@@ -144,7 +144,7 @@ class AnalysisRuntime:
             symbol, BarTimeframe.DAY_1, limit=260, final_only=True
         )
         weekly = self._store.history(
-            symbol, BarTimeframe.WEEK_1, limit=60, final_only=True
+            symbol, BarTimeframe.WEEK_1, limit=220, final_only=True
         )
         if not daily or not weekly:
             return

@@ -123,7 +123,7 @@ class LiveAnalysisService:
     async def _warm_market_data(self, symbols: tuple[str, ...], as_of: datetime) -> int:
         total = 0
         windows = (
-            ("1Week", timedelta(days=730)),
+            ("1Week", timedelta(days=365 * 5)),
             ("1Day", timedelta(days=400)),
             ("15Min", timedelta(days=45)),
             ("1Min", timedelta(days=10)),

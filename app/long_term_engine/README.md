@@ -11,7 +11,8 @@ an adapter outside this engine; incomplete weekly bars must be removed before ca
 
 The analysis covers:
 
-- daily SMA 20/50/150/200 and weekly SMA 10/30/50;
+- daily SMA 20/50/150/200 and weekly SMA 10/30/50/200;
+- weekly price distance from SMA 200 as a percentage, with an explicit risk flag when below it;
 - daily and weekly RSI(14), relative volume, and recent distribution weeks;
 - trend-template criteria, higher-low structure, 52-week range, support and resistance;
 - a stable weekly buy zone and invalidation level derived only from completed bars;
@@ -23,6 +24,10 @@ dependency on Alpaca, NATS, SEC, PostgreSQL, or another engine. Root integration
 responsible for translating the result into events and local monitor alerts. The classifications describe chart
 state (`buy_zone`, `setup`, `watch_pullback`, `extended`, `avoid`, `insufficient_data`); they
 are analysis signals, not instructions to submit an order.
+
+The weekly SMA 200 is currently contextual: it is emitted as a metric and risk/support signal but
+does not by itself grant or veto `buy_zone`. That classification continues to require the complete
+setup and entry conditions described above.
 
 Run its isolated tests with:
 

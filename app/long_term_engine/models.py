@@ -104,6 +104,7 @@ class LongTermIndicators(FrozenModel):
     weekly_sma10: Decimal
     weekly_sma30: Decimal
     weekly_sma50: Decimal
+    weekly_sma200: Decimal | None
     daily_rsi14: Decimal
     weekly_rsi14: Decimal
     daily_rvol20: Decimal | None
@@ -112,6 +113,7 @@ class LongTermIndicators(FrozenModel):
     weekly_price_vs_sma10_percent: Decimal
     weekly_price_vs_sma30_percent: Decimal
     weekly_price_vs_sma50_percent: Decimal
+    weekly_price_vs_sma200_percent: Decimal | None
     weekly_sma30_slope_percent: Decimal
     weekly_sma50_slope_percent: Decimal
     distance_to_high52_percent: Decimal

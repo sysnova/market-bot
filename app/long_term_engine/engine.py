@@ -44,7 +44,7 @@ class LongTermEngine:
     """Analyze completed daily/weekly history without I/O or mutable state."""
 
     engine_id = "long-term"
-    engine_version = "1.0.0"
+    engine_version = "1.1.0"
 
     def analyze(
         self,
@@ -148,6 +148,14 @@ class LongTermEngine:
                     NamedValue(name="daily_rvol20", value=detail.indicators.daily_rvol20),
                     NamedValue(name="weekly_rvol10", value=detail.indicators.weekly_rvol10),
                     NamedValue(
+                        name="weekly_sma200",
+                        value=detail.indicators.weekly_sma200,
+                    ),
+                    NamedValue(
+                        name="weekly_price_vs_sma200_percent",
+                        value=detail.indicators.weekly_price_vs_sma200_percent,
+                    ),
+                    NamedValue(
                         name="trend_template_score",
                         value=detail.indicators.trend_template.score,
                     ),
@@ -176,6 +184,7 @@ class LongTermEngine:
         weekly_sma10 = sma(weekly_closes, 10)
         weekly_sma30 = sma(weekly_closes, 30)
         weekly_sma50 = sma(weekly_closes, 50)
+        weekly_sma200 = sma(weekly_closes, 200) if len(weekly_closes) >= 200 else None
         previous_daily_sma200 = sma(daily_closes[:-20], 200) if len(daily_closes) >= 220 else None
         previous_weekly_sma30 = sma(weekly_closes[:-4], 30)
         previous_weekly_sma50 = (
@@ -212,6 +221,7 @@ class LongTermEngine:
             weekly_sma10=weekly_sma10,
             weekly_sma30=weekly_sma30,
             weekly_sma50=weekly_sma50,
+            weekly_sma200=weekly_sma200,
             daily_rsi14=rsi(daily_closes),
             weekly_rsi14=rsi(weekly_closes),
             daily_rvol20=relative_volume(context.daily_bars, 20),
@@ -220,6 +230,11 @@ class LongTermEngine:
             weekly_price_vs_sma10_percent=percent_vs(context.price, weekly_sma10),
             weekly_price_vs_sma30_percent=percent_vs(context.price, weekly_sma30),
             weekly_price_vs_sma50_percent=percent_vs(context.price, weekly_sma50),
+            weekly_price_vs_sma200_percent=(
+                percent_vs(context.price, weekly_sma200)
+                if weekly_sma200 is not None
+                else None
+            ),
             weekly_sma30_slope_percent=percent_vs(weekly_sma30, previous_weekly_sma30),
             weekly_sma50_slope_percent=percent_vs(weekly_sma50, previous_weekly_sma50),
             distance_to_high52_percent=rounded(
@@ -396,6 +411,11 @@ class LongTermEngine:
             reasons.append("weekly_above_30w")
         if indicators.weekly_price_vs_sma50_percent >= 0:
             reasons.append("weekly_above_50w")
+        if (
+            indicators.weekly_price_vs_sma200_percent is not None
+            and indicators.weekly_price_vs_sma200_percent >= 0
+        ):
+            reasons.append("weekly_above_200w")
         if indicators.weekly_sma30_slope_percent >= 0:
             reasons.append("weekly_30w_rising")
         if Decimal("50") <= indicators.weekly_rsi14 <= Decimal("72"):
@@ -430,6 +450,11 @@ class LongTermEngine:
             flags.append("extended_from_30w")
         if indicators.weekly_price_vs_sma50_percent > Decimal("30"):
             flags.append("extended_from_50w")
+        if (
+            indicators.weekly_price_vs_sma200_percent is not None
+            and indicators.weekly_price_vs_sma200_percent < 0
+        ):
+            flags.append("below_weekly_200w")
         if classification is LongTermClassification.AVOID:
             flags.append("weekly_structure_broken")
         return tuple(flags)

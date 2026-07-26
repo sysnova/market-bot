@@ -101,7 +101,7 @@ async def test_backfill_is_quiet_then_evaluate_all_fans_results_into_one_alert()
         (BarTimeframe.MINUTE_1, 30),
         (BarTimeframe.MINUTE_15, 21),
         (BarTimeframe.DAY_1, 50),
-        (BarTimeframe.WEEK_1, 50),
+        (BarTimeframe.WEEK_1, 220),
     ):
         for index in range(count):
             store.add(bar(timeframe, index, count))
@@ -137,6 +137,9 @@ async def test_backfill_is_quiet_then_evaluate_all_fans_results_into_one_alert()
     await runtime.ingest_analysis(dilution)
     assert sink.alerts == []
     await runtime.evaluate_all(("AAPL",))
+
+    assert len(long_term.contexts) == 1
+    assert len(long_term.contexts[0].weekly_bars) == 220
 
     analysis_events = [
         item

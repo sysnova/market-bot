@@ -105,6 +105,40 @@ def test_constructive_analysis_separates_setup_from_entry_and_emits_levels() -> 
 
 
 @pytest.mark.unit
+def test_analysis_reports_price_distance_from_weekly_sma200() -> None:
+    context = LongTermContext(
+        symbol="TEST",
+        as_of=AS_OF,
+        price=Decimal("120"),
+        daily_bars=_bars(
+            count=260,
+            start=Decimal("40"),
+            step=Decimal("0.30"),
+            volume=100_000,
+            spacing=timedelta(days=1),
+        ),
+        weekly_bars=_bars(
+            count=220,
+            start=Decimal("10"),
+            step=Decimal("0.50"),
+            volume=500_000,
+            spacing=timedelta(days=7),
+        ),
+    )
+
+    detail = LongTermEngine().evaluate(context)
+    result = LongTermEngine().analyze(context)
+    metrics = {metric.name: metric.value for metric in result.metrics}
+
+    assert detail.indicators is not None
+    assert detail.indicators.weekly_sma200 == Decimal("69.7500")
+    assert detail.indicators.weekly_price_vs_sma200_percent == Decimal("72.0430")
+    assert metrics["weekly_sma200"] == Decimal("69.7500")
+    assert metrics["weekly_price_vs_sma200_percent"] == Decimal("72.0430")
+    assert "weekly_above_200w" in detail.reasons
+
+
+@pytest.mark.unit
 def test_insufficient_history_returns_explicit_non_actionable_result() -> None:
     context = LongTermContext(
         symbol="TEST",
@@ -221,4 +255,6 @@ def test_public_output_is_long_term_analysis_contract() -> None:
         "entry_score",
         "support",
         "resistance",
+        "weekly_sma200",
+        "weekly_price_vs_sma200_percent",
     }
