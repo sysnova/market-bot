@@ -17,6 +17,7 @@ from app.contracts import (
     PatternDirection,
 )
 from app.swing_engine import SwingClassification, SwingContext, SwingEngine
+from app.swing_engine.indicators import anchored_vwap
 
 AS_OF = datetime(2026, 1, 2, tzinfo=UTC)
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "scenarios.json"
@@ -124,6 +125,72 @@ def test_breakout_requires_volume_confirmation() -> None:
     assert confirmed.indicators.intraday_rvol20 >= Decimal("1.2")
     assert unconfirmed.classification is SwingClassification.SETUP
     assert "breakout_without_volume" in unconfirmed.risk_flags
+
+
+@pytest.mark.unit
+def test_anchored_vwap_uses_bar_vwap_and_volume_from_anchor() -> None:
+    bars = _bars(
+        count=3,
+        start=Decimal("10"),
+        step=Decimal("1"),
+        volume=100,
+        timeframe=BarTimeframe.DAY_1,
+        spacing=timedelta(days=1),
+    )
+    bars = tuple(
+        bar.model_copy(update={"vwap": vwap, "volume": volume})
+        for bar, vwap, volume in zip(
+            bars,
+            (Decimal("10"), Decimal("20"), Decimal("30")),
+            (Decimal("1"), Decimal("2"), Decimal("3")),
+            strict=True,
+        )
+    )
+
+    assert anchored_vwap(bars, anchor_index=1) == Decimal("26.0000")
+
+
+@pytest.mark.unit
+def test_swing_uses_confirmed_pivot_and_breakout_anchored_vwaps() -> None:
+    case = json.loads(FIXTURES.read_text(encoding="utf-8"))[1]
+    original = _context(case)
+    daily = [
+        bar.model_copy(update={"volume": Decimal("100"), "vwap": Decimal("95")})
+        for bar in original.daily_bars
+    ]
+    daily[60] = daily[60].model_copy(update={"low": Decimal("70")})
+    daily[-1] = daily[-1].model_copy(
+        update={
+            "open": Decimal("99"),
+            "high": Decimal("101"),
+            "low": Decimal("98"),
+            "close": Decimal("100"),
+            "vwap": Decimal("97"),
+        }
+    )
+    context = SwingContext(
+        symbol=original.symbol,
+        as_of=original.as_of,
+        price=Decimal("100"),
+        daily_bars=tuple(daily),
+        intraday_bars=original.intraday_bars,
+    )
+
+    detail = SwingEngine().evaluate(context)
+    result = SwingEngine().analyze(context)
+    metrics = {metric.name: metric.value for metric in result.metrics}
+
+    assert detail.indicators.pivot_low_anchor_at == daily[60].timestamp
+    assert detail.indicators.pivot_low_avwap == Decimal("95.1000")
+    assert detail.indicators.price_vs_pivot_low_avwap_percent == Decimal("5.1525")
+    assert detail.indicators.breakout_anchor_at == daily[-1].timestamp
+    assert detail.indicators.breakout_avwap == Decimal("97.0000")
+    assert detail.indicators.price_vs_breakout_avwap_percent == Decimal("3.0928")
+    assert detail.levels.invalidation == Decimal("95.5450")
+    assert "above_pivot_low_avwap" in detail.reasons
+    assert "above_breakout_avwap" in detail.reasons
+    assert metrics["pivot_low_avwap"] == Decimal("95.1000")
+    assert metrics["breakout_avwap"] == Decimal("97.0000")
 
 
 @pytest.mark.unit

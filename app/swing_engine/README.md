@@ -6,9 +6,12 @@ an established uptrend, or an early breakout through 20-day resistance with conf
 volume. Broken daily structure is classified as avoid rather than converted into an order.
 
 The calculation includes SMA 20/50, RSI(14), ATR(14), daily and intraday relative volume,
-20-day resistance, 10-day support, a technical invalidation level, risk percentage, risk in
-ATR units, and a two-R target used only to assess asymmetry. Invalidation must remain below
-the observed price and within both an 8% and 3-ATR risk budget for a favorable verdict.
+20-day resistance, 10-day support, and daily anchored VWAPs from the latest confirmed pivot
+low and latest confirmed breakout. Each AVWAP includes its distance from current price,
+contributes to the score, and can become the closest technical support used for invalidation.
+The engine also reports risk percentage, risk in ATR units, and a two-R target used only to
+assess asymmetry. Invalidation must remain below the observed price and within both an 8%
+and 3-ATR risk budget for a favorable verdict.
 
 `SwingEngine.analyze()` returns the shared `AnalysisResult` contract with `horizon=SWING`.
 `evaluate()` returns the engine-owned detailed calculation. Both methods are pure; Alpaca,

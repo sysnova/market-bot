@@ -87,6 +87,12 @@ class SwingIndicators(FrozenModel):
     price_vs_sma20_percent: Decimal
     price_vs_sma50_percent: Decimal
     price_vs_resistance_percent: Decimal
+    pivot_low_anchor_at: datetime | None
+    pivot_low_avwap: PositiveDecimal | None
+    price_vs_pivot_low_avwap_percent: Decimal | None
+    breakout_anchor_at: datetime | None
+    breakout_avwap: PositiveDecimal | None
+    price_vs_breakout_avwap_percent: Decimal | None
     bullish_trend: bool
     bearish_trend: bool
     breakout_location: bool
@@ -113,4 +119,3 @@ class SwingAnalysis(FrozenModel):
     levels: SwingLevels | None
     reasons: tuple[str, ...]
     risk_flags: tuple[str, ...]
-

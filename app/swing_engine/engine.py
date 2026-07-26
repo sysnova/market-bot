@@ -14,7 +14,17 @@ from app.contracts import (
     PatternDirection,
 )
 
-from .indicators import atr, percent_vs, relative_volume, rounded, rsi, sma
+from .indicators import (
+    anchored_vwap,
+    atr,
+    last_breakout_index,
+    last_confirmed_pivot_low_index,
+    percent_vs,
+    relative_volume,
+    rounded,
+    rsi,
+    sma,
+)
 from .models import (
     Score,
     SwingAnalysis,
@@ -32,7 +42,7 @@ class SwingEngine:
     """Evaluate swing structure and entry asymmetry without side effects."""
 
     engine_id = "swing"
-    engine_version = "1.0.0"
+    engine_version = "1.1.0"
 
     def analyze(
         self,
@@ -92,6 +102,18 @@ class SwingEngine:
         previous_sma20 = sma(closes[:-5], 20)
         atr14 = atr(context.daily_bars)
         resistance = max(bar.high for bar in context.daily_bars[-21:-1])
+        pivot_low_index = last_confirmed_pivot_low_index(context.daily_bars)
+        breakout_index = last_breakout_index(context.daily_bars)
+        pivot_low_avwap = (
+            anchored_vwap(context.daily_bars, pivot_low_index)
+            if pivot_low_index is not None
+            else None
+        )
+        breakout_avwap = (
+            anchored_vwap(context.daily_bars, breakout_index)
+            if breakout_index is not None
+            else None
+        )
         daily_rvol = relative_volume(context.daily_bars)
         intraday_rvol = relative_volume(context.intraday_bars)
         bullish_trend = (
@@ -116,6 +138,28 @@ class SwingEngine:
             price_vs_sma20_percent=percent_vs(context.price, daily_sma20),
             price_vs_sma50_percent=percent_vs(context.price, daily_sma50),
             price_vs_resistance_percent=percent_vs(context.price, resistance),
+            pivot_low_anchor_at=(
+                context.daily_bars[pivot_low_index].timestamp
+                if pivot_low_index is not None
+                else None
+            ),
+            pivot_low_avwap=pivot_low_avwap,
+            price_vs_pivot_low_avwap_percent=(
+                percent_vs(context.price, pivot_low_avwap)
+                if pivot_low_avwap is not None
+                else None
+            ),
+            breakout_anchor_at=(
+                context.daily_bars[breakout_index].timestamp
+                if breakout_index is not None
+                else None
+            ),
+            breakout_avwap=breakout_avwap,
+            price_vs_breakout_avwap_percent=(
+                percent_vs(context.price, breakout_avwap)
+                if breakout_avwap is not None
+                else None
+            ),
             bullish_trend=bullish_trend,
             bearish_trend=bearish_trend,
             breakout_location=breakout_location,
@@ -128,8 +172,15 @@ class SwingEngine:
         resistance = max(bar.high for bar in context.daily_bars[-21:-1])
         candidates = tuple(
             value
-            for value in (support, indicators.daily_sma20, indicators.daily_sma50, resistance)
-            if value < context.price
+            for value in (
+                support,
+                indicators.daily_sma20,
+                indicators.daily_sma50,
+                resistance,
+                indicators.pivot_low_avwap,
+                indicators.breakout_avwap,
+            )
+            if value is not None and value < context.price
         )
         technical_support = max(candidates) if candidates else context.price - indicators.atr14
         invalidation = rounded(technical_support * Decimal("0.985"))
@@ -192,6 +243,12 @@ class SwingEngine:
         else:
             score += Decimal("6")
         score += Decimal("22") if levels.risk_ok else Decimal("4")
+        for distance in (
+            indicators.price_vs_pivot_low_avwap_percent,
+            indicators.price_vs_breakout_avwap_percent,
+        ):
+            if distance is not None:
+                score += Decimal("6") if distance >= ZERO else Decimal("-10")
         hot_and_extended = (
             indicators.daily_rsi14 >= Decimal("78")
             and classification is SwingClassification.EXTENDED
@@ -215,6 +272,16 @@ class SwingEngine:
             reasons.append("above_20d_resistance")
         if indicators.volume_confirmed:
             reasons.append("relative_volume_confirmed")
+        if (
+            indicators.price_vs_pivot_low_avwap_percent is not None
+            and indicators.price_vs_pivot_low_avwap_percent >= ZERO
+        ):
+            reasons.append("above_pivot_low_avwap")
+        if (
+            indicators.price_vs_breakout_avwap_percent is not None
+            and indicators.price_vs_breakout_avwap_percent >= ZERO
+        ):
+            reasons.append("above_breakout_avwap")
         return tuple(reasons) or ("neutral_swing_structure",)
 
     @staticmethod
@@ -232,6 +299,16 @@ class SwingEngine:
             flags.append("extended_from_20d")
         if classification is SwingClassification.AVOID:
             flags.append("broken_daily_structure")
+        if (
+            indicators.price_vs_pivot_low_avwap_percent is not None
+            and indicators.price_vs_pivot_low_avwap_percent < ZERO
+        ):
+            flags.append("below_pivot_low_avwap")
+        if (
+            indicators.price_vs_breakout_avwap_percent is not None
+            and indicators.price_vs_breakout_avwap_percent < ZERO
+        ):
+            flags.append("below_breakout_avwap")
         return tuple(flags)
 
     @staticmethod
@@ -274,6 +351,28 @@ class SwingEngine:
                     NamedValue(name="daily_rvol20", value=detail.indicators.daily_rvol20),
                     NamedValue(
                         name="intraday_rvol20", value=detail.indicators.intraday_rvol20
+                    ),
+                    NamedValue(
+                        name="pivot_low_anchor_at",
+                        value=detail.indicators.pivot_low_anchor_at,
+                    ),
+                    NamedValue(
+                        name="pivot_low_avwap", value=detail.indicators.pivot_low_avwap
+                    ),
+                    NamedValue(
+                        name="price_vs_pivot_low_avwap_percent",
+                        value=detail.indicators.price_vs_pivot_low_avwap_percent,
+                    ),
+                    NamedValue(
+                        name="breakout_anchor_at",
+                        value=detail.indicators.breakout_anchor_at,
+                    ),
+                    NamedValue(
+                        name="breakout_avwap", value=detail.indicators.breakout_avwap
+                    ),
+                    NamedValue(
+                        name="price_vs_breakout_avwap_percent",
+                        value=detail.indicators.price_vs_breakout_avwap_percent,
                     ),
                 )
             )
