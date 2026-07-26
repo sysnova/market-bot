@@ -36,6 +36,9 @@ class AppSettings(BaseSettings):
     alpaca_market_data_stream_url: AnyUrl = AnyUrl("wss://stream.data.alpaca.markets/v2")
     alpaca_watchlist: str = "AAPL,MSFT,NVDA,SPY,QQQ"
     alpaca_execution_enabled: Literal[False] = False
+    supabase_url: HttpUrl | None = None
+    supabase_desktop_api_key: SecretStr | None = None
+    universe_refresh_seconds: int = Field(default=120, ge=30, le=3600)
     sec_enabled: bool = False
     sec_user_agent: str | None = None
     sec_refresh_hours: int = Field(default=6, ge=1, le=168)
@@ -64,6 +67,13 @@ class AppSettings(BaseSettings):
         )
         if key_configured != secret_configured:
             raise ValueError("Alpaca API key and secret must be configured together")
+        supabase_url_configured = self.supabase_url is not None
+        supabase_key_configured = bool(
+            self.supabase_desktop_api_key
+            and self.supabase_desktop_api_key.get_secret_value().strip()
+        )
+        if supabase_url_configured != supabase_key_configured:
+            raise ValueError("Supabase URL and desktop API key must be configured together")
         if self.sec_enabled and not self.sec_configured:
             raise ValueError("SEC user agent must include an identifiable contact email")
         return self
@@ -85,6 +95,14 @@ class AppSettings(BaseSettings):
     def sec_configured(self) -> bool:
         value = self.sec_user_agent.strip() if self.sec_user_agent else ""
         return " " in value and "@" in value and "." in value.rsplit("@", 1)[-1]
+
+    @property
+    def supabase_universe_configured(self) -> bool:
+        return bool(
+            self.supabase_url
+            and self.supabase_desktop_api_key
+            and self.supabase_desktop_api_key.get_secret_value().strip()
+        )
 
     def redacted(self) -> dict[str, Any]:
         """Return JSON-compatible diagnostics without exposing secret values."""

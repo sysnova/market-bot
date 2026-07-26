@@ -89,6 +89,10 @@ class AnalysisRuntime:
     def enable_live(self) -> None:
         self._live = True
 
+    def disable_live(self) -> None:
+        """Mute event-driven evaluations while historical context is loading."""
+        self._live = False
+
     async def handle_market_event(self, envelope: EventEnvelope) -> None:
         if envelope.event_type not in {MARKET_BAR_EVENT, MARKET_BAR_UPDATED_EVENT}:
             raise ValueError("analysis runtime accepts only market bar events")

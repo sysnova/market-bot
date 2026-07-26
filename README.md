@@ -41,10 +41,15 @@ Open the realtime Alpaca WebSocket and keep analyzing until Ctrl+C:
 uv run marketbot live
 ```
 
-The default watchlist is configured by `MARKETBOT_ALPACA_WATCHLIST`. Alerts appear in the terminal
-and are appended durably to `.runtime/alerts/marketbot-alerts.ndjson`. Market, analysis, and alert
-events are mirrored to the local NATS JetStream stream `MARKETBOT`; `--no-nats` keeps a fully local
-in-process pipeline when the broker is intentionally unavailable.
+By default, MarketBot uses the same universe as Stock Analyzer: the Supabase watchlist plus symbols
+with positive holdings. It refreshes that universe every 120 seconds and reconnects Alpaca only
+when it changes. `MARKETBOT_ALPACA_WATCHLIST` is merged by the shared service and remains the local
+fallback if Supabase is unavailable. Use `--symbols AAPL,NVDA` for a temporary manual universe.
+
+Alerts appear in the terminal and are appended durably to
+`.runtime/alerts/marketbot-alerts.ndjson`. Market, analysis, and alert events are mirrored to the
+local NATS JetStream stream `MARKETBOT`; `--no-nats` keeps a fully local in-process pipeline when
+the broker is intentionally unavailable.
 
 ## Development gates
 

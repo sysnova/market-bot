@@ -102,3 +102,21 @@ def test_sec_settings_require_an_identifiable_user_agent_when_enabled() -> None:
 
     assert settings.sec_configured is True
     assert settings.sec_refresh_hours == 6
+
+
+def test_supabase_universe_credentials_are_paired_and_redacted() -> None:
+    settings = AppSettings(
+        _env_file=None,
+        supabase_url="https://example.supabase.co",
+        supabase_desktop_api_key=SecretStr("desktop-secret"),
+        universe_refresh_seconds=120,
+    )
+
+    assert settings.supabase_universe_configured is True
+    assert "desktop-secret" not in json.dumps(settings.redacted())
+
+
+@pytest.mark.parametrize("field", ["supabase_url", "supabase_desktop_api_key"])
+def test_supabase_universe_credentials_must_be_configured_as_a_pair(field: str) -> None:
+    with pytest.raises(ValidationError, match="Supabase URL and desktop API key"):
+        AppSettings(_env_file=None, **{field: "https://example.supabase.co"})

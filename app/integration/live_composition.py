@@ -31,6 +31,11 @@ from .event_fanout import EventFanoutPublisher, EventPublisher
 from .live_analysis_service import LiveAnalysisService
 from .market_bar_store import MarketBarStore
 from .sec_refresher import SecAnalysisRefresher
+from .supabase_universe import (
+    SupabaseUniverseClient,
+    SupabaseUniverseConfig,
+    fallback_universe,
+)
 
 
 async def run_live_analysis(
@@ -39,6 +44,7 @@ async def run_live_analysis(
     runtime_root: Path,
     bell: bool,
     mirror_to_nats: bool,
+    symbols: tuple[str, ...] | None = None,
 ) -> dict[str, Any] | None:
     """Run read-only market analysis; no execution adapter is composed here."""
 
@@ -46,6 +52,7 @@ async def run_live_analysis(
     configure_logging(level=settings.log_level, json_output=settings.log_json)
     logger = get_logger("live-analysis")
     clock = SystemClock()
+    http_client = httpx.AsyncClient()
     local_bus = InMemoryEventBus()
     nats_bus: NatsJetStreamEventBus | None = None
     if mirror_to_nats:
@@ -96,16 +103,38 @@ async def run_live_analysis(
         "marketbot.v1.market.bar.>", runtime.handle_market_event
     )
     market_data = build_alpaca_market_data_engine(settings, publisher=publisher)
-    sec_client: httpx.AsyncClient | None = None
+    universe_provider: SupabaseUniverseClient | None = None
+    if symbols:
+        universe = fallback_universe(symbols, source="manual-symbols")
+    elif settings.supabase_universe_configured:
+        if settings.supabase_url is None or settings.supabase_desktop_api_key is None:
+            raise RuntimeError("Supabase universe configuration is incomplete")
+        universe_provider = SupabaseUniverseClient(
+            SupabaseUniverseConfig(
+                base_url=str(settings.supabase_url),
+                desktop_api_key=settings.supabase_desktop_api_key.get_secret_value(),
+                fallback_symbols=settings.alpaca_symbols,
+            ),
+            client=http_client,
+        )
+        try:
+            universe = await universe_provider.get_universe()
+        except Exception as error:
+            await logger.awarning(
+                "supabase_universe_unavailable_using_fallback",
+                error_type=type(error).__name__,
+            )
+            universe = fallback_universe(settings.alpaca_symbols)
+    else:
+        universe = fallback_universe(settings.alpaca_symbols)
     sec_refresher: SecAnalysisRefresher | None = None
     if settings.sec_enabled:
         if settings.sec_user_agent is None:
             raise ValueError("SEC user agent is required when SEC analysis is enabled")
-        sec_client = httpx.AsyncClient()
         sec_config = SecEdgarConfig(user_agent=settings.sec_user_agent)
         sec_refresher = SecAnalysisRefresher(
-            resolver=SecTickerResolver(sec_config, client=sec_client),
-            loader=SecEdgarAdapter(sec_config, client=sec_client),
+            resolver=SecTickerResolver(sec_config, client=http_client),
+            loader=SecEdgarAdapter(sec_config, client=http_client),
             engine=DilutionSecEngine(),
             runtime=runtime,
             on_error=lambda symbol, error: logger.warning(
@@ -115,7 +144,7 @@ async def run_live_analysis(
             ),
         )
     service = LiveAnalysisService(
-        symbols=settings.alpaca_symbols,
+        symbols=universe.symbols,
         market_data=market_data,
         local_bus=local_bus,
         runtime=runtime,
@@ -129,6 +158,7 @@ async def run_live_analysis(
             market_events=summary.market_events,
             nats_mirroring=nats_bus is not None,
             sec_enabled=sec_refresher is not None,
+            universe_source=universe.source,
             execution_enabled=False,
         )
         if once:
@@ -139,14 +169,20 @@ async def run_live_analysis(
                 "nats_mirroring": nats_bus is not None,
                 "sec_enabled": sec_refresher is not None,
                 "symbols": list(summary.symbols),
+                "universe_source": universe.source,
             }
         async with asyncio.TaskGroup() as tasks:
-            tasks.create_task(service.stream_forever())
+            tasks.create_task(
+                service.stream_forever(
+                    universe_provider=universe_provider,
+                    universe_refresh_seconds=settings.universe_refresh_seconds,
+                )
+            )
             if sec_refresher is not None:
                 tasks.create_task(
                     _refresh_sec_periodically(
                         sec_refresher,
-                        settings.alpaca_symbols,
+                        service,
                         settings.sec_refresh_hours * 3600,
                         clock,
                     )
@@ -155,8 +191,7 @@ async def run_live_analysis(
     finally:
         await subscription.unsubscribe()
         await market_data.close()
-        if sec_client is not None:
-            await sec_client.aclose()
+        await http_client.aclose()
         if nats_bus is not None:
             await nats_bus.close()
         await local_bus.close()
@@ -164,10 +199,10 @@ async def run_live_analysis(
 
 async def _refresh_sec_periodically(
     refresher: SecAnalysisRefresher,
-    symbols: tuple[str, ...],
+    service: LiveAnalysisService,
     interval_seconds: int,
     clock: SystemClock,
 ) -> None:
     while True:
         await asyncio.sleep(interval_seconds)
-        await refresher.refresh(symbols, clock.now())
+        await refresher.refresh(service.symbols, clock.now())

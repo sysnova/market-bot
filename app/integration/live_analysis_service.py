@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
+
+from .supabase_universe import UniverseSnapshot
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,9 +48,15 @@ class AnalysisRuntimePort(Protocol):
 
     def enable_live(self) -> None: ...
 
+    def disable_live(self) -> None: ...
+
 
 class SecRefresher(Protocol):
     async def refresh(self, symbols: tuple[str, ...], as_of: datetime) -> None: ...
+
+
+class UniverseProvider(Protocol):
+    async def get_universe(self) -> UniverseSnapshot: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,9 +86,41 @@ class LiveAnalysisService:
         self._runtime = runtime
         self._sec_refresher = sec_refresher
 
+    @property
+    def symbols(self) -> tuple[str, ...]:
+        return self._symbols
+
     async def initialize(self, as_of: datetime) -> InitializationSummary:
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise ValueError("initialization time must be timezone-aware")
+        total = await self._warm_market_data(self._symbols, as_of)
+        if self._sec_refresher is not None:
+            await self._sec_refresher.refresh(self._symbols, as_of)
+        await self._runtime.evaluate_all(self._symbols)
+        self._runtime.enable_live()
+        return InitializationSummary(self._symbols, total)
+
+    async def refresh_universe(self, symbols: tuple[str, ...], as_of: datetime) -> bool:
+        """Backfill newly added symbols quietly and replace the live subscription set."""
+        if as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise ValueError("universe refresh time must be timezone-aware")
+        normalized = _normalize_symbols(symbols)
+        if normalized == self._symbols:
+            return False
+        added = tuple(symbol for symbol in normalized if symbol not in self._symbols)
+        self._runtime.disable_live()
+        try:
+            if added:
+                await self._warm_market_data(added, as_of)
+                if self._sec_refresher is not None:
+                    await self._sec_refresher.refresh(added, as_of)
+            self._symbols = normalized
+            await self._runtime.evaluate_all(self._symbols)
+        finally:
+            self._runtime.enable_live()
+        return True
+
+    async def _warm_market_data(self, symbols: tuple[str, ...], as_of: datetime) -> int:
         total = 0
         windows = (
             ("1Week", timedelta(days=730)),
@@ -89,33 +130,37 @@ class LiveAnalysisService:
         )
         for timeframe, lookback in windows:
             total += await self._market_data.publish_bars(
-                self._symbols,
+                symbols,
                 timeframe=timeframe,
                 start=as_of - lookback,
                 end=as_of,
                 limit=10_000,
             )
             await self._local_bus.join()
-        total += await self._market_data.publish_snapshots(self._symbols)
+        total += await self._market_data.publish_snapshots(symbols)
         await self._local_bus.join()
-        if self._sec_refresher is not None:
-            await self._sec_refresher.refresh(self._symbols, as_of)
-        await self._runtime.evaluate_all(self._symbols)
-        self._runtime.enable_live()
-        return InitializationSummary(self._symbols, total)
+        return total
 
     async def stream_forever(
         self,
         *,
         initial_backoff_seconds: float = 1.0,
         maximum_backoff_seconds: float = 30.0,
+        universe_provider: UniverseProvider | None = None,
+        universe_refresh_seconds: float = 120.0,
     ) -> None:
         if initial_backoff_seconds <= 0 or maximum_backoff_seconds < initial_backoff_seconds:
             raise ValueError("invalid reconnect backoff")
         backoff = initial_backoff_seconds
         while True:
+            stream_task = asyncio.create_task(self._market_data.stream_once(self._symbols))
+            universe_changed = False
             try:
-                count = await self._market_data.stream_once(self._symbols)
+                count, universe_changed = await self._run_stream_session(
+                    stream_task,
+                    universe_provider=universe_provider,
+                    universe_refresh_seconds=universe_refresh_seconds,
+                )
                 if count > 0:
                     backoff = initial_backoff_seconds
             except asyncio.CancelledError:
@@ -125,5 +170,57 @@ class LiveAnalysisService:
                     "Alpaca market-data stream disconnected; reconnecting in %.1fs",
                     backoff,
                 )
+            finally:
+                if not stream_task.done():
+                    stream_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await stream_task
+            if universe_changed:
+                backoff = initial_backoff_seconds
+                continue
             await asyncio.sleep(backoff)
             backoff = min(maximum_backoff_seconds, backoff * 2)
+
+    async def _run_stream_session(
+        self,
+        stream_task: asyncio.Task[int],
+        *,
+        universe_provider: UniverseProvider | None,
+        universe_refresh_seconds: float,
+    ) -> tuple[int, bool]:
+        if universe_provider is None:
+            return await stream_task, False
+        if universe_refresh_seconds <= 0:
+            raise ValueError("universe refresh interval must be positive")
+        while True:
+            done, _pending = await asyncio.wait(
+                (stream_task,), timeout=universe_refresh_seconds
+            )
+            if done:
+                return await stream_task, False
+            try:
+                universe = await universe_provider.get_universe()
+            except Exception:
+                _LOGGER.exception(
+                    "Shared Supabase universe refresh failed; keeping current symbols"
+                )
+                continue
+            if _normalize_symbols(universe.symbols) == self._symbols:
+                continue
+            stream_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await stream_task
+            await self.refresh_universe(universe.symbols, datetime.now(UTC))
+            _LOGGER.info(
+                "Market universe changed to %d symbols from %s",
+                len(self._symbols),
+                universe.source,
+            )
+            return 0, True
+
+
+def _normalize_symbols(symbols: tuple[str, ...]) -> tuple[str, ...]:
+    normalized = tuple(dict.fromkeys(item.strip().upper() for item in symbols))
+    if not normalized or any(not item for item in normalized):
+        raise ValueError("at least one market symbol is required")
+    return normalized

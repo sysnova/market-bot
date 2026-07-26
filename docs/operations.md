@@ -14,6 +14,12 @@ uv run marketbot --version
 Configure Alpaca market-data credentials only in the ignored `.env` file. SEC analysis additionally
 requires an identifiable User-Agent with a monitored contact email.
 
+The default symbol universe is shared with Stock Analyzer through its read-only Supabase Edge
+Function contract. Configure `MARKETBOT_SUPABASE_URL` and
+`MARKETBOT_SUPABASE_DESKTOP_API_KEY`; MarketBot fetches `watchlist` and `holdings`, keeps only
+positive positions, merges `MARKETBOT_ALPACA_WATCHLIST` as fallback, and refreshes every
+`MARKETBOT_UNIVERSE_REFRESH_SECONDS` (120 seconds by default).
+
 ```powershell
 uv run marketbot live --once
 uv run marketbot live
@@ -29,7 +35,10 @@ Useful options:
 ```powershell
 uv run marketbot live --no-nats
 uv run marketbot live --runtime-root D:\MarketBotRuntime --bell
+uv run marketbot live --symbols AAPL,NVDA
 ```
+
+`--symbols` is a temporary override for that process and does not modify the shared watchlist.
 
 The alert ledger defaults to `.runtime\alerts\marketbot-alerts.ndjson`. A broker outage is logged
 and local analysis continues; once connected, individual mirror failures likewise do not stop local

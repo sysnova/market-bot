@@ -78,6 +78,12 @@ def live_analysis(
         bool,
         typer.Option("--nats/--no-nats", help="Mirror events durably to local NATS."),
     ] = True,
+    symbols: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated temporary universe; overrides Supabase for this run."
+        ),
+    ] = None,
 ) -> None:
     """Run the realtime analysis-only bot; this command cannot submit orders."""
 
@@ -89,6 +95,7 @@ def live_analysis(
             runtime_root=runtime_root,
             bell=bell,
             mirror_to_nats=nats,
+            symbols=tuple(symbols.split(",")) if symbols else None,
         )
     )
     if summary is not None:
