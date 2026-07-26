@@ -18,3 +18,35 @@ clear context at the end of every request/message to avoid context leakage betwe
 
 `compose.yaml` is solely a workstation convenience. Production NATS and PostgreSQL lifecycle,
 backup, TLS, authentication, and monitoring belong to the deployment platform.
+
+## Native NATS service on Windows
+
+For a persistent Windows development broker, run the repository installer from an elevated
+PowerShell process:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/windows/install-nats-service.ps1
+```
+
+The installer downloads the pinned official NATS archive, verifies its SHA-256 checksum, and
+registers `MarketBotNATS` as an automatic Windows service running as `NetworkService`. The client
+and monitoring listeners bind only to localhost:
+
+- `nats://127.0.0.1:4222`
+- `http://127.0.0.1:8222`
+
+JetStream state and logs live under `C:\ProgramData\MarketBot\NATS`. The service can be inspected
+and controlled with standard Windows commands:
+
+```powershell
+Get-Service MarketBotNATS
+Start-Service MarketBotNATS
+Stop-Service MarketBotNATS
+```
+
+Validate MarketBot against the native broker with:
+
+```powershell
+$env:NATS_URL = "nats://127.0.0.1:4222"
+uv run pytest app/event_bus/tests/test_nats_integration.py -m integration --no-cov
+```
