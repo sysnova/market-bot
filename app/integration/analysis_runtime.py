@@ -119,6 +119,10 @@ class AnalysisRuntime:
             await self._evaluate_swing(symbol)
             await self._evaluate_intraday(symbol)
 
+    async def evaluate_long_term_all(self, symbols: tuple[str, ...]) -> None:
+        for symbol in tuple(dict.fromkeys(item.strip().upper() for item in symbols)):
+            await self._evaluate_long_term(symbol)
+
     async def ingest_analysis(self, result: AnalysisResult) -> None:
         envelope = EventEnvelope(
             event_type=ANALYSIS_RESULT_EVENT,

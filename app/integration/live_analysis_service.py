@@ -46,6 +46,8 @@ class JoinableBus(Protocol):
 class AnalysisRuntimePort(Protocol):
     async def evaluate_all(self, symbols: tuple[str, ...]) -> None: ...
 
+    async def evaluate_long_term_all(self, symbols: tuple[str, ...]) -> None: ...
+
     def enable_live(self) -> None: ...
 
     def disable_live(self) -> None: ...
@@ -119,6 +121,25 @@ class LiveAnalysisService:
         finally:
             self._runtime.enable_live()
         return True
+
+    async def refresh_weekly_context(self, as_of: datetime) -> int:
+        """Refresh recent completed weeks without reacting to historical publications."""
+        if as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise ValueError("weekly refresh time must be timezone-aware")
+        self._runtime.disable_live()
+        try:
+            count = await self._market_data.publish_bars(
+                self._symbols,
+                timeframe="1Week",
+                start=as_of - timedelta(days=21),
+                end=as_of,
+                limit=10_000,
+            )
+            await self._local_bus.join()
+        finally:
+            self._runtime.enable_live()
+        await self._runtime.evaluate_long_term_all(self._symbols)
+        return count
 
     async def _warm_market_data(self, symbols: tuple[str, ...], as_of: datetime) -> int:
         total = 0

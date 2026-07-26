@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+from app.contracts import BarTimeframe, MarketBar
 
 from .normalizer import AlpacaEventNormalizer, Publication
 from .ports import EventPublisher, MarketDataRest, MarketDataStream
+
+_NEW_YORK = ZoneInfo("America/New_York")
 
 
 class AlpacaMarketDataEngine:
@@ -43,7 +48,15 @@ class AlpacaMarketDataEngine:
         count = 0
         for symbol in sorted(bars):
             for raw in bars[symbol]:
-                await self._publish(self._normalizer.rest_bar(symbol, timeframe, raw))
+                publication = self._normalizer.rest_bar(symbol, timeframe, raw)
+                payload = publication.envelope.payload
+                if (
+                    timeframe == BarTimeframe.WEEK_1.value
+                    and isinstance(payload, MarketBar)
+                    and not _weekly_bar_is_complete(payload.timestamp, end)
+                ):
+                    continue
+                await self._publish(publication)
                 count += 1
         return count
 
@@ -83,3 +96,10 @@ class AlpacaMarketDataEngine:
 
     async def _publish(self, publication: Publication) -> None:
         await self._publisher.publish(publication.subject, publication.envelope)
+
+
+def _weekly_bar_is_complete(timestamp: datetime, as_of: datetime) -> bool:
+    local_date = timestamp.astimezone(_NEW_YORK).date()
+    week_start = local_date - timedelta(days=local_date.weekday())
+    completion = datetime.combine(week_start + timedelta(days=5), time(), _NEW_YORK)
+    return as_of.astimezone(_NEW_YORK) >= completion

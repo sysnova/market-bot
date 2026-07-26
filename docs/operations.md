@@ -40,6 +40,11 @@ uv run marketbot live --symbols AAPL,NVDA
 
 `--symbols` is a temporary override for that process and does not modify the shared watchlist.
 
+Historical bar requests default to `MARKETBOT_ALPACA_ADJUSTMENT=split`. MarketBot excludes the
+still-open weekly aggregate and refreshes recent completed weekly bars every Saturday at 02:00
+America/New_York. The refresh temporarily mutes historical reactions and then reevaluates only the
+long-term horizon.
+
 The alert ledger defaults to `.runtime\alerts\marketbot-alerts.ndjson`. A broker outage is logged
 and local analysis continues; once connected, individual mirror failures likewise do not stop local
 alerts.

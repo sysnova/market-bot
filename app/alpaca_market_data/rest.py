@@ -24,6 +24,7 @@ class AlpacaRestClient:
         api_secret_key: str,
         base_url: str,
         feed: str,
+        adjustment: str = "split",
         transport: HttpTransport,
         max_pages: int = 100,
     ) -> None:
@@ -34,12 +35,15 @@ class AlpacaRestClient:
             raise ValueError("Alpaca REST client must use the Stock Market Data endpoint")
         if max_pages < 1:
             raise ValueError("max_pages must be positive")
+        if adjustment not in {"raw", "split", "dividend", "all"}:
+            raise ValueError("unsupported Alpaca bar adjustment")
         self._headers = {
             "APCA-API-KEY-ID": api_key_id,
             "APCA-API-SECRET-KEY": api_secret_key,
         }
         self._base_url = base_url.rstrip("/")
         self._feed = feed
+        self._adjustment = adjustment
         self._transport = transport
         self._max_pages = max_pages
 
@@ -60,7 +64,7 @@ class AlpacaRestClient:
         if not 1 <= limit <= 10_000:
             raise ValueError("limit must be between 1 and 10000")
         params = {
-            "adjustment": "raw",
+            "adjustment": self._adjustment,
             "end": end.astimezone(UTC).isoformat().replace("+00:00", "Z"),
             "feed": self._feed,
             "limit": str(limit),

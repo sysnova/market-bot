@@ -32,6 +32,7 @@ class AppSettings(BaseSettings):
     alpaca_api_key_id: SecretStr | None = None
     alpaca_api_secret_key: SecretStr | None = None
     alpaca_data_feed: Literal["iex", "sip", "delayed_sip", "boats", "overnight"] = "iex"
+    alpaca_adjustment: Literal["raw", "split", "dividend", "all"] = "split"
     alpaca_data_base_url: HttpUrl = HttpUrl("https://data.alpaca.markets")
     alpaca_market_data_stream_url: AnyUrl = AnyUrl("wss://stream.data.alpaca.markets/v2")
     alpaca_watchlist: str = "AAPL,MSFT,NVDA,SPY,QQQ"

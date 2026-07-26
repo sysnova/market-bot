@@ -43,6 +43,9 @@ class FakeRuntime:
     async def evaluate_all(self, symbols: tuple[str, ...]) -> None:
         self.evaluated = symbols
 
+    async def evaluate_long_term_all(self, symbols: tuple[str, ...]) -> None:
+        self.evaluated = symbols
+
     def enable_live(self) -> None:
         self.enabled = True
 
@@ -154,4 +157,37 @@ async def test_stream_session_reconnects_when_shared_universe_changes() -> None:
     assert (count, changed) == (0, True)
     assert stream_task.cancelled()
     assert service.symbols == ("MSFT", "NVDA")
+    assert runtime.enabled is True
+
+
+@pytest.mark.unit
+async def test_weekly_refresh_loads_only_recent_context_while_live_is_muted() -> None:
+    market_data = FakeMarketData()
+    runtime = FakeRuntime()
+    runtime.enable_live()
+    service = LiveAnalysisService(
+        symbols=("AAPL", "MSFT"),
+        market_data=market_data,
+        local_bus=FakeBus(),
+        runtime=runtime,
+    )
+
+    count = await service.refresh_weekly_context(NOW)
+
+    assert count == 1
+    assert market_data.calls == [
+        (
+            "bars",
+            (
+                ("AAPL", "MSFT"),
+                {
+                    "timeframe": "1Week",
+                    "start": NOW - timedelta(days=21),
+                    "end": NOW,
+                    "limit": 10_000,
+                },
+            ),
+        )
+    ]
+    assert runtime.evaluated == ("AAPL", "MSFT")
     assert runtime.enabled is True

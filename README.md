@@ -46,6 +46,10 @@ with positive holdings. It refreshes that universe every 120 seconds and reconne
 when it changes. `MARKETBOT_ALPACA_WATCHLIST` is merged by the shared service and remains the local
 fallback if Supabase is unavailable. Use `--symbols AAPL,NVDA` for a temporary manual universe.
 
+Historical bars use Alpaca's split adjustment. Weekly bars are treated as complete only after the
+market week closes, and the recent weekly context is refreshed each Saturday at 02:00 New York
+time so long-term moving averages stay current without restarting the bot.
+
 Alerts appear in the terminal and are appended durably to
 `.runtime/alerts/marketbot-alerts.ndjson`. Market, analysis, and alert events are mirrored to the
 local NATS JetStream stream `MARKETBOT`; `--no-nats` keeps a fully local in-process pipeline when

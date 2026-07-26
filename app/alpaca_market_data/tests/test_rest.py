@@ -75,6 +75,7 @@ async def test_fetch_bars_paginates_and_authenticates() -> None:
         "APCA-API-SECRET-KEY": "secret",
     }
     assert transport.calls[0][2]["feed"] == "sip"
+    assert transport.calls[0][2]["adjustment"] == "split"
     assert transport.calls[1][2]["page_token"] == "next"
 
 

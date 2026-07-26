@@ -29,6 +29,9 @@ The weekly SMA 200 is currently contextual: it is emitted as a metric and risk/s
 does not by itself grant or veto `buy_zone`. That classification continues to require the complete
 setup and entry conditions described above.
 
+Root integration supplies split-adjusted history, excludes the open market week, retains 220
+completed weekly bars, and refreshes the recent weekly slice after each Friday close.
+
 Run its isolated tests with:
 
 ```powershell

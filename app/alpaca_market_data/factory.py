@@ -32,6 +32,7 @@ def build_alpaca_market_data_engine(
             api_secret_key=api_secret_key,
             base_url=str(settings.alpaca_data_base_url),
             feed=feed,
+            adjustment=settings.alpaca_adjustment,
             transport=HttpxTransport(),
         ),
         stream=AlpacaMarketDataStream(

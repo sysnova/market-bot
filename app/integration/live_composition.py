@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
+from structlog.typing import FilteringBoundLogger
 
 from app.alert_engine import AlertDispatcher, AlertEngine, ConsoleAlertSink, NdjsonAlertSink
 from app.alpaca_market_data import build_alpaca_market_data_engine
@@ -36,6 +39,8 @@ from .supabase_universe import (
     SupabaseUniverseConfig,
     fallback_universe,
 )
+
+_NEW_YORK = ZoneInfo("America/New_York")
 
 
 async def run_live_analysis(
@@ -178,6 +183,7 @@ async def run_live_analysis(
                     universe_refresh_seconds=settings.universe_refresh_seconds,
                 )
             )
+            tasks.create_task(_refresh_weekly_periodically(service, clock, logger))
             if sec_refresher is not None:
                 tasks.create_task(
                     _refresh_sec_periodically(
@@ -206,3 +212,34 @@ async def _refresh_sec_periodically(
     while True:
         await asyncio.sleep(interval_seconds)
         await refresher.refresh(service.symbols, clock.now())
+
+
+async def _refresh_weekly_periodically(
+    service: LiveAnalysisService,
+    clock: SystemClock,
+    logger: FilteringBoundLogger,
+) -> None:
+    while True:
+        now = clock.now()
+        refresh_at = _next_weekly_refresh(now)
+        await asyncio.sleep((refresh_at - now).total_seconds())
+        try:
+            count = await service.refresh_weekly_context(clock.now())
+            await logger.ainfo("weekly_context_refreshed", market_events=count)
+        except Exception as error:
+            await logger.awarning(
+                "weekly_context_refresh_failed",
+                error_type=type(error).__name__,
+            )
+
+
+def _next_weekly_refresh(now: datetime) -> datetime:
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("weekly refresh scheduling requires a timezone-aware time")
+    local_now = now.astimezone(_NEW_YORK)
+    days_until_saturday = (5 - local_now.weekday()) % 7
+    candidate_date = local_now.date() + timedelta(days=days_until_saturday)
+    candidate = datetime.combine(candidate_date, time(hour=2), tzinfo=_NEW_YORK)
+    if candidate <= local_now:
+        candidate += timedelta(days=7)
+    return candidate.astimezone(UTC)
