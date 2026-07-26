@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -14,6 +15,7 @@ from app.contracts import (
     MARKET_BAR_UPDATED_EVENT,
     AnalysisResult,
     BarTimeframe,
+    EntryWatchTransition,
     EventEnvelope,
     MarketBar,
     analysis_result_subject,
@@ -57,6 +59,12 @@ class IntradayAnalyzer(Protocol):
     ) -> AnalysisResult: ...
 
 
+class EntryWatchAnalyzer(Protocol):
+    async def ingest(
+        self, result: AnalysisResult, *, now: datetime
+    ) -> EntryWatchTransition | None: ...
+
+
 class AnalysisRuntime:
     """Keep backfill quiet, then evaluate each horizon on its natural cadence."""
 
@@ -72,6 +80,7 @@ class AnalysisRuntime:
         alert_dispatcher: AlertDispatcher,
         clock: Clock,
         aggregator: MinuteBarAggregator | None = None,
+        entry_watcher: EntryWatchAnalyzer | None = None,
     ) -> None:
         self._store = store
         self._publisher = publisher
@@ -84,6 +93,7 @@ class AnalysisRuntime:
         self._aggregator = aggregator or MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_5, BarTimeframe.MINUTE_15)
         )
+        self._entry_watcher = entry_watcher
         self._live = False
 
     def enable_live(self) -> None:
@@ -135,7 +145,14 @@ class AnalysisRuntime:
             analysis_result_subject(result.horizon, result.symbol),
             envelope,
         )
-        alert = self._alert_engine.ingest(result, now=self._clock.now())
+        now = self._clock.now()
+        if self._entry_watcher is not None:
+            transition = await self._entry_watcher.ingest(result, now=now)
+            if transition is not None:
+                await self._alert_dispatcher.dispatch(
+                    self._alert_engine.ingest_entry_watch(transition, now=now)
+                )
+        alert = self._alert_engine.ingest(result, now=now)
         if alert is not None:
             await self._alert_dispatcher.dispatch(alert)
 

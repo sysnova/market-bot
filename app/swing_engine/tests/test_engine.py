@@ -191,6 +191,7 @@ def test_swing_uses_confirmed_pivot_and_breakout_anchored_vwaps() -> None:
     assert "above_breakout_avwap" in detail.reasons
     assert metrics["pivot_low_avwap"] == Decimal("95.1000")
     assert metrics["breakout_avwap"] == Decimal("97.0000")
+    assert metrics["reference_price"] == Decimal("100")
 
 
 @pytest.mark.unit

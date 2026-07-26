@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
@@ -11,6 +12,7 @@ import pytest
 
 from app.persistence.repositories import (
     CheckpointRepository,
+    EntryWatchRepository,
     EventPayloadConflictError,
     HealthRepository,
     OutboxRepository,
@@ -202,3 +204,44 @@ async def test_health_upsert_replaces_latest_snapshot() -> None:
     statement = session.execute.await_args.args[0]
     sql = str(statement.compile(dialect=repository.dialect))
     assert "ON CONFLICT (service_name) DO UPDATE" in sql
+
+
+@pytest.mark.unit
+async def test_entry_watch_loads_only_active_symbol_thesis() -> None:
+    session = AsyncMock()
+    session.scalar.return_value = None
+    repository = EntryWatchRepository(session)
+
+    assert await repository.load_active("aapl") is None
+    statement = session.scalar.await_args.args[0]
+    sql = str(statement.compile(dialect=repository.dialect))
+
+    assert "entry_watches.symbol" in sql
+    assert "entry_watches.status IN" in sql
+    assert "ORDER BY" in sql
+
+
+@pytest.mark.unit
+async def test_entry_watch_transition_uses_optimistic_status_guard() -> None:
+    session = AsyncMock()
+    session.execute.return_value = ScalarResult(ENTITY_ID)
+    session.add = MagicMock()
+    repository = EntryWatchRepository(session)
+    transition = MagicMock()
+
+    changed = await repository.apply_transition(
+        ENTITY_ID,
+        previous_status="ARMED",
+        status="IN_ZONE",
+        current_price=Decimal("103"),
+        updated_at=NOW,
+        terminal_at=None,
+        transition=transition,
+    )
+
+    assert changed is True
+    statement = session.execute.await_args.args[0]
+    sql = str(statement.compile(dialect=repository.dialect))
+    assert "entry_watches.status =" in sql
+    assert "RETURNING" in sql
+    session.add.assert_called_once_with(transition)

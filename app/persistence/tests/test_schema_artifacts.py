@@ -13,6 +13,8 @@ DBML = ROOT / "resources" / "diagrams" / "market_bot.dbml"
 TABLES = {
     "consumer_checkpoints",
     "control_events",
+    "entry_watch_transitions",
+    "entry_watches",
     "outbox_events",
     "processed_events",
     "rule_versions",
@@ -38,7 +40,7 @@ def all_migration_sql() -> str:
 
 @pytest.mark.unit
 def test_migration_creates_only_expected_private_schema_tables() -> None:
-    sql = migration_sql()
+    sql = all_migration_sql()
     created = set(re.findall(r"create table market_bot\.([a-z_]+)", sql))
 
     assert "create schema market_bot" in sql
@@ -49,7 +51,7 @@ def test_migration_creates_only_expected_private_schema_tables() -> None:
 
 @pytest.mark.unit
 def test_every_table_has_forced_rls_and_only_runtime_policies() -> None:
-    sql = migration_sql()
+    sql = all_migration_sql()
 
     for table in TABLES:
         assert f"alter table market_bot.{table} enable row level security" in sql
@@ -61,7 +63,7 @@ def test_every_table_has_forced_rls_and_only_runtime_policies() -> None:
 
 @pytest.mark.unit
 def test_runtime_role_has_no_delete_and_immutable_tables_have_guard_triggers() -> None:
-    sql = migration_sql()
+    sql = all_migration_sql()
 
     assert "create role market_bot_runtime nologin" in sql
     assert "alter role market_bot_runtime" not in sql
@@ -79,6 +81,7 @@ def test_runtime_role_has_no_delete_and_immutable_tables_have_guard_triggers() -
     assert not re.search(r"grant[^;]*\bdelete\b", sql)
     for table in {
         "control_events",
+        "entry_watch_transitions",
         "processed_events",
         "rule_versions",
         "run_strategies",

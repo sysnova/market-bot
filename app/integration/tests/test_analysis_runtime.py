@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import pytest
 
@@ -10,6 +11,8 @@ from app.contracts import (
     AnalysisResult,
     AnalysisVerdict,
     BarTimeframe,
+    EntryWatchStatus,
+    EntryWatchTransition,
     EventEnvelope,
     LocalAlert,
     MarketBar,
@@ -69,6 +72,18 @@ class RecordingSink:
 class FixedClock:
     def now(self) -> datetime:
         return NOW
+
+
+class RecordingEntryWatcher:
+    def __init__(self, transition: EntryWatchTransition) -> None:
+        self.transition = transition
+        self.results: list[AnalysisResult] = []
+
+    async def ingest(
+        self, result: AnalysisResult, *, now: datetime
+    ) -> EntryWatchTransition:
+        self.results.append(result)
+        return self.transition
 
 
 def bar(timeframe: BarTimeframe, index: int, count: int) -> MarketBar:
@@ -192,3 +207,54 @@ async def test_market_events_only_trigger_live_intraday_after_enable() -> None:
     )
 
     assert len(intraday.contexts) == 1
+
+
+@pytest.mark.unit
+async def test_entry_watch_transition_is_dispatched_as_local_alert() -> None:
+    result = AnalysisResult(
+        engine_id="long-test",
+        engine_version="1.0.0",
+        symbol="AAPL",
+        horizon=AnalysisHorizon.LONG_TERM,
+        as_of=NOW,
+        verdict=AnalysisVerdict.WATCH,
+        direction=PatternDirection.BULLISH,
+        score=Decimal("75"),
+        confidence=Decimal("0.8"),
+        reasons=("fixture",),
+        context_hash=HASH,
+    )
+    transition = EntryWatchTransition(
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000001"),
+        symbol="AAPL",
+        status=EntryWatchStatus.ARMED,
+        occurred_at=NOW,
+        zone_low=Decimal("100"),
+        zone_high=Decimal("105"),
+        invalidation=Decimal("92"),
+        current_price=Decimal("120"),
+        watch_expires_at=NOW + timedelta(weeks=8),
+        reasons=("long_entry_thesis_armed",),
+        horizons=(AnalysisHorizon.LONG_TERM,),
+        source_analysis_ids=(result.analysis_id,),
+    )
+    watcher = RecordingEntryWatcher(transition)
+    sink = RecordingSink()
+    runtime = AnalysisRuntime(
+        store=MarketBarStore(),
+        publisher=RecordingPublisher(),
+        long_term=StaticEngine(AnalysisHorizon.LONG_TERM),
+        swing=StaticEngine(AnalysisHorizon.SWING),
+        intraday=StaticEngine(AnalysisHorizon.INTRADAY),
+        alert_engine=AlertEngine(),
+        alert_dispatcher=AlertDispatcher(sinks=(sink,)),
+        clock=FixedClock(),
+        entry_watcher=watcher,
+    )
+
+    await runtime.ingest_analysis(result)
+
+    assert watcher.results == [result]
+    assert len(sink.alerts) == 1
+    assert sink.alerts[0].severity.value == "INFO"
+    assert "ENTRY ARMED" in sink.alerts[0].title

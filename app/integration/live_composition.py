@@ -10,26 +10,30 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncEngine
 from structlog.typing import FilteringBoundLogger
 
 from app.alert_engine import AlertDispatcher, AlertEngine, ConsoleAlertSink, NdjsonAlertSink
 from app.alpaca_market_data import build_alpaca_market_data_engine
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
-from app.common.settings import AppSettings
+from app.common.settings import AppSettings, Environment
 from app.dilution_sec_engine import (
     DilutionSecEngine,
     SecEdgarAdapter,
     SecEdgarConfig,
     SecTickerResolver,
 )
+from app.entry_watcher import EntryWatcher, EntryWatcherPolicy
 from app.event_bus import InMemoryEventBus, NatsJetStreamEventBus
 from app.intraday_engine import IntradayEngine
 from app.long_term_engine import LongTermEngine
+from app.persistence import create_database_engine, create_session_factory
 from app.swing_engine import SwingEngine
 
 from .alert_publisher import AlertEventPublisher
 from .analysis_runtime import AnalysisRuntime
+from .entry_watch_store import PostgresEntryWatchStore
 from .event_fanout import EventFanoutPublisher, EventPublisher
 from .live_analysis_service import LiveAnalysisService
 from .market_bar_store import MarketBarStore
@@ -59,6 +63,37 @@ async def run_live_analysis(
     clock = SystemClock()
     http_client = httpx.AsyncClient()
     local_bus = InMemoryEventBus()
+    entry_watch_database: AsyncEngine | None = None
+    entry_watcher: EntryWatcher | None = None
+    if settings.entry_watcher_enabled:
+        try:
+            entry_watch_database = create_database_engine(
+                settings.database_url.get_secret_value(),
+                require_ssl=settings.environment is Environment.PRODUCTION,
+            )
+            entry_watch_store = PostgresEntryWatchStore(
+                create_session_factory(entry_watch_database)
+            )
+            if await entry_watch_store.is_ready():
+                entry_watcher = EntryWatcher(
+                    store=entry_watch_store,
+                    policy=EntryWatcherPolicy(
+                        ttl=timedelta(days=settings.entry_watch_ttl_days)
+                    ),
+                )
+            else:
+                await logger.awarning(
+                    "entry_watcher_schema_unavailable",
+                    migration="20260726180000_entry_watches.sql",
+                )
+        except Exception as error:
+            await logger.awarning(
+                "entry_watcher_postgres_unavailable",
+                error_type=type(error).__name__,
+            )
+            if entry_watch_database is not None:
+                await entry_watch_database.dispose()
+                entry_watch_database = None
     nats_bus: NatsJetStreamEventBus | None = None
     if mirror_to_nats:
         try:
@@ -103,6 +138,7 @@ async def run_live_analysis(
         alert_engine=AlertEngine(),
         alert_dispatcher=alert_dispatcher,
         clock=clock,
+        entry_watcher=entry_watcher,
     )
     subscription = await local_bus.subscribe(
         "marketbot.v1.market.bar.>", runtime.handle_market_event
@@ -165,11 +201,13 @@ async def run_live_analysis(
             sec_enabled=sec_refresher is not None,
             universe_source=universe.source,
             execution_enabled=False,
+            entry_watcher_enabled=entry_watcher is not None,
         )
         if once:
             return {
                 "alert_path": str(alert_path.resolve()),
                 "execution_enabled": False,
+                "entry_watcher_enabled": entry_watcher is not None,
                 "market_events": summary.market_events,
                 "nats_mirroring": nats_bus is not None,
                 "sec_enabled": sec_refresher is not None,
@@ -200,6 +238,8 @@ async def run_live_analysis(
         await http_client.aclose()
         if nats_bus is not None:
             await nats_bus.close()
+        if entry_watch_database is not None:
+            await entry_watch_database.dispose()
         await local_bus.close()
 
 

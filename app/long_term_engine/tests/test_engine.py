@@ -135,6 +135,7 @@ def test_analysis_reports_price_distance_from_weekly_sma200() -> None:
     assert detail.indicators.weekly_price_vs_sma200_percent == Decimal("72.0430")
     assert metrics["weekly_sma200"] == Decimal("69.7500")
     assert metrics["weekly_price_vs_sma200_percent"] == Decimal("72.0430")
+    assert metrics["reference_price"] == Decimal("120")
     assert "weekly_above_200w" in detail.reasons
 
 

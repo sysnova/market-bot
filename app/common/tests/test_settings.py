@@ -16,6 +16,8 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.environment is Environment.DEVELOPMENT
     assert settings.log_level == "DEBUG"
     assert settings.database_url.get_secret_value().endswith("@db/marketbot")
+    assert settings.entry_watcher_enabled is True
+    assert settings.entry_watch_ttl_days == 56
 
 
 def test_settings_reject_unknown_constructor_keys() -> None:

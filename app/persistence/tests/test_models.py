@@ -9,6 +9,7 @@ from sqlalchemy import UniqueConstraint
 
 from app.persistence.models import (
     Base,
+    EntryWatchRecord,
     RuleVersion,
     Run,
     RunStrategy,
@@ -19,6 +20,8 @@ from app.persistence.models import (
 EXPECTED_TABLES = {
     "consumer_checkpoints",
     "control_events",
+    "entry_watch_transitions",
+    "entry_watches",
     "outbox_events",
     "processed_events",
     "rule_versions",
@@ -67,6 +70,21 @@ def test_run_strategy_mapping_includes_foreign_key_lookup_index() -> None:
     index_names = {index.name for index in RunStrategy.__table__.indexes}
 
     assert "run_strategies_strategy_version_id_idx" in index_names
+
+
+@pytest.mark.unit
+def test_entry_watch_has_one_active_thesis_per_symbol() -> None:
+    matching = [
+        index
+        for index in EntryWatchRecord.__table__.indexes
+        if index.name == "entry_watches_one_active_per_symbol_idx"
+    ]
+
+    assert len(matching) == 1
+    assert matching[0].unique is True
+    assert str(matching[0].dialect_options["postgresql"]["where"]) == (
+        "status IN ('ARMED', 'IN_ZONE')"
+    )
 
 
 @pytest.mark.unit

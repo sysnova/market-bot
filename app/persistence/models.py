@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     MetaData,
+    Numeric,
     Text,
     UniqueConstraint,
     text,
@@ -298,6 +300,87 @@ class ControlEvent(Base):
         PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.runs.id", ondelete="RESTRICT")
     )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class EntryWatchRecord(Base):
+    __tablename__ = "entry_watches"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('ARMED', 'IN_ZONE', 'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            name="status",
+        ),
+        CheckConstraint(
+            "invalidation < zone_low and zone_low <= zone_high", name="level_order"
+        ),
+        CheckConstraint("correction_target_percent >= 0", name="correction_nonnegative"),
+        CheckConstraint("expires_at > armed_at", name="expiry_after_arm"),
+        CheckConstraint(f"source_context_hash ~ '{SHA256_PATTERN}'", name="context_hash_format"),
+        Index(
+            "entry_watches_one_active_per_symbol_idx",
+            "symbol",
+            unique=True,
+            postgresql_where=text("status IN ('ARMED', 'IN_ZONE')"),
+        ),
+        Index("entry_watches_status_expires_at_idx", "status", "expires_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    thesis_version: Mapped[str] = mapped_column(Text, nullable=False)
+    armed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    zone_low: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    zone_high: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    invalidation: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    original_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    current_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    correction_target_percent: Mapped[Decimal] = mapped_column(
+        Numeric(12, 4), nullable=False
+    )
+    source_analysis_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    source_context_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    anchor_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class EntryWatchTransitionRecord(Base):
+    __tablename__ = "entry_watch_transitions"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('ARMED', 'IN_ZONE', 'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            name="status",
+        ),
+        CheckConstraint(
+            "previous_status is null or previous_status in "
+            "('ARMED', 'IN_ZONE', 'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            name="previous_status",
+        ),
+        Index("entry_watch_transitions_watch_occurred_idx", "watch_id", "occurred_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    watch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA}.entry_watches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    previous_status: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    current_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    reasons: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    horizons: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    source_analysis_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )

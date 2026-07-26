@@ -44,7 +44,7 @@ class LongTermEngine:
     """Analyze completed daily/weekly history without I/O or mutable state."""
 
     engine_id = "long-term"
-    engine_version = "1.1.0"
+    engine_version = "1.1.1"
 
     def analyze(
         self,
@@ -66,7 +66,7 @@ class LongTermEngine:
             score=detail.score,
             confidence=detail.setup_score / HUNDRED,
             reasons=detail.reasons + detail.risk_flags,
-            metrics=self._metrics(detail),
+            metrics=self._metrics(detail, reference_price=context.price),
             source_event_ids=source_event_ids,
             context_hash=f"sha256:{sha256_digest(context.model_dump(mode='python'))}",
         )
@@ -133,9 +133,12 @@ class LongTermEngine:
         }[bias]
 
     @staticmethod
-    def _metrics(detail: LongTermAnalysis) -> tuple[NamedValue, ...]:
+    def _metrics(
+        detail: LongTermAnalysis, *, reference_price: Decimal
+    ) -> tuple[NamedValue, ...]:
         values: list[NamedValue] = [
             NamedValue(name="classification", value=detail.classification.value),
+            NamedValue(name="reference_price", value=reference_price),
             NamedValue(name="setup_score", value=detail.setup_score),
             NamedValue(name="entry_score", value=detail.entry_score),
             NamedValue(name="risk_flags", value=detail.risk_flags),

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .repositories import (
     CheckpointRepository,
+    EntryWatchRepository,
     HealthRepository,
     InboxRepository,
     OutboxRepository,
@@ -24,6 +25,7 @@ class PersistenceUnitOfWork:
         self.outbox: OutboxRepository
         self.checkpoints: CheckpointRepository
         self.health: HealthRepository
+        self.entry_watches: EntryWatchRepository
 
     async def __aenter__(self) -> PersistenceUnitOfWork:
         session = self._session_factory()
@@ -32,6 +34,7 @@ class PersistenceUnitOfWork:
         self.outbox = OutboxRepository(session)
         self.checkpoints = CheckpointRepository(session)
         self.health = HealthRepository(session)
+        self.entry_watches = EntryWatchRepository(session)
         return self
 
     async def __aexit__(

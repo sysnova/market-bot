@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 
@@ -14,6 +15,8 @@ from app.contracts import (
     AnalysisHorizon,
     AnalysisResult,
     AnalysisVerdict,
+    EntryWatchStatus,
+    EntryWatchTransition,
     LocalAlert,
     PatternDirection,
 )
@@ -189,3 +192,35 @@ def test_future_analysis_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="future"):
         engine.ingest(future, now=NOW)
+
+
+@pytest.mark.unit
+def test_triggered_entry_watch_becomes_an_action_alert() -> None:
+    transition = EntryWatchTransition(
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000001"),
+        symbol="TEST",
+        previous_status=EntryWatchStatus.IN_ZONE,
+        status=EntryWatchStatus.TRIGGERED,
+        occurred_at=NOW,
+        zone_low=Decimal("100"),
+        zone_high=Decimal("105"),
+        invalidation=Decimal("92"),
+        current_price=Decimal("103"),
+        watch_expires_at=NOW + timedelta(weeks=8),
+        reasons=("multi_horizon_entry_confirmed",),
+        horizons=(
+            AnalysisHorizon.LONG_TERM,
+            AnalysisHorizon.DILUTION,
+            AnalysisHorizon.SWING,
+            AnalysisHorizon.INTRADAY,
+        ),
+        source_analysis_ids=(
+            UUID("0195f3a5-9000-7000-8000-000000000002"),
+        ),
+    )
+
+    alert = AlertEngine().ingest_entry_watch(transition, now=NOW)
+
+    assert alert.severity is AlertSeverity.ACTION
+    assert "ENTRY TRIGGERED" in alert.title
+    assert alert.deduplication_key.endswith(":triggered")

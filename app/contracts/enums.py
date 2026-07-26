@@ -112,6 +112,14 @@ class AlertSeverity(ContractEnum):
     CRITICAL = "CRITICAL"
 
 
+class EntryWatchStatus(ContractEnum):
+    ARMED = "ARMED"
+    IN_ZONE = "IN_ZONE"
+    TRIGGERED = "TRIGGERED"
+    INVALIDATED = "INVALIDATED"
+    EXPIRED = "EXPIRED"
+
+
 class ServiceStatus(ContractEnum):
     HEALTHY = "HEALTHY"
     DEGRADED = "DEGRADED"

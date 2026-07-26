@@ -42,7 +42,7 @@ class SwingEngine:
     """Evaluate swing structure and entry asymmetry without side effects."""
 
     engine_id = "swing"
-    engine_version = "1.1.0"
+    engine_version = "1.1.1"
 
     def analyze(
         self,
@@ -62,7 +62,7 @@ class SwingEngine:
             score=detail.score,
             confidence=detail.score / HUNDRED,
             reasons=detail.reasons + detail.risk_flags,
-            metrics=self._metrics(detail),
+            metrics=self._metrics(detail, reference_price=context.price),
             source_event_ids=source_event_ids,
             context_hash=f"sha256:{sha256_digest(context.model_dump(mode='python'))}",
         )
@@ -336,9 +336,12 @@ class SwingEngine:
         return PatternDirection.BULLISH
 
     @staticmethod
-    def _metrics(detail: SwingAnalysis) -> tuple[NamedValue, ...]:
+    def _metrics(
+        detail: SwingAnalysis, *, reference_price: Decimal
+    ) -> tuple[NamedValue, ...]:
         values: list[NamedValue] = [
             NamedValue(name="classification", value=detail.classification.value),
+            NamedValue(name="reference_price", value=reference_price),
             NamedValue(name="risk_flags", value=detail.risk_flags),
         ]
         if detail.indicators is not None:

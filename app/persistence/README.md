@@ -3,6 +3,8 @@
 This engine owns the PostgreSQL adapter for MarketBot. It maps the private
 `market_bot` schema and provides short-lived async units of work for the inbox,
 outbox, consumer checkpoints, and latest service-health snapshot.
+It also stores fixed entry theses in `entry_watches` and their immutable audit history in
+`entry_watch_transitions`.
 
 ## Runtime contract
 
@@ -18,10 +20,9 @@ outbox, consumer checkpoints, and latest service-health snapshot.
 
 ## Schema source of truth
 
-`supabase/migrations/20260725184754_market_bot_foundation.sql` is the sole DDL
-source for this milestone. `resources/diagrams/market_bot.dbml` mirrors it. The
-migration creates no object in `public` or `stock` and must be reviewed before
-being applied to the remote Stock project.
+Versioned files under `supabase/migrations/` are the DDL source of truth.
+`resources/diagrams/market_bot.dbml` mirrors the complete schema. The migrations create no object
+in `public` or `stock` and must be reviewed before being applied to the remote Stock project.
 
 The group role `market_bot_runtime` is `NOLOGIN`, receives no `DELETE`, and is
 the only role named in RLS policies. A separately managed login can be granted

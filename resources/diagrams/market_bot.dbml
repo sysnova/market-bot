@@ -126,7 +126,51 @@ Table market_bot.control_events {
   }
 }
 
+Table market_bot.entry_watches {
+  id uuid [pk]
+  symbol text [not null]
+  status text [not null, note: "ARMED | IN_ZONE | TRIGGERED | INVALIDATED | EXPIRED"]
+  thesis_version text [not null]
+  armed_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  expires_at timestamptz [not null]
+  terminal_at timestamptz
+  zone_low numeric(28,8) [not null]
+  zone_high numeric(28,8) [not null]
+  invalidation numeric(28,8) [not null]
+  original_price numeric(28,8) [not null]
+  current_price numeric(28,8) [not null]
+  correction_target_percent numeric(12,4) [not null]
+  source_analysis_id uuid [not null]
+  source_context_hash text [not null]
+  anchor_snapshot jsonb [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    symbol [unique, name: "entry_watches_one_active_per_symbol_idx", note: "Partial: status in ('ARMED', 'IN_ZONE')"]
+    (status, expires_at) [name: "entry_watches_status_expires_at_idx"]
+  }
+}
+
+Table market_bot.entry_watch_transitions {
+  id uuid [pk]
+  watch_id uuid [not null]
+  previous_status text
+  status text [not null]
+  occurred_at timestamptz [not null]
+  current_price numeric(28,8) [not null]
+  reasons jsonb [not null]
+  horizons jsonb [not null]
+  source_analysis_ids jsonb [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (watch_id, occurred_at) [name: "entry_watch_transitions_watch_occurred_idx"]
+  }
+}
+
 Ref: market_bot.run_strategies.run_id > market_bot.runs.id [delete: restrict]
 Ref: market_bot.run_strategies.strategy_version_id > market_bot.strategy_versions.id [delete: restrict]
 Ref: market_bot.processed_events.run_id > market_bot.runs.id [delete: restrict]
 Ref: market_bot.control_events.run_id > market_bot.runs.id [delete: restrict]
+Ref: market_bot.entry_watch_transitions.watch_id > market_bot.entry_watches.id [delete: restrict]

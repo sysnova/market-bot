@@ -25,6 +25,7 @@ from .domain import (
     ServiceHealth,
     TradePlan,
 )
+from .entry_watch import EntryWatchTransition
 from .enums import (
     AlertSeverity,
     AnalysisHorizon,
@@ -32,6 +33,7 @@ from .enums import (
     BarTimeframe,
     DecisionOutcome,
     DependencyPolicy,
+    EntryWatchStatus,
     MarketSession,
     PatternDirection,
     RuleLifecycleStatus,
@@ -85,6 +87,8 @@ __all__ = [
     "DecisionTrace",
     "DependencyHealth",
     "DependencyPolicy",
+    "EntryWatchStatus",
+    "EntryWatchTransition",
     "EvaluationContext",
     "EventBus",
     "EventEnvelope",

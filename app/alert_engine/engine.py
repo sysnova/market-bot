@@ -10,6 +10,8 @@ from app.contracts import (
     AnalysisHorizon,
     AnalysisResult,
     AnalysisVerdict,
+    EntryWatchStatus,
+    EntryWatchTransition,
     LocalAlert,
     PatternDirection,
 )
@@ -54,6 +56,42 @@ class AlertEngine:
             return None
         symbol_values[result.horizon] = result
         return self._aggregate(result.symbol, now)
+
+    def ingest_entry_watch(
+        self, transition: EntryWatchTransition, *, now: datetime
+    ) -> LocalAlert:
+        """Render one durable entry-watch transition as a human-only alert."""
+        _require_utc(now)
+        if transition.occurred_at > now:
+            raise ValueError("entry watch transition cannot be in the future")
+        severity, score = {
+            EntryWatchStatus.ARMED: (AlertSeverity.INFO, Decimal("40")),
+            EntryWatchStatus.IN_ZONE: (AlertSeverity.WATCH, Decimal("65")),
+            EntryWatchStatus.TRIGGERED: (AlertSeverity.ACTION, Decimal("85")),
+            EntryWatchStatus.INVALIDATED: (AlertSeverity.INFO, Decimal("20")),
+            EntryWatchStatus.EXPIRED: (AlertSeverity.INFO, Decimal("10")),
+        }[transition.status]
+        status = transition.status.value
+        return LocalAlert(
+            symbol=transition.symbol,
+            created_at=now,
+            severity=severity,
+            title=f"{transition.symbol} ENTRY {status}",
+            message=(
+                f"price {transition.current_price}; original zone "
+                f"{transition.zone_low}-{transition.zone_high}; "
+                f"invalidation {transition.invalidation}"
+            ),
+            horizons=transition.horizons,
+            component_analysis_ids=transition.source_analysis_ids,
+            score=score,
+            reasons=transition.reasons,
+            deduplication_key=(
+                f"entry-watch:v1:{transition.watch_id}:"
+                f"{transition.transition_id}:{status.lower()}"
+            ),
+            expires_at=now + self._policy.alert_ttl,
+        )
 
     def _aggregate(self, symbol: str, now: datetime) -> LocalAlert | None:
         fresh = self._fresh_values(symbol, now)

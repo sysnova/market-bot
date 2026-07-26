@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (
     ConsumerCheckpoint,
+    EntryWatchRecord,
+    EntryWatchTransitionRecord,
     OutboxEvent,
     ProcessedEvent,
     ServiceHealthRecord,
@@ -216,3 +219,57 @@ class HealthRepository(Repository):
             },
         )
         await self._session.execute(statement)
+
+
+class EntryWatchRepository(Repository):
+    """Persist one active entry thesis per symbol and its immutable transitions."""
+
+    async def load_active(self, symbol: str) -> EntryWatchRecord | None:
+        statement = (
+            select(EntryWatchRecord)
+            .where(
+                EntryWatchRecord.symbol == symbol.strip().upper(),
+                EntryWatchRecord.status.in_(("ARMED", "IN_ZONE")),
+            )
+            .order_by(EntryWatchRecord.armed_at.desc())
+            .limit(1)
+        )
+        return await self._session.scalar(statement)
+
+    def add(
+        self,
+        watch: EntryWatchRecord,
+        transition: EntryWatchTransitionRecord,
+    ) -> None:
+        self._session.add_all((watch, transition))
+
+    async def apply_transition(
+        self,
+        watch_id: UUID,
+        *,
+        previous_status: str,
+        status: str,
+        current_price: Decimal,
+        updated_at: datetime,
+        terminal_at: datetime | None,
+        transition: EntryWatchTransitionRecord,
+    ) -> bool:
+        statement = (
+            update(EntryWatchRecord)
+            .where(
+                EntryWatchRecord.id == watch_id,
+                EntryWatchRecord.status == previous_status,
+            )
+            .values(
+                status=status,
+                current_price=current_price,
+                updated_at=updated_at,
+                terminal_at=terminal_at,
+            )
+            .returning(EntryWatchRecord.id)
+        )
+        result = await self._session.execute(statement)
+        if result.scalar_one_or_none() is None:
+            return False
+        self._session.add(transition)
+        return True
