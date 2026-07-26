@@ -11,7 +11,7 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("MARKETBOT_LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("MARKETBOT_DATABASE_URL", "postgresql://user:password@db/marketbot")
 
-    settings = AppSettings()
+    settings = AppSettings(_env_file=None)
 
     assert settings.environment is Environment.DEVELOPMENT
     assert settings.log_level == "DEBUG"
@@ -20,11 +20,12 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_settings_reject_unknown_constructor_keys() -> None:
     with pytest.raises(ValidationError):
-        AppSettings(unknown="surprise")  # type: ignore[call-arg]
+        AppSettings(_env_file=None, unknown="surprise")  # type: ignore[call-arg]
 
 
 def test_secret_values_are_redacted_from_repr_and_json() -> None:
     settings = AppSettings(
+        _env_file=None,
         database_url=SecretStr("postgresql://user:password@db/marketbot"),
         nats_url=SecretStr("nats://token@nats:4222"),
     )
@@ -37,3 +38,46 @@ def test_secret_values_are_redacted_from_repr_and_json() -> None:
     assert "password" not in serialized
     assert "token" not in serialized
     assert serialized.count("**********") == 2
+
+
+def test_alpaca_settings_load_as_paired_redacted_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MARKETBOT_ALPACA_API_KEY_ID", "paper-key-id")
+    monkeypatch.setenv("MARKETBOT_ALPACA_API_SECRET_KEY", "paper-secret-key")
+    monkeypatch.setenv("MARKETBOT_ALPACA_DATA_FEED", "sip")
+
+    settings = AppSettings(_env_file=None)
+
+    assert settings.alpaca_configured is True
+    assert settings.alpaca_api_key_id is not None
+    assert settings.alpaca_api_secret_key is not None
+    assert settings.alpaca_api_key_id.get_secret_value() == "paper-key-id"
+    assert settings.alpaca_api_secret_key.get_secret_value() == "paper-secret-key"
+    assert settings.alpaca_data_feed == "sip"
+    serialized = json.dumps(settings.redacted())
+    assert "paper-key-id" not in serialized
+    assert "paper-secret-key" not in serialized
+
+
+@pytest.mark.parametrize(
+    "provided_key",
+    ["MARKETBOT_ALPACA_API_KEY_ID", "MARKETBOT_ALPACA_API_SECRET_KEY"],
+)
+def test_alpaca_credentials_must_be_configured_as_a_pair(
+    monkeypatch: pytest.MonkeyPatch,
+    provided_key: str,
+) -> None:
+    monkeypatch.setenv(provided_key, "orphaned-credential")
+
+    with pytest.raises(ValidationError, match="configured together"):
+        AppSettings(_env_file=None)
+
+
+def test_paper_mode_rejects_a_live_trading_endpoint() -> None:
+    with pytest.raises(ValidationError, match="paper-api"):
+        AppSettings(
+            _env_file=None,
+            alpaca_paper=True,
+            alpaca_trading_base_url="https://api.alpaca.markets",
+        )
