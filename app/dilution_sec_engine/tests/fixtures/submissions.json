@@ -1,0 +1,13 @@
+{
+  "cik": "1234567",
+  "name": "Acme Corporation",
+  "filings": {
+    "recent": {
+      "accessionNumber": ["0001234567-26-000010", "0001234567-26-000009"],
+      "filingDate": ["2026-07-10", "2026-06-30"],
+      "form": ["424B5", "10-Q"],
+      "primaryDocument": ["prospectus.htm", "quarterly-report.htm"],
+      "primaryDocDescription": ["ATM prospectus supplement", "Quarterly report"]
+    }
+  }
+}

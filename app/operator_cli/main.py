@@ -59,6 +59,41 @@ def _placeholder(name: str, help_text: str) -> typer.Typer:
 for group_name, group_help in _GROUPS:
     app.add_typer(_placeholder(group_name, group_help), name=group_name)
 
+
+@app.command("live")
+def live_analysis(
+    once: Annotated[
+        bool,
+        typer.Option(help="Warm data, evaluate once, and exit without opening the stream."),
+    ] = False,
+    runtime_root: Annotated[
+        Path,
+        typer.Option(help="Directory for local append-only alerts."),
+    ] = Path(".runtime"),
+    bell: Annotated[
+        bool,
+        typer.Option(help="Ring the terminal bell for each local alert."),
+    ] = True,
+    nats: Annotated[
+        bool,
+        typer.Option("--nats/--no-nats", help="Mirror events durably to local NATS."),
+    ] = True,
+) -> None:
+    """Run the realtime analysis-only bot; this command cannot submit orders."""
+
+    from app.integration.live_composition import run_live_analysis
+
+    summary = asyncio.run(
+        run_live_analysis(
+            once=once,
+            runtime_root=runtime_root,
+            bell=bell,
+            mirror_to_nats=nats,
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
 supervisor = typer.Typer(name="supervisor", help="Run and inspect local engine supervision.")
 app.add_typer(supervisor, name="supervisor")
 

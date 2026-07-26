@@ -1,0 +1,24 @@
+[
+  {
+    "name": "bullish_breakout",
+    "symbol": "SOFI",
+    "start": "100",
+    "step": "0.04",
+    "final_move": "0.55",
+    "base_volume": "1000",
+    "final_volume": "2800",
+    "expected_direction": "BULLISH",
+    "expected_setup": "bullish_breakout"
+  },
+  {
+    "name": "bearish_breakdown",
+    "symbol": "PLTR",
+    "start": "120",
+    "step": "-0.04",
+    "final_move": "-0.55",
+    "base_volume": "1200",
+    "final_volume": "3600",
+    "expected_direction": "BEARISH",
+    "expected_setup": "bearish_breakdown"
+  }
+]

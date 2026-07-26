@@ -1,0 +1,57 @@
+{
+  "cik": 1234567,
+  "entityName": "Acme Corporation",
+  "facts": {
+    "dei": {
+      "EntityCommonStockSharesOutstanding": {
+        "units": {
+          "shares": [
+            {
+              "end": "2025-06-30",
+              "val": 100000000,
+              "accn": "0001234567-25-000020",
+              "filed": "2025-07-20",
+              "form": "10-Q"
+            },
+            {
+              "end": "2026-06-30",
+              "val": 125000000,
+              "accn": "0001234567-26-000009",
+              "filed": "2026-07-20",
+              "form": "10-Q"
+            }
+          ]
+        }
+      }
+    },
+    "us-gaap": {
+      "CashAndCashEquivalentsAtCarryingValue": {
+        "units": {
+          "USD": [
+            {
+              "end": "2026-06-30",
+              "val": 15000000,
+              "accn": "0001234567-26-000009",
+              "filed": "2026-07-20",
+              "form": "10-Q"
+            }
+          ]
+        }
+      },
+      "NetCashProvidedByUsedInOperatingActivities": {
+        "units": {
+          "USD": [
+            {
+              "start": "2026-04-01",
+              "end": "2026-06-30",
+              "val": -10000000,
+              "accn": "0001234567-26-000009",
+              "filed": "2026-07-20",
+              "form": "10-Q"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

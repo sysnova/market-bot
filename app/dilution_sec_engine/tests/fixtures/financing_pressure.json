@@ -1,0 +1,13 @@
+{
+  "symbol": "CASH",
+  "as_of": "2026-07-26",
+  "filings": [],
+  "facts": {
+    "period_end": "2026-06-30",
+    "current_shares_outstanding": "130000000",
+    "prior_year_shares_outstanding": "100000000",
+    "cash_and_equivalents": "15000000",
+    "quarterly_operating_cash_flow": "-10000000",
+    "source_accessions": ["0000000000-26-000202"]
+  }
+}

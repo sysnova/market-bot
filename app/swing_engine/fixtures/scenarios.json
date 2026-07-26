@@ -1,0 +1,26 @@
+[
+  {
+    "name": "bullish_pullback",
+    "daily": {"count": 80, "start": "50", "step": "0.5", "volume": 100000},
+    "intraday": {"count": 30, "start": "83", "step": "0.07", "volume": 10000},
+    "price": "85",
+    "expected_classification": "pullback",
+    "expected_verdict": "FAVORABLE"
+  },
+  {
+    "name": "confirmed_breakout",
+    "daily": {"count": 80, "start": "50", "step": "0.5", "volume": 100000},
+    "intraday": {"count": 30, "start": "88", "step": "0.1", "volume": 10000, "last_volume_multiplier": "2"},
+    "price": "91.2",
+    "expected_classification": "breakout",
+    "expected_verdict": "FAVORABLE"
+  },
+  {
+    "name": "broken_downtrend",
+    "daily": {"count": 80, "start": "100", "step": "-0.5", "volume": 100000},
+    "intraday": {"count": 30, "start": "63", "step": "-0.08", "volume": 10000},
+    "price": "60",
+    "expected_classification": "avoid",
+    "expected_verdict": "AVOID"
+  }
+]

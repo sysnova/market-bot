@@ -12,8 +12,16 @@ def test_root_help_lists_operator_groups() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for group in ("rules", "strategy", "audit", "supervisor", "infra"):
+    for group in ("rules", "strategy", "audit", "supervisor", "infra", "live"):
         assert group in result.stdout
+
+
+def test_live_help_exposes_analysis_only_operation() -> None:
+    result = runner.invoke(app, ["live", "--help"])
+
+    assert result.exit_code == 0
+    assert "analysis-only" in result.stdout.lower()
+    assert "--once" in result.stdout
 
 
 def test_version_is_available_without_runtime_dependencies() -> None:

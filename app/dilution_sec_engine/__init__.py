@@ -1,0 +1,62 @@
+"""Deterministic SEC dilution-risk engine."""
+
+from .engine import DilutionSecEngine
+from .models import (
+    CompanyFactsSnapshot,
+    DilutionAssessment,
+    DilutionEvaluationInput,
+    DilutionMetrics,
+    DilutionSignal,
+    EvidenceSource,
+    RiskEvidence,
+    RiskSeverity,
+    SecFiling,
+)
+from .sec_adapter import (
+    FilingDocumentLoader,
+    FilingDocumentReference,
+    FilingSignalProvider,
+    ParsedFilingSignalProvider,
+    SecAdapterError,
+    SecConfigurationError,
+    SecDocumentSignalParser,
+    SecEdgarAdapter,
+    SecEdgarConfig,
+    SecHttpStatusError,
+    SecInvalidJsonError,
+    SecPayloadError,
+    SecRateLimitError,
+    SecTimeoutError,
+    SecTransportError,
+)
+from .ticker_resolver import SecTickerNotFoundError, SecTickerResolver
+
+__all__ = [
+    "CompanyFactsSnapshot",
+    "DilutionAssessment",
+    "DilutionEvaluationInput",
+    "DilutionMetrics",
+    "DilutionSecEngine",
+    "DilutionSignal",
+    "EvidenceSource",
+    "FilingDocumentLoader",
+    "FilingDocumentReference",
+    "FilingSignalProvider",
+    "ParsedFilingSignalProvider",
+    "RiskEvidence",
+    "RiskSeverity",
+    "SecAdapterError",
+    "SecConfigurationError",
+    "SecDocumentSignalParser",
+    "SecEdgarAdapter",
+    "SecEdgarConfig",
+    "SecFiling",
+    "SecHttpStatusError",
+    "SecInvalidJsonError",
+    "SecPayloadError",
+    "SecRateLimitError",
+    "SecTickerNotFoundError",
+    "SecTickerResolver",
+    "SecTimeoutError",
+    "SecTransportError",
+]

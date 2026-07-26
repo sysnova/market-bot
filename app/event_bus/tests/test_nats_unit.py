@@ -103,6 +103,18 @@ async def test_publish_sets_jetstream_deduplication_header(event: EventEnvelope)
 
 
 @pytest.mark.unit
+async def test_publish_does_not_duplicate_an_already_qualified_prefix(
+    event: EventEnvelope,
+) -> None:
+    js = FakeJetStream()
+    bus = NatsJetStreamEventBus(client=None, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]
+
+    await bus.publish("marketbot.v1.market.bar.1Min.AAPL", event)
+
+    assert js.published[0][0] == "marketbot.v1.market.bar.1Min.AAPL"
+
+
+@pytest.mark.unit
 async def test_subscribe_configures_durable_explicit_ack_and_replay() -> None:
     from nats.js.api import AckPolicy, DeliverPolicy
 

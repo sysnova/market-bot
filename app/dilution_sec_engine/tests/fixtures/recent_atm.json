@@ -1,0 +1,13 @@
+{
+  "symbol": "ACME",
+  "as_of": "2026-07-26",
+  "filings": [
+    {
+      "accession_number": "0000000000-26-000101",
+      "form": "424B5",
+      "filed_at": "2026-07-10",
+      "primary_document_description": "Prospectus supplement",
+      "signals": ["at_the_market", "public_offering", "warrants"]
+    }
+  ]
+}

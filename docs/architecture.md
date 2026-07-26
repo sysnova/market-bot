@@ -23,6 +23,45 @@ schema ownership must remain explicit rather than becoming an implicit shared mo
 `app/common/` contains technical primitives only: clock injection, IDs, canonical encoding,
 configuration, and logging. It must not become a dumping ground for shared business behavior.
 
+## Analysis-only MVP flow
+
+```text
+Alpaca REST backfill + realtime WebSocket
+                 |
+                 v
+      MarketBar / trade / quote events
+                 |
+          local event fan-out -----------------> NATS JetStream
+                 |
+          bounded bar store
+            /    |     \
+      Long-term Swing Intraday       SEC EDGAR -> Dilution
+            \    |     /                  /
+             AnalysisResult events <-----+
+                       |
+                 Alert Engine
+                       |
+          console + append-only NDJSON
+```
+
+Backfill is quiet: it warms the store before live reactions are enabled. Intraday evaluates each
+completed 1-minute bar. The root aggregates completed 1-minute bars into 5-minute and 15-minute
+bars; Swing evaluates on each completed 15-minute bar. Long-term evaluates on daily/weekly updates.
+SEC dilution analysis is scheduled (six hours by default) and is never queried for every market
+tick.
+
+The root composition may import and invoke engines, but engines never import one another. Every
+output crosses the shared `MarketBar`, `AnalysisResult`, `LocalAlert`, or `EventEnvelope` boundary.
+There is no Trading API, order intent, position sizing, or account state in this composition.
+
+## Runtime durability
+
+- The live working set and latest cross-horizon analyses are held in memory for low-latency rules.
+- NATS JetStream durably mirrors market, analysis, and alert events.
+- Local alerts are fsync'd as canonical NDJSON and deduplicated across restarts.
+- PostgreSQL remains available for future run/audit/query models; the MVP does not put PostgreSQL
+  in the per-tick decision path.
+
 ## Determinism
 
 Time and entropy are injected at boundaries. Persisted or signed payloads use canonical JSON and a

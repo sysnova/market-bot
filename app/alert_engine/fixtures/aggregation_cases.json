@@ -1,0 +1,23 @@
+[
+  {
+    "name": "bullish_action",
+    "directions": {"LONG_TERM": "BULLISH", "SWING": "BULLISH", "INTRADAY": "BULLISH"},
+    "scores": {"LONG_TERM": "88", "DILUTION": "5", "SWING": "88", "INTRADAY": "88"},
+    "dilution_verdict": "FAVORABLE",
+    "expected_severity": "ACTION"
+  },
+  {
+    "name": "dilution_caution_downgrade",
+    "directions": {"LONG_TERM": "BULLISH", "SWING": "BULLISH", "INTRADAY": "BULLISH"},
+    "scores": {"LONG_TERM": "88", "DILUTION": "60", "SWING": "88", "INTRADAY": "88"},
+    "dilution_verdict": "CAUTION",
+    "expected_severity": "WATCH"
+  },
+  {
+    "name": "dilution_veto",
+    "directions": {"LONG_TERM": "BULLISH", "SWING": "BULLISH", "INTRADAY": "BULLISH"},
+    "scores": {"LONG_TERM": "92", "DILUTION": "82", "SWING": "92", "INTRADAY": "92"},
+    "dilution_verdict": "AVOID",
+    "expected_severity": "CRITICAL"
+  }
+]

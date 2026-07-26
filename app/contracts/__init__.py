@@ -4,6 +4,15 @@ Only symbols imported here are part of the supported public contract surface.
 """
 
 from ._base import Identifier, NonEmptyStr, SemVer, Sha256, StrictFrozenModel, new_uuid7
+from .analysis_events import (
+    ANALYSIS_RESULT_EVENT,
+    LOCAL_ALERT_EVENT,
+    MARKET_BAR_EVENT,
+    MARKET_BAR_UPDATED_EVENT,
+    analysis_result_subject,
+    local_alert_subject,
+    market_bar_subject,
+)
 from .domain import (
     AlertDecision,
     AlertPolicy,
@@ -18,6 +27,9 @@ from .domain import (
 )
 from .enums import (
     AlertSeverity,
+    AnalysisHorizon,
+    AnalysisVerdict,
+    BarTimeframe,
     DecisionOutcome,
     DependencyPolicy,
     MarketSession,
@@ -31,6 +43,7 @@ from .enums import (
     TradeSide,
 )
 from .event_bus import EventBus, EventHandler, Subscription, SubscriptionOptions
+from .market_analysis import AnalysisResult, LocalAlert, MarketBar
 from .rules import (
     ContextValue,
     EvaluationContext,
@@ -55,9 +68,17 @@ from .strategy import (
 )
 
 __all__ = [
+    "ANALYSIS_RESULT_EVENT",
+    "LOCAL_ALERT_EVENT",
+    "MARKET_BAR_EVENT",
+    "MARKET_BAR_UPDATED_EVENT",
     "AlertDecision",
     "AlertPolicy",
     "AlertSeverity",
+    "AnalysisHorizon",
+    "AnalysisResult",
+    "AnalysisVerdict",
+    "BarTimeframe",
     "CompiledStrategy",
     "ContextValue",
     "DecisionOutcome",
@@ -69,6 +90,8 @@ __all__ = [
     "EventEnvelope",
     "EventHandler",
     "Identifier",
+    "LocalAlert",
+    "MarketBar",
     "MarketSession",
     "NamedValue",
     "NonEmptyStr",
@@ -103,6 +126,9 @@ __all__ = [
     "SubscriptionOptions",
     "TradePlan",
     "TradeSide",
+    "analysis_result_subject",
+    "local_alert_subject",
+    "market_bar_subject",
     "new_uuid7",
     "validate_primary_uniqueness",
 ]

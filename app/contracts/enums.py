@@ -76,6 +76,30 @@ class PatternDirection(ContractEnum):
     NEUTRAL = "NEUTRAL"
 
 
+class BarTimeframe(ContractEnum):
+    MINUTE_1 = "1Min"
+    MINUTE_5 = "5Min"
+    MINUTE_15 = "15Min"
+    HOUR_1 = "1Hour"
+    DAY_1 = "1Day"
+    WEEK_1 = "1Week"
+
+
+class AnalysisHorizon(ContractEnum):
+    LONG_TERM = "LONG_TERM"
+    DILUTION = "DILUTION"
+    SWING = "SWING"
+    INTRADAY = "INTRADAY"
+
+
+class AnalysisVerdict(ContractEnum):
+    FAVORABLE = "FAVORABLE"
+    WATCH = "WATCH"
+    CAUTION = "CAUTION"
+    AVOID = "AVOID"
+    INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
+
+
 class TradeSide(ContractEnum):
     LONG = "LONG"
     SHORT = "SHORT"

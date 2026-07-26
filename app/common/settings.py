@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import AnyUrl, HttpUrl, SecretStr, model_validator
+from pydantic import AnyUrl, Field, HttpUrl, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,18 +28,33 @@ class AppSettings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_json: bool = True
     database_url: SecretStr = SecretStr("postgresql://marketbot:marketbot@localhost:5432/marketbot")
-    nats_url: SecretStr = SecretStr("nats://localhost:4222")
+    nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     alpaca_api_key_id: SecretStr | None = None
     alpaca_api_secret_key: SecretStr | None = None
     alpaca_data_feed: Literal["iex", "sip", "delayed_sip", "boats", "overnight"] = "iex"
     alpaca_data_base_url: HttpUrl = HttpUrl("https://data.alpaca.markets")
     alpaca_market_data_stream_url: AnyUrl = AnyUrl("wss://stream.data.alpaca.markets/v2")
-    alpaca_trading_base_url: HttpUrl = HttpUrl("https://paper-api.alpaca.markets")
-    alpaca_trade_updates_stream_url: AnyUrl = AnyUrl("wss://paper-api.alpaca.markets/stream")
-    alpaca_paper: bool = True
+    alpaca_watchlist: str = "AAPL,MSFT,NVDA,SPY,QQQ"
+    alpaca_execution_enabled: Literal[False] = False
+    sec_enabled: bool = False
+    sec_user_agent: str | None = None
+    sec_refresh_hours: int = Field(default=6, ge=1, le=168)
+
+    @field_validator("alpaca_watchlist")
+    @classmethod
+    def validate_alpaca_watchlist(cls, value: str) -> str:
+        symbols = tuple(dict.fromkeys(item.strip().upper() for item in value.split(",")))
+        if not symbols or any(
+            not symbol
+            or len(symbol) > 16
+            or not all(character.isalnum() or character in ".-" for character in symbol)
+            for symbol in symbols
+        ):
+            raise ValueError("Alpaca watchlist must contain comma-separated market symbols")
+        return ",".join(symbols)
 
     @model_validator(mode="after")
-    def validate_alpaca(self) -> AppSettings:
+    def validate_external_data(self) -> AppSettings:
         key_configured = bool(
             self.alpaca_api_key_id and self.alpaca_api_key_id.get_secret_value().strip()
         )
@@ -49,8 +64,8 @@ class AppSettings(BaseSettings):
         )
         if key_configured != secret_configured:
             raise ValueError("Alpaca API key and secret must be configured together")
-        if self.alpaca_paper and self.alpaca_trading_base_url.host != "paper-api.alpaca.markets":
-            raise ValueError("Alpaca paper mode requires the paper-api.alpaca.markets endpoint")
+        if self.sec_enabled and not self.sec_configured:
+            raise ValueError("SEC user agent must include an identifiable contact email")
         return self
 
     @property
@@ -61,6 +76,15 @@ class AppSettings(BaseSettings):
             and self.alpaca_api_secret_key
             and self.alpaca_api_secret_key.get_secret_value().strip()
         )
+
+    @property
+    def alpaca_symbols(self) -> tuple[str, ...]:
+        return tuple(self.alpaca_watchlist.split(","))
+
+    @property
+    def sec_configured(self) -> bool:
+        value = self.sec_user_agent.strip() if self.sec_user_agent else ""
+        return " " in value and "@" in value and "." in value.rsplit("@", 1)[-1]
 
     def redacted(self) -> dict[str, Any]:
         """Return JSON-compatible diagnostics without exposing secret values."""

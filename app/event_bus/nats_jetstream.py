@@ -98,7 +98,12 @@ class NatsJetStreamEventBus:
         import nats
         from nats.errors import Error as NatsError
 
-        client = await nats.connect(servers=list(servers), connect_timeout=connect_timeout)
+        client = await nats.connect(
+            servers=list(servers),
+            connect_timeout=connect_timeout,
+            max_reconnect_attempts=3,
+            reconnect_time_wait=0.5,
+        )
         jetstream = client.jetstream()
         typed_jetstream = cast(_JetStream, jetstream)
         try:
@@ -198,6 +203,8 @@ class NatsJetStreamEventBus:
         )
 
     def _qualify(self, subject: str) -> str:
+        if subject == self._prefix or subject.startswith(f"{self._prefix}."):
+            return subject
         return f"{self._prefix}.{subject}"
 
     def _require_open(self) -> None:

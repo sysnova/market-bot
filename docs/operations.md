@@ -9,6 +9,32 @@ uv run marketbot --help
 uv run marketbot --version
 ```
 
+## Realtime analysis
+
+Configure Alpaca market-data credentials only in the ignored `.env` file. SEC analysis additionally
+requires an identifiable User-Agent with a monitored contact email.
+
+```powershell
+uv run marketbot live --once
+uv run marketbot live
+```
+
+`--once` performs the four historical backfills, snapshots, SEC refresh, and one evaluation before
+closing. Without it, MarketBot opens the Alpaca WebSocket for trades, quotes, minute bars, updated
+bars, and daily bars, reconnecting with bounded exponential backoff. Ctrl+C stops the foreground
+process. The process is analysis-only and cannot submit an order.
+
+Useful options:
+
+```powershell
+uv run marketbot live --no-nats
+uv run marketbot live --runtime-root D:\MarketBotRuntime --bell
+```
+
+The alert ledger defaults to `.runtime\alerts\marketbot-alerts.ndjson`. A broker outage is logged
+and local analysis continues; once connected, individual mirror failures likewise do not stop local
+alerts.
+
 Production configuration should be provided as `MARKETBOT_*` environment variables by the runtime.
 Do not mount or log `.env` files in production. Treat the URLs as secrets because they may contain
 credentials.
@@ -42,6 +68,8 @@ and controlled with standard Windows commands:
 Get-Service MarketBotNATS
 Start-Service MarketBotNATS
 Stop-Service MarketBotNATS
+Test-NetConnection 127.0.0.1 -Port 4222
+(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8222/varz).StatusCode
 ```
 
 Validate MarketBot against the native broker with:

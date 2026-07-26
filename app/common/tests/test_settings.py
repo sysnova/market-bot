@@ -46,6 +46,7 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     monkeypatch.setenv("MARKETBOT_ALPACA_API_KEY_ID", "paper-key-id")
     monkeypatch.setenv("MARKETBOT_ALPACA_API_SECRET_KEY", "paper-secret-key")
     monkeypatch.setenv("MARKETBOT_ALPACA_DATA_FEED", "sip")
+    monkeypatch.setenv("MARKETBOT_ALPACA_WATCHLIST", "AAPL, msft,AAPL , NVDA")
 
     settings = AppSettings(_env_file=None)
 
@@ -55,6 +56,8 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.alpaca_api_key_id.get_secret_value() == "paper-key-id"
     assert settings.alpaca_api_secret_key.get_secret_value() == "paper-secret-key"
     assert settings.alpaca_data_feed == "sip"
+    assert settings.alpaca_symbols == ("AAPL", "MSFT", "NVDA")
+    assert settings.alpaca_execution_enabled is False
     serialized = json.dumps(settings.redacted())
     assert "paper-key-id" not in serialized
     assert "paper-secret-key" not in serialized
@@ -74,10 +77,28 @@ def test_alpaca_credentials_must_be_configured_as_a_pair(
         AppSettings(_env_file=None)
 
 
-def test_paper_mode_rejects_a_live_trading_endpoint() -> None:
-    with pytest.raises(ValidationError, match="paper-api"):
+def test_alpaca_execution_cannot_be_enabled_in_analysis_only_mvp() -> None:
+    with pytest.raises(ValidationError):
         AppSettings(
             _env_file=None,
-            alpaca_paper=True,
-            alpaca_trading_base_url="https://api.alpaca.markets",
+            alpaca_execution_enabled=True,
         )
+
+
+def test_alpaca_watchlist_rejects_invalid_symbols() -> None:
+    with pytest.raises(ValidationError, match="watchlist"):
+        AppSettings(_env_file=None, alpaca_watchlist="AAPL,../BAD")
+
+
+def test_sec_settings_require_an_identifiable_user_agent_when_enabled() -> None:
+    with pytest.raises(ValidationError, match="SEC user agent"):
+        AppSettings(_env_file=None, sec_enabled=True)
+
+    settings = AppSettings(
+        _env_file=None,
+        sec_enabled=True,
+        sec_user_agent="MarketBot/0.1 research@example.com",
+    )
+
+    assert settings.sec_configured is True
+    assert settings.sec_refresh_hours == 6
