@@ -7,14 +7,14 @@
     "expected_severity": "ACTION"
   },
   {
-    "name": "dilution_caution_downgrade",
+    "name": "dilution_caution_warning",
     "directions": {"LONG_TERM": "BULLISH", "SWING": "BULLISH", "INTRADAY": "BULLISH"},
     "scores": {"LONG_TERM": "88", "DILUTION": "60", "SWING": "88", "INTRADAY": "88"},
     "dilution_verdict": "CAUTION",
-    "expected_severity": "WATCH"
+    "expected_severity": "ACTION"
   },
   {
-    "name": "dilution_veto",
+    "name": "dilution_avoid_warning",
     "directions": {"LONG_TERM": "BULLISH", "SWING": "BULLISH", "INTRADAY": "BULLISH"},
     "scores": {"LONG_TERM": "92", "DILUTION": "82", "SWING": "92", "INTRADAY": "92"},
     "dilution_verdict": "AVOID",

@@ -2,11 +2,11 @@
 
 The alert engine keeps the newest `AnalysisResult` for each symbol and horizon, filters stale
 components, combines fresh LONG_TERM, SWING, and INTRADAY direction with configurable
-weights, and treats DILUTION as a risk overlay. A dilution `CAUTION` applies a weighted
-penalty; `AVOID` vetoes a bullish composite and produces a critical human warning.
+weights, and attaches DILUTION only as an informational risk warning. SEC results never change
+the directional score, suppress an alert, or invalidate an entry.
 
-Default severity thresholds are WATCH 60, ACTION 75, and CRITICAL 90. At least three fresh
-horizons, including DILUTION, are required. Inputs in the future are rejected. Alert expiry,
+Default severity thresholds are WATCH 60, ACTION 75, and CRITICAL 90. Fresh LONG_TERM, SWING,
+and INTRADAY results are required; DILUTION is optional. Inputs in the future are rejected. Alert expiry,
 freshness limits, cooldown windows, and weights are explicit policy values. Escalation can
 bypass cooldown; otherwise the same symbol/direction is suppressed until the next window.
 

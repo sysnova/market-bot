@@ -36,12 +36,15 @@ class AlertPolicy:
     """All alert policy knobs, including time, are explicit and immutable."""
 
     horizons: tuple[HorizonPolicy, ...] = field(default_factory=_default_horizons)
-    required_horizons: tuple[AnalysisHorizon, ...] = (AnalysisHorizon.DILUTION,)
-    min_fresh_horizons: int = 4
+    required_horizons: tuple[AnalysisHorizon, ...] = (
+        AnalysisHorizon.LONG_TERM,
+        AnalysisHorizon.SWING,
+        AnalysisHorizon.INTRADAY,
+    )
+    min_fresh_horizons: int = 3
     watch_threshold: Decimal = Decimal("60")
     action_threshold: Decimal = Decimal("75")
     critical_threshold: Decimal = Decimal("90")
-    dilution_caution_penalty: Decimal = Decimal("10")
     cooldown: timedelta = timedelta(minutes=15)
     alert_ttl: timedelta = timedelta(minutes=15)
 
@@ -59,8 +62,6 @@ class AlertPolicy:
             raise ValueError("severity thresholds must be strictly increasing")
         if self.critical_threshold > HUNDRED:
             raise ValueError("critical threshold cannot exceed 100")
-        if self.dilution_caution_penalty < ZERO:
-            raise ValueError("dilution caution penalty cannot be negative")
         if self.cooldown <= timedelta(0) or self.alert_ttl <= timedelta(0):
             raise ValueError("cooldown and alert_ttl must be positive")
 
@@ -70,4 +71,3 @@ class AlertPolicy:
 
 ZERO = Decimal("0")
 HUNDRED = Decimal("100")
-

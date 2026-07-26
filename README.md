@@ -57,8 +57,9 @@ the broker is intentionally unavailable.
 
 The Entry Watcher remembers Long opportunities that are `EXTENDED`, `WATCH_PULLBACK`, `SETUP`, or
 already in `BUY_ZONE`. It freezes the original zone and invalidation for 56 days by default,
-persists every lifecycle transition in PostgreSQL, and waits for fresh Long, Swing, Intraday, and
-dilution confirmation before emitting an `ENTRY TRIGGERED` action alert. Apply
+persists every lifecycle transition in PostgreSQL, and waits for fresh Long, Swing, and Intraday
+confirmation before emitting an `ENTRY TRIGGERED` action alert. SEC dilution analysis is included
+as a warning but never penalizes, gates, or invalidates an entry. Apply
 `supabase/migrations/20260726180000_entry_watches.sql` after the foundation migrations. If the
 database or migration is unavailable, realtime analysis continues and logs that persistent entry
 watching is disabled.

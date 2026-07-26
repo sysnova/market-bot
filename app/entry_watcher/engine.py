@@ -118,12 +118,13 @@ class EntryWatcher:
 
         in_original_zone = active.zone_low <= current_price <= active.zone_high
         if in_original_zone and self._confirmed(latest, now=now):
+            dilution_warning = self._dilution_warning(latest)
             return await self._change(
                 active,
                 EntryWatchStatus.TRIGGERED,
                 now=now,
                 price=current_price,
-                reasons=("multi_horizon_entry_confirmed",),
+                reasons=("multi_horizon_entry_confirmed", dilution_warning),
                 analyses=latest,
             )
 
@@ -201,7 +202,7 @@ class EntryWatcher:
                 "metrics": _json_value(metrics),
                 "confirmation_policy": {
                     "long": "bullish_and_not_avoid",
-                    "dilution": "not_avoid",
+                    "dilution": "warning_only_not_a_gate",
                     "swing": "favorable_pullback_or_breakout",
                     "intraday": "favorable_bullish",
                 },
@@ -290,7 +291,6 @@ class EntryWatcher:
     ) -> bool:
         required = {
             AnalysisHorizon.LONG_TERM,
-            AnalysisHorizon.DILUTION,
             AnalysisHorizon.SWING,
             AnalysisHorizon.INTRADAY,
         }
@@ -302,14 +302,12 @@ class EntryWatcher:
         ):
             return False
         long_term = analyses[AnalysisHorizon.LONG_TERM]
-        dilution = analyses[AnalysisHorizon.DILUTION]
         swing = analyses[AnalysisHorizon.SWING]
         intraday = analyses[AnalysisHorizon.INTRADAY]
         return (
             long_term.direction is PatternDirection.BULLISH
             and long_term.verdict
             not in {AnalysisVerdict.AVOID, AnalysisVerdict.INSUFFICIENT_DATA}
-            and dilution.verdict is not AnalysisVerdict.AVOID
             and swing.direction is PatternDirection.BULLISH
             and swing.verdict is AnalysisVerdict.FAVORABLE
             and _metrics(swing).get("classification") in _SWING_CONFIRMATIONS
@@ -321,8 +319,6 @@ class EntryWatcher:
     def _invalidation_reason(
         watch: EntryWatch, *, result: AnalysisResult, current_price: Decimal
     ) -> str | None:
-        if result.horizon is AnalysisHorizon.DILUTION and result.verdict is AnalysisVerdict.AVOID:
-            return "dilution_veto"
         if result.horizon is AnalysisHorizon.LONG_TERM and (
             result.verdict is AnalysisVerdict.AVOID
             or result.direction is PatternDirection.BEARISH
@@ -331,6 +327,15 @@ class EntryWatcher:
         if current_price <= watch.invalidation:
             return "original_invalidation_breached"
         return None
+
+    @staticmethod
+    def _dilution_warning(
+        analyses: dict[AnalysisHorizon, AnalysisResult],
+    ) -> str:
+        dilution = analyses.get(AnalysisHorizon.DILUTION)
+        if dilution is None or dilution.verdict is AnalysisVerdict.INSUFFICIENT_DATA:
+            return "dilution_warning:unavailable"
+        return f"dilution_warning:{dilution.verdict.value.lower()}"
 
     @staticmethod
     def _current_price(analyses: dict[AnalysisHorizon, AnalysisResult]) -> Decimal | None:

@@ -88,15 +88,57 @@ def test_weighted_policy_and_dilution_overlay(case: dict[str, Any]) -> None:
 
 
 @pytest.mark.unit
-def test_dilution_avoid_vetoes_bullish_composite_with_critical_warning() -> None:
+def test_dilution_avoid_is_warning_only_for_bullish_composite() -> None:
     case = json.loads(FIXTURES.read_text(encoding="utf-8"))[2]
 
     alert = _feed_case(AlertEngine(), case)
 
     assert alert is not None
     assert alert.severity is AlertSeverity.CRITICAL
-    assert "DILUTION VETO" in alert.title
-    assert "dilution_avoid_veto" in alert.reasons
+    assert alert.score == Decimal("92.00")
+    assert "BULLISH" in alert.title
+    assert "dilution_avoid_warning" in alert.reasons
+
+
+@pytest.mark.unit
+def test_directional_alert_does_not_require_sec_analysis() -> None:
+    engine = AlertEngine()
+    alert = None
+    for horizon in (
+        AnalysisHorizon.LONG_TERM,
+        AnalysisHorizon.SWING,
+        AnalysisHorizon.INTRADAY,
+    ):
+        alert = engine.ingest(
+            _analysis(
+                horizon,
+                score="88",
+                direction=PatternDirection.BULLISH,
+            ),
+            now=NOW,
+        ) or alert
+
+    assert alert is not None
+    assert alert.severity is AlertSeverity.ACTION
+    assert "dilution_analysis_unavailable" in alert.reasons
+
+
+@pytest.mark.unit
+def test_sec_avoid_emits_standalone_watch_without_gating_entries() -> None:
+    result = _analysis(
+        AnalysisHorizon.DILUTION,
+        score="82",
+        verdict=AnalysisVerdict.AVOID,
+        direction=PatternDirection.BEARISH,
+    )
+
+    alert = AlertEngine().ingest(result, now=NOW)
+
+    assert alert is not None
+    assert alert.severity is AlertSeverity.WATCH
+    assert "SEC DILUTION WARNING" in alert.title
+    assert "dilution_avoid_warning" in alert.reasons
+    assert "does not gate entries" in alert.message
 
 
 @pytest.mark.unit
@@ -156,15 +198,24 @@ def test_older_result_does_not_replace_latest() -> None:
 
 @pytest.mark.unit
 def test_cooldown_suppresses_repeat_but_allows_escalation() -> None:
-    caution_case = json.loads(FIXTURES.read_text(encoding="utf-8"))[1]
+    caution_case = json.loads(FIXTURES.read_text(encoding="utf-8"))[0]
+    caution_case = {
+        **caution_case,
+        "scores": {
+            "LONG_TERM": "70",
+            "DILUTION": "5",
+            "SWING": "70",
+            "INTRADAY": "70",
+        },
+    }
     engine = AlertEngine()
     first = _feed_case(engine, caution_case)
     assert first is not None and first.severity is AlertSeverity.WATCH
 
     replacement = _analysis(
-        AnalysisHorizon.DILUTION,
-        score="5",
-        verdict=AnalysisVerdict.FAVORABLE,
+        AnalysisHorizon.INTRADAY,
+        score="100",
+        direction=PatternDirection.BULLISH,
         as_of=NOW,
     )
     escalated = engine.ingest(replacement, now=NOW + timedelta(minutes=1))

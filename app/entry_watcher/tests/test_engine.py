@@ -104,15 +104,6 @@ async def test_zone_is_remembered_until_swing_and_intraday_confirm() -> None:
     store = InMemoryEntryWatchStore()
     watcher = EntryWatcher(store=store)
     await watcher.ingest(long_watch(), now=NOW)
-    await watcher.ingest(
-        analysis(
-            AnalysisHorizon.DILUTION,
-            classification="clear",
-            verdict=AnalysisVerdict.FAVORABLE,
-            direction=PatternDirection.NEUTRAL,
-        ),
-        now=NOW,
-    )
 
     entered = await watcher.ingest(
         analysis(
@@ -155,6 +146,7 @@ async def test_zone_is_remembered_until_swing_and_intraday_confirm() -> None:
     assert triggered is not None
     assert triggered.status is EntryWatchStatus.TRIGGERED
     assert "multi_horizon_entry_confirmed" in triggered.reasons
+    assert "dilution_warning:unavailable" in triggered.reasons
     assert await store.load_active("AAPL") is None
 
 
@@ -171,16 +163,6 @@ async def test_zone_is_remembered_until_swing_and_intraday_confirm() -> None:
                 price="101",
             ),
             "long_structure_invalidated",
-        ),
-        (
-            analysis(
-                AnalysisHorizon.DILUTION,
-                classification="avoid",
-                verdict=AnalysisVerdict.AVOID,
-                direction=PatternDirection.BEARISH,
-                price="101",
-            ),
-            "dilution_veto",
         ),
         (
             analysis(
@@ -227,3 +209,45 @@ async def test_watch_expires_without_reusing_stale_confirmation() -> None:
     assert transition is not None
     assert transition.status is EntryWatchStatus.EXPIRED
     assert await store.load_active("AAPL") is None
+
+
+@pytest.mark.unit
+async def test_dilution_avoid_warns_but_does_not_block_entry_trigger() -> None:
+    watcher = EntryWatcher(store=InMemoryEntryWatchStore())
+    await watcher.ingest(long_watch(), now=NOW)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.DILUTION,
+            classification="avoid",
+            verdict=AnalysisVerdict.AVOID,
+            direction=PatternDirection.BEARISH,
+        ),
+        now=NOW,
+    )
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="pullback",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=1),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    transition = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="vwap_reclaim",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=2),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+
+    assert transition is not None
+    assert transition.status is EntryWatchStatus.TRIGGERED
+    assert "dilution_warning:avoid" in transition.reasons

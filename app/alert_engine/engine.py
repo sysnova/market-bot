@@ -55,7 +55,12 @@ class AlertEngine:
         ):
             return None
         symbol_values[result.horizon] = result
-        return self._aggregate(result.symbol, now)
+        aggregate = self._aggregate(result.symbol, now)
+        if aggregate is not None:
+            return aggregate
+        if result.horizon is AnalysisHorizon.DILUTION:
+            return self._dilution_warning_alert(result, now=now)
+        return None
 
     def ingest_entry_watch(
         self, transition: EntryWatchTransition, *, now: datetime
@@ -99,14 +104,12 @@ class AlertEngine:
             return None
         if any(horizon not in fresh for horizon in self._policy.required_horizons):
             return None
-        dilution = fresh[AnalysisHorizon.DILUTION]
-        if dilution.verdict is AnalysisVerdict.AVOID:
-            return self._build_dilution_veto(symbol, fresh, dilution, now)
-
         direction, raw_score = self._directional_score(fresh)
         if direction is None:
             return None
-        score, dilution_reason = self._apply_dilution(raw_score, fresh, dilution)
+        score, dilution_reason = self._apply_dilution(
+            raw_score, fresh.get(AnalysisHorizon.DILUTION)
+        )
         severity = self._severity(score)
         if severity is None:
             return None
@@ -172,51 +175,52 @@ class AlertEngine:
     def _apply_dilution(
         self,
         raw_score: Decimal,
-        fresh: dict[AnalysisHorizon, AnalysisResult],
-        dilution: AnalysisResult,
+        dilution: AnalysisResult | None,
     ) -> tuple[Decimal, str | None]:
-        directional_weight = sum(
-            (
-                self._policy.for_horizon(horizon).weight
-                for horizon in (
-                    AnalysisHorizon.LONG_TERM,
-                    AnalysisHorizon.SWING,
-                    AnalysisHorizon.INTRADAY,
-                )
-                if horizon in fresh
-            ),
-            ZERO,
-        )
-        ratio = self._policy.for_horizon(AnalysisHorizon.DILUTION).weight / directional_weight
-        penalty = dilution.score * ratio
-        reason: str | None = None
-        if dilution.verdict is AnalysisVerdict.CAUTION:
-            penalty += self._policy.dilution_caution_penalty
-            reason = "dilution_caution_penalty"
-        elif dilution.verdict is AnalysisVerdict.WATCH:
-            reason = "dilution_watch_penalty"
-        elif dilution.verdict is AnalysisVerdict.FAVORABLE:
-            penalty *= Decimal("0.25")
-        return _score(raw_score - penalty), reason
+        if dilution is None:
+            return raw_score, "dilution_analysis_unavailable"
+        reason = {
+            AnalysisVerdict.FAVORABLE: None,
+            AnalysisVerdict.WATCH: "dilution_watch_warning",
+            AnalysisVerdict.CAUTION: "dilution_caution_warning",
+            AnalysisVerdict.AVOID: "dilution_avoid_warning",
+            AnalysisVerdict.INSUFFICIENT_DATA: "dilution_analysis_unavailable",
+        }[dilution.verdict]
+        return raw_score, reason
 
-    def _build_dilution_veto(
-        self,
-        symbol: str,
-        fresh: dict[AnalysisHorizon, AnalysisResult],
-        dilution: AnalysisResult,
-        now: datetime,
+    def _dilution_warning_alert(
+        self, result: AnalysisResult, *, now: datetime
     ) -> LocalAlert | None:
-        score = max(Decimal("90"), dilution.score)
-        reasons = ("dilution_avoid_veto", *self._component_reasons(fresh))
-        return self._build_alert(
-            symbol,
-            fresh,
-            "DILUTION VETO",
-            AlertSeverity.CRITICAL,
-            score,
-            reasons,
-            now,
+        warning = {
+            AnalysisVerdict.FAVORABLE: None,
+            AnalysisVerdict.WATCH: "dilution_watch_warning",
+            AnalysisVerdict.CAUTION: "dilution_caution_warning",
+            AnalysisVerdict.AVOID: "dilution_avoid_warning",
+            AnalysisVerdict.INSUFFICIENT_DATA: None,
+        }[result.verdict]
+        if warning is None:
+            return None
+        deduplication_key = (
+            f"sec-warning:v1:{result.symbol.lower()}:"
+            f"{result.verdict.value.lower()}:{result.context_hash}"
         )
+        if deduplication_key in self._emitted_keys:
+            return None
+        alert = LocalAlert(
+            symbol=result.symbol,
+            created_at=now,
+            severity=AlertSeverity.WATCH,
+            title=f"{result.symbol} SEC DILUTION WARNING",
+            message="informational SEC risk only; does not gate entries or submit orders",
+            horizons=(AnalysisHorizon.DILUTION,),
+            component_analysis_ids=(result.analysis_id,),
+            score=result.score,
+            reasons=_unique((warning, *result.reasons)),
+            deduplication_key=deduplication_key,
+            expires_at=now + self._policy.alert_ttl,
+        )
+        self._emitted_keys.add(deduplication_key)
+        return alert
 
     def _build_alert(
         self,
