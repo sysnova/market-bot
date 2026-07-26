@@ -1,0 +1,12 @@
+application:
+  environment: development
+
+logging:
+  level: DEBUG
+  json: false
+
+nats:
+  url: nats://localhost:4222
+
+postgres:
+  url: postgresql://marketbot:marketbot@localhost:5432/marketbot

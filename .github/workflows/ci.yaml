@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pyright
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest -m "not integration"
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: marketbot
+          POSTGRES_USER: marketbot
+          POSTGRES_PASSWORD: marketbot
+        options: >-
+          --health-cmd "pg_isready -U marketbot -d marketbot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    env:
+      MARKETBOT_ENVIRONMENT: test
+      MARKETBOT_NATS_URL: nats://localhost:4222
+      NATS_URL: nats://localhost:4222
+      MARKETBOT_DATABASE_URL: postgresql://marketbot:marketbot@localhost:5432/marketbot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Start NATS JetStream
+        run: |
+          docker run --detach --name marketbot-nats \
+            --publish 4222:4222 --publish 8222:8222 \
+            nats:2.12-alpine --jetstream --store_dir=/data --http_port=8222
+          for attempt in {1..20}; do
+            if curl --fail --silent http://localhost:8222/healthz > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs marketbot-nats
+          exit 1
+      - name: Bootstrap Supabase-compatible roles
+        env:
+          PGPASSWORD: marketbot
+        run: |
+          psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 <<'SQL'
+          create role postgres nologin;
+          create role anon nologin;
+          create role authenticated nologin;
+          create role service_role nologin;
+          SQL
+      - name: Apply and verify foundation migration
+        env:
+          PGPASSWORD: marketbot
+        run: |
+          for migration in supabase/migrations/*.sql; do
+            psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 \
+              -f "$migration"
+          done
+          psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 \
+            -f supabase/tests/market_bot_foundation_checks.sql
+      - name: Run integration tests when present
+        shell: bash
+        run: |
+          set +e
+          uv run pytest -m integration --no-cov
+          status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 5 ]; then exit "$status"; fi

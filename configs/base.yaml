@@ -1,0 +1,15 @@
+application:
+  name: marketbot
+
+logging:
+  level: INFO
+  json: true
+
+nats:
+  stream: MARKETBOT
+  subjects:
+    - marketbot.>
+
+postgres:
+  pool_min_size: 1
+  pool_max_size: 10

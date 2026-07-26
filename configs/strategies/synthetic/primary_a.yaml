@@ -1,0 +1,56 @@
+strategy_id: synthetic-primary-a
+version: 1.0.0
+family: synthetic
+engine: reference_engine
+run_id: synthetic-demo
+mode: PRIMARY
+rule_pack_hash: sha256:7888f555b65eb9be056287ea4a944af77d27299ef3a056c4b0afd90f5127a92d
+pipeline:
+  - step_id: read
+    rule_id: synthetic.read_number
+    rule_version: 1.0.0
+    depends_on: []
+    dependency_policy: REQUIRE_COMPLETION
+    enabled: true
+  - step_id: multiply
+    rule_id: synthetic.multiply
+    rule_version: 1.0.0
+    depends_on: [read]
+    dependency_policy: REQUIRE_PASS
+    enabled: true
+  - step_id: threshold
+    rule_id: synthetic.threshold
+    rule_version: 1.0.0
+    depends_on: [multiply]
+    dependency_policy: REQUIRE_PASS
+    enabled: true
+bindings:
+  - rule_id: synthetic.read_number
+    parameters:
+      - name: source
+        value: price
+  - rule_id: synthetic.multiply
+    parameters:
+      - name: value
+        value: "${steps.read.outputs.number}"
+      - name: factor
+        value: "2"
+  - rule_id: synthetic.threshold
+    parameters:
+      - name: value
+        value: "${steps.multiply.outputs.product}"
+      - name: minimum
+        value: "20"
+policies:
+  fail_closed: true
+  stop_on_error: true
+  minimum_passing_rules: 3
+  allow_not_applicable: false
+scoring:
+  pass_threshold: "1"
+  weights:
+    - rule_id: synthetic.threshold
+      weight: "1"
+  require_complete_scoring: true
+description: Synthetic PRIMARY baseline using threshold v1.
+tags: [synthetic, baseline]

@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "marketbot"
+version = "0.1.0"
+description = "Event-driven market automation platform"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = { text = "Proprietary" }
+authors = [{ name = "MarketBot contributors" }]
+dependencies = [
+  "nats-py>=2.11,<3",
+  "pydantic>=2.12,<3",
+  "pydantic-settings>=2.11,<3",
+  "psutil>=7,<8",
+  "psycopg[binary,pool]>=3.2,<4",
+  "PyYAML>=6,<7",
+  "SQLAlchemy[asyncio]>=2.0,<3",
+  "structlog>=25.4,<26",
+  "typer>=0.20,<1",
+]
+
+[project.scripts]
+marketbot = "app.operator_cli.main:app"
+
+[project.entry-points."marketbot.rulepacks.v1"]
+synthetic_core = "app.rulepacks.synthetic_core:get_providers"
+
+[dependency-groups]
+dev = [
+  "pyright>=1.1.407,<2",
+  "pytest>=9,<10",
+  "pytest-asyncio>=1.2,<2",
+  "pytest-cov>=7,<8",
+  "ruff>=0.14,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --cov=app --cov-report=term-missing --cov-fail-under=80"
+asyncio_mode = "auto"
+testpaths = ["app"]
+markers = [
+  "integration: requires external infrastructure such as NATS or PostgreSQL",
+  "unit: isolated test with no external services",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = ["app/**/tests/*"]
+
+[tool.coverage.report]
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "ASYNC", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["ANN401", "S105", "S106"]
+
+[tool.pyright]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+include = ["app"]
+exclude = ["app/**/tests"]
+reportMissingTypeStubs = false
+reportUnknownMemberType = false
+
+[tool.uv]
+default-groups = ["dev"]

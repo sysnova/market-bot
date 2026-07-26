@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.python-version.local
+.venv/
+.uv-cache/
+dist/
+build/
+*.egg-info/
+
+# Tests and tooling
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# Local configuration and state
+.env
+.env.*
+!.env.example
+*.log
+.nats/
+.postgres/
+.runtime/
+runtime/
+supabase/.temp/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,1 @@
+{"duration_ms":"0","error_code":null,"error_message":null,"evaluated_at":"2026-01-02T15:30:00Z","outputs":[{"name":"product","value":"25.00"}],"reason":"multiplied exact decimal values","rule_id":"synthetic.multiply","rule_version":"1.0.0","score":"1","status":"PASS"}

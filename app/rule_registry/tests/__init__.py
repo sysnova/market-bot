@@ -1,0 +1,1 @@
+"""Rule registry tests."""

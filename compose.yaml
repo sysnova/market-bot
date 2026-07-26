@@ -1,0 +1,36 @@
+name: marketbot
+
+services:
+  nats:
+    image: nats:2.12-alpine
+    command: ["--jetstream", "--store_dir=/data", "--http_port=8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: marketbot
+      POSTGRES_USER: marketbot
+      POSTGRES_PASSWORD: marketbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketbot -d marketbot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  nats-data:
+  postgres-data:
