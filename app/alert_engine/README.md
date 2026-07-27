@@ -17,8 +17,16 @@ sends an alert to local sinks and can publish it through a structural port using
 
 Included local sinks:
 
-- `ConsoleAlertSink`: readable single-line console notification with an optional terminal bell;
+- `ConsoleAlertSink`: multi-line actionable context with price, entry zone, invalidation,
+  objectives, per-horizon verdicts, technical metrics, reasons, and an optional terminal bell;
 - `NdjsonAlertSink`: canonical, fsynced, append-only NDJSON with deduplication by alert key.
+
+`LocalAlert.component_analyses` embeds the exact fresh `AnalysisResult` values used by the alert.
+This keeps the structured NDJSON/event payload suitable for future dashboards while the console
+formatter presents the most useful Stock Analyzer-style fields: weekly SMA200 distance, Long
+setup/entry scores, Swing anchored VWAPs and 2R target, Intraday VWAP/RVOL/R:R, and SEC evidence.
+Entry Watch alerts additionally carry their frozen zone and invalidation as alert metrics. None of
+these presentation fields express or submit an order.
 
 Windows toast can be added later as an optional sink without changing the engine or tests.
 

@@ -18,6 +18,7 @@ from app.contracts import (
     EntryWatchStatus,
     EntryWatchTransition,
     LocalAlert,
+    NamedValue,
     PatternDirection,
 )
 
@@ -33,6 +34,7 @@ def _analysis(
     direction: PatternDirection = PatternDirection.NEUTRAL,
     verdict: AnalysisVerdict = AnalysisVerdict.FAVORABLE,
     as_of: datetime = NOW - timedelta(minutes=1),
+    metrics: tuple[NamedValue, ...] = (),
 ) -> AnalysisResult:
     return AnalysisResult(
         engine_id=f"fixture-{horizon.value.lower()}",
@@ -45,6 +47,7 @@ def _analysis(
         score=Decimal(score),
         confidence=Decimal("1"),
         reasons=(f"{horizon.value.lower()} fixture",),
+        metrics=metrics,
         context_hash=HASH,
     )
 
@@ -121,6 +124,59 @@ def test_directional_alert_does_not_require_sec_analysis() -> None:
     assert alert is not None
     assert alert.severity is AlertSeverity.ACTION
     assert "dilution_analysis_unavailable" in alert.reasons
+    assert tuple(item.horizon for item in alert.component_analyses) == (
+        AnalysisHorizon.LONG_TERM,
+        AnalysisHorizon.SWING,
+        AnalysisHorizon.INTRADAY,
+    )
+
+
+@pytest.mark.unit
+def test_entry_alert_includes_latest_analysis_context() -> None:
+    engine = AlertEngine()
+    for horizon in (
+        AnalysisHorizon.LONG_TERM,
+        AnalysisHorizon.SWING,
+        AnalysisHorizon.INTRADAY,
+    ):
+        engine.ingest(
+            _analysis(
+                horizon,
+                score="84",
+                direction=PatternDirection.BULLISH,
+                metrics=(NamedValue(name="reference_price", value=Decimal("103")),),
+            ),
+            now=NOW,
+        )
+    transition = EntryWatchTransition(
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000001"),
+        symbol="TEST",
+        previous_status=EntryWatchStatus.IN_ZONE,
+        status=EntryWatchStatus.TRIGGERED,
+        occurred_at=NOW,
+        zone_low=Decimal("100"),
+        zone_high=Decimal("105"),
+        invalidation=Decimal("92"),
+        current_price=Decimal("103"),
+        watch_expires_at=NOW + timedelta(weeks=8),
+        reasons=("multi_horizon_entry_confirmed",),
+        horizons=(
+            AnalysisHorizon.LONG_TERM,
+            AnalysisHorizon.SWING,
+            AnalysisHorizon.INTRADAY,
+        ),
+        source_analysis_ids=(
+            UUID("0195f3a5-9000-7000-8000-000000000002"),
+        ),
+    )
+
+    alert = engine.ingest_entry_watch(transition, now=NOW)
+
+    assert tuple(item.horizon for item in alert.component_analyses) == (
+        AnalysisHorizon.LONG_TERM,
+        AnalysisHorizon.SWING,
+        AnalysisHorizon.INTRADAY,
+    )
 
 
 @pytest.mark.unit

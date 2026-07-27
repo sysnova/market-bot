@@ -14,6 +14,8 @@ from pydantic import ValidationError
 from app.common.canonical import canonical_json
 from app.contracts import LocalAlert
 
+from .formatter import format_local_alert
+
 
 class ConsoleAlertSink:
     def __init__(self, *, stream: TextIO, bell: bool = False) -> None:
@@ -22,10 +24,7 @@ class ConsoleAlertSink:
 
     def emit(self, alert: LocalAlert) -> None:
         bell = "\a" if self._bell else ""
-        self._stream.write(
-            f"[{alert.severity.value}] {alert.symbol} score={alert.score} "
-            f"{alert.title} - {alert.message}{bell}\n"
-        )
+        self._stream.write(f"{format_local_alert(alert)}{bell}\n")
         self._stream.flush()
 
 
@@ -84,4 +83,3 @@ class NdjsonAlertSink:
                         f"invalid alert record at {self._path}:{line_number}"
                     ) from error
                 self._keys.add(alert.deduplication_key)
-

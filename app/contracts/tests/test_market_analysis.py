@@ -106,11 +106,13 @@ def test_local_alert_links_component_analyses_without_order_intent() -> None:
         component_analysis_ids=(analysis.analysis_id,),
         score=analysis.score,
         reasons=analysis.reasons,
+        component_analyses=(analysis,),
         deduplication_key="AAPL:INTRADAY:VWAP_RECLAIM",
         expires_at=NOW + timedelta(minutes=5),
     )
 
     assert alert.alert_id.version == 7
+    assert alert.component_analyses == (analysis,)
     assert "order" not in alert.model_dump()
     with pytest.raises(ValidationError, match="expires_at"):
         LocalAlert(**{**alert.model_dump(), "expires_at": NOW - timedelta(seconds=1)})

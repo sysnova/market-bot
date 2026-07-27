@@ -146,13 +146,13 @@ class AnalysisRuntime:
             envelope,
         )
         now = self._clock.now()
+        alert = self._alert_engine.ingest(result, now=now)
         if self._entry_watcher is not None:
             transition = await self._entry_watcher.ingest(result, now=now)
             if transition is not None:
                 await self._alert_dispatcher.dispatch(
                     self._alert_engine.ingest_entry_watch(transition, now=now)
                 )
-        alert = self._alert_engine.ingest(result, now=now)
         if alert is not None:
             await self._alert_dispatcher.dispatch(alert)
 

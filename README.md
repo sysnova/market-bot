@@ -50,8 +50,10 @@ Historical bars use Alpaca's split adjustment. Weekly bars are treated as comple
 market week closes, and the recent weekly context is refreshed each Saturday at 02:00 New York
 time so long-term moving averages stay current without restarting the bot.
 
-Alerts appear in the terminal and are appended durably to
-`.runtime/alerts/marketbot-alerts.ndjson`. Market, analysis, and alert events are mirrored to the
+Alerts appear in the terminal with their actionable context: current price, buy zone,
+invalidation, objective, Long/Swing/Intraday indicators, anchored and session VWAP, SEC warnings,
+and the reasons behind each engine decision. The complete structured analyses are also appended
+durably to `.runtime/alerts/marketbot-alerts.ndjson`. Market, analysis, and alert events are mirrored to the
 local NATS JetStream stream `MARKETBOT`; `--no-nats` keeps a fully local in-process pipeline when
 the broker is intentionally unavailable.
 

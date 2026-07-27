@@ -258,3 +258,4 @@ async def test_entry_watch_transition_is_dispatched_as_local_alert() -> None:
     assert len(sink.alerts) == 1
     assert sink.alerts[0].severity.value == "INFO"
     assert "ENTRY ARMED" in sink.alerts[0].title
+    assert sink.alerts[0].component_analyses == (result,)

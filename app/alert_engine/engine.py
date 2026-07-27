@@ -13,6 +13,7 @@ from app.contracts import (
     EntryWatchStatus,
     EntryWatchTransition,
     LocalAlert,
+    NamedValue,
     PatternDirection,
 )
 
@@ -77,6 +78,7 @@ class AlertEngine:
             EntryWatchStatus.EXPIRED: (AlertSeverity.INFO, Decimal("10")),
         }[transition.status]
         status = transition.status.value
+        fresh = self._fresh_values(transition.symbol, now)
         return LocalAlert(
             symbol=transition.symbol,
             created_at=now,
@@ -89,6 +91,14 @@ class AlertEngine:
             ),
             horizons=transition.horizons,
             component_analysis_ids=transition.source_analysis_ids,
+            component_analyses=self._ordered_analyses(fresh),
+            metrics=(
+                NamedValue(name="current_price", value=transition.current_price),
+                NamedValue(name="buy_zone_low", value=transition.zone_low),
+                NamedValue(name="buy_zone_high", value=transition.zone_high),
+                NamedValue(name="invalidation", value=transition.invalidation),
+                NamedValue(name="watch_expires_at", value=transition.watch_expires_at),
+            ),
             score=score,
             reasons=transition.reasons,
             deduplication_key=(
@@ -214,6 +224,7 @@ class AlertEngine:
             message="informational SEC risk only; does not gate entries or submit orders",
             horizons=(AnalysisHorizon.DILUTION,),
             component_analysis_ids=(result.analysis_id,),
+            component_analyses=(result,),
             score=result.score,
             reasons=_unique((warning, *result.reasons)),
             deduplication_key=deduplication_key,
@@ -258,6 +269,7 @@ class AlertEngine:
             message=f"weighted score {score}; inspect {len(components)} component analyses",
             horizons=ordered,
             component_analysis_ids=components,
+            component_analyses=self._ordered_analyses(fresh),
             score=score,
             reasons=_unique(reasons),
             deduplication_key=deduplication_key,
@@ -284,6 +296,18 @@ class AlertEngine:
             f"{horizon.value.lower()}:{result.verdict.value.lower()}:{result.score}"
             for horizon, result in sorted(fresh.items(), key=lambda item: item[0].value)
         )
+
+    @staticmethod
+    def _ordered_analyses(
+        values: dict[AnalysisHorizon, AnalysisResult],
+    ) -> tuple[AnalysisResult, ...]:
+        order = (
+            AnalysisHorizon.LONG_TERM,
+            AnalysisHorizon.SWING,
+            AnalysisHorizon.INTRADAY,
+            AnalysisHorizon.DILUTION,
+        )
+        return tuple(values[horizon] for horizon in order if horizon in values)
 
 
 def _require_utc(value: datetime) -> None:

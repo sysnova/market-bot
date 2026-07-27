@@ -31,7 +31,10 @@ Importar desde `app.contracts`, no desde módulos internos.
   `RuleTraceStatus.SKIPPED_DEPENDENCY` vive en la traza, no en `RuleStatus`, porque
   una regla que no se ejecutó no produjo un resultado.
 - Mercado y entrega: `PatternCandidate`, `TradePlan`, `AlertPolicy`,
-  `AlertDecision`, `ServiceHealth` y sus submodelos/enums.
+  `AlertDecision`, `AnalysisResult`, `LocalAlert`, `ServiceHealth` y sus submodelos/enums.
+  `LocalAlert.component_analyses` es opcional y conserva los resultados completos que explican
+  una alerta; `LocalAlert.metrics` agrega contexto propio de la notificacion, como la zona original
+  de un Entry Watch, sin expresar una orden.
 
 ## Invariantes comprobadas
 
