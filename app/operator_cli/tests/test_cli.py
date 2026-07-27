@@ -1,11 +1,21 @@
+import asyncio
 import json
 from pathlib import Path
 
 from typer.testing import CliRunner
 
-from app.operator_cli.main import app
+from app.operator_cli.main import _run_async, app
 
 runner = CliRunner()
+
+
+def test_async_cli_commands_use_selector_event_loop() -> None:
+    async def current_loop() -> asyncio.AbstractEventLoop:
+        return asyncio.get_running_loop()
+
+    loop = _run_async(current_loop())
+
+    assert isinstance(loop, asyncio.SelectorEventLoop)
 
 
 def test_root_help_lists_operator_groups() -> None:

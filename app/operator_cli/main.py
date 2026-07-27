@@ -2,8 +2,10 @@
 
 import asyncio
 import json
+import selectors
+from collections.abc import Coroutine
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -26,6 +28,15 @@ app = typer.Typer(
     no_args_is_help=True,
     pretty_exceptions_enable=False,
 )
+
+
+def _run_async[ResultT](coroutine: Coroutine[Any, Any, ResultT]) -> ResultT:
+    """Run CLI coroutines on a loop supported by psycopg on Windows."""
+
+    return asyncio.run(
+        coroutine,
+        loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()),
+    )
 
 
 def _version_callback(value: bool) -> None:
@@ -89,7 +100,7 @@ def live_analysis(
 
     from app.integration.live_composition import run_live_analysis
 
-    summary = asyncio.run(
+    summary = _run_async(
         run_live_analysis(
             once=once,
             runtime_root=runtime_root,
@@ -118,7 +129,7 @@ def supervisor_demo(
 ) -> None:
     """Execute PRIMARY v1 and SHADOW v2 once in the local in-process supervisor."""
 
-    summary = asyncio.run(_run_demo(price=price, runtime_root=runtime_root))
+    summary = _run_async(_run_demo(price=price, runtime_root=runtime_root))
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
