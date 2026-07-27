@@ -224,7 +224,12 @@ def _market_bar(
         isinstance(trade_count, bool) or int(str(trade_count)) != Decimal(str(trade_count))
     ):
         raise ValueError("Alpaca bar trade count must be an integer")
-    vwap = raw.get("vw")
+    normalized_trade_count = int(str(trade_count)) if trade_count is not None else None
+    volume = Decimal(_decimal_text(raw.get("v")))
+    raw_vwap = raw.get("vw")
+    vwap = Decimal(_decimal_text(raw_vwap)) if raw_vwap is not None else None
+    if vwap == 0 and volume == 0 and normalized_trade_count in {None, 0}:
+        vwap = None
     return MarketBar(
         symbol=symbol,
         timeframe=BarTimeframe(timeframe),
@@ -233,9 +238,9 @@ def _market_bar(
         high=Decimal(_decimal_text(raw.get("h"))),
         low=Decimal(_decimal_text(raw.get("l"))),
         close=Decimal(_decimal_text(raw.get("c"))),
-        volume=Decimal(_decimal_text(raw.get("v"))),
-        trade_count=int(str(trade_count)) if trade_count is not None else None,
-        vwap=Decimal(_decimal_text(vwap)) if vwap is not None else None,
+        volume=volume,
+        trade_count=normalized_trade_count,
+        vwap=vwap,
         source="alpaca",
         feed=feed,
         is_final=is_final,

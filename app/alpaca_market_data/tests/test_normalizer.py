@@ -1,5 +1,8 @@
 from datetime import UTC, datetime
 
+import pytest
+from pydantic import ValidationError
+
 from app.alpaca_market_data.normalizer import AlpacaEventNormalizer
 from app.contracts import MARKET_BAR_EVENT, MARKET_BAR_UPDATED_EVENT, BarTimeframe, MarketBar
 
@@ -142,3 +145,47 @@ def test_updated_and_daily_bars_share_the_versioned_bar_subject() -> None:
     assert daily.envelope.event_type == MARKET_BAR_EVENT
     assert isinstance(daily.envelope.payload, MarketBar)
     assert daily.envelope.payload.is_final is True
+
+
+def test_zero_activity_bar_treats_zero_vwap_as_unavailable() -> None:
+    normalizer = AlpacaEventNormalizer(feed="sip")
+
+    publication = normalizer.rest_bar(
+        "NBIS",
+        "1Week",
+        {
+            "o": 18.94,
+            "h": 18.94,
+            "l": 18.94,
+            "c": 18.94,
+            "v": 0,
+            "n": 0,
+            "vw": 0,
+            "t": "2022-02-28T05:00:00Z",
+        },
+    )
+
+    assert isinstance(publication.envelope.payload, MarketBar)
+    assert publication.envelope.payload.volume == 0
+    assert publication.envelope.payload.trade_count == 0
+    assert publication.envelope.payload.vwap is None
+
+
+def test_active_bar_rejects_zero_vwap() -> None:
+    normalizer = AlpacaEventNormalizer(feed="sip")
+
+    with pytest.raises(ValidationError, match="vwap"):
+        normalizer.rest_bar(
+            "NBIS",
+            "1Week",
+            {
+                "o": 18.94,
+                "h": 18.94,
+                "l": 18.94,
+                "c": 18.94,
+                "v": 100,
+                "n": 2,
+                "vw": 0,
+                "t": "2022-02-28T05:00:00Z",
+            },
+        )
