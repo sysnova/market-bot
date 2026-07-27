@@ -6,8 +6,10 @@ import json
 import os
 import threading
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TextIO
+from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
@@ -15,6 +17,8 @@ from app.common.canonical import canonical_json
 from app.contracts import LocalAlert
 
 from .formatter import format_local_alert
+
+_NEW_YORK = ZoneInfo("America/New_York")
 
 
 class ConsoleAlertSink:
@@ -36,21 +40,25 @@ class AlertSinkReceipt:
 
 
 class NdjsonAlertSink:
-    """Append complete canonical records and deduplicate across restarts."""
+    """Rotate canonical records by market date and deduplicate across restarts."""
 
     def __init__(self, path: Path | str) -> None:
-        self._path = Path(path).resolve()
+        self._base_path = Path(path).resolve()
         self._lock = threading.Lock()
-        self._keys: set[str] = set()
-        self._recover_and_index()
+        self._keys_by_path: dict[Path, set[str]] = {}
 
     def emit(self, alert: LocalAlert) -> AlertSinkReceipt:
         with self._lock:
-            if alert.deduplication_key in self._keys:
-                return AlertSinkReceipt(self._path, False, True)
-            self._path.parent.mkdir(parents=True, exist_ok=True)
+            path = self._daily_path(alert)
+            keys = self._keys_by_path.get(path)
+            if keys is None:
+                keys = self._recover_and_index(path)
+                self._keys_by_path[path] = keys
+            if alert.deduplication_key in keys:
+                return AlertSinkReceipt(path, False, True)
+            path.parent.mkdir(parents=True, exist_ok=True)
             line = canonical_json(alert) + b"\n"
-            descriptor = os.open(self._path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+            descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
             try:
                 view = memoryview(line)
                 while view:
@@ -61,25 +69,39 @@ class NdjsonAlertSink:
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
-            self._keys.add(alert.deduplication_key)
-            return AlertSinkReceipt(self._path, True, False)
+            keys.add(alert.deduplication_key)
+            return AlertSinkReceipt(path, True, False)
 
-    def _recover_and_index(self) -> None:
-        if not self._path.exists():
-            return
-        data = self._path.read_bytes()
+    def path_for(self, created_at: datetime) -> Path:
+        """Return the immutable ledger path for one alert timestamp."""
+
+        market_date = created_at.astimezone(_NEW_YORK).date().isoformat()
+        return self._base_path.with_name(
+            f"{self._base_path.stem}-{market_date}{self._base_path.suffix}"
+        )
+
+    def _daily_path(self, alert: LocalAlert) -> Path:
+        return self.path_for(alert.created_at)
+
+    @staticmethod
+    def _recover_and_index(path: Path) -> set[str]:
+        keys: set[str] = set()
+        if not path.exists():
+            return keys
+        data = path.read_bytes()
         if data and not data.endswith(b"\n"):
             last_complete = data.rfind(b"\n") + 1
-            with self._path.open("r+b") as target:
+            with path.open("r+b") as target:
                 target.truncate(last_complete)
                 target.flush()
                 os.fsync(target.fileno())
-        with self._path.open("rb") as source:
+        with path.open("rb") as source:
             for line_number, line in enumerate(source, start=1):
                 try:
                     alert = LocalAlert.model_validate_json(line)
                 except (ValidationError, ValueError, json.JSONDecodeError) as error:
                     raise ValueError(
-                        f"invalid alert record at {self._path}:{line_number}"
+                        f"invalid alert record at {path}:{line_number}"
                     ) from error
-                self._keys.add(alert.deduplication_key)
+                keys.add(alert.deduplication_key)
+        return keys

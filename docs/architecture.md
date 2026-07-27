@@ -58,7 +58,8 @@ There is no Trading API, order intent, position sizing, or account state in this
 
 - The live working set and latest cross-horizon analyses are held in memory for low-latency rules.
 - NATS JetStream durably mirrors market, analysis, and alert events.
-- Local alerts are fsync'd as canonical NDJSON and deduplicated across restarts.
+- Local alerts are fsync'd as canonical NDJSON, rotated by New York market date, and deduplicated
+  across restarts within each daily ledger.
 - PostgreSQL remains available for future run/audit/query models; the MVP does not put PostgreSQL
   in the per-tick decision path.
 

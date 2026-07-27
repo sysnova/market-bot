@@ -122,10 +122,11 @@ async def run_live_analysis(
         on_mirror_error=mirror_error,
     )
     alert_path = runtime_root / "alerts" / "marketbot-alerts.ndjson"
+    alert_ledger = NdjsonAlertSink(alert_path)
     alert_dispatcher = AlertDispatcher(
         sinks=(
             ConsoleAlertSink(stream=sys.stdout, bell=bell),
-            NdjsonAlertSink(alert_path),
+            alert_ledger,
         ),
         publisher=AlertEventPublisher(publisher),
     )
@@ -205,7 +206,7 @@ async def run_live_analysis(
         )
         if once:
             return {
-                "alert_path": str(alert_path.resolve()),
+                "alert_path": str(alert_ledger.path_for(clock.now())),
                 "execution_enabled": False,
                 "entry_watcher_enabled": entry_watcher is not None,
                 "market_events": summary.market_events,

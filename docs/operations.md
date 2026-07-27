@@ -45,7 +45,10 @@ still-open weekly aggregate and refreshes recent completed weekly bars every Sat
 America/New_York. The refresh temporarily mutes historical reactions and then reevaluates only the
 long-term horizon.
 
-The alert ledger defaults to `.runtime\alerts\marketbot-alerts.ndjson`. A broker outage is logged
+The alert ledger rotates by `America/New_York` market date and defaults to files such as
+`.runtime\alerts\marketbot-alerts-2026-07-26.ndjson`. Each day is append-only, fsynced, and
+deduplicated independently. Existing ledgers are retained; MarketBot does not delete old days.
+A broker outage is logged
 and local analysis continues; once connected, individual mirror failures likewise do not stop local
 alerts.
 

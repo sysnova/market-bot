@@ -19,7 +19,9 @@ Included local sinks:
 
 - `ConsoleAlertSink`: multi-line actionable context with price, entry zone, invalidation,
   objectives, per-horizon verdicts, technical metrics, reasons, and an optional terminal bell;
-- `NdjsonAlertSink`: canonical, fsynced, append-only NDJSON with deduplication by alert key.
+- `NdjsonAlertSink`: canonical, fsynced, append-only NDJSON rotated by `America/New_York` market
+  date, with independent recovery and deduplication for each daily ledger. It never deletes old
+  ledgers.
 
 `LocalAlert.component_analyses` embeds the exact fresh `AnalysisResult` values used by the alert.
 This keeps the structured NDJSON/event payload suitable for future dashboards while the console

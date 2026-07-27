@@ -101,19 +101,49 @@ def test_console_sink_renders_actionable_component_context() -> None:
 def test_ndjson_sink_is_append_only_and_idempotent(
     tmp_path: Path, alert: LocalAlert
 ) -> None:
-    path = tmp_path / "alerts.ndjson"
-    sink = NdjsonAlertSink(path)
+    base_path = tmp_path / "alerts.ndjson"
+    daily_path = tmp_path / "alerts-2026-07-26.ndjson"
+    sink = NdjsonAlertSink(base_path)
 
     first = sink.emit(alert)
     duplicate = sink.emit(alert)
-    reopened = NdjsonAlertSink(path).emit(alert)
+    reopened = NdjsonAlertSink(base_path).emit(alert)
 
+    assert first.path == daily_path
     assert first.persisted is True
     assert duplicate.duplicate is True
     assert reopened.duplicate is True
-    lines = path.read_text(encoding="utf-8").splitlines()
+    assert not base_path.exists()
+    lines = daily_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0])["deduplication_key"] == alert.deduplication_key
+
+
+@pytest.mark.unit
+def test_ndjson_sink_rotates_by_new_york_market_date(
+    tmp_path: Path, alert: LocalAlert
+) -> None:
+    sink = NdjsonAlertSink(tmp_path / "marketbot-alerts.ndjson")
+    late_sunday_utc = alert.model_copy(
+        update={
+            "created_at": datetime(2026, 7, 27, 1, 0, tzinfo=UTC),
+            "deduplication_key": "alert:sunday-market-date",
+        }
+    )
+    monday = alert.model_copy(
+        update={
+            "created_at": datetime(2026, 7, 27, 14, 0, tzinfo=UTC),
+            "deduplication_key": "alert:monday-market-date",
+        }
+    )
+
+    sunday_receipt = sink.emit(late_sunday_utc)
+    monday_receipt = sink.emit(monday)
+
+    assert sunday_receipt.path.name == "marketbot-alerts-2026-07-26.ndjson"
+    assert monday_receipt.path.name == "marketbot-alerts-2026-07-27.ndjson"
+    assert len(sunday_receipt.path.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(monday_receipt.path.read_text(encoding="utf-8").splitlines()) == 1
 
 
 class PublisherSpy:
