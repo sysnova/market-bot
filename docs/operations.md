@@ -20,6 +20,33 @@ Function contract. Configure `MARKETBOT_SUPABASE_URL` and
 positive positions, merges `MARKETBOT_ALPACA_WATCHLIST` as fallback, and refreshes every
 `MARKETBOT_UNIVERSE_REFRESH_SECONDS` (120 seconds by default).
 
+### Windows launcher
+
+The PowerShell launcher resolves the repository location automatically, so it can be invoked from
+any working directory. With no parameters it starts the continuous analysis using the Supabase
+universe, NATS, terminal alerts, and `.runtime` under the repository:
+
+```powershell
+.\scripts\windows\start-market-bot.ps1
+```
+
+Common variants:
+
+```powershell
+.\scripts\windows\start-market-bot.ps1 -Once
+.\scripts\windows\start-market-bot.ps1 -Symbols HIMS,ZETA
+.\scripts\windows\start-market-bot.ps1 -NoNats -NoBell
+.\scripts\windows\start-market-bot.ps1 -RuntimeRoot D:\MarketBotRuntime
+```
+
+If the local execution policy blocks scripts, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\start-market-bot.ps1
+```
+
+The equivalent low-level commands remain available:
+
 ```powershell
 uv run marketbot live --once
 uv run marketbot live

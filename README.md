@@ -29,6 +29,15 @@ all process settings from the `MARKETBOT_` namespace.
 
 ## Run the analytical MVP
 
+On Windows, start the continuous bot from PowerShell without writing the underlying `uv` command:
+
+```powershell
+.\scripts\windows\start-market-bot.ps1
+```
+
+The launcher uses the configured Supabase universe, local NATS service, and terminal alerts by
+default. Use `-Once` for one evaluation or `-Symbols HIMS,ZETA` for a temporary symbol override.
+
 Validate one complete backfill/evaluation and exit:
 
 ```powershell
