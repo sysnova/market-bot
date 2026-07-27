@@ -16,7 +16,7 @@ from app.contracts import (
     MarketBar,
     PatternDirection,
 )
-from app.swing_engine import SwingClassification, SwingContext, SwingEngine
+from app.swing_engine import SwingClassification, SwingContext, SwingEngine, SwingEngineV2
 from app.swing_engine.indicators import anchored_vwap
 
 AS_OF = datetime(2026, 1, 2, tzinfo=UTC)
@@ -255,3 +255,21 @@ def test_result_is_reproducible_except_for_contract_identity() -> None:
     assert first.score == second.score
     with pytest.raises(ValidationError):
         first_detail.score = Decimal("1")  # type: ignore[misc]
+
+
+@pytest.mark.unit
+def test_v2_exposes_regime_entry_zone_and_confirmed_structure_break() -> None:
+    case = json.loads(FIXTURES.read_text(encoding="utf-8"))[0]
+    context = _context(case)
+
+    legacy = SwingEngine().analyze(context)
+    result = SwingEngineV2().analyze(context)
+    metrics = {metric.name: metric.value for metric in result.metrics}
+
+    assert legacy.engine_version == "1.1.1"
+    assert result.engine_version == "2.0.0"
+    assert metrics["market_regime"] == "clean_uptrend"
+    assert metrics["structure_broken_confirmed"] is False
+    assert metrics["entry_zone_low"] <= metrics["entry_zone_high"]
+    assert "price_vs_entry_zone_atr" in metrics
+    assert "reward_risk_to_resistance" in metrics

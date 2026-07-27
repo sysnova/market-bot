@@ -1,5 +1,16 @@
 # Swing engine
 
+## Versiones
+
+- `SwingEngineV1` / `SwingEngine`: reglas `1.1.1` originales.
+- `SwingEngineV2`: versión activa `2.0.0`. Clasifica régimen con ADX y percentil de ATR,
+  construye una zona alrededor del soporte técnico más próximo, informa distancia en ATR y
+  calcula la relación riesgo/beneficio contra la resistencia observada.
+
+V2 sólo marca estructura rota cuando el precio está al menos `1.5 ATR` bajo SMA50, la
+pendiente de SMA20 es negativa, ADX confirma tendencia y `-DI > +DI`. Una corrección normal
+de una acción high beta puede continuar como `setup` o `pullback`.
+
 Deterministic swing analysis over completed daily bars and one intraday confirmation series
 (`15Min` or `1Hour`). The engine looks for two constructive states: a controlled pullback in
 an established uptrend, or an early breakout through 20-day resistance with confirming
@@ -16,6 +27,9 @@ and 3-ATR risk budget for a favorable verdict.
 `SwingEngine.analyze()` returns the shared `AnalysisResult` contract with `horizon=SWING`.
 `evaluate()` returns the engine-owned detailed calculation. Both methods are pure; Alpaca,
 NATS, persistence, alert presentation, and order execution belong to external adapters.
+
+La composición live selecciona `SwingEngineV2`; V1 permanece disponible para reproducir
+resultados anteriores.
 
 Run the focused suite with:
 

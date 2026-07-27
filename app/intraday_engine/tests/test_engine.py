@@ -11,6 +11,7 @@ from app.contracts import (
 )
 from app.intraday_engine.engine import IntradayEngine
 from app.intraday_engine.models import IntradayContext
+from app.intraday_engine.v2 import IntradayEngineV2
 
 from .helpers import trend_bars
 
@@ -137,3 +138,41 @@ def test_optional_five_minute_confirmation_is_reported() -> None:
 
     assert _metric(result, "five_minute_bias") == "bullish"
     assert result.confidence > Decimal("0.5")
+
+
+def test_v2_reports_regime_and_confirmation_quality_without_replacing_v1() -> None:
+    minute_bars = trend_bars(
+        symbol="AMD",
+        start=Decimal("160"),
+        step=Decimal("0.04"),
+        final_move=Decimal("0.60"),
+        base_volume=Decimal("1000"),
+        final_volume=Decimal("2600"),
+    )
+    five_minute_bars = trend_bars(
+        symbol="AMD",
+        start=Decimal("155"),
+        step=Decimal("0.12"),
+        final_move=Decimal("0.30"),
+        base_volume=Decimal("5000"),
+        final_volume=Decimal("7000"),
+        count=20,
+        timeframe=BarTimeframe.MINUTE_5,
+    )
+    context = IntradayContext(
+        symbol="AMD",
+        as_of=max(minute_bars[-1].timestamp, five_minute_bars[-1].timestamp),
+        minute_bars=minute_bars,
+        five_minute_bars=five_minute_bars,
+    )
+
+    legacy = IntradayEngine().analyze(context)
+    result = IntradayEngineV2().analyze(context)
+
+    assert legacy.engine_version == "1.0.0"
+    assert result.engine_version == "2.0.0"
+    assert _metric(result, "intraday_regime") == "bullish_trend"
+    assert _metric(result, "confirmation_quality") in {"standard", "strong"}
+    assert Decimal(str(_metric(result, "close_location"))) >= Decimal("0.60")
+    assert Decimal(str(_metric(result, "volume_acceleration"))) > Decimal("1")
+    assert _metric(result, "five_minute_higher_low") is True

@@ -24,12 +24,12 @@ from app.dilution_sec_engine import (
     SecEdgarConfig,
     SecTickerResolver,
 )
-from app.entry_watcher import EntryWatcher, EntryWatcherPolicy
+from app.entry_watcher import EntryWatcherPolicy, EntryWatcherV2
 from app.event_bus import InMemoryEventBus, NatsJetStreamEventBus
-from app.intraday_engine import IntradayEngine
-from app.long_term_engine import LongTermEngine
+from app.intraday_engine import IntradayEngineV2
+from app.long_term_engine import LongTermEngineV2
 from app.persistence import create_database_engine, create_session_factory
-from app.swing_engine import SwingEngine
+from app.swing_engine import SwingEngineV2
 
 from .alert_publisher import AlertEventPublisher
 from .analysis_runtime import AnalysisRuntime
@@ -64,7 +64,7 @@ async def run_live_analysis(
     http_client = httpx.AsyncClient()
     local_bus = InMemoryEventBus()
     entry_watch_database: AsyncEngine | None = None
-    entry_watcher: EntryWatcher | None = None
+    entry_watcher: EntryWatcherV2 | None = None
     if settings.entry_watcher_enabled:
         try:
             entry_watch_database = create_database_engine(
@@ -75,7 +75,7 @@ async def run_live_analysis(
                 create_session_factory(entry_watch_database)
             )
             if await entry_watch_store.is_ready():
-                entry_watcher = EntryWatcher(
+                entry_watcher = EntryWatcherV2(
                     store=entry_watch_store,
                     policy=EntryWatcherPolicy(
                         ttl=timedelta(days=settings.entry_watch_ttl_days)
@@ -133,9 +133,9 @@ async def run_live_analysis(
     runtime = AnalysisRuntime(
         store=MarketBarStore(capacity_per_series=10_000),
         publisher=publisher,
-        long_term=LongTermEngine(),
-        swing=SwingEngine(),
-        intraday=IntradayEngine(),
+        long_term=LongTermEngineV2(),
+        swing=SwingEngineV2(),
+        intraday=IntradayEngineV2(),
         alert_engine=AlertEngine(),
         alert_dispatcher=alert_dispatcher,
         clock=clock,

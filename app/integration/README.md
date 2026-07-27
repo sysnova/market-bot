@@ -12,3 +12,7 @@ The live composition also connects the pure horizon engines to `EntryWatcher`. A
 remain the only cross-engine input. The watcher persists through the PostgreSQL adapter, while
 `AnalysisRuntime` converts its lifecycle transitions into local human alerts. Failure to connect
 to the optional watcher database is isolated from Alpaca analysis and NATS mirroring.
+
+The active analytical generation is selected explicitly in `live_composition.py`: Long v2,
+Swing v2, Intraday v2, and Entry Watcher v2. Their V1 classes remain available inside each
+engine package; changing the active generation must never silently rewrite an old class.

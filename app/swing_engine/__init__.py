@@ -8,12 +8,15 @@ from .models import (
     SwingIndicators,
     SwingLevels,
 )
+from .v2 import SwingEngineV1, SwingEngineV2
 
 __all__ = [
     "SwingAnalysis",
     "SwingClassification",
     "SwingContext",
     "SwingEngine",
+    "SwingEngineV1",
+    "SwingEngineV2",
     "SwingIndicators",
     "SwingLevels",
 ]

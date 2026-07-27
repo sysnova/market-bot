@@ -12,7 +12,12 @@ from app.contracts import (
     NamedValue,
     PatternDirection,
 )
-from app.entry_watcher import EntryWatcher, EntryWatcherPolicy, InMemoryEntryWatchStore
+from app.entry_watcher import (
+    EntryWatcher,
+    EntryWatcherPolicy,
+    EntryWatcherV2,
+    InMemoryEntryWatchStore,
+)
 
 NOW = datetime(2026, 7, 26, 15, tzinfo=UTC)
 HASH = "sha256:" + "a" * 64
@@ -27,6 +32,7 @@ def analysis(
     direction: PatternDirection,
     price: str = "120",
     as_of: datetime = NOW,
+    setup: str | None = None,
 ) -> AnalysisResult:
     metrics = [
         NamedValue(name="classification", value=classification),
@@ -41,6 +47,8 @@ def analysis(
                 NamedValue(name="support", value=Decimal("96")),
             )
         )
+    if setup is not None:
+        metrics.append(NamedValue(name="setup", value=setup))
     return AnalysisResult(
         analysis_id=UUID(
             {
@@ -65,13 +73,14 @@ def analysis(
     )
 
 
-def long_watch(*, price: str = "120") -> AnalysisResult:
+def long_watch(*, price: str = "120", as_of: datetime = NOW) -> AnalysisResult:
     return analysis(
         AnalysisHorizon.LONG_TERM,
         classification="extended",
         verdict=AnalysisVerdict.CAUTION,
         direction=PatternDirection.BULLISH,
         price=price,
+        as_of=as_of,
     )
 
 
@@ -97,6 +106,7 @@ async def test_extended_long_setup_arms_and_freezes_original_zone() -> None:
     assert active.correction_target_percent == Decimal("12.5000")
     assert active.expires_at == NOW + timedelta(weeks=8)
     assert active.anchor_snapshot["metrics"]["support"] == "96"
+    assert active.anchor_snapshot["watcher_engine_version"] == "1.0.0"
 
 
 @pytest.mark.unit
@@ -251,3 +261,75 @@ async def test_dilution_avoid_warns_but_does_not_block_entry_trigger() -> None:
     assert transition is not None
     assert transition.status is EntryWatchStatus.TRIGGERED
     assert "dilution_warning:avoid" in transition.reasons
+
+
+@pytest.mark.unit
+async def test_v2_ignores_intraday_invalidation_wick_and_requires_named_bullish_trigger() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV2(store=store)
+    await watcher.ingest(long_watch(), now=NOW)
+
+    wick = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="breakdown",
+            verdict=AnalysisVerdict.AVOID,
+            direction=PatternDirection.BEARISH,
+            price="91",
+            as_of=NOW + timedelta(seconds=1),
+            setup="bearish_breakdown",
+        ),
+        now=NOW + timedelta(seconds=1),
+    )
+
+    assert wick is None
+    assert await store.load_active("AAPL") is not None
+
+    healthy_long_close = await watcher.ingest(
+        long_watch(price="120", as_of=NOW),
+        now=NOW + timedelta(seconds=2),
+    )
+
+    assert healthy_long_close is None
+    assert await store.load_active("AAPL") is not None
+
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="pullback",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=1),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    no_trigger = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="no_trigger",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=2),
+            setup="no_trigger",
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+    triggered = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="vwap_reclaim",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=3),
+            setup="bullish_vwap_reclaim",
+        ),
+        now=NOW + timedelta(minutes=3),
+    )
+
+    assert no_trigger is None
+    assert triggered is not None
+    assert triggered.status is EntryWatchStatus.TRIGGERED
+    assert "regime_aware_entry_confirmed" in triggered.reasons

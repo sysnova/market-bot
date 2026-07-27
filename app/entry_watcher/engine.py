@@ -118,13 +118,12 @@ class EntryWatcher:
 
         in_original_zone = active.zone_low <= current_price <= active.zone_high
         if in_original_zone and self._confirmed(latest, now=now):
-            dilution_warning = self._dilution_warning(latest)
             return await self._change(
                 active,
                 EntryWatchStatus.TRIGGERED,
                 now=now,
                 price=current_price,
-                reasons=("multi_horizon_entry_confirmed", dilution_warning),
+                reasons=self._confirmation_reasons(latest),
                 analyses=latest,
             )
 
@@ -197,6 +196,7 @@ class EntryWatcher:
             anchor_snapshot={
                 "classification": classification,
                 "engine_version": result.engine_version,
+                "watcher_engine_version": self.engine_version,
                 "score": str(result.score),
                 "reasons": list(result.reasons),
                 "metrics": _json_value(metrics),
@@ -313,6 +313,14 @@ class EntryWatcher:
             and _metrics(swing).get("classification") in _SWING_CONFIRMATIONS
             and intraday.direction is PatternDirection.BULLISH
             and intraday.verdict is AnalysisVerdict.FAVORABLE
+        )
+
+    def _confirmation_reasons(
+        self, analyses: dict[AnalysisHorizon, AnalysisResult]
+    ) -> tuple[str, ...]:
+        return (
+            "multi_horizon_entry_confirmed",
+            self._dilution_warning(analyses),
         )
 
     @staticmethod

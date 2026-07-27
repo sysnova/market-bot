@@ -1,5 +1,13 @@
 # Long-term engine
 
+## Versiones
+
+- `LongTermEngineV1` / `LongTermEngine`: reglas históricas `1.1.1`, conservadas para
+  reproducibilidad.
+- `LongTermEngineV2`: versión activa `2.0.0`. Agrega ADX, `+DI/-DI`, percentil de ATR,
+  régimen local y distancia a la zona de compra expresada en ATR. El régimen ajusta la
+  calidad de la entrada, pero no convierte por sí solo una señal en una orden.
+
 Pure long-horizon technical analysis over normalized daily and completed weekly OHLCV bars.
 The engine separates `setup_score` (quality of the underlying structure) from `entry_score`
 (quality of the current location), so a strong company chart can remain interesting without
@@ -31,6 +39,9 @@ setup and entry conditions described above.
 
 Root integration supplies split-adjusted history, excludes the open market week, retains 220
 completed weekly bars, and refreshes the recent weekly slice after each Friday close.
+
+La composición live utiliza explícitamente `LongTermEngineV2`; V1 continúa importable para
+comparaciones controladas y para reproducir alertas históricas.
 
 Run its isolated tests with:
 

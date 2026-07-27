@@ -14,6 +14,7 @@ from app.long_term_engine import (
     LongTermClassification,
     LongTermContext,
     LongTermEngine,
+    LongTermEngineV2,
     MarketBar,
 )
 
@@ -259,3 +260,20 @@ def test_public_output_is_long_term_analysis_contract() -> None:
         "weekly_sma200",
         "weekly_price_vs_sma200_percent",
     }
+
+
+@pytest.mark.unit
+def test_v2_adds_regime_and_atr_normalized_entry_context_without_replacing_v1() -> None:
+    case = json.loads(FIXTURES.read_text(encoding="utf-8"))[0]
+    context = _context(case)
+
+    legacy = LongTermEngine().analyze(context)
+    result = LongTermEngineV2().analyze(context)
+    metrics = {metric.name: metric.value for metric in result.metrics}
+
+    assert legacy.engine_version == "1.1.1"
+    assert result.engine_version == "2.0.0"
+    assert metrics["market_regime"] == "clean_uptrend"
+    assert Decimal("0") <= metrics["daily_atr_percentile"] <= Decimal("100")
+    assert metrics["daily_adx14"] >= Decimal("25")
+    assert "distance_to_buy_zone_atr" in metrics

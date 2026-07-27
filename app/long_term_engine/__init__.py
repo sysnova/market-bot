@@ -13,6 +13,7 @@ from .models import (
     LongTermLevels,
     TrendTemplate,
 )
+from .v2 import LongTermEngineV1, LongTermEngineV2
 
 __all__ = [
     "EntryZoneStatus",
@@ -21,6 +22,8 @@ __all__ = [
     "LongTermClassification",
     "LongTermContext",
     "LongTermEngine",
+    "LongTermEngineV1",
+    "LongTermEngineV2",
     "LongTermIndicators",
     "LongTermLevels",
     "MarketBar",
