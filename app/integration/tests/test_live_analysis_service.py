@@ -91,6 +91,12 @@ async def test_initialize_backfills_each_required_timeframe_before_enabling_live
         if kind == "bars" and payload[1]["timeframe"] == "1Week"
     )
     assert weekly_payload[1]["start"] == NOW - timedelta(days=365 * 5)
+    fifteen_minute_payload = next(
+        payload
+        for kind, payload in market_data.calls
+        if kind == "bars" and payload[1]["timeframe"] == "15Min"
+    )
+    assert fifteen_minute_payload[1]["start"] == NOW - timedelta(days=14)
     minute_payload = next(
         payload
         for kind, payload in market_data.calls

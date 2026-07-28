@@ -17,12 +17,16 @@ class MarketBarStore:
     def add(self, bar: MarketBar) -> None:
         key = (bar.symbol.upper(), bar.timeframe)
         series = self._series.setdefault(key, [])
-        timestamps = [item.timestamp for item in series]
-        index = bisect_left(timestamps, bar.timestamp)
-        if index < len(series) and series[index].timestamp == bar.timestamp:
-            series[index] = bar
+        if not series or bar.timestamp > series[-1].timestamp:
+            series.append(bar)
+        elif bar.timestamp == series[-1].timestamp:
+            series[-1] = bar
         else:
-            series.insert(index, bar)
+            index = bisect_left(series, bar.timestamp, key=lambda item: item.timestamp)
+            if index < len(series) and series[index].timestamp == bar.timestamp:
+                series[index] = bar
+            else:
+                series.insert(index, bar)
         overflow = len(series) - self._capacity
         if overflow > 0:
             del series[:overflow]

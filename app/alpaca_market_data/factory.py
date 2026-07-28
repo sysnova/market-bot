@@ -44,4 +44,5 @@ def build_alpaca_market_data_engine(
         ),
         publisher=publisher,
         normalizer=AlpacaEventNormalizer(feed=feed),
+        rest_batch_size=settings.alpaca_rest_batch_size,
     )

@@ -55,7 +55,11 @@ async def run_live_analysis(
     logger = get_logger("live-analysis")
     clock = SystemClock()
     http_client = httpx.AsyncClient()
-    local_bus = InMemoryEventBus()
+    local_bus = InMemoryEventBus(
+        retain_history=False,
+        deduplicate=False,
+        synchronous_delivery=True,
+    )
     entry_watch_database: AsyncEngine | None = None
     entry_watcher: EntryWatcherV2 | None = None
     if settings.entry_watcher_enabled:

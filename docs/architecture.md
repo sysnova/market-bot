@@ -60,6 +60,8 @@ There is no Trading API, order intent, position sizing, or account state in this
 ## Runtime durability
 
 - The live working set and latest cross-horizon analyses are held in memory for low-latency rules.
+- The realtime in-process bus disables replay history and event-ID retention during backfill, and
+  delivers locally with backpressure so a large watchlist cannot create an unbounded task queue.
 - NATS JetStream durably mirrors market, analysis, and alert events.
 - Local alerts are fsync'd as canonical NDJSON, rotated by New York market date, and deduplicated
   across restarts within each daily ledger.

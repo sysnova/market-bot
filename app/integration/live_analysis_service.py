@@ -23,6 +23,7 @@ class MarketDataService(Protocol):
         start: datetime,
         end: datetime,
         limit: int = 10_000,
+        max_bars_per_symbol: int | None = None,
     ) -> int: ...
 
     async def publish_snapshots(self, symbols: tuple[str, ...]) -> int: ...
@@ -134,18 +135,19 @@ class LiveAnalysisService:
     async def _warm_market_data(self, symbols: tuple[str, ...], as_of: datetime) -> int:
         total = 0
         windows = (
-            ("1Week", timedelta(days=365 * 5)),
-            ("1Day", timedelta(days=400)),
-            ("15Min", timedelta(days=45)),
-            ("1Min", timedelta(days=5)),
+            ("1Week", timedelta(days=365 * 5), 221),
+            ("1Day", timedelta(days=400), 260),
+            ("15Min", timedelta(days=14), 160),
+            ("1Min", timedelta(days=5), 500),
         )
-        for timeframe, lookback in windows:
+        for timeframe, lookback, max_bars_per_symbol in windows:
             total += await self._market_data.publish_bars(
                 symbols,
                 timeframe=timeframe,
                 start=as_of - lookback,
                 end=as_of,
                 limit=10_000,
+                max_bars_per_symbol=max_bars_per_symbol,
             )
             await self._local_bus.join()
         total += await self._market_data.publish_snapshots(symbols)

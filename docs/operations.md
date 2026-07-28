@@ -70,7 +70,13 @@ uv run marketbot live --symbols AAPL,NVDA
 Historical bar requests default to `MARKETBOT_ALPACA_ADJUSTMENT=split`. MarketBot excludes the
 still-open weekly aggregate and refreshes recent completed weekly bars every Saturday at 02:00
 America/New_York. The refresh temporarily mutes historical reactions and then reevaluates only the
-long-term horizon.
+long-term horizon. REST backfills split large universes into batches of
+`MARKETBOT_ALPACA_REST_BATCH_SIZE` symbols (20 by default), so Alpaca pagination is bounded per
+batch instead of accumulating across the complete watchlist. The 15-minute warmup covers 14
+calendar days, comfortably exceeding the 160-bar Swing working set without downloading 45 days
+that the in-memory store discarded. Before publishing, each timeframe is trimmed to the maximum
+working set consumed by its engines (221 weekly, 260 daily, 160 swing and 500 minute bars per
+symbol), preventing unused history from entering the event bus.
 
 The alert ledger rotates by `America/New_York` market date and defaults to files such as
 `.runtime\alerts\marketbot-alerts-2026-07-26.ndjson`. Each day is append-only, fsynced, and

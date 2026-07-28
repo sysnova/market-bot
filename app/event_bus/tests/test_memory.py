@@ -148,6 +148,53 @@ async def test_unsubscribe_stops_delivery(event: EventEnvelope) -> None:
     await bus.close()
 
 
+@pytest.mark.unit
+async def test_ephemeral_mode_does_not_retain_history_or_event_ids(
+    event: EventEnvelope,
+) -> None:
+    bus = InMemoryEventBus(retain_history=False, deduplicate=False)
+    early: list[EventEnvelope] = []
+    await bus.subscribe("prices.updated", lambda item: _append(early, item))
+
+    await bus.publish("prices.updated", event)
+    await bus.publish("prices.updated", event)
+    await bus.join()
+
+    late: list[EventEnvelope] = []
+    await bus.subscribe(
+        "prices.updated",
+        lambda item: _append(late, item),
+        options=SubscriptionOptions(replay_all=True),
+    )
+    await bus.join()
+
+    assert early == [event, event]
+    assert late == []
+    await bus.close()
+
+
+@pytest.mark.unit
+async def test_synchronous_delivery_applies_backpressure(event: EventEnvelope) -> None:
+    bus = InMemoryEventBus(synchronous_delivery=True, deduplicate=False)
+    release = asyncio.Event()
+    started = asyncio.Event()
+
+    async def blocked(_: EventEnvelope) -> None:
+        started.set()
+        await release.wait()
+
+    await bus.subscribe("prices.updated", blocked)
+    publication = asyncio.create_task(bus.publish("prices.updated", event))
+    await asyncio.wait_for(started.wait(), timeout=1)
+
+    try:
+        assert not publication.done()
+    finally:
+        release.set()
+    await asyncio.wait_for(publication, timeout=1)
+    await asyncio.wait_for(bus.close(), timeout=1)
+
+
 async def _append(items: list[EventEnvelope], item: EventEnvelope) -> None:
     items.append(item)
     await asyncio.sleep(0)

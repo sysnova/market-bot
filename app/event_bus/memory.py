@@ -42,9 +42,19 @@ class InMemoryEventBus:
     state intentionally disappear when the process exits.
     """
 
-    def __init__(self, *, prefix: str = "marketbot") -> None:
+    def __init__(
+        self,
+        *,
+        prefix: str = "marketbot",
+        retain_history: bool = True,
+        deduplicate: bool = True,
+        synchronous_delivery: bool = False,
+    ) -> None:
         validate_publish_subject(prefix)
         self._prefix = prefix
+        self._retain_history = retain_history
+        self._deduplicate = deduplicate
+        self._synchronous_delivery = synchronous_delivery
         self._subscribers: list[_Subscriber] = []
         self._history: list[tuple[str, bytes]] = []
         self._published_ids: set[UUID] = set()
@@ -54,12 +64,14 @@ class InMemoryEventBus:
     async def publish(self, subject: str, envelope: EventEnvelope) -> None:
         self._require_open()
         validate_publish_subject(subject)
-        if envelope.event_id in self._published_ids:
-            return
+        if self._deduplicate:
+            if envelope.event_id in self._published_ids:
+                return
+            self._published_ids.add(envelope.event_id)
         payload = encode_envelope(envelope)
-        self._published_ids.add(envelope.event_id)
-        self._history.append((subject, payload))
-        self._schedule_for_matching(subject, payload, self._subscribers)
+        if self._retain_history:
+            self._history.append((subject, payload))
+        await self._deliver_to_matching(subject, payload, self._subscribers)
 
     async def subscribe(
         self,
@@ -76,7 +88,7 @@ class InMemoryEventBus:
         if resolved_options.replay_all:
             for historical_subject, payload in self._history:
                 if subject_matches(subject, historical_subject):
-                    self._schedule_delivery(subscriber, payload)
+                    await self._start_delivery(subscriber, payload)
         return _MemorySubscription(subscriber)
 
     async def join(self) -> None:
@@ -93,7 +105,7 @@ class InMemoryEventBus:
         await self.join()
         self._closed = True
 
-    def _schedule_for_matching(
+    async def _deliver_to_matching(
         self,
         subject: str,
         payload: bytes,
@@ -101,7 +113,13 @@ class InMemoryEventBus:
     ) -> None:
         for subscriber in tuple(subscribers):
             if subscriber.active and subject_matches(subscriber.subject, subject):
-                self._schedule_delivery(subscriber, payload)
+                await self._start_delivery(subscriber, payload)
+
+    async def _start_delivery(self, subscriber: _Subscriber, payload: bytes) -> None:
+        if self._synchronous_delivery:
+            await self._deliver(subscriber, payload)
+            return
+        self._schedule_delivery(subscriber, payload)
 
     def _schedule_delivery(self, subscriber: _Subscriber, payload: bytes) -> None:
         task = asyncio.create_task(self._deliver(subscriber, payload))

@@ -23,11 +23,15 @@ class AlpacaMarketDataEngine:
         stream: MarketDataStream,
         publisher: EventPublisher,
         normalizer: AlpacaEventNormalizer,
+        rest_batch_size: int = 20,
     ) -> None:
+        if isinstance(rest_batch_size, bool) or rest_batch_size < 1:
+            raise ValueError("Alpaca REST batch size must be positive")
         self._rest = rest
         self._stream = stream
         self._publisher = publisher
         self._normalizer = normalizer
+        self._rest_batch_size = rest_batch_size
 
     async def publish_bars(
         self,
@@ -37,34 +41,46 @@ class AlpacaMarketDataEngine:
         start: datetime,
         end: datetime,
         limit: int = 10_000,
+        max_bars_per_symbol: int | None = None,
     ) -> int:
-        bars = await self._rest.fetch_bars(
-            symbols,
-            timeframe=timeframe,
-            start=start,
-            end=end,
-            limit=limit,
-        )
+        if max_bars_per_symbol is not None and (
+            isinstance(max_bars_per_symbol, bool) or max_bars_per_symbol < 1
+        ):
+            raise ValueError("max_bars_per_symbol must be positive")
         count = 0
-        for symbol in sorted(bars):
-            for raw in bars[symbol]:
-                publication = self._normalizer.rest_bar(symbol, timeframe, raw)
-                payload = publication.envelope.payload
-                if (
-                    timeframe == BarTimeframe.WEEK_1.value
-                    and isinstance(payload, MarketBar)
-                    and not _weekly_bar_is_complete(payload.timestamp, end)
-                ):
-                    continue
-                await self._publish(publication)
-                count += 1
+        for batch in _symbol_batches(symbols, self._rest_batch_size):
+            bars = await self._rest.fetch_bars(
+                batch,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+                limit=limit,
+            )
+            for symbol in sorted(bars):
+                records = bars[symbol]
+                if max_bars_per_symbol is not None:
+                    records = records[-max_bars_per_symbol:]
+                for raw in records:
+                    publication = self._normalizer.rest_bar(symbol, timeframe, raw)
+                    payload = publication.envelope.payload
+                    if (
+                        timeframe == BarTimeframe.WEEK_1.value
+                        and isinstance(payload, MarketBar)
+                        and not _weekly_bar_is_complete(payload.timestamp, end)
+                    ):
+                        continue
+                    await self._publish(publication)
+                    count += 1
         return count
 
     async def publish_snapshots(self, symbols: tuple[str, ...]) -> int:
-        snapshots = await self._rest.fetch_snapshots(symbols)
-        for symbol in sorted(snapshots):
-            await self._publish(self._normalizer.snapshot(symbol, snapshots[symbol]))
-        return len(snapshots)
+        count = 0
+        for batch in _symbol_batches(symbols, self._rest_batch_size):
+            snapshots = await self._rest.fetch_snapshots(batch)
+            for symbol in sorted(snapshots):
+                await self._publish(self._normalizer.snapshot(symbol, snapshots[symbol]))
+                count += 1
+        return count
 
     async def stream_once(
         self,
@@ -103,3 +119,15 @@ def _weekly_bar_is_complete(timestamp: datetime, as_of: datetime) -> bool:
     week_start = local_date - timedelta(days=local_date.weekday())
     completion = datetime.combine(week_start + timedelta(days=5), time(), _NEW_YORK)
     return as_of.astimezone(_NEW_YORK) >= completion
+
+
+def _symbol_batches(
+    symbols: tuple[str, ...], batch_size: int
+) -> tuple[tuple[str, ...], ...]:
+    normalized = tuple(dict.fromkeys(symbol.strip().upper() for symbol in symbols))
+    if not normalized or any(not symbol for symbol in normalized):
+        raise ValueError("at least one non-blank symbol is required")
+    return tuple(
+        normalized[index : index + batch_size]
+        for index in range(0, len(normalized), batch_size)
+    )

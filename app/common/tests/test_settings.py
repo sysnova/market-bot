@@ -59,6 +59,7 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.alpaca_api_secret_key.get_secret_value() == "paper-secret-key"
     assert settings.alpaca_data_feed == "sip"
     assert settings.alpaca_adjustment == "split"
+    assert settings.alpaca_rest_batch_size == 20
     assert settings.alpaca_symbols == ("AAPL", "MSFT", "NVDA")
     assert settings.alpaca_execution_enabled is False
     serialized = json.dumps(settings.redacted())

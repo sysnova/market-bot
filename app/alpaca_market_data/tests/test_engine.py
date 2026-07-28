@@ -82,6 +82,119 @@ class WeeklyFakeRest(FakeRest):
         }
 
 
+class BatchTrackingRest(FakeRest):
+    def __init__(self) -> None:
+        self.bar_calls: list[tuple[str, ...]] = []
+        self.snapshot_calls: list[tuple[str, ...]] = []
+
+    async def fetch_bars(
+        self, symbols: tuple[str, ...], *args: object, **kwargs: object
+    ) -> dict[str, list[dict[str, object]]]:
+        self.bar_calls.append(symbols)
+        return {
+            symbol: [
+                {
+                    "o": 100,
+                    "h": 101,
+                    "l": 99,
+                    "c": 100.5,
+                    "v": 1000,
+                    "t": "2026-07-24T14:30:00Z",
+                }
+            ]
+            for symbol in symbols
+        }
+
+    async def fetch_snapshots(
+        self, symbols: tuple[str, ...]
+    ) -> dict[str, dict[str, object]]:
+        self.snapshot_calls.append(symbols)
+        return {
+            symbol: {
+                "latestTrade": {"p": 100.5, "s": 1, "t": "2026-07-24T14:31:00Z"}
+            }
+            for symbol in symbols
+        }
+
+
+class MultiBarRest(FakeRest):
+    async def fetch_bars(
+        self, symbols: tuple[str, ...], *args: object, **kwargs: object
+    ) -> dict[str, list[dict[str, object]]]:
+        return {
+            symbol: [
+                {
+                    "o": 100 + minute,
+                    "h": 101 + minute,
+                    "l": 99 + minute,
+                    "c": 100.5 + minute,
+                    "v": 1000,
+                    "t": f"2026-07-24T14:{30 + minute:02d}:00Z",
+                }
+                for minute in range(3)
+            ]
+            for symbol in symbols
+        }
+
+
+@pytest.mark.asyncio
+async def test_engine_publishes_only_the_consumer_working_set() -> None:
+    publisher = FakePublisher()
+    engine = AlpacaMarketDataEngine(
+        rest=MultiBarRest(),
+        stream=FakeStream(),
+        publisher=publisher,
+        normalizer=AlpacaEventNormalizer(feed="sip"),
+    )
+
+    count = await engine.publish_bars(
+        ("AAPL",),
+        timeframe="15Min",
+        start=datetime(2026, 7, 24, 14, 30, tzinfo=UTC),
+        end=datetime(2026, 7, 24, 14, 33, tzinfo=UTC),
+        max_bars_per_symbol=2,
+    )
+
+    assert count == 2
+    assert [item.payload.timestamp.minute for _, item in publisher.events] == [31, 32]
+
+
+@pytest.mark.asyncio
+async def test_engine_batches_large_rest_universes() -> None:
+    publisher = FakePublisher()
+    rest = BatchTrackingRest()
+    engine = AlpacaMarketDataEngine(
+        rest=rest,
+        stream=FakeStream(),
+        publisher=publisher,
+        normalizer=AlpacaEventNormalizer(feed="sip"),
+        rest_batch_size=2,
+    )
+
+    bar_count = await engine.publish_bars(
+        ("AAPL", "MSFT", "NVDA", "AAPL"),
+        timeframe="15Min",
+        start=datetime(2026, 7, 24, 14, 30, tzinfo=UTC),
+        end=datetime(2026, 7, 24, 14, 31, tzinfo=UTC),
+    )
+    snapshot_count = await engine.publish_snapshots(("AAPL", "MSFT", "NVDA", "AAPL"))
+
+    assert rest.bar_calls == [("AAPL", "MSFT"), ("NVDA",)]
+    assert rest.snapshot_calls == [("AAPL", "MSFT"), ("NVDA",)]
+    assert (bar_count, snapshot_count) == (3, 3)
+
+
+def test_engine_rejects_invalid_rest_batch_size() -> None:
+    with pytest.raises(ValueError, match="batch size"):
+        AlpacaMarketDataEngine(
+            rest=FakeRest(),
+            stream=FakeStream(),
+            publisher=FakePublisher(),
+            normalizer=AlpacaEventNormalizer(feed="sip"),
+            rest_batch_size=0,
+        )
+
+
 @pytest.mark.asyncio
 async def test_engine_publishes_backfill_snapshots_and_stream_without_orders() -> None:
     publisher = FakePublisher()
