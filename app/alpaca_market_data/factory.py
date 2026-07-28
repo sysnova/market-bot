@@ -16,6 +16,7 @@ def build_alpaca_market_data_engine(
     settings: AppSettings,
     *,
     publisher: EventPublisher,
+    backfill_publisher: EventPublisher | None = None,
 ) -> AlpacaMarketDataEngine:
     """Build read-only Alpaca ingress; Trading API settings are intentionally unused."""
 
@@ -43,6 +44,7 @@ def build_alpaca_market_data_engine(
             connector=WebsocketsConnector(),
         ),
         publisher=publisher,
+        backfill_publisher=backfill_publisher,
         normalizer=AlpacaEventNormalizer(feed=feed),
         rest_batch_size=settings.alpaca_rest_batch_size,
     )

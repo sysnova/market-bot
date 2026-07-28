@@ -78,6 +78,10 @@ that the in-memory store discarded. Before publishing, each timeframe is trimmed
 working set consumed by its engines (221 weekly, 260 daily, 160 swing and 500 minute bars per
 symbol), preventing unused history from entering the event bus.
 
+Historical REST bars are delivered only to the local analytical bus during warm-up and weekly
+refreshes; they are not mirrored to NATS. Snapshots, WebSocket market data, analysis results, and
+alerts remain eligible for NATS mirroring.
+
 The alert ledger rotates by `America/New_York` market date and defaults to files such as
 `.runtime\alerts\marketbot-alerts-2026-07-26.ndjson`. Each day is append-only, fsynced, and
 deduplicated independently. Existing ledgers are retained; MarketBot does not delete old days.

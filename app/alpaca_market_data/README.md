@@ -41,10 +41,19 @@ deduplication identity across reconnects and process restarts.
 ## Composition
 
 ```python
-engine = build_alpaca_market_data_engine(settings, publisher=nats_bus)
+engine = build_alpaca_market_data_engine(
+    settings,
+    publisher=live_fanout,
+    backfill_publisher=local_bus,
+)
 await engine.publish_snapshots(("AAPL", "MSFT"))
 await engine.stream_once(("AAPL", "MSFT"))
 ```
+
+REST backfill bars use `backfill_publisher`. The live composition binds that port directly to
+the local analytical bus so historical warm-up hydrates the in-process `MarketBarStore` without
+flooding NATS. Snapshots, WebSocket data, analysis results, and alerts continue through the live
+fan-out publisher and may be mirrored to NATS.
 
 `stream_once` represents one authenticated connection. The root supervisor owns
 reconnection policy, health reporting and shutdown orchestration.

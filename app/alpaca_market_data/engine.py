@@ -22,6 +22,7 @@ class AlpacaMarketDataEngine:
         rest: MarketDataRest,
         stream: MarketDataStream,
         publisher: EventPublisher,
+        backfill_publisher: EventPublisher | None = None,
         normalizer: AlpacaEventNormalizer,
         rest_batch_size: int = 20,
     ) -> None:
@@ -30,6 +31,9 @@ class AlpacaMarketDataEngine:
         self._rest = rest
         self._stream = stream
         self._publisher = publisher
+        self._backfill_publisher = (
+            publisher if backfill_publisher is None else backfill_publisher
+        )
         self._normalizer = normalizer
         self._rest_batch_size = rest_batch_size
 
@@ -69,7 +73,7 @@ class AlpacaMarketDataEngine:
                         and not _weekly_bar_is_complete(payload.timestamp, end)
                     ):
                         continue
-                    await self._publish(publication)
+                    await self._publish_to(self._backfill_publisher, publication)
                     count += 1
         return count
 
@@ -111,7 +115,13 @@ class AlpacaMarketDataEngine:
         await self._rest.close()
 
     async def _publish(self, publication: Publication) -> None:
-        await self._publisher.publish(publication.subject, publication.envelope)
+        await self._publish_to(self._publisher, publication)
+
+    @staticmethod
+    async def _publish_to(
+        publisher: EventPublisher, publication: Publication
+    ) -> None:
+        await publisher.publish(publication.subject, publication.envelope)
 
 
 def _weekly_bar_is_complete(timestamp: datetime, as_of: datetime) -> bool:

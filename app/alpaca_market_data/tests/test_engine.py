@@ -224,6 +224,36 @@ async def test_engine_publishes_backfill_snapshots_and_stream_without_orders() -
 
 
 @pytest.mark.asyncio
+async def test_engine_routes_rest_backfill_only_to_its_backfill_publisher() -> None:
+    live_publisher = FakePublisher()
+    backfill_publisher = FakePublisher()
+    engine = AlpacaMarketDataEngine(
+        rest=FakeRest(),
+        stream=FakeStream(),
+        publisher=live_publisher,
+        backfill_publisher=backfill_publisher,
+        normalizer=AlpacaEventNormalizer(feed="sip"),
+    )
+
+    await engine.publish_bars(
+        ("AAPL",),
+        timeframe="1Min",
+        start=datetime(2026, 7, 24, 14, 30, tzinfo=UTC),
+        end=datetime(2026, 7, 24, 14, 31, tzinfo=UTC),
+    )
+    await engine.publish_snapshots(("AAPL",))
+    await engine.stream_once(("AAPL",))
+
+    assert [subject for subject, _ in backfill_publisher.events] == [
+        "marketbot.v1.market.bar.1Min.AAPL"
+    ]
+    assert [subject for subject, _ in live_publisher.events] == [
+        "market.data.snapshot.aapl",
+        "market.data.quote.aapl",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_engine_excludes_the_current_week_until_it_is_complete() -> None:
     publisher = FakePublisher()
     engine = AlpacaMarketDataEngine(

@@ -141,7 +141,11 @@ async def run_live_analysis(
     subscription = await local_bus.subscribe(
         "marketbot.v1.market.bar.>", runtime.handle_market_event
     )
-    market_data = build_alpaca_market_data_engine(settings, publisher=publisher)
+    market_data = build_alpaca_market_data_engine(
+        settings,
+        publisher=publisher,
+        backfill_publisher=local_bus,
+    )
     universe_provider: SupabaseUniverseClient | None = None
     if symbols:
         universe = fallback_universe(symbols, source="manual-symbols")
