@@ -45,6 +45,51 @@ def test_windows_launcher_builds_live_command_without_running_it() -> None:
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_windows_launcher_defaults_to_independent_processes() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(SCRIPT_PATH),
+            "-Symbols",
+            "HIMS,ZETA",
+            "-NoBell",
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["mode"] == "distributed"
+    assert [process["name"] for process in plan["processes"]] == [
+        "alerts-v2",
+        "entry-watcher-v2",
+        "long-term-v2",
+        "swing-v2",
+        "intraday-v2",
+        "alpaca-market-stream",
+    ]
+    assert plan["processes"][2]["arguments"][:4] == [
+        "run",
+        "marketbot",
+        "engine",
+        "long",
+    ]
+    assert plan["processes"][-1]["arguments"][:4] == [
+        "run",
+        "marketbot",
+        "market",
+        "stream",
+    ]
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
 def test_windows_sec_launcher_builds_bounded_daily_command() -> None:
     result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
         [

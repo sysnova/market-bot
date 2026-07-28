@@ -112,6 +112,17 @@ class AlertSeverity(ContractEnum):
     CRITICAL = "CRITICAL"
 
 
+class AlertKind(ContractEnum):
+    CONSENSUS = "CONSENSUS"
+    LONG_BUY_ZONE = "LONG_BUY_ZONE"
+    SWING_SETUP = "SWING_SETUP"
+    ENTRY_CONFIRMED = "ENTRY_CONFIRMED"
+    HIGH_CONVICTION_BUY = "HIGH_CONVICTION_BUY"
+    BEARISH_CONSENSUS = "BEARISH_CONSENSUS"
+    SEC_WARNING = "SEC_WARNING"
+    ENTRY_WATCH = "ENTRY_WATCH"
+
+
 class EntryWatchStatus(ContractEnum):
     ARMED = "ARMED"
     IN_ZONE = "IN_ZONE"

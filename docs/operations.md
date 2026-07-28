@@ -22,9 +22,11 @@ positive positions, merges `MARKETBOT_ALPACA_WATCHLIST` as fallback, and refresh
 
 ### Windows launcher
 
-The PowerShell launcher resolves the repository location automatically, so it can be invoked from
-any working directory. With no parameters it starts the continuous analysis using the Supabase
-universe, NATS, terminal alerts, and `.runtime` under the repository:
+The PowerShell launcher resolves the repository location automatically. With no parameters it
+starts Alert v2, Entry Watcher v2, Long v2, Swing v2, and Intraday v2 as independent processes.
+Alert opens as the visible local monitor; the technical processes stay hidden and write individual
+logs. Each engine loads its own REST history and writes readiness under `.runtime/status`;
+only after all five consumers are ready does the launcher start the Alpaca WebSocket-to-NATS process:
 
 ```powershell
 .\scripts\windows\start-market-bot.ps1
@@ -52,10 +54,9 @@ uv run marketbot live --once
 uv run marketbot live
 ```
 
-`--once` performs the four market-data backfills, snapshots, and one evaluation before closing. It
-does not query SEC EDGAR. Without it, MarketBot opens the Alpaca WebSocket for trades, quotes,
-minute bars, updated bars, and daily bars, reconnecting with bounded exponential backoff. Ctrl+C
-stops the foreground process. The process is analysis-only and cannot submit an order.
+`-Once` preserves the legacy one-process diagnostic. The default distributed launcher supervises
+all child processes and stops the children it created when the launcher exits. Logs live under
+`.runtime/logs`. The deployment is analysis-only and cannot submit an order.
 
 Useful options:
 
@@ -78,9 +79,18 @@ that the in-memory store discarded. Before publishing, each timeframe is trimmed
 working set consumed by its engines (221 weekly, 260 daily, 160 swing and 500 minute bars per
 symbol), preventing unused history from entering the event bus.
 
-Historical REST bars are delivered only to the local analytical bus during warm-up and weekly
-refreshes; they are not mirrored to NATS. Snapshots, WebSocket market data, analysis results, and
-alerts remain eligible for NATS mirroring.
+In distributed mode, historical REST bars never enter an event bus: each engine loads them directly
+into its private store. WebSocket updates, analysis results, service health, and final alerts use
+NATS. Useful standalone process commands are:
+
+```powershell
+uv run marketbot alerts serve
+uv run marketbot entry-watch serve
+uv run marketbot engine long
+uv run marketbot engine swing
+uv run marketbot engine intraday
+uv run marketbot market stream
+```
 
 The alert ledger rotates by `America/New_York` market date and defaults to files such as
 `.runtime\alerts\marketbot-alerts-2026-07-26.ndjson`. Each day is append-only, fsynced, and

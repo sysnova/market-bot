@@ -15,6 +15,18 @@ order and contains no account, position, sizing, or Trading API concept. `AlertD
 sends an alert to local sinks and can publish it through a structural port using
 `LOCAL_ALERT_EVENT` and `local_alert_subject`.
 
+`AlertEngineV2` is the active distributed generation. It emits explicit `AlertKind` values:
+
+- `LONG_BUY_ZONE` from a fresh bullish Long result;
+- `SWING_SETUP` from a fresh bullish Swing result;
+- `ENTRY_CONFIRMED` when Intraday confirms either Long or Swing;
+- `HIGH_CONVICTION_BUY` when Long, Swing, and Intraday are all bullish;
+- `SEC_WARNING` independently, without gating another alert.
+
+The standalone Alert process consumes `marketbot.v1.analysis.result.>` and
+`marketbot.v1.entry-watch.transition.>` through separate durable NATS consumers and publishes
+final `LocalAlert` events for viewers. It does not read any engine store or the watcher database.
+
 Included local sinks:
 
 - `ConsoleAlertSink`: multi-line actionable context with price, entry zone, invalidation,

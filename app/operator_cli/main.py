@@ -113,6 +113,158 @@ def live_analysis(
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
+engine = typer.Typer(name="engine", help="Run one independent analytical engine process.")
+app.add_typer(engine, name="engine")
+
+
+def _engine_process(
+    horizon: str,
+    *,
+    once: bool,
+    symbols: str | None,
+    ready_path: Path,
+) -> None:
+    from app.contracts import AnalysisHorizon
+    from app.integration.distributed_composition import run_engine_process
+
+    summary = _run_async(
+        run_engine_process(
+            horizon=AnalysisHorizon(horizon),
+            symbols=tuple(symbols.split(",")) if symbols else None,
+            once=once,
+            ready_path=ready_path,
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@engine.command("long")
+def long_engine_process(
+    once: Annotated[bool, typer.Option(help="Bootstrap and evaluate once, then exit.")] = False,
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Comma-separated temporary universe; overrides Supabase."),
+    ] = None,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after this process subscribes to NATS."),
+    ] = Path(".runtime/status/long-term-v2.ready.json"),
+) -> None:
+    """Run the independent Long v2 process."""
+
+    _engine_process("LONG_TERM", once=once, symbols=symbols, ready_path=ready_path)
+
+
+@engine.command("swing")
+def swing_engine_process(
+    once: Annotated[bool, typer.Option(help="Bootstrap and evaluate once, then exit.")] = False,
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Comma-separated temporary universe; overrides Supabase."),
+    ] = None,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after this process subscribes to NATS."),
+    ] = Path(".runtime/status/swing-v2.ready.json"),
+) -> None:
+    """Run the independent Swing v2 process."""
+
+    _engine_process("SWING", once=once, symbols=symbols, ready_path=ready_path)
+
+
+@engine.command("intraday")
+def intraday_engine_process(
+    once: Annotated[bool, typer.Option(help="Bootstrap and evaluate once, then exit.")] = False,
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Comma-separated temporary universe; overrides Supabase."),
+    ] = None,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after this process subscribes to NATS."),
+    ] = Path(".runtime/status/intraday-v2.ready.json"),
+) -> None:
+    """Run the independent Intraday v2 process."""
+
+    _engine_process("INTRADAY", once=once, symbols=symbols, ready_path=ready_path)
+
+
+market = typer.Typer(name="market", help="Run independent market-data processes.")
+app.add_typer(market, name="market")
+
+
+@market.command("stream")
+def market_stream_process(
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Comma-separated temporary universe; overrides Supabase."),
+    ] = None,
+) -> None:
+    """Run the Alpaca WebSocket-to-NATS process."""
+
+    from app.integration.distributed_composition import run_market_stream_process
+
+    _run_async(
+        run_market_stream_process(
+            symbols=tuple(symbols.split(",")) if symbols else None,
+        )
+    )
+
+
+alerts = typer.Typer(name="alerts", help="Run the independent alert aggregation process.")
+app.add_typer(alerts, name="alerts")
+
+
+@alerts.command("serve")
+def alert_process(
+    runtime_root: Annotated[
+        Path,
+        typer.Option(help="Directory for local append-only alerts."),
+    ] = Path(".runtime"),
+    bell: Annotated[
+        bool,
+        typer.Option(help="Ring the terminal bell for each final human alert."),
+    ] = True,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after all NATS subscriptions exist."),
+    ] = Path(".runtime/status/alert-v2.ready.json"),
+) -> None:
+    """Run the Alert v2 NATS consumer process."""
+
+    from app.integration.distributed_composition import run_alert_process
+
+    _run_async(
+        run_alert_process(
+            runtime_root=runtime_root,
+            bell=bell,
+            ready_path=ready_path,
+        )
+    )
+
+
+entry_watch = typer.Typer(
+    name="entry-watch",
+    help="Run the independent persistent entry-opportunity process.",
+)
+app.add_typer(entry_watch, name="entry-watch")
+
+
+@entry_watch.command("serve")
+def entry_watcher_process(
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
+    ] = Path(".runtime/status/entry-watcher-v2.ready.json"),
+) -> None:
+    """Run the Entry Watcher v2 PostgreSQL/NATS process."""
+
+    from app.integration.distributed_composition import run_entry_watcher_process
+
+    _run_async(run_entry_watcher_process(ready_path=ready_path))
+
+
 sec = typer.Typer(name="sec", help="Run the independent bounded SEC filing bot.")
 app.add_typer(sec, name="sec")
 

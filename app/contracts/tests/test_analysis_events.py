@@ -4,9 +4,12 @@ from app.contracts import (
     AlertSeverity,
     AnalysisHorizon,
     BarTimeframe,
+    EntryWatchStatus,
     analysis_result_subject,
+    entry_watch_transition_subject,
     local_alert_subject,
     market_bar_subject,
+    service_health_subject,
 )
 
 
@@ -19,6 +22,10 @@ def test_stable_analysis_subjects_are_partitioned_by_kind_and_symbol() -> None:
     )
     assert local_alert_subject(AlertSeverity.ACTION, "NVDA") == (
         "marketbot.v1.alert.local.ACTION.NVDA"
+    )
+    assert service_health_subject("swing-v2") == "marketbot.v1.service.health.swing-v2"
+    assert entry_watch_transition_subject(EntryWatchStatus.IN_ZONE, "BRK.B") == (
+        "marketbot.v1.entry-watch.transition.IN_ZONE.BRK_B"
     )
 
 

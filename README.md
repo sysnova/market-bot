@@ -3,10 +3,11 @@
 MarketBot is a Python 3.14 event-driven market analysis monorepo. Engines are isolated under
 `app/<engine>/`; they communicate through stable contracts rather than direct imports.
 
-The current MVP is deliberately analysis-only. The continuous process consumes Alpaca Stock Market
-Data, publishes versioned events, runs the market analytical horizons, and shows local alerts. An
-independent daily bot checks recent SEC EDGAR filings. There is no order adapter and configuration
-enforces `MARKETBOT_ALPACA_EXECUTION_ENABLED=false`.
+The current MVP is deliberately analysis-only. Long v2, Swing v2, Intraday v2, Entry Watcher v2,
+Alert v2, and the Alpaca WebSocket ingress run as independent operating-system processes. NATS JetStream distributes
+live market bars and analytical results between them. An independent daily bot checks recent SEC
+EDGAR filings. There is no order adapter and configuration enforces
+`MARKETBOT_ALPACA_EXECUTION_ENABLED=false`.
 
 ## Prerequisites
 
@@ -36,8 +37,12 @@ On Windows, start the continuous bot from PowerShell without writing the underly
 .\scripts\windows\start-market-bot.ps1
 ```
 
-The launcher uses the configured Supabase universe, local NATS service, and terminal alerts by
-default. Use `-Once` for one evaluation or `-Symbols HIMS,ZETA` for a temporary symbol override.
+The launcher starts Alert, Entry Watcher, Long, Swing, and Intraday independently. Each analytical
+engine loads only its own REST history into its own in-memory store. After all five consumers are ready, the launcher
+starts the independent Alpaca WebSocket-to-NATS process. Use `-Once` for the legacy one-process
+diagnostic evaluation or `-Symbols HIMS,ZETA` for a temporary symbol override.
+Alert opens in one visible local monitor; infrastructure and engine processes remain hidden with
+separate logs under `.runtime/logs`.
 
 Validate one complete backfill/evaluation and exit:
 
@@ -45,28 +50,32 @@ Validate one complete backfill/evaluation and exit:
 uv run marketbot live --once
 ```
 
-Open the realtime Alpaca WebSocket and keep analyzing until Ctrl+C:
+Individual distributed processes can also be operated directly:
 
 ```powershell
-uv run marketbot live
+uv run marketbot alerts serve
+uv run marketbot entry-watch serve
+uv run marketbot engine long
+uv run marketbot engine swing
+uv run marketbot engine intraday
+uv run marketbot market stream
 ```
 
-By default, MarketBot uses the same universe as Stock Analyzer: the Supabase watchlist plus symbols
-with positive holdings. It refreshes that universe every 120 seconds and reconnects Alpaca only
-when it changes. `MARKETBOT_ALPACA_WATCHLIST` is merged by the shared service and remains the local
-fallback if Supabase is unavailable. Use `--symbols AAPL,NVDA` for a temporary manual universe.
+By default, every process starts from the same universe as Stock Analyzer: the Supabase watchlist
+plus symbols with positive holdings. `MARKETBOT_ALPACA_WATCHLIST` remains the local fallback. Use
+`--symbols AAPL,NVDA` for a temporary manual universe.
 
 Historical bars use Alpaca's split adjustment. Weekly bars are treated as complete only after the
-market week closes, and the recent weekly context is refreshed each Saturday at 02:00 New York
-time so long-term moving averages stay current without restarting the bot.
+market week closes. The distributed Long process receives completed daily and weekly updates from
+NATS after its private bootstrap.
 
-Alerts appear in the terminal with their actionable context: current price, buy zone,
+Alert v2 consumes every engine's `AnalysisResult` from NATS and emits named `LONG_BUY_ZONE`,
+`SWING_SETUP`, `ENTRY_CONFIRMED`, and `HIGH_CONVICTION_BUY` notifications. Alerts appear with their actionable context: current price, buy zone,
 invalidation, objective, Long/Swing/Intraday indicators, anchored and session VWAP, and the reasons
 behind each engine decision. SEC warnings are emitted by the independent daily bot. The complete structured analyses are also appended
 durably to one ledger per New York market date, for example
-`.runtime/alerts/marketbot-alerts-2026-07-26.ndjson`. Market, analysis, and alert events are mirrored to the
-local NATS JetStream stream `MARKETBOT`; `--no-nats` keeps a fully local in-process pipeline when
-the broker is intentionally unavailable.
+`.runtime/alerts/marketbot-alerts-2026-07-26.ndjson`. Only live market updates, engine results,
+service health, and final alerts cross NATS. Historical REST bootstrap bars never do.
 
 The Entry Watcher remembers Long opportunities that are `EXTENDED`, `WATCH_PULLBACK`, `SETUP`, or
 already in `BUY_ZONE`. It freezes the original zone and invalidation for 56 days by default,
@@ -74,8 +83,9 @@ persists every lifecycle transition in PostgreSQL, and waits for fresh Long, Swi
 confirmation before emitting an `ENTRY TRIGGERED` action alert. SEC dilution analysis is included
 as an independent warning but never penalizes, gates, or invalidates an entry. Apply
 `supabase/migrations/20260726180000_entry_watches.sql` after the foundation migrations. If the
-database or migration is unavailable, realtime analysis continues and logs that persistent entry
-watching is disabled.
+database or migration is unavailable, the distributed launcher stops before opening the market
+stream so it cannot silently lose persistent opportunity tracking. The legacy `live` diagnostic
+continues without it and logs that persistent entry watching is disabled.
 
 Run the bounded SEC scan manually with `.\scripts\windows\run-sec-bot.ps1`. It checks only the
 configured recent filing-date window (two days by default), considers dilution-related forms, and

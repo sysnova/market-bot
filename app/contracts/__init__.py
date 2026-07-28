@@ -6,12 +6,16 @@ Only symbols imported here are part of the supported public contract surface.
 from ._base import Identifier, NonEmptyStr, SemVer, Sha256, StrictFrozenModel, new_uuid7
 from .analysis_events import (
     ANALYSIS_RESULT_EVENT,
+    ENTRY_WATCH_TRANSITION_EVENT,
     LOCAL_ALERT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    SERVICE_HEALTH_EVENT,
     analysis_result_subject,
+    entry_watch_transition_subject,
     local_alert_subject,
     market_bar_subject,
+    service_health_subject,
 )
 from .domain import (
     AlertDecision,
@@ -27,6 +31,7 @@ from .domain import (
 )
 from .entry_watch import EntryWatchTransition
 from .enums import (
+    AlertKind,
     AlertSeverity,
     AnalysisHorizon,
     AnalysisVerdict,
@@ -71,10 +76,13 @@ from .strategy import (
 
 __all__ = [
     "ANALYSIS_RESULT_EVENT",
+    "ENTRY_WATCH_TRANSITION_EVENT",
     "LOCAL_ALERT_EVENT",
     "MARKET_BAR_EVENT",
     "MARKET_BAR_UPDATED_EVENT",
+    "SERVICE_HEALTH_EVENT",
     "AlertDecision",
+    "AlertKind",
     "AlertPolicy",
     "AlertSeverity",
     "AnalysisHorizon",
@@ -131,8 +139,10 @@ __all__ = [
     "TradePlan",
     "TradeSide",
     "analysis_result_subject",
+    "entry_watch_transition_subject",
     "local_alert_subject",
     "market_bar_subject",
     "new_uuid7",
+    "service_health_subject",
     "validate_primary_uniqueness",
 ]

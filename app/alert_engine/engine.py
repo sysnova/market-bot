@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.contracts import (
+    AlertKind,
     AlertSeverity,
     AnalysisHorizon,
     AnalysisResult,
@@ -82,6 +83,7 @@ class AlertEngine:
         return LocalAlert(
             symbol=transition.symbol,
             created_at=now,
+            kind=AlertKind.ENTRY_WATCH,
             severity=severity,
             title=f"{transition.symbol} ENTRY {status}",
             message=(
@@ -219,6 +221,7 @@ class AlertEngine:
         alert = LocalAlert(
             symbol=result.symbol,
             created_at=now,
+            kind=AlertKind.SEC_WARNING,
             severity=AlertSeverity.WATCH,
             title=f"{result.symbol} SEC DILUTION WARNING",
             message="informational SEC risk only; does not gate entries or submit orders",

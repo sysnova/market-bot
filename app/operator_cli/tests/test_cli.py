@@ -22,8 +22,35 @@ def test_root_help_lists_operator_groups() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for group in ("rules", "strategy", "audit", "supervisor", "infra", "live", "sec"):
+    for group in (
+        "rules",
+        "strategy",
+        "audit",
+        "supervisor",
+        "infra",
+        "live",
+        "sec",
+        "engine",
+        "market",
+        "alerts",
+        "entry-watch",
+    ):
         assert group in result.stdout
+
+
+def test_distributed_process_commands_are_explicit() -> None:
+    for command in (
+        ("engine", "long"),
+        ("engine", "swing"),
+        ("engine", "intraday"),
+        ("market", "stream"),
+        ("alerts", "serve"),
+        ("entry-watch", "serve"),
+    ):
+        result = runner.invoke(app, [*command, "--help"])
+
+        assert result.exit_code == 0
+        assert "process" in result.stdout.lower()
 
 
 def test_live_help_exposes_analysis_only_operation() -> None:

@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.contracts import (
+    AlertKind,
     AlertSeverity,
     AnalysisHorizon,
     AnalysisResult,
@@ -99,6 +100,7 @@ def test_local_alert_links_component_analyses_without_order_intent() -> None:
     alert = LocalAlert(
         symbol="AAPL",
         created_at=NOW,
+        kind=AlertKind.ENTRY_CONFIRMED,
         severity=AlertSeverity.WATCH,
         title="AAPL intraday setup",
         message="Reclaimed VWAP with increasing volume.",
@@ -112,6 +114,7 @@ def test_local_alert_links_component_analyses_without_order_intent() -> None:
     )
 
     assert alert.alert_id.version == 7
+    assert alert.kind is AlertKind.ENTRY_CONFIRMED
     assert alert.component_analyses == (analysis,)
     assert "order" not in alert.model_dump()
     with pytest.raises(ValidationError, match="expires_at"):

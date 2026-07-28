@@ -18,6 +18,7 @@ from ._base import (
     new_uuid7,
 )
 from .enums import (
+    AlertKind,
     AlertSeverity,
     AnalysisHorizon,
     AnalysisVerdict,
@@ -101,6 +102,7 @@ class LocalAlert(StrictFrozenModel):
     score: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
     reasons: tuple[NonEmptyStr, ...] = Field(min_length=1)
     deduplication_key: NonEmptyStr
+    kind: AlertKind = AlertKind.CONSENSUS
     expires_at: datetime | None = None
 
     @model_validator(mode="after")
