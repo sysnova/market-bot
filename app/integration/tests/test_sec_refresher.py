@@ -73,3 +73,25 @@ async def test_sec_refresh_resolves_each_symbol_and_isolates_failures() -> None:
 
     assert [result.symbol for result in runtime.results] == ["AAPL", "MSFT"]
     assert failures[0][0] == "BAD"
+
+
+@pytest.mark.unit
+async def test_daily_sec_refresh_skips_symbols_without_recent_filings() -> None:
+    runtime = Runtime()
+    refresher = SecAnalysisRefresher(
+        resolver=Resolver(),
+        loader=Loader(),
+        engine=Engine(),
+        runtime=runtime,
+        request_spacing_seconds=0,
+        skip_without_filings=True,
+    )
+
+    summary = await refresher.refresh(("AAPL", "MSFT"), NOW)
+
+    assert runtime.results == []
+    assert summary.symbols_scanned == 2
+    assert summary.symbols_with_filings == 0
+    assert summary.filings_analyzed == 0
+    assert summary.analyses_published == 0
+    assert summary.failures == 0

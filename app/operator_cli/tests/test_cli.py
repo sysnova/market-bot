@@ -22,7 +22,7 @@ def test_root_help_lists_operator_groups() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for group in ("rules", "strategy", "audit", "supervisor", "infra", "live"):
+    for group in ("rules", "strategy", "audit", "supervisor", "infra", "live", "sec"):
         assert group in result.stdout
 
 
@@ -32,6 +32,14 @@ def test_live_help_exposes_analysis_only_operation() -> None:
     assert result.exit_code == 0
     assert "analysis-only" in result.stdout.lower()
     assert "--once" in result.stdout
+
+
+def test_sec_daily_help_exposes_bounded_filing_scan() -> None:
+    result = runner.invoke(app, ["sec", "daily", "--help"])
+
+    assert result.exit_code == 0
+    assert "filing" in result.stdout.lower()
+    assert "--lookback-days" in result.stdout
 
 
 def test_version_is_available_without_runtime_dependencies() -> None:

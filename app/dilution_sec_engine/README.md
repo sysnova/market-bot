@@ -64,6 +64,11 @@ The fixtures under `tests/fixtures/` are synthetic and contain no credentials or
 adapter must not be called on every market tick; cache or schedule snapshots by CIK and refresh them
 on an operational cadence appropriate for filings.
 
+The repository composition runs this adapter through `marketbot sec daily`, independently from the
+realtime market process. Its default two-day inclusive filing window keeps only configured
+dilution-related forms. CompanyFacts is requested only for symbols with a matching recent filing,
+and primary documents are not backfilled by the daily composition.
+
 SEC requires an identifiable `User-Agent`. Pass an application name plus a monitored contact email from runtime configuration; never hard-code a personal address in Git:
 
 ```python

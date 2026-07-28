@@ -53,10 +53,6 @@ class AnalysisRuntimePort(Protocol):
     def disable_live(self) -> None: ...
 
 
-class SecRefresher(Protocol):
-    async def refresh(self, symbols: tuple[str, ...], as_of: datetime) -> None: ...
-
-
 class UniverseProvider(Protocol):
     async def get_universe(self) -> UniverseSnapshot: ...
 
@@ -77,7 +73,6 @@ class LiveAnalysisService:
         market_data: MarketDataService,
         local_bus: JoinableBus,
         runtime: AnalysisRuntimePort,
-        sec_refresher: SecRefresher | None = None,
     ) -> None:
         normalized = tuple(dict.fromkeys(item.strip().upper() for item in symbols))
         if not normalized or any(not item for item in normalized):
@@ -86,7 +81,6 @@ class LiveAnalysisService:
         self._market_data = market_data
         self._local_bus = local_bus
         self._runtime = runtime
-        self._sec_refresher = sec_refresher
 
     @property
     def symbols(self) -> tuple[str, ...]:
@@ -96,8 +90,6 @@ class LiveAnalysisService:
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise ValueError("initialization time must be timezone-aware")
         total = await self._warm_market_data(self._symbols, as_of)
-        if self._sec_refresher is not None:
-            await self._sec_refresher.refresh(self._symbols, as_of)
         await self._runtime.evaluate_all(self._symbols)
         self._runtime.enable_live()
         return InitializationSummary(self._symbols, total)
@@ -114,8 +106,6 @@ class LiveAnalysisService:
         try:
             if added:
                 await self._warm_market_data(added, as_of)
-                if self._sec_refresher is not None:
-                    await self._sec_refresher.refresh(added, as_of)
             self._symbols = normalized
             await self._runtime.evaluate_all(self._symbols)
         finally:
@@ -147,7 +137,7 @@ class LiveAnalysisService:
             ("1Week", timedelta(days=365 * 5)),
             ("1Day", timedelta(days=400)),
             ("15Min", timedelta(days=45)),
-            ("1Min", timedelta(days=10)),
+            ("1Min", timedelta(days=5)),
         )
         for timeframe, lookback in windows:
             total += await self._market_data.publish_bars(

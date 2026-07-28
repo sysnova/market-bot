@@ -18,12 +18,6 @@ from app.alpaca_market_data import build_alpaca_market_data_engine
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
 from app.common.settings import AppSettings, Environment
-from app.dilution_sec_engine import (
-    DilutionSecEngine,
-    SecEdgarAdapter,
-    SecEdgarConfig,
-    SecTickerResolver,
-)
 from app.entry_watcher import EntryWatcherPolicy, EntryWatcherV2
 from app.event_bus import InMemoryEventBus, NatsJetStreamEventBus
 from app.intraday_engine import IntradayEngineV2
@@ -37,7 +31,6 @@ from .entry_watch_store import PostgresEntryWatchStore
 from .event_fanout import EventFanoutPublisher, EventPublisher
 from .live_analysis_service import LiveAnalysisService
 from .market_bar_store import MarketBarStore
-from .sec_refresher import SecAnalysisRefresher
 from .supabase_universe import (
     SupabaseUniverseClient,
     SupabaseUniverseConfig,
@@ -169,28 +162,11 @@ async def run_live_analysis(
             universe = fallback_universe(settings.alpaca_symbols)
     else:
         universe = fallback_universe(settings.alpaca_symbols)
-    sec_refresher: SecAnalysisRefresher | None = None
-    if settings.sec_enabled:
-        if settings.sec_user_agent is None:
-            raise ValueError("SEC user agent is required when SEC analysis is enabled")
-        sec_config = SecEdgarConfig(user_agent=settings.sec_user_agent)
-        sec_refresher = SecAnalysisRefresher(
-            resolver=SecTickerResolver(sec_config, client=http_client),
-            loader=SecEdgarAdapter(sec_config, client=http_client),
-            engine=DilutionSecEngine(),
-            runtime=runtime,
-            on_error=lambda symbol, error: logger.warning(
-                "sec_refresh_failed",
-                symbol=symbol,
-                error_type=type(error).__name__,
-            ),
-        )
     service = LiveAnalysisService(
         symbols=universe.symbols,
         market_data=market_data,
         local_bus=local_bus,
         runtime=runtime,
-        sec_refresher=sec_refresher,
     )
     try:
         summary = await service.initialize(clock.now())
@@ -199,7 +175,7 @@ async def run_live_analysis(
             symbols=summary.symbols,
             market_events=summary.market_events,
             nats_mirroring=nats_bus is not None,
-            sec_enabled=sec_refresher is not None,
+            sec_enabled=False,
             universe_source=universe.source,
             execution_enabled=False,
             entry_watcher_enabled=entry_watcher is not None,
@@ -211,7 +187,7 @@ async def run_live_analysis(
                 "entry_watcher_enabled": entry_watcher is not None,
                 "market_events": summary.market_events,
                 "nats_mirroring": nats_bus is not None,
-                "sec_enabled": sec_refresher is not None,
+                "sec_enabled": False,
                 "symbols": list(summary.symbols),
                 "universe_source": universe.source,
             }
@@ -223,15 +199,6 @@ async def run_live_analysis(
                 )
             )
             tasks.create_task(_refresh_weekly_periodically(service, clock, logger))
-            if sec_refresher is not None:
-                tasks.create_task(
-                    _refresh_sec_periodically(
-                        sec_refresher,
-                        service,
-                        settings.sec_refresh_hours * 3600,
-                        clock,
-                    )
-                )
         return None
     finally:
         await subscription.unsubscribe()
@@ -242,17 +209,6 @@ async def run_live_analysis(
         if entry_watch_database is not None:
             await entry_watch_database.dispose()
         await local_bus.close()
-
-
-async def _refresh_sec_periodically(
-    refresher: SecAnalysisRefresher,
-    service: LiveAnalysisService,
-    interval_seconds: int,
-    clock: SystemClock,
-) -> None:
-    while True:
-        await asyncio.sleep(interval_seconds)
-        await refresher.refresh(service.symbols, clock.now())
 
 
 async def _refresh_weekly_periodically(

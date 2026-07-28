@@ -45,6 +45,7 @@ class AppSettings(BaseSettings):
     sec_enabled: bool = False
     sec_user_agent: str | None = None
     sec_refresh_hours: int = Field(default=6, ge=1, le=168)
+    sec_filing_lookback_days: int = Field(default=2, ge=1, le=30)
 
     @field_validator("alpaca_watchlist")
     @classmethod

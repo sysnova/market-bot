@@ -53,14 +53,6 @@ class FakeRuntime:
         self.enabled = False
 
 
-class FakeSec:
-    def __init__(self) -> None:
-        self.calls: list[tuple[tuple[str, ...], datetime]] = []
-
-    async def refresh(self, symbols: tuple[str, ...], as_of: datetime) -> None:
-        self.calls.append((symbols, as_of))
-
-
 class BlockingMarketData(FakeMarketData):
     async def stream_once(self, symbols: tuple[str, ...], **kwargs: Any) -> int:
         self.calls.append(("stream", (symbols, kwargs)))
@@ -78,13 +70,11 @@ async def test_initialize_backfills_each_required_timeframe_before_enabling_live
     market_data = FakeMarketData()
     bus = FakeBus()
     runtime = FakeRuntime()
-    sec = FakeSec()
     service = LiveAnalysisService(
         symbols=("aapl", "MSFT", "AAPL"),
         market_data=market_data,
         local_bus=bus,
         runtime=runtime,
-        sec_refresher=sec,
     )
 
     summary = await service.initialize(NOW)
@@ -101,9 +91,14 @@ async def test_initialize_backfills_each_required_timeframe_before_enabling_live
         if kind == "bars" and payload[1]["timeframe"] == "1Week"
     )
     assert weekly_payload[1]["start"] == NOW - timedelta(days=365 * 5)
+    minute_payload = next(
+        payload
+        for kind, payload in market_data.calls
+        if kind == "bars" and payload[1]["timeframe"] == "1Min"
+    )
+    assert minute_payload[1]["start"] == NOW - timedelta(days=5)
     assert market_data.calls[-1] == ("snapshots", ("AAPL", "MSFT"))
     assert bus.joins == 5
-    assert sec.calls == [(("AAPL", "MSFT"), NOW)]
     assert runtime.evaluated == ("AAPL", "MSFT")
     assert runtime.enabled is True
     assert summary.symbols == ("AAPL", "MSFT")
@@ -115,13 +110,11 @@ async def test_refresh_universe_backfills_only_added_symbols_and_reenables_live(
     market_data = FakeMarketData()
     bus = FakeBus()
     runtime = FakeRuntime()
-    sec = FakeSec()
     service = LiveAnalysisService(
         symbols=("AAPL", "MSFT"),
         market_data=market_data,
         local_bus=bus,
         runtime=runtime,
-        sec_refresher=sec,
     )
     runtime.enable_live()
 
@@ -131,7 +124,6 @@ async def test_refresh_universe_backfills_only_added_symbols_and_reenables_live(
     assert service.symbols == ("MSFT", "NVDA")
     assert all(payload[0] == ("NVDA",) for kind, payload in market_data.calls if kind == "bars")
     assert market_data.calls[-1] == ("snapshots", ("NVDA",))
-    assert sec.calls == [(("NVDA",), NOW)]
     assert runtime.evaluated == ("MSFT", "NVDA")
     assert runtime.enabled is True
 

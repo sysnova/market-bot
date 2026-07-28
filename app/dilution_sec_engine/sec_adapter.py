@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from html import unescape
 from math import isfinite
@@ -122,6 +122,9 @@ class SecEdgarConfig:
     timeout_seconds: float = 10.0
     max_recent_filings: int = 200
     max_signal_documents: int = 5
+    filing_lookback_days: int | None = None
+    included_forms: tuple[str, ...] = ()
+    companyfacts_only_with_filings: bool = False
 
     def __post_init__(self) -> None:
         user_agent = self.user_agent.strip()
@@ -135,7 +138,18 @@ class SecEdgarConfig:
             raise SecConfigurationError("SEC max_recent_filings must be positive")
         if isinstance(self.max_signal_documents, bool) or self.max_signal_documents < 0:
             raise SecConfigurationError("SEC max_signal_documents must not be negative")
+        if self.filing_lookback_days is not None and (
+            isinstance(self.filing_lookback_days, bool)
+            or self.filing_lookback_days <= 0
+        ):
+            raise SecConfigurationError("SEC filing_lookback_days must be positive")
+        included_forms = tuple(
+            dict.fromkeys(form.strip().upper() for form in self.included_forms)
+        )
+        if any(not form for form in included_forms):
+            raise SecConfigurationError("SEC included_forms cannot contain blanks")
         object.__setattr__(self, "user_agent", user_agent)
+        object.__setattr__(self, "included_forms", included_forms)
 
 
 class FilingDocumentReference(StrictFrozenModel):
@@ -265,13 +279,15 @@ class SecEdgarAdapter:
 
         normalized_cik = self.normalize_cik(cik)
         submissions_endpoint = f"/submissions/CIK{normalized_cik}.json"
-        companyfacts_endpoint = (
-            f"/api/xbrl/companyfacts/CIK{normalized_cik}.json"
-        )
         submissions = await self._request_json(submissions_endpoint)
-        companyfacts = await self._request_json(companyfacts_endpoint)
-        filings = await self._map_filings(normalized_cik, submissions)
-        facts = self._map_companyfacts(companyfacts, as_of)
+        filings = await self._map_filings(normalized_cik, submissions, as_of=as_of)
+        facts = None
+        if filings or not self._config.companyfacts_only_with_filings:
+            companyfacts_endpoint = (
+                f"/api/xbrl/companyfacts/CIK{normalized_cik}.json"
+            )
+            companyfacts = await self._request_json(companyfacts_endpoint)
+            facts = self._map_companyfacts(companyfacts, as_of)
         try:
             return DilutionEvaluationInput(
                 symbol=symbol,
@@ -312,7 +328,7 @@ class SecEdgarAdapter:
         return payload
 
     async def _map_filings(
-        self, cik: str, payload: object
+        self, cik: str, payload: object, *, as_of: date
     ) -> tuple[SecFiling, ...]:
         root = _mapping(payload, "submissions")
         filings = _mapping(root.get("filings"), "filings")
@@ -331,10 +347,22 @@ class SecEdgarAdapter:
         mapped: list[SecFiling] = []
         signal_documents = 0
         available_count = next(iter(sizes), 0)
+        earliest_filing_date = (
+            as_of - timedelta(days=self._config.filing_lookback_days - 1)
+            if self._config.filing_lookback_days is not None
+            else None
+        )
+        included_forms = set(self._config.included_forms)
         for index in range(min(available_count, self._config.max_recent_filings)):
             accession = _text(columns["accessionNumber"][index], "accessionNumber")
             form = _text(columns["form"][index], "form")
             filed_at = _date(columns["filingDate"][index], "filingDate")
+            if filed_at > as_of:
+                continue
+            if earliest_filing_date is not None and filed_at < earliest_filing_date:
+                continue
+            if included_forms and form.upper() not in included_forms:
+                continue
             primary_document = _text(
                 columns["primaryDocument"][index], "primaryDocument"
             )

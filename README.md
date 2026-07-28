@@ -3,9 +3,10 @@
 MarketBot is a Python 3.14 event-driven market analysis monorepo. Engines are isolated under
 `app/<engine>/`; they communicate through stable contracts rather than direct imports.
 
-The current MVP is deliberately analysis-only. It consumes Alpaca Stock Market Data and SEC EDGAR,
-publishes versioned events, runs four analytical horizons, and shows local alerts. It contains no
-order adapter and configuration enforces `MARKETBOT_ALPACA_EXECUTION_ENABLED=false`.
+The current MVP is deliberately analysis-only. The continuous process consumes Alpaca Stock Market
+Data, publishes versioned events, runs the market analytical horizons, and shows local alerts. An
+independent daily bot checks recent SEC EDGAR filings. There is no order adapter and configuration
+enforces `MARKETBOT_ALPACA_EXECUTION_ENABLED=false`.
 
 ## Prerequisites
 
@@ -60,8 +61,8 @@ market week closes, and the recent weekly context is refreshed each Saturday at 
 time so long-term moving averages stay current without restarting the bot.
 
 Alerts appear in the terminal with their actionable context: current price, buy zone,
-invalidation, objective, Long/Swing/Intraday indicators, anchored and session VWAP, SEC warnings,
-and the reasons behind each engine decision. The complete structured analyses are also appended
+invalidation, objective, Long/Swing/Intraday indicators, anchored and session VWAP, and the reasons
+behind each engine decision. SEC warnings are emitted by the independent daily bot. The complete structured analyses are also appended
 durably to one ledger per New York market date, for example
 `.runtime/alerts/marketbot-alerts-2026-07-26.ndjson`. Market, analysis, and alert events are mirrored to the
 local NATS JetStream stream `MARKETBOT`; `--no-nats` keeps a fully local in-process pipeline when
@@ -71,10 +72,15 @@ The Entry Watcher remembers Long opportunities that are `EXTENDED`, `WATCH_PULLB
 already in `BUY_ZONE`. It freezes the original zone and invalidation for 56 days by default,
 persists every lifecycle transition in PostgreSQL, and waits for fresh Long, Swing, and Intraday
 confirmation before emitting an `ENTRY TRIGGERED` action alert. SEC dilution analysis is included
-as a warning but never penalizes, gates, or invalidates an entry. Apply
+as an independent warning but never penalizes, gates, or invalidates an entry. Apply
 `supabase/migrations/20260726180000_entry_watches.sql` after the foundation migrations. If the
 database or migration is unavailable, realtime analysis continues and logs that persistent entry
 watching is disabled.
+
+Run the bounded SEC scan manually with `.\scripts\windows\run-sec-bot.ps1`. It checks only the
+configured recent filing-date window (two days by default), considers dilution-related forms, and
+does not backfill historical filings. See the operations guide to install it as a daily Windows
+Scheduled Task.
 
 ## Development gates
 

@@ -112,6 +112,56 @@ def live_analysis(
     if summary is not None:
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
+
+sec = typer.Typer(name="sec", help="Run the independent bounded SEC filing bot.")
+app.add_typer(sec, name="sec")
+
+
+@sec.command("daily")
+def sec_daily(
+    lookback_days: Annotated[
+        int | None,
+        typer.Option(
+            min=1,
+            max=30,
+            help="Inclusive recent filing-date window; no historical form backfill.",
+        ),
+    ] = None,
+    runtime_root: Annotated[
+        Path,
+        typer.Option(help="Directory for local append-only alerts."),
+    ] = Path(".runtime"),
+    bell: Annotated[
+        bool,
+        typer.Option(help="Ring the terminal bell for each SEC warning."),
+    ] = False,
+    nats: Annotated[
+        bool,
+        typer.Option("--nats/--no-nats", help="Mirror SEC results to local NATS."),
+    ] = True,
+    symbols: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated temporary universe; overrides Supabase for this scan."
+        ),
+    ] = None,
+) -> None:
+    """Scan recent dilution-related SEC filings once and exit."""
+
+    from app.integration.sec_daily_composition import run_sec_daily_analysis
+
+    summary = _run_async(
+        run_sec_daily_analysis(
+            runtime_root=runtime_root,
+            mirror_to_nats=nats,
+            bell=bell,
+            lookback_days=lookback_days,
+            symbols=tuple(symbols.split(",")) if symbols else None,
+        )
+    )
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 supervisor = typer.Typer(name="supervisor", help="Run and inspect local engine supervision.")
 app.add_typer(supervisor, name="supervisor")
 

@@ -98,6 +98,57 @@ async def test_metadata_descriptions_never_create_textual_signals() -> None:
     assert all(filing.signals == () for filing in result.filings)
 
 
+@pytest.mark.asyncio
+async def test_daily_scan_filters_filings_by_date_and_form() -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        name = "submissions.json" if "submissions" in request.url.path else "companyfacts.json"
+        return httpx.Response(200, json=_json_fixture(name))
+
+    async with _client(httpx.MockTransport(respond)) as client:
+        result = await SecEdgarAdapter(
+            SecEdgarConfig(
+                user_agent="MarketBot/0.1 operator@marketbot.test",
+                filing_lookback_days=2,
+                included_forms=("424B5", "S-3"),
+                companyfacts_only_with_filings=True,
+            ),
+            client=client,
+        ).load(cik=1234567, symbol="ACME", as_of=date(2026, 7, 11))
+
+    assert [filing.form for filing in result.filings] == ["424B5"]
+    assert result.facts is None
+    assert len(requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_daily_scan_skips_companyfacts_when_no_recent_filing_exists() -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_json_fixture("submissions.json"))
+
+    async with _client(httpx.MockTransport(respond)) as client:
+        result = await SecEdgarAdapter(
+            SecEdgarConfig(
+                user_agent="MarketBot/0.1 operator@marketbot.test",
+                filing_lookback_days=2,
+                included_forms=("424B5", "S-3"),
+                companyfacts_only_with_filings=True,
+            ),
+            client=client,
+        ).load(cik=1234567, symbol="ACME", as_of=date(2026, 7, 26))
+
+    assert result.filings == ()
+    assert result.facts is None
+    assert [request.url.path for request in requests] == [
+        "/submissions/CIK0001234567.json"
+    ]
+
+
 def test_configuration_requires_an_identifiable_user_agent_and_valid_cik() -> None:
     with pytest.raises(SecConfigurationError, match="contact email"):
         SecEdgarConfig(user_agent="MarketBot")

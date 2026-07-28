@@ -11,8 +11,8 @@ uv run marketbot --version
 
 ## Realtime analysis
 
-Configure Alpaca market-data credentials only in the ignored `.env` file. SEC analysis additionally
-requires an identifiable User-Agent with a monitored contact email.
+Configure Alpaca market-data credentials only in the ignored `.env` file. The independent SEC bot
+additionally requires an identifiable User-Agent with a monitored contact email.
 
 The default symbol universe is shared with Stock Analyzer through its read-only Supabase Edge
 Function contract. Configure `MARKETBOT_SUPABASE_URL` and
@@ -52,10 +52,10 @@ uv run marketbot live --once
 uv run marketbot live
 ```
 
-`--once` performs the four historical backfills, snapshots, SEC refresh, and one evaluation before
-closing. Without it, MarketBot opens the Alpaca WebSocket for trades, quotes, minute bars, updated
-bars, and daily bars, reconnecting with bounded exponential backoff. Ctrl+C stops the foreground
-process. The process is analysis-only and cannot submit an order.
+`--once` performs the four market-data backfills, snapshots, and one evaluation before closing. It
+does not query SEC EDGAR. Without it, MarketBot opens the Alpaca WebSocket for trades, quotes,
+minute bars, updated bars, and daily bars, reconnecting with bounded exponential backoff. Ctrl+C
+stops the foreground process. The process is analysis-only and cannot submit an order.
 
 Useful options:
 
@@ -78,6 +78,30 @@ deduplicated independently. Existing ledgers are retained; MarketBot does not de
 A broker outage is logged
 and local analysis continues; once connected, individual mirror failures likewise do not stop local
 alerts.
+
+## Independent daily SEC bot
+
+SEC is deliberately absent from realtime startup. Run one bounded scan manually with:
+
+```powershell
+.\scripts\windows\run-sec-bot.ps1
+.\scripts\windows\run-sec-bot.ps1 -LookbackDays 3 -Symbols HIMS,ZETA -NoNats
+```
+
+The default two-day inclusive filing-date window covers today and yesterday. The bot requests the
+SEC submissions index for each symbol, keeps only dilution-related forms in that window, and skips
+CompanyFacts when there is no matching recent filing. It neither downloads every historical form
+nor executes orders. Alerts are printed and appended to the normal daily NDJSON ledger.
+
+Install the scan for the current Windows user at 20:00 local time each day (after the regular U.S.
+market session):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-sec-daily-task.ps1
+```
+
+Use `-At 21:00`, `-LookbackDays 3`, or `-NoNats` to change the task. Re-running the installer for an
+existing `MarketBotSECDaily` task requires `-Force`.
 
 Production configuration should be provided as `MARKETBOT_*` environment variables by the runtime.
 Do not mount or log `.env` files in production. Treat the URLs as secrets because they may contain

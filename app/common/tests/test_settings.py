@@ -105,6 +105,7 @@ def test_sec_settings_require_an_identifiable_user_agent_when_enabled() -> None:
 
     assert settings.sec_configured is True
     assert settings.sec_refresh_hours == 6
+    assert settings.sec_filing_lookback_days == 2
 
 
 def test_supabase_universe_credentials_are_paired_and_redacted() -> None:

@@ -7,6 +7,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).parents[3]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-market-bot.ps1"
+SEC_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-sec-bot.ps1"
 POWERSHELL = shutil.which("powershell")
 
 
@@ -41,3 +42,34 @@ def test_windows_launcher_builds_live_command_without_running_it() -> None:
     assert "--no-nats" in command["arguments"]
     assert "--no-bell" in command["arguments"]
     assert command["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_windows_sec_launcher_builds_bounded_daily_command() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(SEC_SCRIPT_PATH),
+            "-Symbols",
+            "HIMS,ZETA",
+            "-LookbackDays",
+            "3",
+            "-NoNats",
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    command = json.loads(result.stdout)
+    assert command["arguments"][:4] == ["run", "marketbot", "sec", "daily"]
+    assert command["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
+    assert "--lookback-days" in command["arguments"]
+    assert "3" in command["arguments"]
+    assert "--no-nats" in command["arguments"]

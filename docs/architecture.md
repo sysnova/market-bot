@@ -35,20 +35,23 @@ Alpaca REST backfill + realtime WebSocket
                  |
           bounded bar store
             /    |     \
-      Long-term Swing Intraday       SEC EDGAR -> Dilution
-            \    |     /                  /
-             AnalysisResult events <-----+
+      Long-term Swing Intraday
+            \    |     /
+             AnalysisResult events
                        |
                  Alert Engine
                        |
           console + append-only NDJSON
+
+Daily scheduler -> bounded SEC EDGAR scan -> Dilution -> alerts + NDJSON
 ```
 
 Backfill is quiet: it warms the store before live reactions are enabled. Intraday evaluates each
 completed 1-minute bar. The root aggregates completed 1-minute bars into 5-minute and 15-minute
 bars; Swing evaluates on each completed 15-minute bar. Long-term evaluates on daily/weekly updates.
-SEC dilution analysis is scheduled (six hours by default) and is never queried for every market
-tick.
+SEC dilution analysis runs in an independent once-daily process. Its adapter filters an inclusive
+recent filing-date window and relevant forms before optional CompanyFacts work; it is never queried
+during realtime startup or for each market tick.
 
 The root composition may import and invoke engines, but engines never import one another. Every
 output crosses the shared `MarketBar`, `AnalysisResult`, `LocalAlert`, or `EventEnvelope` boundary.
