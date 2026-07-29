@@ -8,7 +8,63 @@ import pytest
 PROJECT_ROOT = Path(__file__).parents[3]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-market-bot.ps1"
 SEC_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-sec-bot.ps1"
+JETSTREAM_MONITOR_SCRIPT_PATH = (
+    PROJECT_ROOT / "scripts" / "windows" / "watch-jetstream.ps1"
+)
 POWERSHELL = shutil.which("powershell")
+
+
+def test_windows_launcher_stops_complete_child_process_trees() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "function Stop-MarketBotProcessTree" in script
+    assert '"/PID", [string]$Process.Id, "/T", "/F"' in script
+    assert "Stop-MarketBotProcessTree -Process $Child.process" in script
+    assert "function Close-MarketBotMonitorWindows" in script
+    assert "::PostMessage(" in script
+    assert "Close-MarketBotMonitorWindows" in script
+
+
+def test_windows_launcher_tiles_three_visible_windows_vertically() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "function Set-MarketBotVerticalWindowLayout" in script
+    assert "$WorkingArea.Height / 3" in script
+    assert "MarketBotWindowLayoutV3.NativeMethods]::FindVisibleWindow($Title)" in script
+    assert '"MarketBot Control"' in script
+    assert '"MarketBot Analysis"' in script
+    assert '"MarketBot Confirmed Buys"' in script
+    assert '"-w", "-1"' in script
+    assert "$Process.MainWindowHandle" in script
+    assert '"-PidPath", $PidPath' in script
+    assert "MoveWindow" in script
+    assert "Automatic mosaic failed but MarketBot will continue" in script
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_jetstream_monitor_builds_subscription_without_connecting() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(JETSTREAM_MONITOR_SCRIPT_PATH),
+            "-Subject",
+            "marketbot.v1.analysis.result.>",
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    command = json.loads(result.stdout)
+    assert command["subject"] == "marketbot.v1.analysis.result.>"
+    assert command["nats_url"] == "nats://127.0.0.1:4222"
+    assert command["executable"].endswith(".venv\\Scripts\\python.exe")
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
@@ -73,6 +129,8 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "long-term-v2",
         "swing-v2",
         "intraday-v2",
+        "market-rotation-v1",
+        "confirmed-buy-monitor",
         "alpaca-market-stream",
     ]
     assert plan["processes"][2]["arguments"][:4] == [
@@ -86,6 +144,18 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "marketbot",
         "market",
         "stream",
+    ]
+    assert plan["processes"][5]["arguments"][:4] == [
+        "run",
+        "marketbot",
+        "engine",
+        "rotation",
+    ]
+    assert plan["processes"][6]["arguments"][:4] == [
+        "run",
+        "marketbot",
+        "alerts",
+        "confirmed",
     ]
 
 

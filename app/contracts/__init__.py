@@ -10,6 +10,8 @@ from .analysis_events import (
     LOCAL_ALERT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    MARKET_ROTATION_EVENT,
+    MARKET_ROTATION_SUBJECT,
     SERVICE_HEALTH_EVENT,
     analysis_result_subject,
     entry_watch_transition_subject,
@@ -51,6 +53,7 @@ from .enums import (
 )
 from .event_bus import EventBus, EventHandler, Subscription, SubscriptionOptions
 from .market_analysis import AnalysisResult, LocalAlert, MarketBar
+from .market_rotation import MarketRotationReport, RotationSector
 from .rules import (
     ContextValue,
     EvaluationContext,
@@ -80,6 +83,8 @@ __all__ = [
     "LOCAL_ALERT_EVENT",
     "MARKET_BAR_EVENT",
     "MARKET_BAR_UPDATED_EVENT",
+    "MARKET_ROTATION_EVENT",
+    "MARKET_ROTATION_SUBJECT",
     "SERVICE_HEALTH_EVENT",
     "AlertDecision",
     "AlertKind",
@@ -104,6 +109,7 @@ __all__ = [
     "Identifier",
     "LocalAlert",
     "MarketBar",
+    "MarketRotationReport",
     "MarketSession",
     "NamedValue",
     "NonEmptyStr",
@@ -112,6 +118,7 @@ __all__ = [
     "PatternEvidence",
     "PipelineStep",
     "PriceLevel",
+    "RotationSector",
     "RuleBinding",
     "RuleInputDeclaration",
     "RuleLifecycleStatus",

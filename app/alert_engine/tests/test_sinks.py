@@ -11,6 +11,7 @@ import pytest
 from app.alert_engine import AlertDispatcher, ConsoleAlertSink, NdjsonAlertSink
 from app.contracts import (
     LOCAL_ALERT_EVENT,
+    AlertKind,
     AlertSeverity,
     AnalysisHorizon,
     AnalysisResult,
@@ -95,6 +96,51 @@ def test_console_sink_renders_actionable_component_context() -> None:
     assert "LONG favorable / bullish / score 84" in output
     assert "SMA200W $80 (+28.75%)" in output
     assert "weekly_structure_constructive" in output
+
+
+@pytest.mark.unit
+def test_console_sink_highlights_buyable_ticker_and_ideal_price() -> None:
+    analysis = AnalysisResult(
+        engine_id="long-term",
+        engine_version="1.1.1",
+        symbol="HIMS",
+        horizon=AnalysisHorizon.LONG_TERM,
+        as_of=NOW,
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        score=Decimal("90"),
+        confidence=Decimal("0.95"),
+        reasons=("price_in_buy_zone",),
+        metrics=(
+            NamedValue(name="reference_price", value=Decimal("41.20")),
+            NamedValue(name="buy_zone_low", value=Decimal("40")),
+            NamedValue(name="buy_zone_high", value=Decimal("42")),
+        ),
+        context_hash="sha256:" + "b" * 64,
+    )
+    buyable = _alert(AlertSeverity.CRITICAL).model_copy(
+        update={
+            "symbol": "HIMS",
+            "kind": AlertKind.HIGH_CONVICTION_BUY,
+            "title": "HIMS HIGH CONVICTION BUY",
+            "component_analyses": (analysis,),
+        }
+    )
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True).emit(buyable)
+
+    first_line = stream.getvalue().splitlines()[0]
+    assert first_line == "\x1b[1;97;42m HIMS | IDEAL BUY $41 \x1b[0m"
+
+
+@pytest.mark.unit
+def test_console_sink_does_not_highlight_non_buy_alert(alert: LocalAlert) -> None:
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True).emit(alert)
+
+    assert "\x1b[" not in stream.getvalue()
 
 
 @pytest.mark.unit

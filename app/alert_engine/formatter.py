@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, cast
 
-from app.contracts import AnalysisHorizon, AnalysisResult, LocalAlert
+from app.contracts import AlertKind, AnalysisHorizon, AnalysisResult, LocalAlert
 
 _HORIZON_LABELS = {
     AnalysisHorizon.LONG_TERM: "LONG",
@@ -13,17 +13,32 @@ _HORIZON_LABELS = {
     AnalysisHorizon.INTRADAY: "INTRADAY",
     AnalysisHorizon.DILUTION: "SEC",
 }
+_BUYABLE_KINDS = {
+    AlertKind.LONG_BUY_ZONE,
+    AlertKind.ENTRY_CONFIRMED,
+    AlertKind.HIGH_CONVICTION_BUY,
+}
+_BUY_BANNER_STYLE = "\x1b[1;97;42m"
+_RESET_STYLE = "\x1b[0m"
 
 
-def format_local_alert(alert: LocalAlert) -> str:
+def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
     """Render an alert with levels, technical context, and evidence."""
 
     analyses = {item.horizon: item for item in alert.component_analyses}
-    lines = [
+    lines: list[str] = []
+    buy_banner = _buy_banner(alert, analyses)
+    if buy_banner is not None:
+        lines.append(
+            f"{_BUY_BANNER_STYLE} {buy_banner} {_RESET_STYLE}"
+            if color
+            else buy_banner
+        )
+    lines.extend([
         f"[{alert.severity.value}] {alert.symbol} score={_number(alert.score)} "
         f"{alert.title}",
         f"  Decision: {alert.message}",
-    ]
+    ])
     level_line = _level_line(alert, analyses)
     if level_line is not None:
         lines.append(f"  {level_line}")
@@ -39,6 +54,35 @@ def format_local_alert(alert: LocalAlert) -> str:
     if alert.reasons:
         lines.append(f"  Alert reasons: {'; '.join(alert.reasons)}")
     return "\n".join(lines)
+
+
+def _buy_banner(
+    alert: LocalAlert,
+    analyses: dict[AnalysisHorizon, AnalysisResult],
+) -> str | None:
+    if alert.kind not in _BUYABLE_KINDS and not (
+        alert.kind is AlertKind.ENTRY_WATCH and "ENTRY TRIGGERED" in alert.title.upper()
+    ):
+        return None
+    alert_metrics = _metrics(alert)
+    analysis_metrics = [_metrics(item) for item in analyses.values()]
+    zone_low = _first(
+        alert_metrics.get("buy_zone_low"),
+        *(values.get("buy_zone_low") for values in analysis_metrics),
+    )
+    zone_high = _first(
+        alert_metrics.get("buy_zone_high"),
+        *(values.get("buy_zone_high") for values in analysis_metrics),
+    )
+    ideal_price = _midpoint(zone_low, zone_high)
+    if ideal_price is None:
+        ideal_price = _first(
+            alert_metrics.get("current_price"),
+            *(values.get("reference_price") for values in reversed(analysis_metrics)),
+        )
+    if ideal_price is None:
+        return None
+    return f"{alert.symbol} | IDEAL BUY {_money(ideal_price)}"
 
 
 def _level_line(
@@ -225,6 +269,15 @@ def _number(value: object) -> str:
 
 def _money(value: object) -> str:
     return f"${_number(value)}"
+
+
+def _midpoint(low: object, high: object) -> Decimal | None:
+    if isinstance(low, bool) or isinstance(high, bool):
+        return None
+    try:
+        return (Decimal(str(low)) + Decimal(str(high))) / Decimal("2")
+    except (ValueError, ArithmeticError):
+        return None
 
 
 def _money_or_none(value: object) -> str | None:

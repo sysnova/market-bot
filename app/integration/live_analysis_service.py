@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from .supabase_universe import UniverseSnapshot
+from .postgres_universe import UniverseSnapshot
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -215,7 +215,7 @@ class LiveAnalysisService:
                 universe = await universe_provider.get_universe()
             except Exception:
                 _LOGGER.exception(
-                    "Shared Supabase universe refresh failed; keeping current symbols"
+                    "Local PostgreSQL universe refresh failed; keeping current symbols"
                 )
                 continue
             if _normalize_symbols(universe.symbols) == self._symbols:

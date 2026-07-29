@@ -31,9 +31,8 @@ from .entry_watch_store import PostgresEntryWatchStore
 from .event_fanout import EventFanoutPublisher, EventPublisher
 from .live_analysis_service import LiveAnalysisService
 from .market_bar_store import MarketBarStore
-from .supabase_universe import (
-    SupabaseUniverseClient,
-    SupabaseUniverseConfig,
+from .postgres_universe import (
+    PostgresUniverseClient,
     fallback_universe,
 )
 
@@ -146,30 +145,20 @@ async def run_live_analysis(
         publisher=publisher,
         backfill_publisher=local_bus,
     )
-    universe_provider: SupabaseUniverseClient | None = None
+    universe_provider: PostgresUniverseClient | None = None
+    universe_database = entry_watch_database
     if symbols:
         universe = fallback_universe(symbols, source="manual-symbols")
-    elif settings.supabase_universe_configured:
-        if settings.supabase_url is None or settings.supabase_desktop_api_key is None:
-            raise RuntimeError("Supabase universe configuration is incomplete")
-        universe_provider = SupabaseUniverseClient(
-            SupabaseUniverseConfig(
-                base_url=str(settings.supabase_url),
-                desktop_api_key=settings.supabase_desktop_api_key.get_secret_value(),
-                fallback_symbols=settings.alpaca_symbols,
-            ),
-            client=http_client,
-        )
-        try:
-            universe = await universe_provider.get_universe()
-        except Exception as error:
-            await logger.awarning(
-                "supabase_universe_unavailable_using_fallback",
-                error_type=type(error).__name__,
-            )
-            universe = fallback_universe(settings.alpaca_symbols)
     else:
-        universe = fallback_universe(settings.alpaca_symbols)
+        if universe_database is None:
+            universe_database = create_database_engine(
+                settings.database_url.get_secret_value(),
+                require_ssl=settings.environment is Environment.PRODUCTION,
+            )
+        universe_provider = PostgresUniverseClient(
+            universe_database,
+        )
+        universe = await universe_provider.get_universe()
     service = LiveAnalysisService(
         symbols=universe.symbols,
         market_data=market_data,
@@ -214,8 +203,8 @@ async def run_live_analysis(
         await http_client.aclose()
         if nats_bus is not None:
             await nats_bus.close()
-        if entry_watch_database is not None:
-            await entry_watch_database.dispose()
+        if universe_database is not None:
+            await universe_database.dispose()
         await local_bus.close()
 
 

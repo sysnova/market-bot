@@ -48,7 +48,6 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     monkeypatch.setenv("MARKETBOT_ALPACA_API_KEY_ID", "paper-key-id")
     monkeypatch.setenv("MARKETBOT_ALPACA_API_SECRET_KEY", "paper-secret-key")
     monkeypatch.setenv("MARKETBOT_ALPACA_DATA_FEED", "sip")
-    monkeypatch.setenv("MARKETBOT_ALPACA_WATCHLIST", "AAPL, msft,AAPL , NVDA")
 
     settings = AppSettings(_env_file=None)
 
@@ -60,7 +59,6 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.alpaca_data_feed == "sip"
     assert settings.alpaca_adjustment == "split"
     assert settings.alpaca_rest_batch_size == 20
-    assert settings.alpaca_symbols == ("AAPL", "MSFT", "NVDA")
     assert settings.alpaca_execution_enabled is False
     serialized = json.dumps(settings.redacted())
     assert "paper-key-id" not in serialized
@@ -89,11 +87,6 @@ def test_alpaca_execution_cannot_be_enabled_in_analysis_only_mvp() -> None:
         )
 
 
-def test_alpaca_watchlist_rejects_invalid_symbols() -> None:
-    with pytest.raises(ValidationError, match="watchlist"):
-        AppSettings(_env_file=None, alpaca_watchlist="AAPL,../BAD")
-
-
 def test_sec_settings_require_an_identifiable_user_agent_when_enabled() -> None:
     with pytest.raises(ValidationError, match="SEC user agent"):
         AppSettings(_env_file=None, sec_enabled=True)
@@ -107,21 +100,3 @@ def test_sec_settings_require_an_identifiable_user_agent_when_enabled() -> None:
     assert settings.sec_configured is True
     assert settings.sec_refresh_hours == 6
     assert settings.sec_filing_lookback_days == 2
-
-
-def test_supabase_universe_credentials_are_paired_and_redacted() -> None:
-    settings = AppSettings(
-        _env_file=None,
-        supabase_url="https://example.supabase.co",
-        supabase_desktop_api_key=SecretStr("desktop-secret"),
-        universe_refresh_seconds=120,
-    )
-
-    assert settings.supabase_universe_configured is True
-    assert "desktop-secret" not in json.dumps(settings.redacted())
-
-
-@pytest.mark.parametrize("field", ["supabase_url", "supabase_desktop_api_key"])
-def test_supabase_universe_credentials_must_be_configured_as_a_pair(field: str) -> None:
-    with pytest.raises(ValidationError, match="Supabase URL and desktop API key"):
-        AppSettings(_env_file=None, **{field: "https://example.supabase.co"})

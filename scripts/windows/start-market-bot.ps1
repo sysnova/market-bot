@@ -8,7 +8,8 @@ param(
     [string]$RuntimeRoot = ".runtime",
     [ValidateRange(30, 1800)]
     [int]$ReadyTimeoutSeconds = 600,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$NoTileWindows
 )
 
 $ErrorActionPreference = "Stop"
@@ -83,6 +84,8 @@ $ReadyFiles = [ordered]@{
     "long-term-v2" = Join-Path -Path $StatusRoot -ChildPath "long-term-v2.ready.json"
     "swing-v2" = Join-Path -Path $StatusRoot -ChildPath "swing-v2.ready.json"
     "intraday-v2" = Join-Path -Path $StatusRoot -ChildPath "intraday-v2.ready.json"
+    "market-rotation-v1" = Join-Path -Path $StatusRoot -ChildPath "market-rotation-v1.ready.json"
+    "confirmed-buy-monitor" = Join-Path -Path $StatusRoot -ChildPath "confirmed-buy-monitor.ready.json"
 }
 
 function New-ProcessSpec {
@@ -153,6 +156,24 @@ foreach ($Definition in @(
     $ProcessSpecs.Add((New-ProcessSpec -Name $Definition.Name -Arguments $Arguments.ToArray()))
 }
 
+$RotationArguments = @(
+    "run", "marketbot", "engine", "rotation",
+    "--ready-path", $ReadyFiles["market-rotation-v1"]
+)
+$ProcessSpecs.Add((New-ProcessSpec -Name "market-rotation-v1" -Arguments $RotationArguments))
+
+$ConfirmedBuyArguments = [System.Collections.Generic.List[string]]::new()
+foreach ($Argument in @(
+    "run", "marketbot", "alerts", "confirmed",
+    "--ready-path", $ReadyFiles["confirmed-buy-monitor"]
+)) {
+    $ConfirmedBuyArguments.Add($Argument)
+}
+if ($NoBell) {
+    $ConfirmedBuyArguments.Add("--no-bell")
+}
+$ProcessSpecs.Add((New-ProcessSpec -Name "confirmed-buy-monitor" -Arguments $ConfirmedBuyArguments.ToArray()))
+
 $StreamArguments = [System.Collections.Generic.List[string]]::new()
 foreach ($Argument in @("run", "marketbot", "market", "stream")) {
     $StreamArguments.Add($Argument)
@@ -185,22 +206,59 @@ function Start-MarketBotProcess {
     $ArgumentLine = ($Spec.arguments | ForEach-Object {
         '"' + ([string]$_).Replace('"', '\"') + '"'
     }) -join " "
+    $Visible = $Spec.name -in @("alerts-v2", "confirmed-buy-monitor")
+    if ($Visible) {
+        $WindowsTerminal = Get-Command wt.exe -ErrorAction Stop
+        $Role = if ($Spec.name -eq "alerts-v2") {
+            "analysis"
+        }
+        else {
+            "confirmed"
+        }
+        $ArgumentsPath = Join-Path -Path $StatusRoot -ChildPath "$($Spec.name).arguments.json"
+        [System.IO.File]::WriteAllText(
+            $ArgumentsPath,
+            ($Spec.arguments | ConvertTo-Json -Compress)
+        )
+        $PidPath = Join-Path -Path $StatusRoot -ChildPath "$($Spec.name).host.pid"
+        Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+        $VisibleHost = Join-Path -Path $PSScriptRoot -ChildPath "run-visible-marketbot.ps1"
+        $Title = if ($Role -eq "analysis") { "MarketBot Analysis" } else { "MarketBot Confirmed Buys" }
+        $TerminalArguments = @(
+            "-w", "-1", "new-tab", "--title", $Title,
+            "--suppressApplicationTitle", "--startingDirectory", $ProjectRoot,
+            "powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", $VisibleHost, "-Role", $Role, "-PidPath", $PidPath,
+            "-Executable", $UvCommand.Source, "-ArgumentsPath", $ArgumentsPath
+        )
+        $TerminalArgumentLine = ($TerminalArguments | ForEach-Object {
+            '"' + ([string]$_).Replace('"', '\"') + '"'
+        }) -join " "
+        Start-Process -FilePath $WindowsTerminal.Source -ArgumentList $TerminalArgumentLine | Out-Null
+        $Deadline = [DateTime]::UtcNow.AddSeconds(10)
+        while (-not (Test-Path -LiteralPath $PidPath)) {
+            if ([DateTime]::UtcNow -ge $Deadline) {
+                throw "$Title did not expose its host PID."
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        $VisibleProcess = Get-Process -Id ([int](Get-Content -LiteralPath $PidPath -Raw))
+        return [pscustomobject]@{
+            name = $Spec.name
+            process = $VisibleProcess
+            stdout = "visible Windows Terminal window"
+            stderr = "visible Windows Terminal window"
+        }
+    }
     $StartParameters = @{
         FilePath = $UvCommand.Source
         ArgumentList = $ArgumentLine
         WorkingDirectory = $ProjectRoot
         PassThru = $true
     }
-    if ($Spec.name -eq "alerts-v2") {
-        $StartParameters["WindowStyle"] = "Normal"
-        $StdoutPath = "visible alert window"
-        $StderrPath = "visible alert window"
-    }
-    else {
-        $StartParameters["WindowStyle"] = "Hidden"
-        $StartParameters["RedirectStandardOutput"] = $StdoutPath
-        $StartParameters["RedirectStandardError"] = $StderrPath
-    }
+    $StartParameters["WindowStyle"] = "Hidden"
+    $StartParameters["RedirectStandardOutput"] = $StdoutPath
+    $StartParameters["RedirectStandardError"] = $StderrPath
     $Process = Start-Process @StartParameters
     [pscustomobject]@{
         name = $Spec.name
@@ -230,8 +288,157 @@ function Wait-MarketBotReadiness {
     }
 }
 
+function Stop-MarketBotProcessTree {
+    param([System.Diagnostics.Process]$Process)
+    if ($Process.HasExited) {
+        return
+    }
+    $TaskKill = Join-Path -Path $env:SystemRoot -ChildPath "System32\taskkill.exe"
+    if (Test-Path -LiteralPath $TaskKill) {
+        & $TaskKill @("/PID", [string]$Process.Id, "/T", "/F") 2>$null | Out-Null
+    }
+    else {
+        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    }
+    Wait-Process -Id $Process.Id -Timeout 5 -ErrorAction SilentlyContinue
+}
+
+function Initialize-WindowLayoutApi {
+    if ("MarketBotWindowLayoutV3.NativeMethods" -as [type]) {
+        return
+    }
+    Add-Type -TypeDefinition @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+
+namespace MarketBotWindowLayoutV3 {
+    public static class NativeMethods {
+        public delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr window);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr window, StringBuilder text, int count);
+
+        public static IntPtr FindVisibleWindow(string title) {
+            IntPtr match = IntPtr.Zero;
+            EnumWindows((window, parameter) => {
+                if (!IsWindowVisible(window)) return true;
+                var text = new StringBuilder(512);
+                GetWindowText(window, text, text.Capacity);
+                if (text.ToString().Contains(title)) {
+                    match = window;
+                    return false;
+                }
+                return true;
+            }, IntPtr.Zero);
+            return match;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool MoveWindow(
+            IntPtr hWnd, int X, int Y, int width, int height, bool repaint
+        );
+
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int command);
+
+        [DllImport("user32.dll")]
+        public static extern bool PostMessage(
+            IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam
+        );
+    }
+}
+"@
+}
+
+function Get-MarketBotWindowHandle {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$Title,
+        [ValidateRange(1, 30)][int]$TimeoutSeconds = 2
+    )
+    $Deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $Deadline) {
+        $Process.Refresh()
+        $Handle = $Process.MainWindowHandle
+        if ($Handle -eq [IntPtr]::Zero -and -not [string]::IsNullOrWhiteSpace($Title)) {
+            $Handle = [MarketBotWindowLayoutV3.NativeMethods]::FindVisibleWindow($Title)
+        }
+        if ($Handle -ne [IntPtr]::Zero) {
+            return $Handle
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    return [IntPtr]::Zero
+}
+
+function Set-MarketBotVerticalWindowLayout {
+    param(
+        [System.Diagnostics.Process]$AnalysisProcess,
+        [System.Diagnostics.Process]$ConfirmedBuyProcess
+    )
+    try {
+        Initialize-WindowLayoutApi
+        Add-Type -AssemblyName System.Windows.Forms
+        $WorkingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+        $CurrentProcess = Get-Process -Id $PID
+        $MainHandle = Get-MarketBotWindowHandle $CurrentProcess "MarketBot Control"
+        $AnalysisHandle = Get-MarketBotWindowHandle $AnalysisProcess "MarketBot Analysis"
+        $ConfirmedHandle = Get-MarketBotWindowHandle $ConfirmedBuyProcess "MarketBot Confirmed Buys"
+        $script:AnalysisWindowHandle = $AnalysisHandle
+        $script:ConfirmedBuyWindowHandle = $ConfirmedHandle
+        $Handles = @($MainHandle, $AnalysisHandle, $ConfirmedHandle)
+        if ($Handles | Where-Object { $_ -eq [IntPtr]::Zero }) {
+            Write-Warning "Could not detect all console windows; automatic mosaic was skipped."
+            return
+        }
+        if ($NoTileWindows) {
+            return
+        }
+        $RowHeight = [int][Math]::Floor($WorkingArea.Height / 3)
+        for ($Index = 0; $Index -lt $Handles.Count; $Index++) {
+            $Top = [int]($WorkingArea.Top + ($RowHeight * $Index))
+            $Height = if ($Index -eq 2) {
+                [int]($WorkingArea.Bottom - $Top)
+            }
+            else {
+                $RowHeight
+            }
+            [MarketBotWindowLayoutV3.NativeMethods]::ShowWindow($Handles[$Index], 9) | Out-Null
+            $Moved = [MarketBotWindowLayoutV3.NativeMethods]::MoveWindow(
+                $Handles[$Index], [int]$WorkingArea.Left, $Top,
+                [int]$WorkingArea.Width, $Height, $true
+            )
+            if (-not $Moved) {
+                Write-Warning "Windows rejected one MarketBot window position."
+            }
+        }
+    }
+    catch {
+        Write-Warning "Automatic mosaic failed but MarketBot will continue: $($_.Exception.Message)"
+    }
+}
+
+function Close-MarketBotMonitorWindows {
+    Initialize-WindowLayoutApi
+    foreach ($Handle in @($script:AnalysisWindowHandle, $script:ConfirmedBuyWindowHandle)) {
+        if ($null -ne $Handle -and $Handle -ne [IntPtr]::Zero) {
+            [MarketBotWindowLayoutV3.NativeMethods]::PostMessage(
+                $Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero
+            ) | Out-Null
+        }
+    }
+}
+
 $Children = [System.Collections.Generic.List[object]]::new()
 try {
+    $Host.UI.RawUI.WindowTitle = "MarketBot Control"
     Write-Host "Starting independent MarketBot processes..." -ForegroundColor Cyan
     Write-Host "Project: $ProjectRoot"
     Write-Host "Runtime: $ResolvedRuntimeRoot"
@@ -245,7 +452,16 @@ try {
         $ReadyFiles["entry-watcher-v2"]
     )
 
-    for ($Index = 2; $Index -lt 5; $Index++) {
+    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[6]
+    $Children.Add($ConfirmedChild)
+    Write-Host "Started confirmed-buy monitor (PID $($ConfirmedChild.process.Id))"
+    Wait-MarketBotReadiness -Paths @($ReadyFiles["confirmed-buy-monitor"])
+    $AlertChild = $Children | Where-Object { $_.name -eq "alerts-v2" } | Select-Object -First 1
+    Set-MarketBotVerticalWindowLayout `
+        -AnalysisProcess $AlertChild.process `
+        -ConfirmedBuyProcess $ConfirmedChild.process
+
+    for ($Index = 2; $Index -lt 6; $Index++) {
         $Child = Start-MarketBotProcess -Spec $ProcessSpecs[$Index]
         $Children.Add($Child)
         Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
@@ -253,10 +469,11 @@ try {
     Wait-MarketBotReadiness -Paths @(
         $ReadyFiles["long-term-v2"],
         $ReadyFiles["swing-v2"],
-        $ReadyFiles["intraday-v2"]
+        $ReadyFiles["intraday-v2"],
+        $ReadyFiles["market-rotation-v1"]
     )
 
-    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[5]
+    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[7]
     $Children.Add($StreamChild)
     Write-Host "All engines ready. Started Alpaca WebSocket (PID $($StreamChild.process.Id))."
     Write-Host "Logs: $LogRoot"
@@ -273,8 +490,10 @@ try {
 }
 finally {
     foreach ($Child in $Children) {
-        if (-not $Child.process.HasExited) {
-            Stop-Process -Id $Child.process.Id -ErrorAction SilentlyContinue
-        }
+        Stop-MarketBotProcessTree -Process $Child.process
     }
+    Close-MarketBotMonitorWindows
+    Get-ChildItem -LiteralPath $StatusRoot -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '\.(host\.pid|arguments\.json)$' } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 }

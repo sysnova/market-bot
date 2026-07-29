@@ -15,7 +15,7 @@ from structlog.typing import FilteringBoundLogger
 from app.alert_engine import AlertDispatcher, AlertEngine, ConsoleAlertSink, NdjsonAlertSink
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
-from app.common.settings import AppSettings
+from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     AnalysisResult,
@@ -29,15 +29,15 @@ from app.dilution_sec_engine import (
     SecTickerResolver,
 )
 from app.event_bus import InMemoryEventBus, NatsJetStreamEventBus
+from app.persistence import create_database_engine
 
 from .alert_publisher import AlertEventPublisher
 from .event_fanout import EventFanoutPublisher, EventPublisher
-from .sec_refresher import SecAnalysisRefresher
-from .supabase_universe import (
-    SupabaseUniverseClient,
-    SupabaseUniverseConfig,
+from .postgres_universe import (
+    PostgresUniverseClient,
     fallback_universe,
 )
+from .sec_refresher import SecAnalysisRefresher
 
 _DILUTION_FORMS = (
     "424B3",
@@ -151,29 +151,18 @@ async def run_sec_daily_analysis(
         clock=clock,
     )
 
+    universe_database = None
     if symbols:
         universe = fallback_universe(symbols, source="manual-symbols")
-    elif settings.supabase_universe_configured:
-        if settings.supabase_url is None or settings.supabase_desktop_api_key is None:
-            raise RuntimeError("Supabase universe configuration is incomplete")
-        universe_provider = SupabaseUniverseClient(
-            SupabaseUniverseConfig(
-                base_url=str(settings.supabase_url),
-                desktop_api_key=settings.supabase_desktop_api_key.get_secret_value(),
-                fallback_symbols=settings.alpaca_symbols,
-            ),
-            client=http_client,
-        )
-        try:
-            universe = await universe_provider.get_universe()
-        except Exception as error:
-            await logger.awarning(
-                "supabase_universe_unavailable_using_fallback",
-                error_type=type(error).__name__,
-            )
-            universe = fallback_universe(settings.alpaca_symbols)
     else:
-        universe = fallback_universe(settings.alpaca_symbols)
+        universe_database = create_database_engine(
+            settings.database_url.get_secret_value(),
+            require_ssl=settings.environment is Environment.PRODUCTION,
+        )
+        universe_provider = PostgresUniverseClient(
+            universe_database,
+        )
+        universe = await universe_provider.get_universe()
 
     sec_config = SecEdgarConfig(
         user_agent=settings.sec_user_agent,
@@ -208,6 +197,8 @@ async def run_sec_daily_analysis(
         return result
     finally:
         await http_client.aclose()
+        if universe_database is not None:
+            await universe_database.dispose()
         if nats_bus is not None:
             await nats_bus.close()
         await local_bus.close()

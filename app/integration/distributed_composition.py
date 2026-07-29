@@ -51,9 +51,8 @@ from .alert_publisher import AlertEventPublisher
 from .entry_watch_store import PostgresEntryWatchStore
 from .intraday_worker import IntradayWorker
 from .long_term_worker import LongTermWorker
-from .supabase_universe import (
-    SupabaseUniverseClient,
-    SupabaseUniverseConfig,
+from .postgres_universe import (
+    PostgresUniverseClient,
     UniverseSnapshot,
     fallback_universe,
 )
@@ -135,7 +134,7 @@ async def run_engine_process(
     rest: MarketDataRest | None = None
     subscriptions: list[Subscription] = []
     try:
-        universe = await _resolve_universe(settings, http_client, symbols)
+        universe = await _resolve_universe(settings, symbols)
         bus = await _connect_nats(settings)
         rest = _build_rest(settings)
         normalizer = AlpacaEventNormalizer(feed=settings.alpaca_data_feed)
@@ -204,7 +203,7 @@ async def run_market_stream_process(
     bus: NatsJetStreamEventBus | None = None
     engine: AlpacaMarketDataEngine | None = None
     try:
-        universe = await _resolve_universe(settings, http_client, symbols)
+        universe = await _resolve_universe(settings, symbols)
         bus = await _connect_nats(settings)
         engine = _build_stream_engine(settings, bus)
         await _publish_health(
@@ -401,23 +400,20 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
 
 async def _resolve_universe(
     settings: AppSettings,
-    http_client: httpx.AsyncClient,
     symbols: tuple[str, ...] | None,
 ) -> UniverseSnapshot:
     if symbols:
         return fallback_universe(symbols, source="manual-symbols")
-    if settings.supabase_universe_configured:
-        if settings.supabase_url is None or settings.supabase_desktop_api_key is None:
-            raise RuntimeError("Supabase universe configuration is incomplete")
-        return await SupabaseUniverseClient(
-            SupabaseUniverseConfig(
-                base_url=str(settings.supabase_url),
-                desktop_api_key=settings.supabase_desktop_api_key.get_secret_value(),
-                fallback_symbols=settings.alpaca_symbols,
-            ),
-            client=http_client,
+    database = create_database_engine(
+        settings.database_url.get_secret_value(),
+        require_ssl=settings.environment is Environment.PRODUCTION,
+    )
+    try:
+        return await PostgresUniverseClient(
+            database,
         ).get_universe()
-    return fallback_universe(settings.alpaca_symbols)
+    finally:
+        await database.dispose()
 
 
 async def _connect_nats(settings: AppSettings) -> NatsJetStreamEventBus:

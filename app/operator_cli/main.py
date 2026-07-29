@@ -92,7 +92,7 @@ def live_analysis(
     symbols: Annotated[
         str | None,
         typer.Option(
-            help="Comma-separated temporary universe; overrides Supabase for this run."
+            help="Comma-separated temporary universe; overrides local PostgreSQL for this run."
         ),
     ] = None,
 ) -> None:
@@ -190,6 +190,28 @@ def intraday_engine_process(
     _engine_process("INTRADAY", once=once, symbols=symbols, ready_path=ready_path)
 
 
+@engine.command("rotation")
+def rotation_engine_process(
+    once: Annotated[bool, typer.Option(help="Analizar una vez y salir.")] = False,
+    interval_minutes: Annotated[
+        int, typer.Option(min=1, max=1440, help="Frecuencia del análisis.")
+    ] = 5,
+    ready_path: Annotated[Path, typer.Option(help="Archivo de readiness del proceso.")] = Path(
+        ".runtime/status/market-rotation-v1.ready.json"
+    ),
+) -> None:
+    """Monitorea rotación sectorial, persiste ROT y publica el reporte en NATS."""
+    from app.integration.market_rotation_composition import run_market_rotation_process
+
+    summary = _run_async(
+        run_market_rotation_process(
+            once=once, interval_minutes=interval_minutes, ready_path=ready_path
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
 
@@ -244,6 +266,24 @@ def alert_process(
     )
 
 
+@alerts.command("confirmed")
+def confirmed_buy_monitor(
+    bell: Annotated[
+        bool,
+        typer.Option(help="Ring the terminal bell for each confirmed buy."),
+    ] = True,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after subscribing to NATS."),
+    ] = Path(".runtime/status/confirmed-buy-monitor.ready.json"),
+) -> None:
+    """Show only confirmed buy events received through NATS."""
+
+    from app.integration.confirmed_buy_monitor import run_confirmed_buy_monitor
+
+    _run_async(run_confirmed_buy_monitor(ready_path=ready_path, bell=bell))
+
+
 entry_watch = typer.Typer(
     name="entry-watch",
     help="Run the independent persistent entry-opportunity process.",
@@ -294,7 +334,7 @@ def sec_daily(
     symbols: Annotated[
         str | None,
         typer.Option(
-            help="Comma-separated temporary universe; overrides Supabase for this scan."
+            help="Comma-separated temporary universe; overrides local PostgreSQL for this scan."
         ),
     ] = None,
 ) -> None:

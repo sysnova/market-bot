@@ -37,12 +37,11 @@ On Windows, start the continuous bot from PowerShell without writing the underly
 .\scripts\windows\start-market-bot.ps1
 ```
 
-The launcher starts Alert, Entry Watcher, Long, Swing, and Intraday independently. Each analytical
-engine loads only its own REST history into its own in-memory store. After all five consumers are ready, the launcher
-starts the independent Alpaca WebSocket-to-NATS process. Use `-Once` for the legacy one-process
-diagnostic evaluation or `-Symbols HIMS,ZETA` for a temporary symbol override.
-Alert opens in one visible local monitor; infrastructure and engine processes remain hidden with
-separate logs under `.runtime/logs`.
+The launcher starts all engines independently. Once ready, three visible consoles are arranged in
+full-width rows: main control, analysis, and confirmed buys. Infrastructure and engine processes
+remain hidden with separate logs under `.runtime/logs`. Use `-NoTileWindows` to keep manual window
+positions, `-Once` for the legacy one-process diagnostic, or `-Symbols HIMS,ZETA` for a temporary
+symbol override.
 
 Validate one complete backfill/evaluation and exit:
 
@@ -62,7 +61,7 @@ uv run marketbot market stream
 ```
 
 By default, every process starts from the same universe as Stock Analyzer: the Supabase watchlist
-plus symbols with positive holdings. `MARKETBOT_ALPACA_WATCHLIST` remains the local fallback. Use
+plus symbols with positive holdings. The universe refreshes dynamically from PostgreSQL. Use
 `--symbols AAPL,NVDA` for a temporary manual universe.
 
 Historical bars use Alpaca's split adjustment. Weekly bars are treated as complete only after the
@@ -112,8 +111,22 @@ docker compose up -d
 docker compose ps
 ```
 
-This starts NATS 2.12 with JetStream and PostgreSQL 17. It is a convenience for integration work,
-not a prerequisite for local development.
+This starts NATS 2.12 with JetStream and PostgreSQL 17. PostgreSQL listens on
+`localhost:5432`, uses the `marketbot` database/user/password from `.env.example`, and persists its
+database files in the repository-local `data/` directory (ignored by Git). It is a convenience for
+integration work, not a prerequisite for local development.
 
 See [architecture](docs/architecture.md), [development](docs/development.md), and
 [operations](docs/operations.md) for repository-wide guidance.
+# Market Rotation local
+
+MarketBot incluye un proceso independiente que reutiliza los perfiles sectoriales migrados en
+PostgreSQL local, consulta barras diarias de Alpaca, guarda cada ejecución en las tablas
+`stock.market_rotation_*`, agrega candidatos con metadata `ROT` a la watchlist y publica el
+reporte completo en `marketbot.v1.rotation.result` para que aparezca en el monitor JetStream.
+
+Se inicia junto con `start-market-bot.ps1` cada 5 minutos, o manualmente una vez:
+
+```powershell
+uv run marketbot engine rotation --once
+```

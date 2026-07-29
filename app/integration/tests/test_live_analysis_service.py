@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from app.integration.live_analysis_service import LiveAnalysisService
-from app.integration.supabase_universe import UniverseSnapshot
+from app.integration.postgres_universe import UniverseSnapshot
 
 NOW = datetime(2026, 7, 26, 15, 0, tzinfo=UTC)
 

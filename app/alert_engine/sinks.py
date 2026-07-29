@@ -22,14 +22,30 @@ _NEW_YORK = ZoneInfo("America/New_York")
 
 
 class ConsoleAlertSink:
-    def __init__(self, *, stream: TextIO, bell: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        stream: TextIO,
+        bell: bool = False,
+        color: bool | None = None,
+    ) -> None:
         self._stream = stream
         self._bell = bell
+        self._color = _supports_color(stream) if color is None else color
 
     def emit(self, alert: LocalAlert) -> None:
         bell = "\a" if self._bell else ""
-        self._stream.write(f"{format_local_alert(alert)}{bell}\n")
+        self._stream.write(f"{format_local_alert(alert, color=self._color)}{bell}\n")
         self._stream.flush()
+
+
+def _supports_color(stream: TextIO) -> bool:
+    if os.environ.get("NO_COLOR") is not None or os.environ.get("TERM") == "dumb":
+        return False
+    try:
+        return stream.isatty()
+    except (AttributeError, OSError):
+        return False
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,6 +10,8 @@ ANALYSIS_RESULT_EVENT: Final = "analysis.result.produced"
 LOCAL_ALERT_EVENT: Final = "alert.local.produced"
 SERVICE_HEALTH_EVENT: Final = "service.health.reported"
 ENTRY_WATCH_TRANSITION_EVENT: Final = "entry-watch.transitioned"
+MARKET_ROTATION_EVENT: Final = "market-rotation.analyzed"
+MARKET_ROTATION_SUBJECT: Final = "marketbot.v1.rotation.result"
 
 
 def market_bar_subject(timeframe: BarTimeframe, symbol: str) -> str:

@@ -14,19 +14,21 @@ uv run marketbot --version
 Configure Alpaca market-data credentials only in the ignored `.env` file. The independent SEC bot
 additionally requires an identifiable User-Agent with a monitored contact email.
 
-The default symbol universe is shared with Stock Analyzer through its read-only Supabase Edge
-Function contract. Configure `MARKETBOT_SUPABASE_URL` and
-`MARKETBOT_SUPABASE_DESKTOP_API_KEY`; MarketBot fetches `watchlist` and `holdings`, keeps only
-positive positions, merges `MARKETBOT_ALPACA_WATCHLIST` as fallback, and refreshes every
-`MARKETBOT_UNIVERSE_REFRESH_SECONDS` (120 seconds by default).
+The default symbol universe is read directly from the local PostgreSQL `stock` schema configured by
+`MARKETBOT_DATABASE_URL`. MarketBot combines active `watchlist_symbol` rows with positive active
+`customer_holding` rows and refreshes every `MARKETBOT_UNIVERSE_REFRESH_SECONDS` (120 seconds by
+default). Symbols added by analysis become available on the next refresh. There is no static
+fallback list and no Supabase Edge Function is used at runtime. `--symbols` remains an explicit
+one-run operator override.
 
 ### Windows launcher
 
 The PowerShell launcher resolves the repository location automatically. With no parameters it
-starts Alert v2, Entry Watcher v2, Long v2, Swing v2, and Intraday v2 as independent processes.
-Alert opens as the visible local monitor; the technical processes stay hidden and write individual
-logs. Each engine loads its own REST history and writes readiness under `.runtime/status`;
-only after all five consumers are ready does the launcher start the Alpaca WebSocket-to-NATS process:
+starts every engine as an independent process. Three consoles remain visible and are tiled as
+full-width horizontal rows on the primary monitor: supervisor/control at the top, analysis in the
+middle, and confirmed buys at the bottom. Technical processes stay hidden and write individual
+logs. Each engine loads its own REST history and writes readiness under `.runtime/status`; only
+after all consumers are ready does the launcher start the Alpaca WebSocket-to-NATS process:
 
 ```powershell
 .\scripts\windows\start-market-bot.ps1
@@ -39,6 +41,7 @@ Common variants:
 .\scripts\windows\start-market-bot.ps1 -Symbols HIMS,ZETA
 .\scripts\windows\start-market-bot.ps1 -NoNats -NoBell
 .\scripts\windows\start-market-bot.ps1 -RuntimeRoot D:\MarketBotRuntime
+.\scripts\windows\start-market-bot.ps1 -NoTileWindows
 ```
 
 If the local execution policy blocks scripts, use:
@@ -166,3 +169,13 @@ Validate MarketBot against the native broker with:
 $env:NATS_URL = "nats://127.0.0.1:4222"
 uv run pytest app/event_bus/tests/test_nats_integration.py -m integration --no-cov
 ```
+
+Watch all live MarketBot messages with formatted JSON from PowerShell:
+
+```powershell
+.\scripts\windows\watch-jetstream.ps1
+# Or from the repository root:
+.\watch-jetstream.cmd
+```
+
+Use `-Subject marketbot.v1.analysis.result.>` to narrow the subscription to analytical results.
