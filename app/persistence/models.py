@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -382,5 +383,47 @@ class EntryWatchTransitionRecord(Base):
     horizons: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     source_analysis_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class LongPortfolioAlertRecord(Base):
+    __tablename__ = "long_portfolio_alerts"
+    __table_args__ = (
+        UniqueConstraint("deduplication_key", name="long_portfolio_alerts_deduplication_key_key"),
+        CheckConstraint(
+            "invalidation < buy_zone_low and buy_zone_low <= buy_zone_high",
+            name="levels",
+        ),
+        CheckConstraint(
+            "target_weight_percent > 0 and target_weight_percent <= 100", name="weight"
+        ),
+        CheckConstraint("tranche_percent > 0 and tranche_percent <= 100", name="tranche"),
+        CheckConstraint("target_capital_usd > 0 and tranche_usd > 0", name="money"),
+        CheckConstraint("score >= 0 and score <= 100", name="score"),
+        Index("long_portfolio_alerts_symbol_created_idx", "symbol", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    deduplication_key: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rule_version: Mapped[str] = mapped_column(Text, nullable=False)
+    horizon_end: Mapped[date] = mapped_column(Date, nullable=False)
+    current_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    buy_zone_low: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    buy_zone_high: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    invalidation: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    target_weight_percent: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    target_capital_usd: Mapped[Decimal] = mapped_column(Numeric(28, 2), nullable=False)
+    tranche_percent: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    tranche_usd: Mapped[Decimal] = mapped_column(Numeric(28, 2), nullable=False)
+    suggested_whole_shares: Mapped[Decimal] = mapped_column(Numeric(28, 0), nullable=False)
+    score: Mapped[Decimal] = mapped_column(Numeric(7, 2), nullable=False)
+    reasons: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    persisted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )

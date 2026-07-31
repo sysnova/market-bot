@@ -20,10 +20,13 @@ from app.integration.distributed_composition import (
     _write_ready,
     engine_history_requests,
     engine_live_subjects,
+    market_stream_subscription_options,
 )
 from app.integration.intraday_worker import IntradayWorker
 from app.integration.long_term_worker import LongTermWorker
 from app.integration.swing_worker import SwingWorker
+from app.intraday_engine import IntradayEngineV3
+from app.swing_engine import SwingEngineV3
 
 
 class RecordingPublisher:
@@ -68,6 +71,17 @@ def test_each_engine_has_an_independent_live_subscription_set() -> None:
     assert engine_live_subjects(AnalysisHorizon.INTRADAY) == (
         "marketbot.v1.market.bar.1Min.>",
     )
+
+
+@pytest.mark.unit
+def test_market_stream_subscribes_only_to_events_consumed_by_engines() -> None:
+    assert market_stream_subscription_options() == {
+        "trades": True,
+        "quotes": True,
+        "bars": True,
+        "updated_bars": True,
+        "daily_bars": True,
+    }
 
 
 @pytest.mark.unit
@@ -121,3 +135,13 @@ def test_worker_factory_selects_only_distributed_analytical_engines() -> None:
     assert isinstance(_build_worker(AnalysisHorizon.INTRADAY, publisher), IntradayWorker)
     with pytest.raises(ValueError, match="unsupported"):
         _build_worker(AnalysisHorizon.DILUTION, publisher)
+
+
+@pytest.mark.unit
+def test_worker_factory_selects_exact_v3_rule_artifact() -> None:
+    publisher = RecordingPublisher()
+    swing = _build_worker(AnalysisHorizon.SWING, publisher, rule_version="3.0.0")
+    intraday = _build_worker(AnalysisHorizon.INTRADAY, publisher, rule_version="3.0.0")
+
+    assert isinstance(swing._analyzer, SwingEngineV3)
+    assert isinstance(intraday._analyzer, IntradayEngineV3)

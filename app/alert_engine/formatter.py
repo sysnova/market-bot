@@ -17,8 +17,10 @@ _BUYABLE_KINDS = {
     AlertKind.LONG_BUY_ZONE,
     AlertKind.ENTRY_CONFIRMED,
     AlertKind.HIGH_CONVICTION_BUY,
+    AlertKind.LONG_PORTFOLIO_BUY,
 }
 _BUY_BANNER_STYLE = "\x1b[1;97;42m"
+_PROTECT_BANNER_STYLE = "\x1b[1;97;41m"
 _RESET_STYLE = "\x1b[0m"
 
 
@@ -27,6 +29,11 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
 
     analyses = {item.horizon: item for item in alert.component_analyses}
     lines: list[str] = []
+    if alert.kind is AlertKind.PORTFOLIO_PROTECT:
+        banner = f"PROTECT {alert.symbol}"
+        lines.append(
+            f"{_PROTECT_BANNER_STYLE} {banner} {_RESET_STYLE}" if color else banner
+        )
     buy_banner = _buy_banner(alert, analyses)
     if buy_banner is not None:
         lines.append(

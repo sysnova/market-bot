@@ -11,6 +11,7 @@ import pytest
 from app.contracts import EventEnvelope
 from app.event_bus import NatsJetStreamEventBus, SubscriptionOptions
 from app.event_bus.codec import encode_envelope
+from app.event_bus.nats_jetstream import stream_subjects
 
 
 @dataclass
@@ -34,7 +35,7 @@ class FakeJetStream:
     subscription: FakeSubscription = field(default_factory=lambda: FakeSubscription())
     subscribed: list[tuple[str, str, object]] = field(default_factory=list)
     stream_queries: list[str] = field(default_factory=list)
-    streams_added: list[tuple[str, list[str]]] = field(default_factory=list)
+    streams_added: list[tuple[str, list[str], float]] = field(default_factory=list)
 
     async def publish(
         self, subject: str, payload: bytes, *, headers: dict[str, str] | None = None
@@ -59,8 +60,10 @@ class FakeJetStream:
         self.stream_queries.append(stream)
         return object()
 
-    async def add_stream(self, *, name: str, subjects: list[str]) -> object:
-        self.streams_added.append((name, subjects))
+    async def add_stream(
+        self, *, name: str, subjects: list[str], max_age: float
+    ) -> object:
+        self.streams_added.append((name, subjects, max_age))
         return object()
 
 
@@ -84,6 +87,11 @@ class FakeClient:
     async def drain(self) -> None:
         self.drains += 1
         self.is_closed = True
+
+
+@pytest.mark.unit
+def test_stream_subjects_persist_only_versioned_events_and_dlq() -> None:
+    assert stream_subjects("marketbot") == ["marketbot.v1.>", "marketbot.dlq"]
 
 
 @pytest.mark.unit

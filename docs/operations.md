@@ -9,6 +9,32 @@ uv run marketbot --help
 uv run marketbot --version
 ```
 
+## Versioned entry-confirmation rules
+
+Entry confirmation is selected by an exact, rollback-safe artifact coordinate:
+
+```powershell
+$env:MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION = "3.0.0"
+.\scripts\windows\start-market-bot.ps1
+```
+
+The manifests live under `configs/rules/entry_confirmation/`. Version `3.0.0` adds an
+anchored-VWAP Swing gate, two-close or five-minute persistence, magnitude-aware momentum, and a
+minimum tactical stop based on price and ATR. Every Swing and Intraday result records both its
+`engine_version` and `entry_confirmation_rule_version`, so alert outcomes can be grouped by the
+exact rules that produced them.
+
+Rollback does not require a code revert. Stop MarketBot and restart it with the previous exact
+coordinate:
+
+```powershell
+$env:MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION = "2.0.0"
+.\scripts\windows\start-market-bot.ps1
+```
+
+Do not change an existing manifest in place. Add a new semantic version for every behavioral
+change, and retain old engine classes and manifests for reproducibility.
+
 ## Realtime analysis
 
 Configure Alpaca market-data credentials only in the ignored `.env` file. The independent SEC bot
@@ -133,8 +159,9 @@ credentials.
 JSON logs are the default. Bind a `correlation_id`, message ID, or command ID at entry points and
 clear context at the end of every request/message to avoid context leakage between tasks.
 
-`compose.yaml` is solely a workstation convenience. Production NATS and PostgreSQL lifecycle,
-backup, TLS, authentication, and monitoring belong to the deployment platform.
+The local workstation uses independent `postgres-local` and `marketbot-nats` Docker containers.
+Production NATS and PostgreSQL lifecycle, backup, TLS, authentication, and monitoring belong to
+the deployment platform.
 
 ## Native NATS service on Windows
 

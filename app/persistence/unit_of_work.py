@@ -11,6 +11,7 @@ from .repositories import (
     EntryWatchRepository,
     HealthRepository,
     InboxRepository,
+    LongPortfolioAlertRepository,
     OutboxRepository,
 )
 
@@ -26,6 +27,7 @@ class PersistenceUnitOfWork:
         self.checkpoints: CheckpointRepository
         self.health: HealthRepository
         self.entry_watches: EntryWatchRepository
+        self.long_portfolio_alerts: LongPortfolioAlertRepository
 
     async def __aenter__(self) -> PersistenceUnitOfWork:
         session = self._session_factory()
@@ -35,6 +37,7 @@ class PersistenceUnitOfWork:
         self.checkpoints = CheckpointRepository(session)
         self.health = HealthRepository(session)
         self.entry_watches = EntryWatchRepository(session)
+        self.long_portfolio_alerts = LongPortfolioAlertRepository(session)
         return self
 
     async def __aexit__(

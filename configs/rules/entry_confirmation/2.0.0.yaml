@@ -1,0 +1,14 @@
+rule_id: marketbot.entry_confirmation
+version: 2.0.0
+status: rollback
+engines:
+  swing: 2.0.0
+  intraday: 2.0.0
+  entry_watcher: 2.0.0
+behavior:
+  anchored_vwap_gate: false
+  persistence_required: false
+  minimum_momentum_percent: 0
+  minimum_risk_percent: 0.03
+  minimum_atr_risk_multiple: 0.25
+  reward_risk_ratio: 1.5

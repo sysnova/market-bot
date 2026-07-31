@@ -6,7 +6,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from app.alert_engine.confirmed import is_confirmed_buy
+from app.alert_engine.confirmed import is_portfolio_monitor_alert
 from app.alert_engine.sinks import ConsoleAlertSink
 from app.common.settings import AppSettings
 from app.contracts import LOCAL_ALERT_EVENT, EventEnvelope, LocalAlert, SubscriptionOptions
@@ -34,7 +34,7 @@ async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: boo
             if isinstance(envelope.payload, LocalAlert)
             else LocalAlert.model_validate(envelope.payload, strict=False)
         )
-        if is_confirmed_buy(alert):
+        if is_portfolio_monitor_alert(alert):
             sink.emit(alert)
 
     subscription = await bus.subscribe(
@@ -52,7 +52,7 @@ async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: boo
                     "replay": False,
                 },
             )
-        print("COMPRAS CONFIRMADAS — esperando nuevas señales NATS...", flush=True)
+        print("COMPRAS CONFIRMADAS + PROTECCIÓN DE PORTFOLIO — esperando NATS...", flush=True)
         await asyncio.Event().wait()
     finally:
         await subscription.unsubscribe()

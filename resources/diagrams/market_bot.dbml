@@ -169,6 +169,33 @@ Table market_bot.entry_watch_transitions {
   }
 }
 
+Table market_bot.long_portfolio_alerts {
+  id uuid [pk]
+  deduplication_key text [not null, unique]
+  symbol text [not null]
+  created_at timestamptz [not null]
+  expires_at timestamptz
+  rule_version text [not null]
+  horizon_end date [not null]
+  current_price numeric(28,8) [not null]
+  buy_zone_low numeric(28,8) [not null]
+  buy_zone_high numeric(28,8) [not null]
+  invalidation numeric(28,8) [not null]
+  target_weight_percent numeric(12,4) [not null]
+  target_capital_usd numeric(28,2) [not null]
+  tranche_percent numeric(12,4) [not null]
+  tranche_usd numeric(28,2) [not null]
+  suggested_whole_shares numeric(28,0) [not null]
+  score numeric(7,2) [not null]
+  reasons jsonb [not null]
+  payload jsonb [not null]
+  persisted_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (symbol, created_at) [name: "long_portfolio_alerts_symbol_created_idx"]
+  }
+}
+
 Ref: market_bot.run_strategies.run_id > market_bot.runs.id [delete: restrict]
 Ref: market_bot.run_strategies.strategy_version_id > market_bot.strategy_versions.id [delete: restrict]
 Ref: market_bot.processed_events.run_id > market_bot.runs.id [delete: restrict]

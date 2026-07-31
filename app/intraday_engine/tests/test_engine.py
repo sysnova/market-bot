@@ -12,6 +12,7 @@ from app.contracts import (
 from app.intraday_engine.engine import IntradayEngine
 from app.intraday_engine.models import IntradayContext
 from app.intraday_engine.v2 import IntradayEngineV2
+from app.intraday_engine.v3 import IntradayEngineV3
 
 from .helpers import trend_bars
 
@@ -176,3 +177,37 @@ def test_v2_reports_regime_and_confirmation_quality_without_replacing_v1() -> No
     assert Decimal(str(_metric(result, "close_location"))) >= Decimal("0.60")
     assert Decimal(str(_metric(result, "volume_acceleration"))) > Decimal("1")
     assert _metric(result, "five_minute_higher_low") is True
+
+
+def test_v3_versions_the_gate_and_keeps_stop_outside_minimum_noise() -> None:
+    minute_bars = trend_bars(
+        symbol="AMD",
+        start=Decimal("160"),
+        step=Decimal("0.04"),
+        final_move=Decimal("0.60"),
+        base_volume=Decimal("1000"),
+        final_volume=Decimal("2600"),
+    )
+    five_minute_bars = trend_bars(
+        symbol="AMD",
+        start=Decimal("155"),
+        step=Decimal("0.12"),
+        final_move=Decimal("0.30"),
+        base_volume=Decimal("5000"),
+        final_volume=Decimal("7000"),
+        count=20,
+        timeframe=BarTimeframe.MINUTE_5,
+    )
+    context = IntradayContext(
+        symbol="AMD",
+        as_of=max(minute_bars[-1].timestamp, five_minute_bars[-1].timestamp),
+        minute_bars=minute_bars,
+        five_minute_bars=five_minute_bars,
+    )
+
+    result = IntradayEngineV3().analyze(context)
+
+    assert result.engine_version == "3.0.0"
+    assert _metric(result, "entry_confirmation_rule_version") == "3.0.0"
+    assert Decimal(str(_metric(result, "risk_percent"))) >= Decimal("0.25")
+    assert isinstance(_metric(result, "confirmation_gate_passed"), bool)

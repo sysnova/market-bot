@@ -14,6 +14,14 @@ from .codec import decode_envelope, encode_envelope
 from .protocols import EventHandler, Subscription, SubscriptionOptions
 from .subjects import validate_publish_subject, validate_subscription_subject
 
+STREAM_MAX_AGE_SECONDS = 15 * 24 * 60 * 60
+
+
+def stream_subjects(prefix: str) -> list[str]:
+    """Return durable subjects while leaving high-volume raw ticks on Core NATS."""
+
+    return [f"{prefix}.v1.>", f"{prefix}.dlq"]
+
 
 class _NatsMessage(Protocol):
     subject: str
@@ -22,6 +30,15 @@ class _NatsMessage(Protocol):
     async def ack(self) -> None: ...
 
     async def nak(self, *, delay: float | None = None) -> None: ...
+
+
+class _StreamConfig(Protocol):
+    subjects: list[str] | None
+    max_age: float
+
+
+class _StreamInfo(Protocol):
+    config: _StreamConfig
 
 
 class _NatsSubscription(Protocol):
@@ -33,6 +50,8 @@ class _NatsClient(Protocol):
     def is_closed(self) -> bool: ...
 
     async def drain(self) -> None: ...
+
+    async def publish(self, subject: str, payload: bytes) -> None: ...
 
 
 class _JetStream(Protocol):
@@ -54,9 +73,13 @@ class _JetStream(Protocol):
         config: object,
     ) -> _NatsSubscription: ...
 
-    async def stream_info(self, stream: str) -> object: ...
+    async def stream_info(self, stream: str) -> _StreamInfo: ...
 
-    async def add_stream(self, *, name: str, subjects: list[str]) -> object: ...
+    async def add_stream(
+        self, *, name: str, subjects: list[str], max_age: float
+    ) -> object: ...
+
+    async def update_stream(self, *, config: _StreamConfig) -> object: ...
 
 
 class _JetStreamSubscription(Subscription):
@@ -106,10 +129,23 @@ class NatsJetStreamEventBus:
         )
         jetstream = client.jetstream()
         typed_jetstream = cast(_JetStream, jetstream)
+        desired_subjects = stream_subjects(prefix)
         try:
-            await typed_jetstream.stream_info(stream)
+            info = await typed_jetstream.stream_info(stream)
+            config = info.config
+            if (
+                config.subjects != desired_subjects
+                or config.max_age != STREAM_MAX_AGE_SECONDS
+            ):
+                config.subjects = desired_subjects
+                config.max_age = STREAM_MAX_AGE_SECONDS
+                await typed_jetstream.update_stream(config=config)
         except NatsError:
-            await typed_jetstream.add_stream(name=stream, subjects=[f"{prefix}.>"])
+            await typed_jetstream.add_stream(
+                name=stream,
+                subjects=desired_subjects,
+                max_age=STREAM_MAX_AGE_SECONDS,
+            )
         return cls(
             client=cast(_NatsClient, client),
             jetstream=typed_jetstream,
@@ -119,9 +155,20 @@ class NatsJetStreamEventBus:
     async def publish(self, subject: str, envelope: EventEnvelope) -> None:
         self._require_open()
         validate_publish_subject(subject)
+        qualified = self._qualify(subject)
+        payload = encode_envelope(envelope)
+        ephemeral_prefixes = (
+            f"{self._prefix}.market.data.trade.",
+            f"{self._prefix}.market.data.quote.",
+        )
+        if qualified.startswith(ephemeral_prefixes):
+            if self._client is None:
+                raise RuntimeError("Core NATS client is unavailable")
+            await self._client.publish(qualified, payload)
+            return
         await self._jetstream.publish(
-            self._qualify(subject),
-            encode_envelope(envelope),
+            qualified,
+            payload,
             headers={"Nats-Msg-Id": str(envelope.event_id)},
         )
 

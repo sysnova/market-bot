@@ -74,4 +74,6 @@ class MarketDataStream(Protocol):
         bars: bool = True,
         updated_bars: bool = True,
         daily_bars: bool = True,
+        trade_symbols: tuple[str, ...] | None = None,
+        quote_symbols: tuple[str, ...] | None = None,
     ) -> AsyncIterator[Mapping[str, object]]: ...

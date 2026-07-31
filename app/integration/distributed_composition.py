@@ -43,9 +43,11 @@ from app.contracts import (
     entry_watch_transition_subject,
     service_health_subject,
 )
-from app.entry_watcher import EntryWatcherPolicy, EntryWatcherV2
+from app.entry_watcher import EntryWatcherPolicy, EntryWatcherV2, EntryWatcherV3
 from app.event_bus import NatsJetStreamEventBus
+from app.intraday_engine import IntradayEngineV2, IntradayEngineV3
 from app.persistence import create_database_engine, create_session_factory
+from app.swing_engine import SwingEngineV2, SwingEngineV3
 
 from .alert_publisher import AlertEventPublisher
 from .entry_watch_store import PostgresEntryWatchStore
@@ -110,6 +112,18 @@ def engine_live_subjects(horizon: AnalysisHorizon) -> tuple[str, ...]:
     }.get(horizon, ())
 
 
+def market_stream_subscription_options() -> dict[str, bool]:
+    """Subscribe only to live records consumed by the analytical engines."""
+
+    return {
+        "trades": True,
+        "quotes": True,
+        "bars": True,
+        "updated_bars": True,
+        "daily_bars": True,
+    }
+
+
 async def run_engine_process(
     *,
     horizon: AnalysisHorizon,
@@ -147,7 +161,11 @@ async def run_engine_process(
             as_of=as_of,
             batch_size=settings.alpaca_rest_batch_size,
         )
-        worker = _build_worker(horizon, bus)
+        worker = _build_worker(
+            horizon,
+            bus,
+            rule_version=settings.entry_confirmation_rule_version,
+        )
         result_count = await worker.bootstrap(bars, symbols=universe.symbols)
         if not once:
             for index, subject in enumerate(engine_live_subjects(horizon), start=1):
@@ -170,6 +188,7 @@ async def run_engine_process(
             "initial_results": result_count,
             "universe_source": universe.source,
             "live_subjects": list(engine_live_subjects(horizon)),
+            "entry_confirmation_rule_version": settings.entry_confirmation_rule_version,
         }
         await _publish_health(bus, _service_name(horizon), summary, clock.now())
         if ready_path is not None:
@@ -203,21 +222,28 @@ async def run_market_stream_process(
     bus: NatsJetStreamEventBus | None = None
     engine: AlpacaMarketDataEngine | None = None
     try:
-        universe = await _resolve_universe(settings, symbols)
         bus = await _connect_nats(settings)
         engine = _build_stream_engine(settings, bus)
-        await _publish_health(
-            bus,
-            "alpaca-market-stream",
-            {"symbols": len(universe.symbols), "universe_source": universe.source},
-            clock.now(),
-        )
         backoff = 1.0
         while True:
             try:
-                count = await engine.stream_once(universe.symbols)
+                universe = await _resolve_universe(settings, symbols)
+                holdings = await _resolve_holdings(settings)
+                await _publish_health(bus, "alpaca-market-stream", {
+                    "symbols": len(universe.symbols), "portfolio_symbols": len(holdings.symbols),
+                    "universe_source": universe.source}, clock.now())
+                async with asyncio.timeout(settings.universe_refresh_seconds):
+                    count = await engine.stream_once(
+                        universe.symbols,
+                        **market_stream_subscription_options(),
+                        trade_symbols=holdings.symbols,
+                        quote_symbols=holdings.symbols,
+                    )
                 if count > 0:
                     backoff = 1.0
+            except TimeoutError:
+                backoff = 1.0
+                continue
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -341,13 +367,20 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
                 "entry watcher schema is unavailable; apply "
                 "20260726180000_entry_watches.sql"
             )
-        watcher = EntryWatcherV2(
+        watcher_type = (
+            EntryWatcherV3
+            if settings.entry_confirmation_rule_version == "3.0.0"
+            else EntryWatcherV2
+        )
+        watcher = watcher_type(
             store=store,
             policy=EntryWatcherPolicy(
                 ttl=timedelta(days=settings.entry_watch_ttl_days)
             ),
         )
         bus = await _connect_nats(settings)
+        watcher_version = settings.entry_confirmation_rule_version
+        watcher_service = f"entry-watcher-v{watcher_version.split('.', 1)[0]}"
 
         async def handle_analysis(envelope: EventEnvelope) -> None:
             if envelope.event_type != ANALYSIS_RESULT_EVENT:
@@ -366,7 +399,7 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
                     EventEnvelope(
                         event_type=ENTRY_WATCH_TRANSITION_EVENT,
                         occurred_at=transition.occurred_at,
-                        source="entry-watcher-v2",
+                        source=watcher_service,
                         subject=transition.symbol,
                         payload=transition,
                     ),
@@ -376,17 +409,19 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
             "marketbot.v1.analysis.result.>",
             handle_analysis,
             options=SubscriptionOptions(
-                durable_name="marketbot-entry-watcher-v2",
+                durable_name=watcher_service,
                 replay_all=False,
                 ack_wait_seconds=60,
             ),
         )
         details = {
+            "service": watcher_service,
+            "engine_version": watcher_version,
             "input_subject": "marketbot.v1.analysis.result.>",
             "output_subject": "marketbot.v1.entry-watch.transition.>",
             "persistence": "postgresql",
         }
-        await _publish_health(bus, "entry-watcher-v2", details, clock.now())
+        await _publish_health(bus, watcher_service, details, clock.now())
         if ready_path is not None:
             _write_ready(ready_path, details)
         await asyncio.Event().wait()
@@ -412,6 +447,17 @@ async def _resolve_universe(
         return await PostgresUniverseClient(
             database,
         ).get_universe()
+    finally:
+        await database.dispose()
+
+
+async def _resolve_holdings(settings: AppSettings) -> UniverseSnapshot:
+    database = create_database_engine(
+        settings.database_url.get_secret_value(),
+        require_ssl=settings.environment is Environment.PRODUCTION,
+    )
+    try:
+        return await PostgresUniverseClient(database).get_holdings()
     finally:
         await database.dispose()
 
@@ -504,13 +550,17 @@ async def _load_history(
 def _build_worker(
     horizon: AnalysisHorizon,
     publisher: EventPublisher,
+    *,
+    rule_version: str = "2.0.0",
 ) -> HorizonWorker:
     if horizon is AnalysisHorizon.LONG_TERM:
         return LongTermWorker(publisher=publisher)
     if horizon is AnalysisHorizon.SWING:
-        return SwingWorker(publisher=publisher)
+        analyzer = SwingEngineV3() if rule_version == "3.0.0" else SwingEngineV2()
+        return SwingWorker(publisher=publisher, analyzer=analyzer)
     if horizon is AnalysisHorizon.INTRADAY:
-        return IntradayWorker(publisher=publisher)
+        analyzer = IntradayEngineV3() if rule_version == "3.0.0" else IntradayEngineV2()
+        return IntradayWorker(publisher=publisher, analyzer=analyzer)
     raise ValueError("unsupported distributed horizon")
 
 

@@ -95,6 +95,8 @@ class AlpacaMarketDataEngine:
         bars: bool = True,
         updated_bars: bool = True,
         daily_bars: bool = True,
+        trade_symbols: tuple[str, ...] | None = None,
+        quote_symbols: tuple[str, ...] | None = None,
     ) -> int:
         count = 0
         async for raw in self._stream.messages(
@@ -104,6 +106,8 @@ class AlpacaMarketDataEngine:
             bars=bars,
             updated_bars=updated_bars,
             daily_bars=daily_bars,
+            trade_symbols=trade_symbols,
+            quote_symbols=quote_symbols,
         ):
             await self._publish(self._normalizer.stream_message(raw))
             count += 1

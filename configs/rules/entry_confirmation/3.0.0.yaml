@@ -1,0 +1,26 @@
+rule_id: marketbot.entry_confirmation
+version: 3.0.0
+status: active
+engines:
+  swing: 3.0.0
+  intraday: 3.0.0
+  entry_watcher: 3.0.0
+behavior:
+  anchored_vwap_gate: true
+  persistence_required: true
+  minimum_momentum_percent: 0.15
+  minimum_risk_percent: 0.25
+  minimum_atr_risk_multiple: 0.50
+  reward_risk_ratio: 1.5
+measurement:
+  dimensions:
+    - engine_version
+    - entry_confirmation_rule_version
+  outcomes:
+    - first_level_hit
+    - mfe_percent
+    - mae_percent
+    - return_15m
+    - return_30m
+    - return_60m
+    - return_close

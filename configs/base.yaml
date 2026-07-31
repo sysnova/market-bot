@@ -8,7 +8,8 @@ logging:
 nats:
   stream: MARKETBOT
   subjects:
-    - marketbot.>
+    - marketbot.v1.>
+    - marketbot.dlq
 
 postgres:
   pool_min_size: 1

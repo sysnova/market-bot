@@ -10,11 +10,13 @@ from uuid import UUID
 
 import pytest
 
+from app.persistence import LongPortfolioAlertRecord
 from app.persistence.repositories import (
     CheckpointRepository,
     EntryWatchRepository,
     EventPayloadConflictError,
     HealthRepository,
+    LongPortfolioAlertRepository,
     OutboxRepository,
     ProcessedEventRepository,
 )
@@ -245,3 +247,38 @@ async def test_entry_watch_transition_uses_optimistic_status_guard() -> None:
     assert "entry_watches.status =" in sql
     assert "RETURNING" in sql
     session.add.assert_called_once_with(transition)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_long_portfolio_alert_insert_is_idempotent_by_deduplication_key() -> None:
+    session = AsyncMock()
+    session.execute.return_value = ScalarResult(ENTITY_ID)
+    repository = LongPortfolioAlertRepository(session)
+    mapped = LongPortfolioAlertRecord(
+        id=ENTITY_ID,
+        deduplication_key="long-portfolio:1.0.0:HIMS:1",
+        symbol="HIMS",
+        created_at=NOW,
+        expires_at=None,
+        rule_version="1.0.0",
+        horizon_end=NOW.date(),
+        current_price=Decimal("50"),
+        buy_zone_low=Decimal("48"),
+        buy_zone_high=Decimal("51"),
+        invalidation=Decimal("43"),
+        target_weight_percent=Decimal("11.73"),
+        target_capital_usd=Decimal("12081.90"),
+        tranche_percent=Decimal("50"),
+        tranche_usd=Decimal("6040.95"),
+        suggested_whole_shares=Decimal("120"),
+        score=Decimal("82"),
+        reasons=["solid_long_entry"],
+        payload={"symbol": "HIMS"},
+        persisted_at=NOW,
+    )
+
+    assert await repository.add(mapped) is True
+    statement = session.execute.await_args.args[0]
+    sql = str(statement.compile(dialect=repository.dialect))
+    assert "ON CONFLICT (deduplication_key) DO NOTHING" in sql

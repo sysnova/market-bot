@@ -212,6 +212,41 @@ def rotation_engine_process(
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
+@engine.command("portfolio-flow")
+def portfolio_flow_process(
+    ready_path: Annotated[Path, typer.Option(help="Archivo de readiness del proceso.")] = Path(
+        ".runtime/status/portfolio-flow-v1.ready.json"
+    ),
+) -> None:
+    """Monitorea order flow efímero sólo para posiciones abiertas."""
+    from app.integration.portfolio_flow_composition import run_portfolio_flow_process
+
+    _run_async(run_portfolio_flow_process(ready_path=ready_path))
+
+
+@engine.command("long-portfolio")
+def long_portfolio_process(
+    config_path: Annotated[
+        Path, typer.Option(help="Exact-version LONG portfolio YAML artifact.")
+    ] = Path("configs/rules/long_portfolio/1.0.0.yaml"),
+    runtime_root: Annotated[
+        Path, typer.Option(help="Directory for the deduplicated LONG alert ledger.")
+    ] = Path(".runtime"),
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after subscribing to NATS.")
+    ] = Path(".runtime/status/long-portfolio-v1.ready.json"),
+) -> None:
+    """Monitor solid, allocation-aware entries for the year-end LONG portfolio."""
+
+    from app.integration.long_portfolio_composition import run_long_portfolio_process
+
+    _run_async(run_long_portfolio_process(
+        config_path=config_path,
+        runtime_root=runtime_root,
+        ready_path=ready_path,
+    ))
+
+
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
 
@@ -284,6 +319,25 @@ def confirmed_buy_monitor(
     _run_async(run_confirmed_buy_monitor(ready_path=ready_path, bell=bell))
 
 
+@alerts.command("long-portfolio")
+def long_portfolio_monitor(
+    bell: Annotated[bool, typer.Option(help="Ring for each new LONG portfolio alert.")] = True,
+    history: Annotated[
+        int, typer.Option(min=1, max=500, help="Persisted PostgreSQL alerts shown on startup.")
+    ] = 25,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after history and NATS are ready.")
+    ] = Path(".runtime/status/long-portfolio-monitor.ready.json"),
+) -> None:
+    """Show only persisted and live year-end LONG portfolio alerts."""
+
+    from app.integration.long_portfolio_monitor import run_long_portfolio_monitor
+
+    _run_async(run_long_portfolio_monitor(
+        ready_path=ready_path, bell=bell, history=history
+    ))
+
+
 entry_watch = typer.Typer(
     name="entry-watch",
     help="Run the independent persistent entry-opportunity process.",
@@ -296,9 +350,9 @@ def entry_watcher_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
-    ] = Path(".runtime/status/entry-watcher-v2.ready.json"),
+    ] = Path(".runtime/status/entry-watcher-v3.ready.json"),
 ) -> None:
-    """Run the Entry Watcher v2 PostgreSQL/NATS process."""
+    """Run the configured Entry Watcher PostgreSQL/NATS process (V3 by default)."""
 
     from app.integration.distributed_composition import run_entry_watcher_process
 

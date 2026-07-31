@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "control_events",
     "entry_watch_transitions",
     "entry_watches",
+    "long_portfolio_alerts",
     "outbox_events",
     "processed_events",
     "rule_versions",

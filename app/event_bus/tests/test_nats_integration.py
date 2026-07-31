@@ -28,13 +28,13 @@ async def test_publish_subscribe_and_deduplicate(event: EventEnvelope) -> None:
         delivered.set()
 
     await bus.subscribe(
-        "prices.updated",
+        "v1.prices.updated",
         capture,
         options=SubscriptionOptions(durable_name=f"consumer_{token}", replay_all=True),
     )
 
-    await bus.publish("prices.updated", event)
-    await bus.publish("prices.updated", event)
+    await bus.publish("v1.prices.updated", event)
+    await bus.publish("v1.prices.updated", event)
     await asyncio.wait_for(delivered.wait(), timeout=3)
     await asyncio.sleep(0.2)
 

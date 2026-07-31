@@ -3,7 +3,7 @@
 MarketBot is a Python 3.14 event-driven market analysis monorepo. Engines are isolated under
 `app/<engine>/`; they communicate through stable contracts rather than direct imports.
 
-The current MVP is deliberately analysis-only. Long v2, Swing v2, Intraday v2, Entry Watcher v2,
+The current MVP is deliberately analysis-only. Long v2, Swing v3, Intraday v3, Entry Watcher v3,
 Alert v2, and the Alpaca WebSocket ingress run as independent operating-system processes. NATS JetStream distributes
 live market bars and analytical results between them. An independent daily bot checks recent SEC
 EDGAR filings. There is no order adapter and configuration enforces
@@ -102,22 +102,38 @@ uv run pytest -m "not integration"
 The test suite enforces at least 80% branch-aware coverage. Tests needing external services must use
 the `integration` marker.
 
-## Optional local infrastructure
+## Local infrastructure
 
-For hosts that already have Docker Compose:
+PostgreSQL and NATS run as independent Docker containers so PostgreSQL can be shared by local
+projects:
 
 ```shell
-docker compose up -d
-docker compose ps
+docker start postgres-local marketbot-nats
+docker ps --filter name=postgres-local --filter name=marketbot-nats
 ```
 
-This starts NATS 2.12 with JetStream and PostgreSQL 17. PostgreSQL listens on
+NATS 2.12 includes JetStream and PostgreSQL 17 listens on
 `localhost:5432`, uses the `marketbot` database/user/password from `.env.example`, and persists its
-database files in the repository-local `data/` directory (ignored by Git). It is a convenience for
-integration work, not a prerequisite for local development.
+database files in the repository-local `data/` directory (ignored by Git). NATS listens on
+`localhost:4222`, exposes monitoring on `localhost:8222`, and persists in the Docker volume
+`marketbot_nats-data`.
 
 See [architecture](docs/architecture.md), [development](docs/development.md), and
 [operations](docs/operations.md) for repository-wide guidance.
+
+On Ubuntu Desktop, install `tmux` and start the four-pane process monitor with:
+
+```shell
+sudo apt install tmux
+./scripts/linux/start-market-bot.sh
+```
+
+The fourth pane, `LONG PORTFOLIO 2026`, loads persisted alerts from local PostgreSQL
+and follows new allocation-aware LONG entries. The control pane also owns the
+`long-portfolio-v1` engine, so `Ctrl+C` stops it together with the rest of MarketBot.
+
+The top pane controls lifecycle, the middle pane displays analyses, and the bottom pane displays
+confirmed purchases. Pressing `Ctrl+C` in the control pane stops all MarketBot processes.
 # Market Rotation local
 
 MarketBot incluye un proceso independiente que reutiliza los perfiles sectoriales migrados en

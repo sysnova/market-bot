@@ -80,12 +80,15 @@ $StatusRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "status"
 $LogRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "logs"
 $ReadyFiles = [ordered]@{
     "alerts-v2" = Join-Path -Path $StatusRoot -ChildPath "alert-v2.ready.json"
-    "entry-watcher-v2" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher-v2.ready.json"
+    "entry-watcher-v3" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher-v3.ready.json"
     "long-term-v2" = Join-Path -Path $StatusRoot -ChildPath "long-term-v2.ready.json"
     "swing-v2" = Join-Path -Path $StatusRoot -ChildPath "swing-v2.ready.json"
     "intraday-v2" = Join-Path -Path $StatusRoot -ChildPath "intraday-v2.ready.json"
     "market-rotation-v1" = Join-Path -Path $StatusRoot -ChildPath "market-rotation-v1.ready.json"
+    "portfolio-flow-v1" = Join-Path -Path $StatusRoot -ChildPath "portfolio-flow-v1.ready.json"
+    "long-portfolio-v1" = Join-Path -Path $StatusRoot -ChildPath "long-portfolio-v1.ready.json"
     "confirmed-buy-monitor" = Join-Path -Path $StatusRoot -ChildPath "confirmed-buy-monitor.ready.json"
+    "long-portfolio-monitor" = Join-Path -Path $StatusRoot -ChildPath "long-portfolio-monitor.ready.json"
 }
 
 function New-ProcessSpec {
@@ -132,9 +135,9 @@ $EntryWatchArguments = @(
     "entry-watch",
     "serve",
     "--ready-path",
-    $ReadyFiles["entry-watcher-v2"]
+    $ReadyFiles["entry-watcher-v3"]
 )
-$ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher-v2" -Arguments $EntryWatchArguments))
+$ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher-v3" -Arguments $EntryWatchArguments))
 
 foreach ($Definition in @(
     [pscustomobject]@{ Name = "long-term-v2"; Command = "long" },
@@ -161,6 +164,19 @@ $RotationArguments = @(
     "--ready-path", $ReadyFiles["market-rotation-v1"]
 )
 $ProcessSpecs.Add((New-ProcessSpec -Name "market-rotation-v1" -Arguments $RotationArguments))
+
+$PortfolioFlowArguments = @(
+    "run", "marketbot", "engine", "portfolio-flow",
+    "--ready-path", $ReadyFiles["portfolio-flow-v1"]
+)
+$ProcessSpecs.Add((New-ProcessSpec -Name "portfolio-flow-v1" -Arguments $PortfolioFlowArguments))
+
+$LongPortfolioArguments = @(
+    "run", "marketbot", "engine", "long-portfolio",
+    "--runtime-root", $ResolvedRuntimeRoot,
+    "--ready-path", $ReadyFiles["long-portfolio-v1"]
+)
+$ProcessSpecs.Add((New-ProcessSpec -Name "long-portfolio-v1" -Arguments $LongPortfolioArguments))
 
 $ConfirmedBuyArguments = [System.Collections.Generic.List[string]]::new()
 foreach ($Argument in @(
@@ -449,10 +465,10 @@ try {
     }
     Wait-MarketBotReadiness -Paths @(
         $ReadyFiles["alerts-v2"],
-        $ReadyFiles["entry-watcher-v2"]
+        $ReadyFiles["entry-watcher-v3"]
     )
 
-    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[6]
+    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[8]
     $Children.Add($ConfirmedChild)
     Write-Host "Started confirmed-buy monitor (PID $($ConfirmedChild.process.Id))"
     Wait-MarketBotReadiness -Paths @($ReadyFiles["confirmed-buy-monitor"])
@@ -461,7 +477,7 @@ try {
         -AnalysisProcess $AlertChild.process `
         -ConfirmedBuyProcess $ConfirmedChild.process
 
-    for ($Index = 2; $Index -lt 6; $Index++) {
+    for ($Index = 2; $Index -lt 8; $Index++) {
         $Child = Start-MarketBotProcess -Spec $ProcessSpecs[$Index]
         $Children.Add($Child)
         Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
@@ -470,11 +486,23 @@ try {
         $ReadyFiles["long-term-v2"],
         $ReadyFiles["swing-v2"],
         $ReadyFiles["intraday-v2"],
-        $ReadyFiles["market-rotation-v1"]
+        $ReadyFiles["market-rotation-v1"],
+        $ReadyFiles["portfolio-flow-v1"],
+        $ReadyFiles["long-portfolio-v1"]
     )
 
-    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[7]
+    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[9]
     $Children.Add($StreamChild)
+    $TmuxLauncher = Join-Path $PSScriptRoot "start-long-portfolio-tmux.ps1"
+    $TmuxArguments = @(
+        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $TmuxLauncher,
+        "-ReadyPath", $ReadyFiles["long-portfolio-monitor"]
+    )
+    if ($NoBell) {
+        $TmuxArguments += "-NoBell"
+    }
+    & powershell.exe @TmuxArguments
+    Wait-MarketBotReadiness -Paths @($ReadyFiles["long-portfolio-monitor"])
     Write-Host "All engines ready. Started Alpaca WebSocket (PID $($StreamChild.process.Id))."
     Write-Host "Logs: $LogRoot"
     Write-Host "Press Ctrl+C to stop every process."
@@ -493,6 +521,7 @@ finally {
         Stop-MarketBotProcessTree -Process $Child.process
     }
     Close-MarketBotMonitorWindows
+    & wsl.exe sh -lc "tmux kill-session -t marketbot-long 2>/dev/null || true"
     Get-ChildItem -LiteralPath $StatusRoot -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '\.(host\.pid|arguments\.json)$' } |
         Remove-Item -Force -ErrorAction SilentlyContinue

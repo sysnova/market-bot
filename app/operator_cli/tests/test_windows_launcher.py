@@ -11,6 +11,7 @@ SEC_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-sec-bot.ps1"
 JETSTREAM_MONITOR_SCRIPT_PATH = (
     PROJECT_ROOT / "scripts" / "windows" / "watch-jetstream.ps1"
 )
+LONG_TMUX_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-long-portfolio-tmux.ps1"
 POWERSHELL = shutil.which("powershell")
 
 
@@ -125,11 +126,13 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["mode"] == "distributed"
     assert [process["name"] for process in plan["processes"]] == [
         "alerts-v2",
-        "entry-watcher-v2",
+        "entry-watcher-v3",
         "long-term-v2",
         "swing-v2",
         "intraday-v2",
         "market-rotation-v1",
+        "portfolio-flow-v1",
+        "long-portfolio-v1",
         "confirmed-buy-monitor",
         "alpaca-market-stream",
     ]
@@ -154,9 +157,46 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["processes"][6]["arguments"][:4] == [
         "run",
         "marketbot",
+        "engine",
+        "portfolio-flow",
+    ]
+    assert plan["processes"][7]["arguments"][:4] == [
+        "run",
+        "marketbot",
+        "engine",
+        "long-portfolio",
+    ]
+    assert plan["processes"][8]["arguments"][:4] == [
+        "run",
+        "marketbot",
         "alerts",
         "confirmed",
     ]
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_long_portfolio_tmux_launcher_builds_dedicated_session() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(LONG_TMUX_SCRIPT_PATH),
+            "-NoBell",
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    command = json.loads(result.stdout)
+    assert command["session"] == "marketbot-long"
+    assert "run-long-portfolio-monitor.ps1" in command["pane_command"]
+    assert "-NoBell" in command["pane_command"]
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")

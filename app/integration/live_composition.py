@@ -18,12 +18,12 @@ from app.alpaca_market_data import build_alpaca_market_data_engine
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
 from app.common.settings import AppSettings, Environment
-from app.entry_watcher import EntryWatcherPolicy, EntryWatcherV2
+from app.entry_watcher import EntryWatcherPolicy, EntryWatcherV2, EntryWatcherV3
 from app.event_bus import InMemoryEventBus, NatsJetStreamEventBus
-from app.intraday_engine import IntradayEngineV2
+from app.intraday_engine import IntradayEngineV2, IntradayEngineV3
 from app.long_term_engine import LongTermEngineV2
 from app.persistence import create_database_engine, create_session_factory
-from app.swing_engine import SwingEngineV2
+from app.swing_engine import SwingEngineV2, SwingEngineV3
 
 from .alert_publisher import AlertEventPublisher
 from .analysis_runtime import AnalysisRuntime
@@ -71,7 +71,12 @@ async def run_live_analysis(
                 create_session_factory(entry_watch_database)
             )
             if await entry_watch_store.is_ready():
-                entry_watcher = EntryWatcherV2(
+                watcher_type = (
+                    EntryWatcherV3
+                    if settings.entry_confirmation_rule_version == "3.0.0"
+                    else EntryWatcherV2
+                )
+                entry_watcher = watcher_type(
                     store=entry_watch_store,
                     policy=EntryWatcherPolicy(
                         ttl=timedelta(days=settings.entry_watch_ttl_days)
@@ -126,12 +131,22 @@ async def run_live_analysis(
         ),
         publisher=AlertEventPublisher(publisher),
     )
+    swing = (
+        SwingEngineV3()
+        if settings.entry_confirmation_rule_version == "3.0.0"
+        else SwingEngineV2()
+    )
+    intraday = (
+        IntradayEngineV3()
+        if settings.entry_confirmation_rule_version == "3.0.0"
+        else IntradayEngineV2()
+    )
     runtime = AnalysisRuntime(
         store=MarketBarStore(capacity_per_series=10_000),
         publisher=publisher,
         long_term=LongTermEngineV2(),
-        swing=SwingEngineV2(),
-        intraday=IntradayEngineV2(),
+        swing=swing,
+        intraday=intraday,
         alert_engine=AlertEngine(),
         alert_dispatcher=alert_dispatcher,
         clock=clock,

@@ -40,7 +40,7 @@ configuration, and logging. It must not become a dumping ground for shared busin
                      AnalysisResult events
                          /          \
                         v            v
-              Entry Watcher v2   Alert v2 process
+              Entry Watcher v3   Alert v2 process
                  PostgreSQL         ^
                         |            |
                         +-- transitions
@@ -62,7 +62,7 @@ Alert v2 is a separate consumer. It keeps the latest fresh result by ticker and 
 reads an engine's store or recalculates indicators. A bullish Long result can emit `LONG_BUY_ZONE`,
 a bullish Swing result can emit `SWING_SETUP`, Intraday plus Long or Swing can emit
 `ENTRY_CONFIRMED`, and all three bullish engines can emit `HIGH_CONVICTION_BUY`.
-Entry Watcher v2 is another independent consumer of the same results. It freezes Long entry zones
+Entry Watcher v3 is another independent consumer of the same results. It freezes Long entry zones
 in PostgreSQL and publishes lifecycle transitions back to NATS; Alert v2 renders those transitions
 without reading the watcher database.
 SEC dilution analysis runs in an independent once-daily process. Its adapter filters an inclusive

@@ -42,6 +42,8 @@ class AlpacaMarketDataStream:
         bars: bool = True,
         updated_bars: bool = True,
         daily_bars: bool = True,
+        trade_symbols: tuple[str, ...] | None = None,
+        quote_symbols: tuple[str, ...] | None = None,
     ) -> AsyncIterator[Mapping[str, object]]:
         normalized_symbols = tuple(
             dict.fromkeys(symbol.strip().upper() for symbol in symbols)
@@ -76,15 +78,16 @@ class AlpacaMarketDataStream:
 
             request: dict[str, object] = {"action": "subscribe"}
             channels = {
-                "trades": trades,
-                "quotes": quotes,
-                "bars": bars,
-                "updatedBars": updated_bars,
-                "dailyBars": daily_bars,
+                "trades": (trades, trade_symbols),
+                "quotes": (quotes, quote_symbols),
+                "bars": (bars, None),
+                "updatedBars": (updated_bars, None),
+                "dailyBars": (daily_bars, None),
             }
-            for channel, enabled in channels.items():
+            for channel, (enabled, selected) in channels.items():
                 if enabled:
-                    request[channel] = list(normalized_symbols)
+                    channel_symbols = selected if selected is not None else normalized_symbols
+                    request[channel] = list(channel_symbols)
             await _send_json(socket, request)
 
             while True:

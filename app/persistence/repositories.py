@@ -17,6 +17,7 @@ from .models import (
     ConsumerCheckpoint,
     EntryWatchRecord,
     EntryWatchTransitionRecord,
+    LongPortfolioAlertRecord,
     OutboxEvent,
     ProcessedEvent,
     ServiceHealthRecord,
@@ -273,3 +274,21 @@ class EntryWatchRepository(Repository):
             return False
         self._session.add(transition)
         return True
+
+
+class LongPortfolioAlertRepository(Repository):
+    """Append an immutable LONG alert exactly once by its stable deduplication key."""
+
+    async def add(self, record: LongPortfolioAlertRecord) -> bool:
+        values = {
+            column.name: getattr(record, column.name)
+            for column in LongPortfolioAlertRecord.__table__.columns
+        }
+        statement = (
+            insert(LongPortfolioAlertRecord)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=["deduplication_key"])
+            .returning(LongPortfolioAlertRecord.id)
+        )
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none() is not None

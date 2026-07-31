@@ -97,6 +97,27 @@ class PostgresUniverseClient:
             holdings_updated_at=_latest_timestamp(row.updated_at for row in holdings),
         )
 
+    async def get_holdings(self) -> UniverseSnapshot:
+        """Load only active positive holdings for portfolio tick monitoring."""
+
+        try:
+            async with self._engine.connect() as connection:
+                rows = (await connection.execute(text("""
+                    select h.symbol, h.updated_at
+                    from stock.customer_holding h
+                    join stock.customer c on c.id = h.customer_id
+                    where c.slug = :customer_slug and c.status = 'active'
+                      and h.status = 'active' and h.quantity > 0
+                    order by h.symbol asc
+                """), {"customer_slug": self._customer_slug})).all()
+        except SQLAlchemyError as error:
+            raise PostgresUniverseError("Local PostgreSQL holdings query failed") from error
+        return UniverseSnapshot(
+            symbols=_normalize_symbols(tuple(str(row.symbol) for row in rows)),
+            source="postgresql-local-holdings",
+            holdings_updated_at=_latest_timestamp(row.updated_at for row in rows),
+        )
+
 
 def fallback_universe(symbols: Sequence[str], *, source: str = "env-fallback") -> UniverseSnapshot:
     normalized = _normalize_symbols(symbols)

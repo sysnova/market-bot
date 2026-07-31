@@ -15,6 +15,7 @@ TABLES = {
     "control_events",
     "entry_watch_transitions",
     "entry_watches",
+    "long_portfolio_alerts",
     "outbox_events",
     "processed_events",
     "rule_versions",
@@ -82,6 +83,7 @@ def test_runtime_role_has_no_delete_and_immutable_tables_have_guard_triggers() -
     for table in {
         "control_events",
         "entry_watch_transitions",
+        "long_portfolio_alerts",
         "processed_events",
         "rule_versions",
         "run_strategies",

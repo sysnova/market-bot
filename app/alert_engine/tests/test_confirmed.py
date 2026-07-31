@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.alert_engine.confirmed import is_confirmed_buy
+from app.alert_engine.confirmed import is_confirmed_buy, is_portfolio_monitor_alert
 from app.contracts import (
     AlertKind,
     AlertSeverity,
@@ -41,3 +41,17 @@ def test_confirmed_buy_accepts_confirmations_and_triggered_entry(alert: LocalAle
 
 def test_confirmed_buy_rejects_unconfirmed_buy_zone(alert: LocalAlert) -> None:
     assert not is_confirmed_buy(alert.model_copy(update={"kind": AlertKind.LONG_BUY_ZONE}))
+
+
+def test_portfolio_monitor_accepts_protect_alert(alert: LocalAlert) -> None:
+    protect = alert.model_copy(
+        update={"kind": AlertKind.PORTFOLIO_PROTECT, "title": "PROTECT HIMS"}
+    )
+    assert is_portfolio_monitor_alert(protect)
+    assert not is_confirmed_buy(protect)
+
+
+def test_portfolio_monitor_accepts_long_portfolio_buy(alert: LocalAlert) -> None:
+    long_buy = alert.model_copy(update={"kind": AlertKind.LONG_PORTFOLIO_BUY})
+    assert is_portfolio_monitor_alert(long_buy)
+    assert not is_confirmed_buy(long_buy)
