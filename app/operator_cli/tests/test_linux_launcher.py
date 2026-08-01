@@ -15,3 +15,5 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     assert '"$STATUS_ROOT/long-portfolio-monitor.ready.json"' in script
     assert "start_background entry-watcher-v3" in script
     assert "remain-on-exit on" in script
+    assert 'tmux kill-session -t "$SESSION"' in script
+    assert "tmux kill-pane -a" not in script

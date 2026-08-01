@@ -101,7 +101,7 @@ run_control() {
       kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
     done
     if [[ -n "${TMUX_PANE:-}" ]]; then
-      tmux kill-pane -a -t "$TMUX_PANE" 2>/dev/null || true
+      tmux kill-session -t "$SESSION" 2>/dev/null || true
     fi
   }
   trap cleanup EXIT
