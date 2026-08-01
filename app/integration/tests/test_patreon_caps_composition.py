@@ -234,6 +234,7 @@ async def test_runtime_persists_before_publishing_full_transition() -> None:
         portfolio_capital_usd=Decimal("103000"),
         macro_symbols=("SPY",),
         require_hourly=True,
+        analysis_settle_seconds=0,
     )
     bars = (
         *(_bar(BarTimeframe.DAY_1, index) for index in range(260)),
@@ -252,6 +253,8 @@ async def test_runtime_persists_before_publishing_full_transition() -> None:
             payload=analysis,
         )
     )
+    assert order == []
+    await runtime.complete_hydration()
 
     assert order == [
         "persisted",
@@ -277,6 +280,7 @@ async def test_runtime_filters_noise_and_does_not_publish_duplicate_transition()
         allocations={},
         portfolio_capital_usd=Decimal("103000"),
         macro_symbols=("SPY",),
+        analysis_settle_seconds=0,
     )
     bars = (
         *(_bar(BarTimeframe.DAY_1, index) for index in range(260)),
@@ -302,6 +306,7 @@ async def test_runtime_filters_noise_and_does_not_publish_duplicate_transition()
             payload=_analysis().model_dump(mode="json"),
         )
     )
+    await runtime.complete_hydration()
 
     assert order == ["persisted"]
     assert publisher.events == []
@@ -322,6 +327,7 @@ async def test_runtime_publishes_assessment_without_transition_or_sizing() -> No
         allocations={},
         portfolio_capital_usd=Decimal("103000"),
         macro_symbols=(),
+        analysis_settle_seconds=0,
     )
     bars = (
         *(_bar(BarTimeframe.DAY_1, index) for index in range(260)),
@@ -338,9 +344,97 @@ async def test_runtime_publishes_assessment_without_transition_or_sizing() -> No
             payload=_analysis(),
         )
     )
+    await runtime.complete_hydration()
 
     assert order == [PATREON_CAPS_ASSESSMENT_EVENT]
     assert publisher.events[0][1].payload == evaluation.assessment
+
+
+async def test_runtime_restart_does_not_reprocess_the_same_market_snapshot() -> None:
+    order: list[str] = []
+    engine = _Engine(_evaluation())
+    runtime = PatreonCapsRuntime(
+        engine=engine,  # type: ignore[arg-type]
+        publisher=_Publisher(order),
+        store=_Store(order),
+        portfolio_data=_Portfolio(),
+        allocations={},
+        portfolio_capital_usd=Decimal("103000"),
+        macro_symbols=(),
+        last_evaluated_at={"NVO": NOW},
+        analysis_settle_seconds=0,
+    )
+    bars = (
+        *(_bar(BarTimeframe.DAY_1, index) for index in range(260)),
+        *(_bar(BarTimeframe.WEEK_1, index) for index in range(220)),
+        *(_bar(BarTimeframe.MINUTE_15, index) for index in range(160)),
+    )
+    await runtime.bootstrap(bars, symbols=("NVO",))
+    await runtime.handle_analysis(
+        EventEnvelope(
+            event_type=ANALYSIS_RESULT_EVENT,
+            occurred_at=NOW,
+            source="fixture",
+            subject="NVO",
+            payload=_analysis(),
+        )
+    )
+    await runtime.complete_hydration()
+
+    assert engine.contexts == []
+    assert order == []
+
+
+async def test_runtime_requires_a_new_market_snapshot_for_live_evaluation() -> None:
+    order: list[str] = []
+    engine = _Engine(_evaluation())
+    runtime = PatreonCapsRuntime(
+        engine=engine,  # type: ignore[arg-type]
+        publisher=_Publisher(order),
+        store=_Store(order),
+        portfolio_data=_Portfolio(),
+        allocations={},
+        portfolio_capital_usd=Decimal("103000"),
+        macro_symbols=(),
+        analysis_settle_seconds=0,
+    )
+    bars = (
+        *(_bar(BarTimeframe.DAY_1, index) for index in range(260)),
+        *(_bar(BarTimeframe.WEEK_1, index) for index in range(220)),
+        *(_bar(BarTimeframe.MINUTE_15, index) for index in range(160)),
+    )
+    await runtime.bootstrap(bars, symbols=("NVO",))
+    initial = _analysis()
+    initial_envelope = EventEnvelope(
+        event_type=ANALYSIS_RESULT_EVENT,
+        occurred_at=NOW,
+        source="fixture",
+        subject="NVO",
+        payload=initial,
+    )
+    await runtime.handle_analysis(initial_envelope)
+    await runtime.complete_hydration()
+    assert len(engine.contexts) == 1
+
+    await runtime.handle_analysis(initial_envelope)
+    assert len(engine.contexts) == 1
+
+    newer = initial.model_copy(update={"as_of": NOW + timedelta(minutes=15)})
+    await runtime.handle_analysis(initial_envelope.model_copy(update={"payload": newer}))
+    assert len(engine.contexts) == 1
+
+    await runtime.handle_market(
+        EventEnvelope(
+            event_type=MARKET_BAR_EVENT,
+            occurred_at=NOW + timedelta(days=1),
+            source="fixture",
+            subject="NVO",
+            payload=_bar(BarTimeframe.DAY_1, 301),
+        )
+    )
+    newest = initial.model_copy(update={"as_of": NOW + timedelta(minutes=30)})
+    await runtime.handle_analysis(initial_envelope.model_copy(update={"payload": newest}))
+    assert len(engine.contexts) == 2
 
 
 def test_terminal_formatting_exposes_scores_sizing_and_colors() -> None:
@@ -430,6 +524,18 @@ async def test_postgres_store_loads_and_saves_full_engine_state(monkeypatch: Any
     watch_record, transition_record = repository.save.await_args.args
     assert watch_record.symbol == "NVO"
     assert transition_record.state == PatreonCapsState.CONFIRMED_V.value
+
+
+async def test_postgres_store_loads_latest_transition_watermarks() -> None:
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=[("NVO", NOW), ("HIMS", NOW - timedelta(days=1))])
+    )
+    store = PostgresPatreonCapsStore(lambda: _SessionContext(session))  # type: ignore[arg-type]
+
+    latest = await store.latest_transition_times(rule_version="1.1.0")
+
+    assert latest == {"NVO": NOW, "HIMS": NOW - timedelta(days=1)}
+    assert session.execute.await_count == 1
 
 
 async def test_postgres_store_rejects_evaluation_without_transition() -> None:

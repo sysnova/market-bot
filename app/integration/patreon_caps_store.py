@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select, text
+from datetime import datetime
+
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.contracts import PatreonCapsTransition
@@ -35,6 +37,20 @@ class PostgresPatreonCapsStore:
                 PatreonCapsWatch.model_validate(record.payload, strict=False)
                 for record in records
             )
+
+    async def latest_transition_times(
+        self, *, rule_version: str
+    ) -> dict[str, datetime]:
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                select(
+                    PatreonCapsTransitionRecord.symbol,
+                    func.max(PatreonCapsTransitionRecord.occurred_at),
+                )
+                .where(PatreonCapsTransitionRecord.rule_version == rule_version)
+                .group_by(PatreonCapsTransitionRecord.symbol)
+            )
+            return {symbol: occurred_at for symbol, occurred_at in rows}
 
     async def save(self, evaluation: PatreonCapsEvaluation) -> bool:
         transition = evaluation.transition

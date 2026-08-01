@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
@@ -72,6 +72,10 @@ PATREON_HISTORY_REQUESTS = (
 class PatreonCapsStore(Protocol):
     async def save(self, evaluation: PatreonCapsEvaluation) -> bool: ...
 
+    async def latest_transition_times(
+        self, *, rule_version: str
+    ) -> dict[str, datetime]: ...
+
 
 class PortfolioData(Protocol):
     async def get_holding_quantity(self, symbol: str) -> Decimal: ...
@@ -91,6 +95,8 @@ class PatreonCapsRuntime:
         portfolio_capital_usd: Decimal,
         macro_symbols: tuple[str, ...],
         require_hourly: bool = False,
+        last_evaluated_at: dict[str, datetime] | None = None,
+        analysis_settle_seconds: float = 0.25,
     ) -> None:
         self._engine = engine
         self._publisher = publisher
@@ -107,6 +113,11 @@ class PatreonCapsRuntime:
         self._macro = classify_macro_regime({})
         self._symbols: set[str] = set()
         self._require_hourly = require_hourly
+        self._last_evaluated_at = dict(last_evaluated_at or {})
+        self._analysis_settle_seconds = analysis_settle_seconds
+        self._analysis_generations: dict[str, int] = {}
+        self._hydrating = True
+        self._state_lock = asyncio.Lock()
 
     async def bootstrap(
         self,
@@ -133,12 +144,17 @@ class PatreonCapsRuntime:
             AnalysisHorizon.INTRADAY,
         }:
             return
-        values = self._analyses.setdefault(result.symbol, {})
-        previous = values.get(result.horizon)
-        if previous is not None and result.as_of < previous.as_of:
-            return
-        values[result.horizon] = result
-        await self._evaluate(result.symbol)
+        async with self._state_lock:
+            values = self._analyses.setdefault(result.symbol, {})
+            previous = values.get(result.horizon)
+            if previous is not None and result.as_of <= previous.as_of:
+                return
+            values[result.horizon] = result
+            if self._hydrating:
+                return
+            generation = self._next_generation(result.symbol)
+
+        await self._evaluate_after_settle(result.symbol, generation)
 
     async def handle_market(self, envelope: EventEnvelope) -> None:
         if envelope.event_type not in {MARKET_BAR_EVENT, MARKET_BAR_UPDATED_EVENT}:
@@ -150,25 +166,52 @@ class PatreonCapsRuntime:
         )
         if not bar.is_final:
             return
-        self._bars.add(bar)
-        if bar.symbol in self._macro_symbols:
-            if bar.timeframe is BarTimeframe.DAY_1:
-                self._refresh_macro()
-            return
-        if bar.symbol not in self._symbols:
-            return
-        if bar.timeframe is BarTimeframe.MINUTE_1:
-            emitted = self._aggregator.add(bar)
-            for aggregate in emitted:
-                self._bars.add(aggregate)
-                await self._evaluate(bar.symbol)
-        elif bar.timeframe in {
-            BarTimeframe.DAY_1,
-            BarTimeframe.WEEK_1,
-            BarTimeframe.HOUR_1,
-            BarTimeframe.MINUTE_15,
-        }:
-            await self._evaluate(bar.symbol)
+        generation: int | None = None
+        async with self._state_lock:
+            self._bars.add(bar)
+            if bar.symbol in self._macro_symbols:
+                if bar.timeframe is BarTimeframe.DAY_1:
+                    self._refresh_macro()
+                return
+            if bar.symbol not in self._symbols:
+                return
+            if bar.timeframe is BarTimeframe.MINUTE_1:
+                aggregates = self._aggregator.add(bar)
+                for aggregate in aggregates:
+                    self._bars.add(aggregate)
+                if aggregates and not self._hydrating:
+                    generation = self._next_generation(bar.symbol)
+            elif bar.timeframe in {
+                BarTimeframe.DAY_1,
+                BarTimeframe.WEEK_1,
+                BarTimeframe.HOUR_1,
+                BarTimeframe.MINUTE_15,
+            } and not self._hydrating:
+                generation = self._next_generation(bar.symbol)
+
+        if generation is not None:
+            await self._evaluate_after_settle(bar.symbol, generation)
+
+    async def complete_hydration(self) -> None:
+        """Evaluate one coherent latest snapshot, then enable live transitions."""
+
+        async with self._state_lock:
+            for symbol in sorted(self._analyses):
+                await self._evaluate(symbol)
+            self._hydrating = False
+
+    def _next_generation(self, symbol: str) -> int:
+        generation = self._analysis_generations.get(symbol, 0) + 1
+        self._analysis_generations[symbol] = generation
+        return generation
+
+    async def _evaluate_after_settle(self, symbol: str, generation: int) -> None:
+        if self._analysis_settle_seconds:
+            await asyncio.sleep(self._analysis_settle_seconds)
+        async with self._state_lock:
+            if self._analysis_generations.get(symbol) != generation:
+                return
+            await self._evaluate(symbol)
 
     def _refresh_macro(self) -> None:
         series = {
@@ -200,6 +243,9 @@ class PatreonCapsRuntime:
         if hourly:
             timestamps.append(hourly[-1].timestamp)
         occurred_at = max(timestamps)
+        previous_evaluation = self._last_evaluated_at.get(symbol)
+        if previous_evaluation is not None and occurred_at <= previous_evaluation:
+            return
         evaluation = self._engine.evaluate(
             PatreonCapsContext(
                 symbol=symbol,
@@ -218,6 +264,7 @@ class PatreonCapsRuntime:
             ),
             now=occurred_at,
         )
+        self._last_evaluated_at[symbol] = occurred_at
         if evaluation is None:
             return
         if evaluation.transition is not None and not await self._store.save(evaluation):
@@ -310,6 +357,9 @@ async def run_patreon_caps_process(
             for item in await store.load_active()
             if item.rule_version == policy.rule_version
         )
+        last_evaluated_at = await store.latest_transition_times(
+            rule_version=policy.rule_version
+        )
         engine = PatreonCapsEngine(policy, restored_watches=restored)
         runtime = PatreonCapsRuntime(
             engine=engine,
@@ -320,19 +370,18 @@ async def run_patreon_caps_process(
             portfolio_capital_usd=policy.portfolio_capital_usd,
             macro_symbols=policy.macro_symbols,
             require_hourly=policy.lesson_enabled,
+            last_evaluated_at=last_evaluated_at,
         )
         await runtime.bootstrap(bars, symbols=symbols)
-        subscriptions.append(
-            await bus.subscribe(
-                "marketbot.v1.analysis.result.>",
-                runtime.handle_analysis,
-                options=SubscriptionOptions(
-                    durable_name="marketbot-patreon-caps-analysis-v1",
-                    replay_all=True,
-                    ack_wait_seconds=60,
-                ),
-            )
+        analysis_subscription = await bus.subscribe(
+            "marketbot.v1.analysis.result.>",
+            runtime.handle_analysis,
+            options=SubscriptionOptions(
+                replay_latest_per_subject=True,
+                ack_wait_seconds=60,
+            ),
         )
+        subscriptions.append(analysis_subscription)
         for index, subject in enumerate(
             (
                 "marketbot.v1.market.bar.1Min.>",
@@ -352,6 +401,11 @@ async def run_patreon_caps_process(
                     ),
                 )
             )
+        await bus.wait_until_caught_up(
+            analysis_subscription,
+            timeout_seconds=60,
+        )
+        await runtime.complete_hydration()
         if ready_path is not None:
             write_ready(
                 ready_path,

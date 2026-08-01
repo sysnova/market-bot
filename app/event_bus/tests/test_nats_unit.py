@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -33,7 +34,7 @@ class FakeMessage:
 class FakeJetStream:
     published: list[tuple[str, bytes, dict[str, str] | None]] = field(default_factory=list)
     subscription: FakeSubscription = field(default_factory=lambda: FakeSubscription())
-    subscribed: list[tuple[str, str, object]] = field(default_factory=list)
+    subscribed: list[tuple[str, str | None, object]] = field(default_factory=list)
     stream_queries: list[str] = field(default_factory=list)
     streams_added: list[tuple[str, list[str], float]] = field(default_factory=list)
 
@@ -46,7 +47,7 @@ class FakeJetStream:
         self,
         subject: str,
         *,
-        durable: str,
+        durable: str | None,
         cb: Callable[[FakeMessage], Awaitable[None]],
         manual_ack: bool,
         config: object,
@@ -73,6 +74,9 @@ class FakeSubscription:
 
     async def unsubscribe(self) -> None:
         self.unsubscribed += 1
+
+    async def consumer_info(self) -> object:
+        return SimpleNamespace(num_pending=0, num_ack_pending=0)
 
 
 @dataclass
@@ -147,6 +151,26 @@ async def test_subscribe_configures_durable_explicit_ack_and_replay() -> None:
     assert config.max_deliver == 7  # type: ignore[attr-defined]
     await subscription.unsubscribe()
     assert js.subscription.unsubscribed == 1
+
+
+@pytest.mark.unit
+async def test_subscribe_can_hydrate_only_latest_message_per_subject() -> None:
+    from nats.js.api import DeliverPolicy
+
+    js = FakeJetStream()
+    bus = NatsJetStreamEventBus(client=None, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]
+
+    subscription = await bus.subscribe(
+        "v1.analysis.result.>",
+        _discard,
+        options=SubscriptionOptions(replay_latest_per_subject=True),
+    )
+
+    _, durable, config = js.subscribed[0]
+    assert durable is None
+    assert config.durable_name is None  # type: ignore[attr-defined]
+    assert config.deliver_policy is DeliverPolicy.LAST_PER_SUBJECT  # type: ignore[attr-defined]
+    await bus.wait_until_caught_up(subscription)
 
 
 @pytest.mark.unit

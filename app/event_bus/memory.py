@@ -89,6 +89,13 @@ class InMemoryEventBus:
             for historical_subject, payload in self._history:
                 if subject_matches(subject, historical_subject):
                     await self._start_delivery(subscriber, payload)
+        elif resolved_options.replay_latest_per_subject:
+            latest: dict[str, bytes] = {}
+            for historical_subject, payload in self._history:
+                if subject_matches(subject, historical_subject):
+                    latest[historical_subject] = payload
+            for payload in latest.values():
+                await self._start_delivery(subscriber, payload)
         return _MemorySubscription(subscriber)
 
     async def join(self) -> None:

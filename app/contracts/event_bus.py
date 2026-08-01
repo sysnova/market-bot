@@ -17,6 +17,7 @@ class SubscriptionOptions:
 
     durable_name: str | None = None
     replay_all: bool = False
+    replay_latest_per_subject: bool = False
     max_deliver: int = 5
     ack_wait_seconds: float = 30.0
     redelivery_delay_seconds: float = 0.1
@@ -24,6 +25,10 @@ class SubscriptionOptions:
     def __post_init__(self) -> None:
         if self.durable_name is not None and not self.durable_name.strip():
             raise ValueError("durable_name cannot be blank")
+        if self.replay_all and self.replay_latest_per_subject:
+            raise ValueError(
+                "replay_all and replay_latest_per_subject are mutually exclusive"
+            )
         if self.max_deliver < 1:
             raise ValueError("max_deliver must be at least one")
         if self.ack_wait_seconds <= 0:

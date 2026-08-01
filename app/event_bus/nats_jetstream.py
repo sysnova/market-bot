@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
+from time import monotonic
 from typing import Protocol, cast
 from uuid import uuid4
 
@@ -44,6 +46,13 @@ class _StreamInfo(Protocol):
 class _NatsSubscription(Protocol):
     async def unsubscribe(self) -> None: ...
 
+    async def consumer_info(self) -> _ConsumerInfo: ...
+
+
+class _ConsumerInfo(Protocol):
+    num_pending: int
+    num_ack_pending: int
+
 
 class _NatsClient(Protocol):
     @property
@@ -67,7 +76,7 @@ class _JetStream(Protocol):
         self,
         subject: str,
         *,
-        durable: str,
+        durable: str | None,
         cb: Callable[[_NatsMessage], Awaitable[None]],
         manual_ack: bool,
         config: object,
@@ -88,6 +97,16 @@ class _JetStreamSubscription(Subscription):
 
     async def unsubscribe(self) -> None:
         await self._subscription.unsubscribe()
+
+    async def wait_until_caught_up(self, *, timeout_seconds: float = 30.0) -> None:
+        deadline = monotonic() + timeout_seconds
+        while True:
+            info = await self._subscription.consumer_info()
+            if info.num_pending == 0 and info.num_ack_pending == 0:
+                return
+            if monotonic() >= deadline:
+                raise TimeoutError("JetStream subscription did not catch up in time")
+            await asyncio.sleep(0.05)
 
 
 class NatsJetStreamEventBus:
@@ -185,15 +204,24 @@ class NatsJetStreamEventBus:
 
         from nats.js.api import AckPolicy, ConsumerConfig, DeliverPolicy
 
+        if resolved.replay_latest_per_subject:
+            deliver_policy = DeliverPolicy.LAST_PER_SUBJECT
+        elif resolved.replay_all:
+            deliver_policy = DeliverPolicy.ALL
+        else:
+            deliver_policy = DeliverPolicy.NEW
+
+        durable_name = resolved.durable_name
+        if durable_name is None and not resolved.replay_latest_per_subject:
+            durable_name = f"mb_{uuid4().hex}"
+
         config = ConsumerConfig(
-            durable_name=resolved.durable_name,
-            deliver_policy=DeliverPolicy.ALL if resolved.replay_all else DeliverPolicy.NEW,
+            durable_name=durable_name,
+            deliver_policy=deliver_policy,
             ack_policy=AckPolicy.EXPLICIT,
             ack_wait=resolved.ack_wait_seconds,
             max_deliver=resolved.max_deliver,
         )
-        durable_name = resolved.durable_name or f"mb_{uuid4().hex}"
-
         async def callback(message: _NatsMessage) -> None:
             await self._deliver(message, handler, resolved)
 
@@ -207,6 +235,13 @@ class NatsJetStreamEventBus:
         subscription = _JetStreamSubscription(native)
         self._subscriptions.append(subscription)
         return subscription
+
+    async def wait_until_caught_up(
+        self, subscription: Subscription, *, timeout_seconds: float = 30.0
+    ) -> None:
+        if not isinstance(subscription, _JetStreamSubscription):
+            raise TypeError("subscription was not created by this JetStream bus")
+        await subscription.wait_until_caught_up(timeout_seconds=timeout_seconds)
 
     async def close(self) -> None:
         if self._closed:
