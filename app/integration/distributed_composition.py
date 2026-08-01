@@ -28,6 +28,8 @@ from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     ENTRY_WATCH_TRANSITION_EVENT,
+    MARKET_ROTATION_EVENT,
+    MARKET_ROTATION_SUBJECT,
     SERVICE_HEALTH_EVENT,
     AnalysisHorizon,
     AnalysisResult,
@@ -35,6 +37,7 @@ from app.contracts import (
     EntryWatchTransition,
     EventEnvelope,
     MarketBar,
+    MarketRotationReport,
     NamedValue,
     ServiceHealth,
     ServiceStatus,
@@ -91,9 +94,7 @@ def engine_history_requests(horizon: AnalysisHorizon) -> tuple[HistoryRequest, .
             HistoryRequest(BarTimeframe.DAY_1, timedelta(days=220), 120),
             HistoryRequest(BarTimeframe.MINUTE_15, timedelta(days=14), 160),
         ),
-        AnalysisHorizon.INTRADAY: (
-            HistoryRequest(BarTimeframe.MINUTE_1, timedelta(days=5), 500),
-        ),
+        AnalysisHorizon.INTRADAY: (HistoryRequest(BarTimeframe.MINUTE_1, timedelta(days=5), 500),),
     }.get(horizon, ())
 
 
@@ -167,6 +168,8 @@ async def run_engine_process(
             rule_version=settings.entry_confirmation_rule_version,
         )
         result_count = await worker.bootstrap(bars, symbols=universe.symbols)
+        current_symbols = set(universe.symbols)
+        refresh_lock = asyncio.Lock()
         if not once:
             for index, subject in enumerate(engine_live_subjects(horizon), start=1):
                 subscriptions.append(
@@ -177,6 +180,55 @@ async def run_engine_process(
                             durable_name=f"marketbot-{horizon.value.lower()}-v2-{index}",
                             replay_all=False,
                             ack_wait_seconds=60,
+                        ),
+                    )
+                )
+            if horizon in {AnalysisHorizon.LONG_TERM, AnalysisHorizon.SWING} and symbols is None:
+
+                async def handle_rotation(envelope: EventEnvelope) -> None:
+                    nonlocal current_symbols
+                    if envelope.event_type != MARKET_ROTATION_EVENT:
+                        return
+                    report = (
+                        envelope.payload
+                        if isinstance(envelope.payload, MarketRotationReport)
+                        else MarketRotationReport.model_validate(envelope.payload, strict=False)
+                    )
+                    if not report.watchlist_additions:
+                        return
+                    async with refresh_lock:
+                        refreshed = await _resolve_universe(settings, None)
+                        added = tuple(
+                            symbol for symbol in refreshed.symbols if symbol not in current_symbols
+                        )
+                        current_symbols = set(refreshed.symbols)
+                        if not added:
+                            return
+                        refresh_bars = await _load_history(
+                            rest,
+                            normalizer,
+                            added,
+                            engine_history_requests(horizon),
+                            as_of=clock.now(),
+                            batch_size=settings.alpaca_rest_batch_size,
+                        )
+                        refreshed_results = await worker.bootstrap(refresh_bars, symbols=added)
+                        await logger.ainfo(
+                            "rotation_universe_refreshed",
+                            symbols=list(added),
+                            historical_bars=len(refresh_bars),
+                            initial_results=refreshed_results,
+                            rotation_run_id=report.run_id,
+                        )
+
+                subscriptions.append(
+                    await bus.subscribe(
+                        MARKET_ROTATION_SUBJECT,
+                        handle_rotation,
+                        options=SubscriptionOptions(
+                            durable_name=f"marketbot-{horizon.value.lower()}-rotation-v1",
+                            replay_all=False,
+                            ack_wait_seconds=120,
                         ),
                     )
                 )
@@ -221,29 +273,74 @@ async def run_market_stream_process(
     http_client = httpx.AsyncClient()
     bus: NatsJetStreamEventBus | None = None
     engine: AlpacaMarketDataEngine | None = None
+    rotation_subscription: Subscription | None = None
+    rotation_refresh = asyncio.Event()
     try:
         bus = await _connect_nats(settings)
         engine = _build_stream_engine(settings, bus)
+
+        async def handle_rotation(envelope: EventEnvelope) -> None:
+            if envelope.event_type != MARKET_ROTATION_EVENT:
+                return
+            report = (
+                envelope.payload
+                if isinstance(envelope.payload, MarketRotationReport)
+                else MarketRotationReport.model_validate(envelope.payload, strict=False)
+            )
+            if report.watchlist_additions:
+                rotation_refresh.set()
+
+        if symbols is None:
+            rotation_subscription = await bus.subscribe(
+                MARKET_ROTATION_SUBJECT,
+                handle_rotation,
+                options=SubscriptionOptions(
+                    durable_name="marketbot-alpaca-stream-rotation-v1",
+                    replay_all=False,
+                    ack_wait_seconds=60,
+                ),
+            )
         backoff = 1.0
         while True:
             try:
+                rotation_refresh.clear()
                 universe = await _resolve_universe(settings, symbols)
                 holdings = await _resolve_holdings(settings)
-                await _publish_health(bus, "alpaca-market-stream", {
-                    "symbols": len(universe.symbols), "portfolio_symbols": len(holdings.symbols),
-                    "universe_source": universe.source}, clock.now())
-                async with asyncio.timeout(settings.universe_refresh_seconds):
-                    count = await engine.stream_once(
+                await _publish_health(
+                    bus,
+                    "alpaca-market-stream",
+                    {
+                        "symbols": len(universe.symbols),
+                        "portfolio_symbols": len(holdings.symbols),
+                        "universe_source": universe.source,
+                    },
+                    clock.now(),
+                )
+                stream_task = asyncio.create_task(
+                    engine.stream_once(
                         universe.symbols,
                         **market_stream_subscription_options(),
                         trade_symbols=holdings.symbols,
                         quote_symbols=holdings.symbols,
                     )
+                )
+                refresh_task = asyncio.create_task(rotation_refresh.wait())
+                done, _ = await asyncio.wait(
+                    (stream_task, refresh_task),
+                    timeout=settings.universe_refresh_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if stream_task in done:
+                    refresh_task.cancel()
+                    count = await stream_task
+                else:
+                    stream_task.cancel()
+                    refresh_task.cancel()
+                    await asyncio.gather(stream_task, refresh_task, return_exceptions=True)
+                    backoff = 1.0
+                    continue
                 if count > 0:
                     backoff = 1.0
-            except TimeoutError:
-                backoff = 1.0
-                continue
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -255,6 +352,8 @@ async def run_market_stream_process(
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
     finally:
+        if rotation_subscription is not None:
+            await rotation_subscription.unsubscribe()
         if engine is not None:
             await engine.close()
         await http_client.aclose()
@@ -364,8 +463,7 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
         store = PostgresEntryWatchStore(create_session_factory(database))
         if not await store.is_ready():
             raise RuntimeError(
-                "entry watcher schema is unavailable; apply "
-                "20260726180000_entry_watches.sql"
+                "entry watcher schema is unavailable; apply 20260726180000_entry_watches.sql"
             )
         watcher_type = (
             EntryWatcherV3
@@ -374,9 +472,7 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
         )
         watcher = watcher_type(
             store=store,
-            policy=EntryWatcherPolicy(
-                ttl=timedelta(days=settings.entry_watch_ttl_days)
-            ),
+            policy=EntryWatcherPolicy(ttl=timedelta(days=settings.entry_watch_ttl_days)),
         )
         bus = await _connect_nats(settings)
         watcher_version = settings.entry_confirmation_rule_version
@@ -393,9 +489,7 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
             transition = await watcher.ingest(result, now=clock.now())
             if transition is not None:
                 await bus.publish(
-                    entry_watch_transition_subject(
-                        transition.status, transition.symbol
-                    ),
+                    entry_watch_transition_subject(transition.status, transition.symbol),
                     EventEnvelope(
                         event_type=ENTRY_WATCH_TRANSITION_EVENT,
                         occurred_at=transition.occurred_at,
@@ -543,9 +637,8 @@ async def _load_history(
                     ).envelope.payload
                     if not isinstance(payload, MarketBar):
                         raise TypeError("normalized REST bar did not produce MarketBar")
-                    if (
-                        payload.timeframe is BarTimeframe.WEEK_1
-                        and not _weekly_bar_is_complete(payload.timestamp, as_of)
+                    if payload.timeframe is BarTimeframe.WEEK_1 and not _weekly_bar_is_complete(
+                        payload.timestamp, as_of
                     ):
                         continue
                     output.append(payload)
@@ -580,10 +673,7 @@ async def _publish_health(
         status=ServiceStatus.HEALTHY,
         observed_at=observed_at,
         version="2.0.0",
-        details=tuple(
-            NamedValue(name=key, value=value)
-            for key, value in sorted(details.items())
-        ),
+        details=tuple(NamedValue(name=key, value=value) for key, value in sorted(details.items())),
     )
     await publisher.publish(
         service_health_subject(service),
