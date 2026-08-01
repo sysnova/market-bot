@@ -12,7 +12,9 @@ import yaml
 from .models import LongPortfolioPolicy, PortfolioAllocation
 
 
-def load_long_portfolio_policy(path: Path) -> LongPortfolioPolicy:
+def load_long_portfolio_policy(
+    path: Path, *, allocations: tuple[PortfolioAllocation, ...]
+) -> LongPortfolioPolicy:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("long-portfolio artifact must be a mapping")
@@ -24,9 +26,8 @@ def load_long_portfolio_policy(path: Path) -> LongPortfolioPolicy:
         horizon_end=str(raw["horizon_end"]),
         portfolio_capital_usd=Decimal(str(raw["portfolio_capital_usd"])),
         cash_weight_percent=Decimal(str(raw["cash_weight_percent"])),
-        excluded_symbols=_strings(raw, "excluded_symbols"),
-        reserved_allocations=_allocations(raw, "reserved_allocations"),
-        allocations=_allocations(raw, "allocations"),
+        reserved_weight_percent=Decimal(str(raw["reserved_weight_percent"])),
+        allocations=allocations,
         minimum_score=Decimal(str(thresholds["minimum_score"])),
         minimum_confidence=Decimal(str(thresholds["minimum_confidence"])),
         minimum_setup_score=Decimal(str(thresholds["minimum_setup_score"])),
@@ -59,19 +60,3 @@ def _strings(values: dict[str, object], key: str) -> tuple[str, ...]:
     if not all(isinstance(item, str) for item in items):
         raise ValueError(f"{key} must be a string list")
     return tuple(str(item) for item in items)
-
-
-def _allocations(values: dict[str, object], key: str) -> tuple[PortfolioAllocation, ...]:
-    value = values[key]
-    if not isinstance(value, list):
-        raise ValueError(f"{key} must be an allocation list")
-    output: list[PortfolioAllocation] = []
-    for item in cast("list[object]", value):
-        if not isinstance(item, dict):
-            raise ValueError(f"{key} entries must be mappings")
-        record = cast("dict[str, object]", item)
-        output.append(PortfolioAllocation(
-            symbol=str(record["symbol"]),
-            weight_percent=Decimal(str(record["weight_percent"])),
-        ))
-    return tuple(output)

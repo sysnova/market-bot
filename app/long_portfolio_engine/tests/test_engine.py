@@ -24,8 +24,7 @@ def _policy() -> LongPortfolioPolicy:
         horizon_end="2026-12-31",
         portfolio_capital_usd=Decimal("103000"),
         cash_weight_percent=Decimal("11.20"),
-        excluded_symbols=("ANF",),
-        reserved_allocations=(),
+        reserved_weight_percent=Decimal("13.07"),
         allocations=(PortfolioAllocation(symbol="HIMS", weight_percent=Decimal("11.73")),),
         minimum_score=Decimal("72"),
         minimum_confidence=Decimal("0.68"),
@@ -100,3 +99,26 @@ def test_resets_confirmation_when_a_session_fails_the_solid_entry_gate() -> None
 
     assert engine.ingest(weak, now=NOW) is None
     assert engine.ingest(_analysis(), now=NOW) is None
+
+
+def test_sizes_only_the_gap_remaining_after_current_holdings() -> None:
+    engine = LongPortfolioEngine(_policy())
+    assert engine.ingest(_analysis(as_of=NOW - timedelta(days=1)), now=NOW) is None
+
+    alert = engine.ingest(_analysis(), now=NOW, held_quantity=Decimal("200"))
+
+    assert alert is not None
+    metrics = {item.name: item.value for item in alert.metrics}
+    assert metrics["current_holding_value_usd"] == Decimal("10000.00")
+    assert metrics["remaining_to_target_usd"] == Decimal("2081.90")
+    assert metrics["suggested_tranche_usd"] == Decimal("2081.90")
+    assert metrics["suggested_whole_shares"] == Decimal("41")
+
+
+def test_does_not_emit_buy_when_current_holding_reaches_target() -> None:
+    engine = LongPortfolioEngine(_policy())
+    assert engine.ingest(_analysis(as_of=NOW - timedelta(days=1)), now=NOW) is None
+
+    assert (
+        engine.ingest(_analysis(), now=NOW, held_quantity=Decimal("300")) is None
+    )

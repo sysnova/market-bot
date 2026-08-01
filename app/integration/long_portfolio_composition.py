@@ -22,6 +22,7 @@ from app.persistence import create_database_engine, create_session_factory
 
 from .distributed_composition import _write_ready  # pyright: ignore[reportPrivateUsage]
 from .long_portfolio_store import PostgresLongPortfolioAlertStore
+from .postgres_universe import PostgresUniverseClient
 
 
 async def run_long_portfolio_process(
@@ -33,14 +34,16 @@ async def run_long_portfolio_process(
     """Replay recent Long results, then monitor new ones and publish durable alerts."""
 
     settings = AppSettings()
-    policy = load_long_portfolio_policy(config_path)
-    engine = LongPortfolioEngine(policy)
-    ledger = NdjsonAlertSink(runtime_root / "alerts" / "long-portfolio-alerts.ndjson")
-    clock = SystemClock()
     database = create_database_engine(
         settings.database_url.get_secret_value(),
         require_ssl=settings.environment is Environment.PRODUCTION,
     )
+    portfolio_data = PostgresUniverseClient(database)
+    allocations = await portfolio_data.get_portfolio_allocations()
+    policy = load_long_portfolio_policy(config_path, allocations=allocations)
+    engine = LongPortfolioEngine(policy)
+    ledger = NdjsonAlertSink(runtime_root / "alerts" / "long-portfolio-alerts.ndjson")
+    clock = SystemClock()
     store = PostgresLongPortfolioAlertStore(create_session_factory(database))
     if not await store.is_ready():
         await database.dispose()
@@ -60,7 +63,8 @@ async def run_long_portfolio_process(
             if isinstance(envelope.payload, AnalysisResult)
             else AnalysisResult.model_validate(envelope.payload, strict=False)
         )
-        alert = engine.ingest(result, now=clock.now())
+        held_quantity = await portfolio_data.get_holding_quantity(result.symbol)
+        alert = engine.ingest(result, now=clock.now(), held_quantity=held_quantity)
         if alert is None or not await store.save(alert):
             return
         ledger.emit(alert)
@@ -87,7 +91,7 @@ async def run_long_portfolio_process(
             "horizon_end": policy.horizon_end,
             "portfolio_capital_usd": str(policy.portfolio_capital_usd),
             "monitored_symbols": len(policy.allocations),
-            "excluded_symbols": list(policy.excluded_symbols),
+            "universe_source": "postgresql-local:watchlist:PORT_YTD",
             "input_subject": "marketbot.v1.analysis.result.LONG_TERM.>",
             "replay_recent": True,
             "persistence": "postgresql+ndjson",

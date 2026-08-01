@@ -5,10 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
+
+from app.long_portfolio_engine import PortfolioAllocation
 
 
 class PostgresUniverseError(RuntimeError):
@@ -117,6 +120,93 @@ class PostgresUniverseClient:
             source="postgresql-local-holdings",
             holdings_updated_at=_latest_timestamp(row.updated_at for row in rows),
         )
+
+    async def get_portfolio_allocations(
+        self, *, indicator: str = "PORT_YTD"
+    ) -> tuple[PortfolioAllocation, ...]:
+        """Load an active tagged portfolio and its target weights from PostgreSQL."""
+
+        try:
+            async with self._engine.connect() as connection:
+                rows = (
+                    await connection.execute(
+                        text(
+                            """
+                            select
+                              ws.symbol,
+                              ws.metadata_json #>> array[
+                                'indicatorDetails', :indicator, 'targetWeightPercent'
+                              ] as target_weight_percent
+                            from stock.watchlist w
+                            join stock.customer c on c.id = w.customer_id
+                            join stock.watchlist_symbol ws on ws.watchlist_id = w.id
+                            where c.slug = :customer_slug
+                              and c.status = 'active'
+                              and w.code = :watchlist_code
+                              and w.status = 'active'
+                              and ws.status = 'active'
+                              and coalesce(ws.metadata_json->'indicators', '[]'::jsonb)
+                                  ? :indicator
+                            order by ws.sort_order asc, ws.symbol asc
+                            """
+                        ),
+                        {
+                            "customer_slug": self._customer_slug,
+                            "watchlist_code": self._watchlist_code,
+                            "indicator": indicator,
+                        },
+                    )
+                ).all()
+        except SQLAlchemyError as error:
+            raise PostgresUniverseError(
+                f"Local PostgreSQL {indicator} portfolio query failed"
+            ) from error
+
+        if not rows:
+            raise PostgresUniverseError(
+                f"Local PostgreSQL has no active {indicator} watchlist symbols"
+            )
+        try:
+            return tuple(
+                PortfolioAllocation(
+                    symbol=str(row.symbol).strip().upper(),
+                    weight_percent=Decimal(str(row.target_weight_percent)),
+                )
+                for row in rows
+            )
+        except (InvalidOperation, ValueError, TypeError) as error:
+            raise PostgresUniverseError(
+                f"Local PostgreSQL contains an invalid {indicator} target weight"
+            ) from error
+
+    async def get_holding_quantity(self, symbol: str) -> Decimal:
+        """Return the current authoritative holding quantity for one symbol."""
+
+        try:
+            async with self._engine.connect() as connection:
+                value = await connection.scalar(
+                    text(
+                        """
+                        select coalesce(h.quantity, 0)
+                        from stock.customer c
+                        left join stock.customer_holding h
+                          on h.customer_id = c.id
+                         and h.symbol = :symbol
+                         and h.status = 'active'
+                        where c.slug = :customer_slug
+                          and c.status = 'active'
+                        """
+                    ),
+                    {
+                        "customer_slug": self._customer_slug,
+                        "symbol": symbol.strip().upper(),
+                    },
+                )
+        except SQLAlchemyError as error:
+            raise PostgresUniverseError(
+                f"Local PostgreSQL holding query failed for {symbol}"
+            ) from error
+        return Decimal(str(value or 0))
 
 
 def fallback_universe(symbols: Sequence[str], *, source: str = "env-fallback") -> UniverseSnapshot:

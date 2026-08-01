@@ -22,8 +22,7 @@ class LongPortfolioPolicy(_FrozenModel):
     horizon_end: str
     portfolio_capital_usd: Decimal = Field(gt=Decimal("0"))
     cash_weight_percent: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
-    excluded_symbols: tuple[str, ...]
-    reserved_allocations: tuple[PortfolioAllocation, ...]
+    reserved_weight_percent: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
     allocations: tuple[PortfolioAllocation, ...]
     minimum_score: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
     minimum_confidence: Decimal = Field(ge=Decimal("0"), le=Decimal("1"))
@@ -43,11 +42,8 @@ class LongPortfolioPolicy(_FrozenModel):
         allocation_symbols = tuple(item.symbol for item in self.allocations)
         if len(allocation_symbols) != len(set(allocation_symbols)):
             raise ValueError("allocation symbols must be unique")
-        if set(allocation_symbols) & set(self.excluded_symbols):
-            raise ValueError("excluded symbols cannot have allocations")
-        total = self.cash_weight_percent + sum(
-            (item.weight_percent for item in (*self.reserved_allocations, *self.allocations)),
-            Decimal(),
+        total = self.cash_weight_percent + self.reserved_weight_percent + sum(
+            (item.weight_percent for item in self.allocations), Decimal()
         )
         if total > Decimal("100"):
             raise ValueError("portfolio weights cannot exceed 100 percent")
@@ -59,9 +55,8 @@ class LongPortfolioPolicy(_FrozenModel):
 
     @property
     def configured_weight_percent(self) -> Decimal:
-        return self.cash_weight_percent + sum(
-            (item.weight_percent for item in (*self.reserved_allocations, *self.allocations)),
-            Decimal(),
+        return self.cash_weight_percent + self.reserved_weight_percent + sum(
+            (item.weight_percent for item in self.allocations), Decimal()
         )
 
     @property

@@ -32,7 +32,13 @@ class LongPortfolioEngine:
         self._qualified_sessions: dict[str, list[date]] = {}
         self._last_emitted: dict[str, datetime] = {}
 
-    def ingest(self, result: AnalysisResult, *, now: datetime) -> LocalAlert | None:
+    def ingest(
+        self,
+        result: AnalysisResult,
+        *,
+        now: datetime,
+        held_quantity: Decimal = Decimal(),
+    ) -> LocalAlert | None:
         allocation = self._policy.allocation_for(result.symbol)
         if allocation is None or result.horizon is not AnalysisHorizon.LONG_TERM:
             return None
@@ -53,8 +59,10 @@ class LongPortfolioEngine:
         previous = self._last_emitted.get(result.symbol)
         if previous is not None and now - previous < self._policy.cooldown:
             return None
-        self._last_emitted[result.symbol] = now
-        return self._build_alert(result, allocation, now)
+        alert = self._build_alert(result, allocation, now, held_quantity)
+        if alert is not None:
+            self._last_emitted[result.symbol] = now
+        return alert
 
     def _qualifies(self, result: AnalysisResult) -> bool:
         metrics = _metrics(result)
@@ -75,14 +83,24 @@ class LongPortfolioEngine:
         )
 
     def _build_alert(
-        self, result: AnalysisResult, allocation: PortfolioAllocation, now: datetime
-    ) -> LocalAlert:
+        self,
+        result: AnalysisResult,
+        allocation: PortfolioAllocation,
+        now: datetime,
+        held_quantity: Decimal,
+    ) -> LocalAlert | None:
         metrics = _metrics(result)
         price = _decimal(metrics.get("reference_price"))
         target = _money(
             self._policy.portfolio_capital_usd * allocation.weight_percent / HUNDRED
         )
-        tranche = _money(target * self._policy.initial_tranche_percent / HUNDRED)
+        current_value = _money(held_quantity * price)
+        remaining = _money(max(target - current_value, Decimal()))
+        if remaining <= 0:
+            return None
+        tranche = min(
+            _money(target * self._policy.initial_tranche_percent / HUNDRED), remaining
+        )
         shares = (tranche / price).quantize(Decimal("1"), rounding=ROUND_DOWN)
         return LocalAlert(
             symbol=result.symbol,
@@ -91,7 +109,8 @@ class LongPortfolioEngine:
             title=f"LONG PORTFOLIO BUY {result.symbol}",
             message=(
                 f"Entrada LONG confirmada por {len(self._qualified_sessions[result.symbol])} "
-                f"sesiones; primera tranche USD {tranche}."
+                f"sesiones; faltan USD {remaining} para el objetivo y se sugiere "
+                f"una tranche de USD {tranche}."
             ),
             horizons=(AnalysisHorizon.LONG_TERM,),
             component_analysis_ids=(result.analysis_id,),
@@ -103,6 +122,9 @@ class LongPortfolioEngine:
                 NamedValue(name="invalidation", value=metrics.get("invalidation")),
                 NamedValue(name="target_weight_percent", value=allocation.weight_percent),
                 NamedValue(name="target_capital_usd", value=target),
+                NamedValue(name="held_quantity", value=held_quantity),
+                NamedValue(name="current_holding_value_usd", value=current_value),
+                NamedValue(name="remaining_to_target_usd", value=remaining),
                 NamedValue(
                     name="suggested_tranche_percent",
                     value=self._policy.initial_tranche_percent,

@@ -3,52 +3,13 @@ rule_version: 1.0.0
 horizon_end: "2026-12-31"
 portfolio_capital_usd: 103000
 
-# Original 10.60% cash plus the 0.60% removed from explicit exclusions.
+# Original 10.60% cash plus the 0.60% removed from the model portfolio.
 cash_weight_percent: 11.20
-excluded_symbols: [JASMY, ANF, ADA, ASPN, ASTI, RR, SIDU]
+# SILVER 7.20%, ETH 4.07% and PALLADIUM 1.80% are reserved outside the stock feed.
+reserved_weight_percent: 13.07
 
-# Retained in the model portfolio but not evaluated by Alpaca's stock feed.
-reserved_allocations:
-  - {symbol: SILVER, weight_percent: 7.20}
-  - {symbol: ETH, weight_percent: 4.07}
-  - {symbol: PALLADIUM, weight_percent: 1.80}
-
-allocations:
-  - {symbol: HIMS, weight_percent: 11.73}
-  - {symbol: UNH, weight_percent: 8.84}
-  - {symbol: ASTS, weight_percent: 8.65}
-  - {symbol: ADUR, weight_percent: 8.65}
-  - {symbol: OSCR, weight_percent: 5.04}
-  - {symbol: NVO, weight_percent: 4.31}
-  - {symbol: ZETA, weight_percent: 4.10}
-  - {symbol: GRRR, weight_percent: 3.61}
-  - {symbol: BABA, weight_percent: 3.61}
-  - {symbol: BIDU, weight_percent: 3.61}
-  - {symbol: WYFI, weight_percent: 3.10}
-  - {symbol: SE, weight_percent: 2.49}
-  - {symbol: GRAB, weight_percent: 2.16}
-  - {symbol: ZVRA, weight_percent: 1.43}
-  - {symbol: JD, weight_percent: 1.19}
-  - {symbol: AMZN, weight_percent: 1.08}
-  - {symbol: NVDA, weight_percent: 0.28}
-  - {symbol: AMD, weight_percent: 0.28}
-  - {symbol: GOOG, weight_percent: 0.21}
-  - {symbol: CRM, weight_percent: 0.16}
-  - {symbol: DKNG, weight_percent: 0.15}
-  - {symbol: ONDS, weight_percent: 0.15}
-  - {symbol: DCTH, weight_percent: 0.15}
-  - {symbol: SHOP, weight_percent: 0.10}
-  - {symbol: PYPL, weight_percent: 0.07}
-  - {symbol: NKE, weight_percent: 0.07}
-  - {symbol: SOFI, weight_percent: 0.07}
-  - {symbol: PFE, weight_percent: 0.07}
-  - {symbol: ONTO, weight_percent: 0.07}
-  - {symbol: ACHR, weight_percent: 0.05}
-  - {symbol: ABNB, weight_percent: 0.05}
-  - {symbol: TGT, weight_percent: 0.05}
-  - {symbol: OXY, weight_percent: 0.05}
-  - {symbol: NIO, weight_percent: 0.05}
-  - {symbol: UPS, weight_percent: 0.05}
+# Equity symbols and target weights are sourced from the local PostgreSQL watchlist
+# indicator PORT_YTD. They intentionally do not live in this rule artifact.
 
 initial_tranche_percent: 50
 thresholds:

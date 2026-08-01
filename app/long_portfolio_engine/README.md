@@ -6,13 +6,13 @@ dependency on Swing or Intraday signals.
 
 An alert requires a favorable bullish `buy_zone` result on two distinct sessions,
 minimum setup/entry/trend scores, an allowed market regime, and no blocked weekly risk
-flag. The first alert sizes 50% of the configured target allocation so that capital is
-deployed in tranches. It is analysis-only and never submits an order.
+flag. Suggested purchases are capped at the gap between the target allocation and the
+current `stock.customer_holding` market value; no buy is emitted once the target is
+reached. It is analysis-only and never submits an order.
 
-The exact portfolio and rule thresholds are frozen in
-`configs/rules/long_portfolio/1.0.0.yaml`. Create a new semantic version to change
-capital, weights, exclusions, thresholds, or tranche size; retain v1 for rollback and
-historical comparison.
+Rule thresholds and capital are frozen in `configs/rules/long_portfolio/1.0.0.yaml`.
+Equity membership and target weights come from active local PostgreSQL watchlist rows
+tagged `PORT_YTD`; retain rule artifacts for rollback and historical comparison.
 
 Run it with:
 
