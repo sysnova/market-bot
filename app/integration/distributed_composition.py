@@ -485,6 +485,11 @@ def _build_rest(settings: AppSettings) -> AlpacaRestClient:
     )
 
 
+def build_rest(settings: AppSettings) -> AlpacaRestClient:
+    """Build the shared Alpaca REST adapter for integration composition roots."""
+    return _build_rest(settings)
+
+
 def _build_stream_engine(
     settings: AppSettings,
     publisher: EventPublisher,
@@ -617,3 +622,8 @@ def _write_ready(path: Path, summary: Mapping[str, object]) -> None:
     temporary = path.with_suffix(f"{path.suffix}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(summary, sort_keys=True), encoding="utf-8")
     temporary.replace(path)
+
+
+def write_ready(path: Path, summary: Mapping[str, object]) -> None:
+    """Atomically write a process readiness summary."""
+    _write_ready(path, summary)

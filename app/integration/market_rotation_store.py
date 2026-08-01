@@ -12,7 +12,7 @@ from uuid import uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.market_rotation_engine import SectorProfile
+from app.market_rotation_engine import RotationResult, SectorProfile
 
 
 class PostgresMarketRotationStore:
@@ -55,7 +55,7 @@ class PostgresMarketRotationStore:
         )
 
     async def save(
-        self, results: tuple[dict[str, object], ...], *, generated_at: datetime
+        self, results: tuple[RotationResult, ...], *, generated_at: datetime
     ) -> tuple[str, tuple[str, ...]]:
         run_id = str(uuid4())
         additions: list[str] = []

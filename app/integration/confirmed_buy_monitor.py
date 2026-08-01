@@ -12,7 +12,7 @@ from app.common.settings import AppSettings
 from app.contracts import LOCAL_ALERT_EVENT, EventEnvelope, LocalAlert, SubscriptionOptions
 from app.event_bus import NatsJetStreamEventBus
 
-from .distributed_composition import _write_ready
+from .distributed_composition import write_ready
 
 
 async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: bool = True) -> None:
@@ -44,7 +44,7 @@ async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: boo
     )
     try:
         if ready_path is not None:
-            _write_ready(
+            write_ready(
                 ready_path,
                 {
                     "service": "confirmed-buy-monitor",

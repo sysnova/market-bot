@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -20,7 +21,7 @@ from app.event_bus import NatsJetStreamEventBus
 from app.market_rotation_engine import Bar, RotationEngine
 from app.persistence import create_database_engine
 
-from .distributed_composition import _build_rest, _write_ready
+from .distributed_composition import build_rest, write_ready
 from .market_rotation_store import PostgresMarketRotationStore
 
 
@@ -36,13 +37,13 @@ async def run_market_rotation_process(
     bus = await NatsJetStreamEventBus.connect(
         servers=[settings.nats_url.get_secret_value()], prefix="marketbot", stream="MARKETBOT"
     )
-    rest = _build_rest(settings)
+    rest = build_rest(settings)
     store = PostgresMarketRotationStore(database)
     calculator = RotationEngine()
     try:
         profiles = await store.load_profiles()
         if ready_path is not None:
-            _write_ready(
+            write_ready(
                 ready_path,
                 {
                     "service": "market-rotation-v1",
@@ -55,7 +56,7 @@ async def run_market_rotation_process(
             symbols = tuple(
                 dict.fromkeys(s for p in profiles for s in (*p.symbols, p.proxy, p.benchmark))
             )
-            raw: dict[str, list[object]] = {}
+            raw: dict[str, list[Mapping[str, object]]] = {}
             for index in range(0, len(symbols), settings.alpaca_rest_batch_size):
                 raw.update(
                     await rest.fetch_bars(
@@ -100,7 +101,7 @@ async def run_market_rotation_process(
                     payload=report,
                 ),
             )
-            summary = {
+            summary: dict[str, object] = {
                 "service": "market-rotation-v1",
                 "run_id": run_id,
                 "sectors": len(results),

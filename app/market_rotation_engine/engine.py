@@ -4,6 +4,39 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Literal, TypedDict
+
+RotationState = Literal[
+    "INFLOW", "ACCUMULATING", "NEUTRAL", "OUTFLOW", "DEFENSIVE_ROTATION"
+]
+
+
+class SymbolEvidence(TypedDict):
+    symbol: str
+    price: Decimal
+    return_1d: Decimal
+    return_5d: Decimal
+    return_20d: Decimal
+    dollar_volume: Decimal
+    average_dollar_volume_20: Decimal
+    rvol: Decimal
+    above_sma20: bool
+    above_sma50: bool
+    score: Decimal
+
+
+class RotationResult(TypedDict):
+    code: str
+    label: str
+    proxy: str
+    benchmark: str
+    score: Decimal
+    state: RotationState
+    relative_20d: Decimal
+    breadth_positive: Decimal
+    breadth_above_sma20: Decimal
+    rvol: Decimal
+    evidence: tuple[SymbolEvidence, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,8 +59,8 @@ class RotationEngine:
 
     def analyze(
         self, profiles: tuple[SectorProfile, ...], history: dict[str, tuple[Bar, ...]]
-    ) -> tuple[dict[str, object], ...]:
-        results: list[dict[str, object]] = []
+    ) -> tuple[RotationResult, ...]:
+        results: list[RotationResult] = []
         for profile in profiles:
             proxy = history.get(profile.proxy, ())
             benchmark = history.get(profile.benchmark, ())
@@ -51,7 +84,7 @@ class RotationEngine:
                     Decimal("50") + relative * 3 + (breadth_positive - 50) / 2 + (rvol - 1) * 10,
                 ),
             ).quantize(Decimal("0.01"))
-            state = (
+            state: RotationState = (
                 "INFLOW"
                 if score >= 70
                 else "ACCUMULATING"
@@ -78,7 +111,7 @@ class RotationEngine:
             )
         return tuple(sorted(results, key=lambda item: item["score"], reverse=True))
 
-    def _symbol(self, symbol: str, bars: tuple[Bar, ...]) -> dict[str, object] | None:
+    def _symbol(self, symbol: str, bars: tuple[Bar, ...]) -> SymbolEvidence | None:
         if len(bars) < 21 or any(bar.close <= 0 for bar in bars[-21:]):
             return None
         latest = bars[-1]
