@@ -22,9 +22,9 @@ begin
   where pg_namespace.nspname = 'market_bot'
     and pg_class.relkind = 'r';
 
-  if rls_enabled_count <> 9 or rls_forced_count <> 9 then
+  if rls_enabled_count <> 12 or rls_forced_count <> 12 then
     raise exception
-      'Expected RLS enabled and forced on all 9 tables, found enabled=% forced=%',
+      'Expected RLS enabled and forced on all 12 tables, found enabled=% forced=%',
       rls_enabled_count,
       rls_forced_count;
   end if;
