@@ -13,6 +13,7 @@ from .repositories import (
     InboxRepository,
     LongPortfolioAlertRepository,
     OutboxRepository,
+    PatreonCapsRepository,
 )
 
 
@@ -28,6 +29,7 @@ class PersistenceUnitOfWork:
         self.health: HealthRepository
         self.entry_watches: EntryWatchRepository
         self.long_portfolio_alerts: LongPortfolioAlertRepository
+        self.patreon_caps: PatreonCapsRepository
 
     async def __aenter__(self) -> PersistenceUnitOfWork:
         session = self._session_factory()
@@ -38,6 +40,7 @@ class PersistenceUnitOfWork:
         self.health = HealthRepository(session)
         self.entry_watches = EntryWatchRepository(session)
         self.long_portfolio_alerts = LongPortfolioAlertRepository(session)
+        self.patreon_caps = PatreonCapsRepository(session)
         return self
 
     async def __aexit__(

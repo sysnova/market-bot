@@ -17,3 +17,15 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     assert "remain-on-exit on" in script
     assert 'tmux kill-session -t "$SESSION"' in script
     assert "tmux kill-pane -a" not in script
+
+
+def test_linux_launcher_starts_patreon_caps_and_dedicated_tmux_window() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "uv run marketbot engine patreon-caps" in script
+    assert "run marketbot monitor patreon-caps" in script
+    assert "run marketbot alerts patreon-caps" in script
+    assert "-n PatreonCaps" in script
+    assert "PATREON CAPS — ANÁLISIS" in script
+    assert "PATREON CAPS — ALERTAS" in script
+    assert "list-windows" in script

@@ -40,6 +40,7 @@ def test_root_help_lists_operator_groups() -> None:
         "market",
         "alerts",
         "entry-watch",
+        "monitor",
     ):
         assert group in result.stdout
 
@@ -52,6 +53,9 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("market", "stream"),
         ("alerts", "serve"),
         ("entry-watch", "serve"),
+        ("engine", "patreon-caps"),
+        ("alerts", "patreon-caps"),
+        ("monitor", "patreon-caps"),
     ):
         result = runner.invoke(app, [*command, "--help"])
 

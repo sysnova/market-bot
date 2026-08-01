@@ -19,6 +19,8 @@ from .models import (
     EntryWatchTransitionRecord,
     LongPortfolioAlertRecord,
     OutboxEvent,
+    PatreonCapsTransitionRecord,
+    PatreonCapsWatchRecord,
     ProcessedEvent,
     ServiceHealthRecord,
     new_entity_id,
@@ -289,6 +291,65 @@ class LongPortfolioAlertRepository(Repository):
             .values(**values)
             .on_conflict_do_nothing(index_elements=["deduplication_key"])
             .returning(LongPortfolioAlertRecord.id)
+        )
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none() is not None
+
+
+class PatreonCapsRepository(Repository):
+    """Atomically update one watch snapshot and append each transition once."""
+
+    async def load_active(self) -> tuple[PatreonCapsWatchRecord, ...]:
+        records = await self._session.scalars(
+            select(PatreonCapsWatchRecord)
+            .where(PatreonCapsWatchRecord.state.not_in(("INVALIDATED", "EXPIRED")))
+            .order_by(PatreonCapsWatchRecord.symbol)
+        )
+        return tuple(records.all())
+
+    async def recent_transitions(self, *, limit: int) -> tuple[PatreonCapsTransitionRecord, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        records = await self._session.scalars(
+            select(PatreonCapsTransitionRecord)
+            .order_by(PatreonCapsTransitionRecord.occurred_at.desc())
+            .limit(limit)
+        )
+        return tuple(reversed(records.all()))
+
+    async def save(
+        self,
+        watch: PatreonCapsWatchRecord,
+        transition: PatreonCapsTransitionRecord,
+    ) -> bool:
+        watch_values = {
+            column.name: getattr(watch, column.name)
+            for column in PatreonCapsWatchRecord.__table__.columns
+        }
+        watch_insert = insert(PatreonCapsWatchRecord).values(**watch_values)
+        await self._session.execute(
+            watch_insert.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "state": watch_insert.excluded.state,
+                    "updated_at": watch_insert.excluded.updated_at,
+                    "highest_price": watch_insert.excluded.highest_price,
+                    "tranche_stage": watch_insert.excluded.tranche_stage,
+                    "saw_macro_shock": watch_insert.excluded.saw_macro_shock,
+                    "source_analysis_ids": watch_insert.excluded.source_analysis_ids,
+                    "payload": watch_insert.excluded.payload,
+                },
+            )
+        )
+        transition_values = {
+            column.name: getattr(transition, column.name)
+            for column in PatreonCapsTransitionRecord.__table__.columns
+        }
+        statement = (
+            insert(PatreonCapsTransitionRecord)
+            .values(**transition_values)
+            .on_conflict_do_nothing(index_elements=["deduplication_key"])
+            .returning(PatreonCapsTransitionRecord.id)
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none() is not None

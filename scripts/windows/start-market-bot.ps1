@@ -87,6 +87,7 @@ $ReadyFiles = [ordered]@{
     "market-rotation-v1" = Join-Path -Path $StatusRoot -ChildPath "market-rotation-v1.ready.json"
     "portfolio-flow-v1" = Join-Path -Path $StatusRoot -ChildPath "portfolio-flow-v1.ready.json"
     "long-portfolio-v1" = Join-Path -Path $StatusRoot -ChildPath "long-portfolio-v1.ready.json"
+    "patreon-caps-v1" = Join-Path -Path $StatusRoot -ChildPath "patreon-caps-v1.ready.json"
     "confirmed-buy-monitor" = Join-Path -Path $StatusRoot -ChildPath "confirmed-buy-monitor.ready.json"
     "long-portfolio-monitor" = Join-Path -Path $StatusRoot -ChildPath "long-portfolio-monitor.ready.json"
 }
@@ -177,6 +178,12 @@ $LongPortfolioArguments = @(
     "--ready-path", $ReadyFiles["long-portfolio-v1"]
 )
 $ProcessSpecs.Add((New-ProcessSpec -Name "long-portfolio-v1" -Arguments $LongPortfolioArguments))
+
+$PatreonCapsArguments = @(
+    "run", "marketbot", "engine", "patreon-caps",
+    "--ready-path", $ReadyFiles["patreon-caps-v1"]
+)
+$ProcessSpecs.Add((New-ProcessSpec -Name "patreon-caps-v1" -Arguments $PatreonCapsArguments))
 
 $ConfirmedBuyArguments = [System.Collections.Generic.List[string]]::new()
 foreach ($Argument in @(
@@ -468,7 +475,7 @@ try {
         $ReadyFiles["entry-watcher-v3"]
     )
 
-    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[8]
+    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[9]
     $Children.Add($ConfirmedChild)
     Write-Host "Started confirmed-buy monitor (PID $($ConfirmedChild.process.Id))"
     Wait-MarketBotReadiness -Paths @($ReadyFiles["confirmed-buy-monitor"])
@@ -477,7 +484,7 @@ try {
         -AnalysisProcess $AlertChild.process `
         -ConfirmedBuyProcess $ConfirmedChild.process
 
-    for ($Index = 2; $Index -lt 8; $Index++) {
+    for ($Index = 2; $Index -lt 9; $Index++) {
         $Child = Start-MarketBotProcess -Spec $ProcessSpecs[$Index]
         $Children.Add($Child)
         Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
@@ -489,9 +496,10 @@ try {
         $ReadyFiles["market-rotation-v1"],
         $ReadyFiles["portfolio-flow-v1"],
         $ReadyFiles["long-portfolio-v1"]
+        $ReadyFiles["patreon-caps-v1"]
     )
 
-    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[9]
+    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[10]
     $Children.Add($StreamChild)
     $TmuxLauncher = Join-Path $PSScriptRoot "start-long-portfolio-tmux.ps1"
     $TmuxArguments = @(

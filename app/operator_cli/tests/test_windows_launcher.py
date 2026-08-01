@@ -133,6 +133,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "market-rotation-v1",
         "portfolio-flow-v1",
         "long-portfolio-v1",
+        "patreon-caps-v1",
         "confirmed-buy-monitor",
         "alpaca-market-stream",
     ]
@@ -167,6 +168,12 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "long-portfolio",
     ]
     assert plan["processes"][8]["arguments"][:4] == [
+        "run",
+        "marketbot",
+        "engine",
+        "patreon-caps",
+    ]
+    assert plan["processes"][9]["arguments"][:4] == [
         "run",
         "marketbot",
         "alerts",

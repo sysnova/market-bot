@@ -10,7 +10,11 @@ from uuid import UUID
 
 import pytest
 
-from app.persistence import LongPortfolioAlertRecord
+from app.persistence import (
+    LongPortfolioAlertRecord,
+    PatreonCapsTransitionRecord,
+    PatreonCapsWatchRecord,
+)
 from app.persistence.repositories import (
     CheckpointRepository,
     EntryWatchRepository,
@@ -18,6 +22,7 @@ from app.persistence.repositories import (
     HealthRepository,
     LongPortfolioAlertRepository,
     OutboxRepository,
+    PatreonCapsRepository,
     ProcessedEventRepository,
 )
 
@@ -281,4 +286,55 @@ async def test_long_portfolio_alert_insert_is_idempotent_by_deduplication_key() 
     assert await repository.add(mapped) is True
     statement = session.execute.await_args.args[0]
     sql = str(statement.compile(dialect=repository.dialect))
+    assert "ON CONFLICT (deduplication_key) DO NOTHING" in sql
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_patreon_caps_save_upserts_snapshot_and_deduplicates_transition() -> None:
+    session = AsyncMock()
+    session.execute.side_effect = [MagicMock(), ScalarResult(ENTITY_ID)]
+    repository = PatreonCapsRepository(session)
+    watch = PatreonCapsWatchRecord(
+        id=ENTITY_ID,
+        symbol="NVO",
+        rule_version="1.0.0",
+        state="WATCH_ZONE",
+        armed_at=NOW,
+        updated_at=NOW,
+        expires_at=NOW,
+        zone_low=Decimal("48"),
+        zone_center=Decimal("49"),
+        zone_high=Decimal("50"),
+        invalidation=Decimal("46"),
+        highest_price=Decimal("50"),
+        tranche_stage=0,
+        saw_macro_shock=False,
+        support_sources=["pivot_daily", "avwap"],
+        source_analysis_ids=[],
+        payload={"state": "WATCH_ZONE"},
+        created_at=NOW,
+    )
+    transition = PatreonCapsTransitionRecord(
+        id=ENTITY_ID,
+        deduplication_key="patreon-caps:1.0.0:NVO:WATCH_ZONE:0:1",
+        watch_id=ENTITY_ID,
+        symbol="NVO",
+        previous_state=None,
+        state="WATCH_ZONE",
+        occurred_at=NOW,
+        rule_version="1.0.0",
+        current_price=Decimal("49"),
+        patreon_score=Decimal("75"),
+        tranche_stage=None,
+        suggested_tranche_usd=None,
+        suggested_whole_shares=None,
+        payload={"state": "WATCH_ZONE"},
+        persisted_at=NOW,
+    )
+
+    assert await repository.save(watch, transition) is True
+    assert session.execute.await_count == 2
+    transition_statement = session.execute.await_args_list[1].args[0]
+    sql = str(transition_statement.compile(dialect=repository.dialect))
     assert "ON CONFLICT (deduplication_key) DO NOTHING" in sql

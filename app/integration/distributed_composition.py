@@ -49,6 +49,7 @@ from app.contracts import (
 from app.entry_watcher import EntryWatcherPolicy, EntryWatcherV2, EntryWatcherV3
 from app.event_bus import NatsJetStreamEventBus
 from app.intraday_engine import IntradayEngineV2, IntradayEngineV3
+from app.patreon_caps_engine import load_patreon_caps_policy
 from app.persistence import create_database_engine, create_session_factory
 from app.swing_engine import SwingEngineV2, SwingEngineV3
 
@@ -275,6 +276,9 @@ async def run_market_stream_process(
     engine: AlpacaMarketDataEngine | None = None
     rotation_subscription: Subscription | None = None
     rotation_refresh = asyncio.Event()
+    macro_symbols = load_patreon_caps_policy(
+        Path("configs/rules/patreon_caps/1.1.0.yaml")
+    ).macro_symbols
     try:
         bus = await _connect_nats(settings)
         engine = _build_stream_engine(settings, bus)
@@ -306,11 +310,13 @@ async def run_market_stream_process(
                 rotation_refresh.clear()
                 universe = await _resolve_universe(settings, symbols)
                 holdings = await _resolve_holdings(settings)
+                stream_symbols = _stream_symbols(universe.symbols, macro_symbols)
                 await _publish_health(
                     bus,
                     "alpaca-market-stream",
                     {
-                        "symbols": len(universe.symbols),
+                        "symbols": len(stream_symbols),
+                        "patreon_macro_symbols": len(macro_symbols),
                         "portfolio_symbols": len(holdings.symbols),
                         "universe_source": universe.source,
                     },
@@ -318,7 +324,7 @@ async def run_market_stream_process(
                 )
                 stream_task = asyncio.create_task(
                     engine.stream_once(
-                        universe.symbols,
+                        stream_symbols,
                         **market_stream_subscription_options(),
                         trade_symbols=holdings.symbols,
                         quote_symbols=holdings.symbols,
@@ -359,6 +365,12 @@ async def run_market_stream_process(
         await http_client.aclose()
         if bus is not None:
             await bus.close()
+
+
+def _stream_symbols(
+    universe_symbols: tuple[str, ...], macro_symbols: tuple[str, ...]
+) -> tuple[str, ...]:
+    return tuple(dict.fromkeys((*universe_symbols, *macro_symbols)))
 
 
 async def run_alert_process(
@@ -564,6 +576,11 @@ async def _connect_nats(settings: AppSettings) -> NatsJetStreamEventBus:
     )
 
 
+async def connect_nats(settings: AppSettings) -> NatsJetStreamEventBus:
+    """Connect the shared NATS adapter for integration composition roots."""
+    return await _connect_nats(settings)
+
+
 def _build_rest(settings: AppSettings) -> AlpacaRestClient:
     if not settings.alpaca_configured:
         raise ValueError("Alpaca market-data credentials are not configured")
@@ -643,6 +660,26 @@ async def _load_history(
                         continue
                     output.append(payload)
     return tuple(output)
+
+
+async def load_history(
+    rest: MarketDataRest,
+    normalizer: AlpacaEventNormalizer,
+    symbols: tuple[str, ...],
+    requests: tuple[HistoryRequest, ...],
+    *,
+    as_of: datetime,
+    batch_size: int,
+) -> tuple[MarketBar, ...]:
+    """Load the bounded, completed history used by integration composition roots."""
+    return await _load_history(
+        rest,
+        normalizer,
+        symbols,
+        requests,
+        as_of=as_of,
+        batch_size=batch_size,
+    )
 
 
 def _build_worker(

@@ -144,7 +144,7 @@ def long_engine_process(
     once: Annotated[bool, typer.Option(help="Bootstrap and evaluate once, then exit.")] = False,
     symbols: Annotated[
         str | None,
-        typer.Option(help="Comma-separated temporary universe; overrides Supabase."),
+        typer.Option(help="Comma-separated temporary universe; overrides local PostgreSQL."),
     ] = None,
     ready_path: Annotated[
         Path,
@@ -247,6 +247,24 @@ def long_portfolio_process(
     ))
 
 
+@engine.command("patreon-caps")
+def patreon_caps_process(
+    config_path: Annotated[
+        Path, typer.Option(help="Exact-version PatreonCaps YAML artifact.")
+    ] = Path("configs/rules/patreon_caps/1.1.0.yaml"),
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after NATS and PostgreSQL are ready.")
+    ] = Path(".runtime/status/patreon-caps-v1.ready.json"),
+) -> None:
+    """Run the independent PatreonCaps v1 SHADOW process."""
+
+    from app.integration.patreon_caps_composition import run_patreon_caps_process
+
+    _run_async(
+        run_patreon_caps_process(config_path=config_path, ready_path=ready_path)
+    )
+
+
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
 
@@ -336,6 +354,53 @@ def long_portfolio_monitor(
     _run_async(run_long_portfolio_monitor(
         ready_path=ready_path, bell=bell, history=history
     ))
+
+
+@alerts.command("patreon-caps")
+def patreon_caps_alert_monitor(
+    bell: Annotated[bool, typer.Option(help="Ring only for PatreonCaps BUY events.")] = True,
+    history: Annotated[
+        int, typer.Option(min=1, max=500, help="Persisted transitions shown on startup.")
+    ] = 50,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after history and NATS are ready.")
+    ] = Path(".runtime/status/patreon-caps-alerts.ready.json"),
+) -> None:
+    """Run the persisted and live PatreonCaps alert process."""
+
+    from app.integration.patreon_caps_monitor import run_patreon_caps_monitor
+
+    _run_async(
+        run_patreon_caps_monitor(
+            mode="alerts",
+            ready_path=ready_path,
+            history=history,
+            bell=bell,
+        )
+    )
+
+
+monitor = typer.Typer(name="monitor", help="Run dedicated analytical terminal views.")
+app.add_typer(monitor, name="monitor")
+
+
+@monitor.command("patreon-caps")
+def patreon_caps_analysis_monitor(
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after subscribing to NATS.")
+    ] = Path(".runtime/status/patreon-caps-analysis.ready.json"),
+) -> None:
+    """Run the live PatreonCaps calculation monitor process."""
+
+    from app.integration.patreon_caps_monitor import run_patreon_caps_monitor
+
+    _run_async(
+        run_patreon_caps_monitor(
+            mode="analysis",
+            ready_path=ready_path,
+            bell=False,
+        )
+    )
 
 
 entry_watch = typer.Typer(

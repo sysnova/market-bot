@@ -118,7 +118,10 @@ uv run marketbot entry-watch serve
 uv run marketbot engine long
 uv run marketbot engine swing
 uv run marketbot engine intraday
+uv run marketbot engine patreon-caps
 uv run marketbot market stream
+uv run marketbot monitor patreon-caps
+uv run marketbot alerts patreon-caps
 ```
 
 The alert ledger rotates by `America/New_York` market date and defaults to files such as
@@ -206,3 +209,43 @@ Watch all live MarketBot messages with formatted JSON from PowerShell:
 ```
 
 Use `-Subject marketbot.v1.analysis.result.>` to narrow the subscription to analytical results.
+
+## PatreonCaps v1 SHADOW
+
+PatreonCaps usa por defecto el artefacto inmutable
+`configs/rules/patreon_caps/1.1.0.yaml`. Consume barras Alpaca y resultados completos de Long,
+Swing V3 e Intraday V3 desde NATS; el universo, las tenencias y las asignaciones `PORT_YTD` se
+obtienen de PostgreSQL local. No envia ordenes al broker.
+
+La version `1.1.0` consolida SMA50/200 diaria y 1H, Golden/Death Cross, triangulo ascendente,
+Wave 2 sobre Fibonacci 0.618 y retest del maximo de Wave 1. Para una comparacion o rollback se
+puede ejecutar el artefacto anterior sin modificarlo:
+
+```bash
+uv run marketbot engine patreon-caps \
+  --config-path configs/rules/patreon_caps/1.0.0.yaml
+```
+
+Antes del primer arranque, aplicar la migracion versionada al contenedor local `postgres-local`:
+
+```powershell
+$containerEnv = docker inspect postgres-local --format '{{range .Config.Env}}{{println .}}{{end}}'
+$dbUser = (($containerEnv | Where-Object { $_ -like 'POSTGRES_USER=*' }) -split '=', 2)[1]
+$dbName = (($containerEnv | Where-Object { $_ -like 'POSTGRES_DB=*' }) -split '=', 2)[1]
+Get-Content .\supabase\migrations\20260801120000_patreon_caps.sql -Raw |
+  docker exec -i postgres-local psql -v ON_ERROR_STOP=1 -U $dbUser -d $dbName
+```
+
+En Ubuntu/WSL, el launcher crea o reutiliza idempotentemente la ventana `PatreonCaps` dentro de la
+sesion principal `marketbot`, con un panel de analisis y otro de alertas:
+
+```bash
+chmod +x ./scripts/linux/start-market-bot.sh
+./scripts/linux/start-market-bot.sh
+tmux attach-session -t marketbot
+tmux select-window -t marketbot:PatreonCaps
+```
+
+Si la sesion ya existe, el launcher no la mata ni la duplica; solamente agrega la ventana cuando
+falta. El panel de alertas recupera las ultimas 50 transiciones desde PostgreSQL y la campana suena
+unicamente para `PATREON_CAPS_BUY`.

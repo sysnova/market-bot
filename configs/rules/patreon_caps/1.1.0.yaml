@@ -1,0 +1,50 @@
+rule_id: patreon_caps
+rule_version: 1.1.0
+status: shadow
+portfolio_capital_usd: 103000
+
+thresholds:
+  minimum_confluence_score: 65
+  minimum_source_families: 3
+  minimum_confirmation_score: 70
+  cluster_distance_atr: 0.35
+  cluster_width_atr: 0.75
+  zone_padding_atr: 0.10
+  test_padding_atr: 0.15
+  invalidation_buffer_atr: 0.75
+  defense_distance_atr: 0.25
+  v_rvol_minimum: 1.5
+  base_rvol_minimum: 1.2
+  impulse_minimum_atr: 2.0
+
+scoring:
+  confluence_weight: 0.35
+  confirmation_weight: 0.25
+  alignment_weight: 0.20
+  lesson_weight: 0.20
+
+lesson:
+  enabled: true
+  require_daily_above_sma200: true
+  cross_lookback_bars: 20
+  triangle_lookback_bars: 80
+  triangle_tolerance_atr: 0.35
+  wave_0618_tolerance_atr: 0.15
+
+timing:
+  watch_ttl_days: 56
+  long_max_age_hours: 168
+  swing_max_age_hours: 8
+  intraday_max_age_minutes: 30
+
+macro:
+  symbols: [UUP, VIXY, TLT, IEF, SPY]
+  buy_thresholds:
+    RISK_ON: 75
+    NEUTRAL: 80
+    RISK_OFF: 85
+
+measurement:
+  mode: SHADOW
+  compare_against: 1.0.0
+  outcomes: [return_5d, return_20d, return_60d, mfe_percent, mae_percent, invalidated]

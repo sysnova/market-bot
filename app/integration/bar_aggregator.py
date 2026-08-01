@@ -8,6 +8,7 @@ from app.contracts import BarTimeframe, MarketBar
 _TARGET_MINUTES = {
     BarTimeframe.MINUTE_5: 5,
     BarTimeframe.MINUTE_15: 15,
+    BarTimeframe.HOUR_1: 60,
 }
 
 
@@ -18,7 +19,7 @@ class MinuteBarAggregator:
         if not targets or len(targets) != len(set(targets)):
             raise ValueError("aggregation targets must be non-empty and unique")
         if any(target not in _TARGET_MINUTES for target in targets):
-            raise ValueError("only 5Min and 15Min aggregation is supported")
+            raise ValueError("only 5Min, 15Min and 1Hour aggregation is supported")
         self._targets = targets
         self._pending: dict[tuple[str, BarTimeframe], list[MarketBar]] = {}
 
@@ -41,7 +42,8 @@ class MinuteBarAggregator:
             if bucket_start == current_start:
                 pending.append(bar)
                 continue
-            emitted.append(_aggregate(pending, target, current_start))
+            if pending[0].timestamp == current_start:
+                emitted.append(_aggregate(pending, target, current_start))
             self._pending[key] = [bar]
         return tuple(emitted)
 

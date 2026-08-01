@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -423,6 +424,85 @@ class LongPortfolioAlertRecord(Base):
     suggested_whole_shares: Mapped[Decimal] = mapped_column(Numeric(28, 0), nullable=False)
     score: Mapped[Decimal] = mapped_column(Numeric(7, 2), nullable=False)
     reasons: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    persisted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class PatreonCapsWatchRecord(Base):
+    __tablename__ = "patreon_caps_watches"
+    __table_args__ = (
+        CheckConstraint(
+            "state in ('WATCH_ZONE', 'SUPPORT_TEST', 'CONFIRMED_V', 'CONFIRMED_BASE', "
+            "'IMPULSE_RETEST', 'INVALIDATED', 'EXPIRED')",
+            name="state",
+        ),
+        CheckConstraint(
+            "invalidation < zone_low and zone_low <= zone_center "
+            "and zone_center <= zone_high",
+            name="levels",
+        ),
+        Index(
+            "patreon_caps_one_active_per_symbol_version_idx",
+            "symbol",
+            "rule_version",
+            unique=True,
+            postgresql_where=text("state NOT IN ('INVALIDATED', 'EXPIRED')"),
+        ),
+        Index("patreon_caps_watches_state_expires_idx", "state", "expires_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    rule_version: Mapped[str] = mapped_column(Text, nullable=False)
+    state: Mapped[str] = mapped_column(Text, nullable=False)
+    armed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    zone_low: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    zone_center: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    zone_high: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    invalidation: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    highest_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    tranche_stage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    saw_macro_shock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    support_sources: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    source_analysis_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class PatreonCapsTransitionRecord(Base):
+    __tablename__ = "patreon_caps_transitions"
+    __table_args__ = (
+        UniqueConstraint("deduplication_key", name="patreon_caps_transitions_dedup_key"),
+        CheckConstraint("patreon_score >= 0 and patreon_score <= 100", name="score"),
+        Index("patreon_caps_transitions_symbol_occurred_idx", "symbol", "occurred_at"),
+        Index("patreon_caps_transitions_watch_occurred_idx", "watch_id", "occurred_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    deduplication_key: Mapped[str] = mapped_column(Text, nullable=False)
+    watch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA}.patreon_caps_watches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    previous_state: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    rule_version: Mapped[str] = mapped_column(Text, nullable=False)
+    current_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    patreon_score: Mapped[Decimal] = mapped_column(Numeric(7, 2), nullable=False)
+    tranche_stage: Mapped[int | None] = mapped_column(Integer)
+    suggested_tranche_usd: Mapped[Decimal | None] = mapped_column(Numeric(28, 2))
+    suggested_whole_shares: Mapped[Decimal | None] = mapped_column(Numeric(28, 0))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     persisted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now

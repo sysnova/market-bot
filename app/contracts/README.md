@@ -35,6 +35,16 @@ Importar desde `app.contracts`, no desde módulos internos.
   `LocalAlert.component_analyses` es opcional y conserva los resultados completos que explican
   una alerta; `LocalAlert.metrics` agrega contexto propio de la notificacion, como la zona original
   de un Entry Watch, sin expresar una orden.
+- PatreonCaps: `PatreonCapsAssessment` publica cada evaluacion relevante y
+  `PatreonCapsTransition` registra un cambio durable de estado. Ambos exponen la version exacta de
+  reglas, scores y aportes, niveles, alineacion de engines, snapshot macro, lectura Lesson y
+  sizing. `lesson_score`, `lesson_gate_passed`, `lesson_reasons` y `lesson_metrics` permiten
+  medir SMA50/200, cruces, triangulo y Wave 1/2 sin perder el calculo que produjo la alerta. Los estados
+  publicos viven en `PatreonCapsState`; el regimen macro, en `MacroRegime`.
+
+Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
+`patreon_caps_transition_subject()`. Las constantes de tipo de evento son
+`PATREON_CAPS_ASSESSMENT_EVENT` y `PATREON_CAPS_TRANSITION_EVENT`.
 
 ## Invariantes comprobadas
 

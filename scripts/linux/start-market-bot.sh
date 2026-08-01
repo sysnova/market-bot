@@ -68,6 +68,35 @@ run_long_portfolio_monitor() {
   exec uv "${args[@]}"
 }
 
+run_patreon_caps_analysis() {
+  cd "$PROJECT_ROOT"
+  mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
+  rm -f "$STATUS_ROOT/patreon-caps-v1.ready.json" \
+    "$STATUS_ROOT/patreon-caps-analysis.ready.json"
+  uv run marketbot engine patreon-caps \
+    --ready-path "$STATUS_ROOT/patreon-caps-v1.ready.json" \
+    >>"$LOG_ROOT/patreon-caps-v1.log" 2>&1 &
+  local engine_pid=$!
+  uv run marketbot monitor patreon-caps \
+    --ready-path "$STATUS_ROOT/patreon-caps-analysis.ready.json" &
+  local monitor_pid=$!
+  cleanup_patreon() {
+    trap - EXIT INT TERM
+    kill "$engine_pid" "$monitor_pid" 2>/dev/null || true
+    wait "$engine_pid" "$monitor_pid" 2>/dev/null || true
+  }
+  trap cleanup_patreon EXIT INT TERM
+  wait -n "$engine_pid" "$monitor_pid"
+}
+
+run_patreon_caps_alerts() {
+  local args=(run marketbot alerts patreon-caps \
+    --ready-path "$STATUS_ROOT/patreon-caps-alerts.ready.json")
+  ((NO_BELL)) && args+=(--no-bell)
+  cd "$PROJECT_ROOT"
+  exec uv "${args[@]}"
+}
+
 wait_ready() {
   local deadline=$((SECONDS + READY_TIMEOUT)) missing path
   while :; do
@@ -128,7 +157,7 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor}.ready.json
+  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts}.ready.json
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
@@ -162,6 +191,9 @@ run_control() {
   wait_ready "$STATUS_ROOT/portfolio-flow-v1.ready.json"
   wait_ready "$STATUS_ROOT/long-portfolio-v1.ready.json" \
     "$STATUS_ROOT/long-portfolio-monitor.ready.json"
+  wait_ready "$STATUS_ROOT/patreon-caps-v1.ready.json" \
+    "$STATUS_ROOT/patreon-caps-analysis.ready.json" \
+    "$STATUS_ROOT/patreon-caps-alerts.ready.json"
 
   start_background alpaca-market-stream run marketbot market stream "${symbol_args[@]}"
   echo "All engines ready. Logs: $LOG_ROOT"
@@ -183,12 +215,6 @@ launch_tmux() {
     echo "Run this launcher outside an existing tmux session." >&2
     exit 1
   }
-  if tmux has-session -t "$SESSION" 2>/dev/null; then
-    echo "A tmux session named '$SESSION' already exists." >&2
-    echo "Attach with: tmux attach -t $SESSION" >&2
-    exit 1
-  fi
-
   export MARKETBOT_LINUX_RUNTIME="$RUNTIME_ROOT"
   export MARKETBOT_LINUX_SYMBOLS="$SYMBOLS"
   export MARKETBOT_LINUX_NO_BELL="$NO_BELL"
@@ -198,11 +224,23 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed long_portfolio
+  local control analysis confirmed long_portfolio patreon_analysis patreon_alerts
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
+  printf -v patreon_analysis '%q ' "${base[@]}" --role patreon-analysis
+  printf -v patreon_alerts '%q ' "${base[@]}" --role patreon-alerts
+
+  if tmux has-session -t "$SESSION" 2>/dev/null; then
+    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'PatreonCaps'; then
+      tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
+      tmux split-window -v -t "$SESSION":PatreonCaps "$patreon_alerts"
+      tmux select-pane -t "$SESSION":PatreonCaps.0 -T 'PATREON CAPS — ANÁLISIS'
+      tmux select-pane -t "$SESSION":PatreonCaps.1 -T 'PATREON CAPS — ALERTAS'
+    fi
+    exec tmux attach-session -t "$SESSION"
+  fi
 
   tmux new-session -d -s "$SESSION" -n MarketBot "$control"
   tmux set-window-option -t "$SESSION":0 window-size latest
@@ -217,6 +255,11 @@ launch_tmux() {
   tmux split-window -v -t "$SESSION":0 "$long_portfolio"
   tmux select-pane -t "$SESSION":0.3 -T 'LONG PORTFOLIO 2026'
   tmux select-layout -t "$SESSION":0 tiled
+  tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
+  tmux set-window-option -t "$SESSION":PatreonCaps remain-on-exit on
+  tmux split-window -v -t "$SESSION":PatreonCaps "$patreon_alerts"
+  tmux select-pane -t "$SESSION":PatreonCaps.0 -T 'PATREON CAPS — ANÁLISIS'
+  tmux select-pane -t "$SESSION":PatreonCaps.1 -T 'PATREON CAPS — ALERTAS'
   tmux select-pane -t "$SESSION":0.0
   exec tmux attach-session -t "$SESSION"
 }
@@ -227,5 +270,7 @@ case "$ROLE" in
   analysis) run_analysis ;;
   confirmed) run_confirmed ;;
   long-portfolio) run_long_portfolio_monitor ;;
+  patreon-analysis) run_patreon_caps_analysis ;;
+  patreon-alerts) run_patreon_caps_alerts ;;
   *) echo "Invalid internal role: $ROLE" >&2; exit 2 ;;
 esac

@@ -61,3 +61,15 @@ def test_aggregator_ignores_provider_updates_and_rejects_non_minute_input() -> N
         assert "1Min" in str(error)
     else:
         raise AssertionError("expected non-minute input to fail")
+
+
+def test_aggregator_emits_completed_hourly_bar_for_patreon_caps() -> None:
+    aggregator = MinuteBarAggregator(targets=(BarTimeframe.HOUR_1,))
+    emitted: list[MarketBar] = []
+    for minute in range(91):
+        emitted.extend(aggregator.add(minute_bar(minute, close=str(100 + minute))))
+
+    assert len(emitted) == 1
+    assert emitted[0].timeframe is BarTimeframe.HOUR_1
+    assert emitted[0].timestamp == START.replace(minute=0) + timedelta(hours=1)
+    assert emitted[0].close == Decimal("189")

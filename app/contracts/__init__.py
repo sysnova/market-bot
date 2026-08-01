@@ -12,11 +12,15 @@ from .analysis_events import (
     MARKET_BAR_UPDATED_EVENT,
     MARKET_ROTATION_EVENT,
     MARKET_ROTATION_SUBJECT,
+    PATREON_CAPS_ASSESSMENT_EVENT,
+    PATREON_CAPS_TRANSITION_EVENT,
     SERVICE_HEALTH_EVENT,
     analysis_result_subject,
     entry_watch_transition_subject,
     local_alert_subject,
     market_bar_subject,
+    patreon_caps_assessment_subject,
+    patreon_caps_transition_subject,
     service_health_subject,
 )
 from .domain import (
@@ -41,7 +45,9 @@ from .enums import (
     DecisionOutcome,
     DependencyPolicy,
     EntryWatchStatus,
+    MacroRegime,
     MarketSession,
+    PatreonCapsState,
     PatternDirection,
     RuleLifecycleStatus,
     RuleStatus,
@@ -54,6 +60,7 @@ from .enums import (
 from .event_bus import EventBus, EventHandler, Subscription, SubscriptionOptions
 from .market_analysis import AnalysisResult, LocalAlert, MarketBar
 from .market_rotation import MarketRotationReport, RotationSector
+from .patreon_caps import PatreonCapsAssessment, PatreonCapsTransition
 from .rules import (
     ContextValue,
     EvaluationContext,
@@ -85,6 +92,8 @@ __all__ = [
     "MARKET_BAR_UPDATED_EVENT",
     "MARKET_ROTATION_EVENT",
     "MARKET_ROTATION_SUBJECT",
+    "PATREON_CAPS_ASSESSMENT_EVENT",
+    "PATREON_CAPS_TRANSITION_EVENT",
     "SERVICE_HEALTH_EVENT",
     "AlertDecision",
     "AlertKind",
@@ -108,11 +117,15 @@ __all__ = [
     "EventHandler",
     "Identifier",
     "LocalAlert",
+    "MacroRegime",
     "MarketBar",
     "MarketRotationReport",
     "MarketSession",
     "NamedValue",
     "NonEmptyStr",
+    "PatreonCapsAssessment",
+    "PatreonCapsState",
+    "PatreonCapsTransition",
     "PatternCandidate",
     "PatternDirection",
     "PatternEvidence",
@@ -150,6 +163,8 @@ __all__ = [
     "local_alert_subject",
     "market_bar_subject",
     "new_uuid7",
+    "patreon_caps_assessment_subject",
+    "patreon_caps_transition_subject",
     "service_health_subject",
     "validate_primary_uniqueness",
 ]

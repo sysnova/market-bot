@@ -6,6 +6,8 @@ from .models import (
     EntryWatchRecord,
     EntryWatchTransitionRecord,
     LongPortfolioAlertRecord,
+    PatreonCapsTransitionRecord,
+    PatreonCapsWatchRecord,
     new_entity_id,
 )
 from .repositories import (
@@ -16,6 +18,7 @@ from .repositories import (
     InboxRepository,
     LongPortfolioAlertRepository,
     OutboxRepository,
+    PatreonCapsRepository,
     ProcessedEventRepository,
 )
 from .unit_of_work import PersistenceUnitOfWork
@@ -32,6 +35,9 @@ __all__ = [
     "LongPortfolioAlertRecord",
     "LongPortfolioAlertRepository",
     "OutboxRepository",
+    "PatreonCapsRepository",
+    "PatreonCapsTransitionRecord",
+    "PatreonCapsWatchRecord",
     "PersistenceUnitOfWork",
     "ProcessedEventRepository",
     "create_database_engine",
