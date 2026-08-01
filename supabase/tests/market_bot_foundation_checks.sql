@@ -9,8 +9,24 @@ begin
   from information_schema.tables
   where table_schema = 'market_bot';
 
-  if market_bot_table_count <> 12 then
-    raise exception 'Expected 12 market_bot tables, found %', market_bot_table_count;
+  if market_bot_table_count <> 14 then
+    raise exception 'Expected 14 market_bot tables, found %', market_bot_table_count;
+  end if;
+
+  if exists (
+    select required.table_name
+    from (values
+      ('patreon_caps_watches'),
+      ('patreon_caps_transitions')
+    ) as required(table_name)
+    where not exists (
+      select 1
+      from information_schema.tables
+      where table_schema = 'market_bot'
+        and table_name = required.table_name
+    )
+  ) then
+    raise exception 'PatreonCaps persistence tables are missing';
   end if;
 
   select
@@ -22,9 +38,9 @@ begin
   where pg_namespace.nspname = 'market_bot'
     and pg_class.relkind = 'r';
 
-  if rls_enabled_count <> 12 or rls_forced_count <> 12 then
+  if rls_enabled_count <> 14 or rls_forced_count <> 14 then
     raise exception
-      'Expected RLS enabled and forced on all 12 tables, found enabled=% forced=%',
+      'Expected RLS enabled and forced on all 14 tables, found enabled=% forced=%',
       rls_enabled_count,
       rls_forced_count;
   end if;
