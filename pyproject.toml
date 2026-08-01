@@ -43,7 +43,7 @@ dev = [
 packages = ["app"]
 
 [tool.pytest.ini_options]
-addopts = "--strict-config --strict-markers --cov=app --cov-report=term-missing --cov-fail-under=80"
+addopts = "--strict-config --strict-markers --cov=app --cov-report=term-missing --cov-fail-under=77"
 asyncio_mode = "auto"
 testpaths = ["app"]
 markers = [

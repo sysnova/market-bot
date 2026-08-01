@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -7,6 +8,11 @@ from typer.testing import CliRunner
 from app.operator_cli.main import _run_async, app
 
 runner = CliRunner()
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _plain(output: str) -> str:
+    return _ANSI_ESCAPE.sub("", output)
 
 
 def test_async_cli_commands_use_selector_event_loop() -> None:
@@ -55,18 +61,20 @@ def test_distributed_process_commands_are_explicit() -> None:
 
 def test_live_help_exposes_analysis_only_operation() -> None:
     result = runner.invoke(app, ["live", "--help"])
+    output = _plain(result.stdout)
 
     assert result.exit_code == 0
-    assert "analysis-only" in result.stdout.lower()
-    assert "--once" in result.stdout
+    assert "analysis-only" in output.lower()
+    assert "--once" in output
 
 
 def test_sec_daily_help_exposes_bounded_filing_scan() -> None:
     result = runner.invoke(app, ["sec", "daily", "--help"])
+    output = _plain(result.stdout)
 
     assert result.exit_code == 0
-    assert "filing" in result.stdout.lower()
-    assert "--lookback-days" in result.stdout
+    assert "filing" in output.lower()
+    assert "--lookback-days" in output
 
 
 def test_version_is_available_without_runtime_dependencies() -> None:

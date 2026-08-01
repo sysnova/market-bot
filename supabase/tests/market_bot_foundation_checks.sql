@@ -9,8 +9,8 @@ begin
   from information_schema.tables
   where table_schema = 'market_bot';
 
-  if market_bot_table_count <> 9 then
-    raise exception 'Expected 9 market_bot tables, found %', market_bot_table_count;
+  if market_bot_table_count <> 12 then
+    raise exception 'Expected 12 market_bot tables, found %', market_bot_table_count;
   end if;
 
   select
