@@ -21,7 +21,7 @@ class LynchCategory(StrEnum):
 
 
 class CriterionName(StrEnum):
-    """The seven deterministic selection criteria."""
+    """The six required financial criteria and one informational signal."""
 
     TRAILING_PE = "trailing_pe"
     PROJECTED_FORWARD_PE = "projected_forward_pe"
@@ -80,13 +80,14 @@ class LynchMetrics:
 
 @dataclass(frozen=True, slots=True)
 class CriterionResult:
-    """Traceable result of one strict selection rule."""
+    """Traceable result of one required criterion or informational signal."""
 
     name: CriterionName
     passed: bool
     value: Decimal | int | None
     threshold: str
     reason: str
+    required: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,8 +108,14 @@ class PeterLynchEvaluation:
 
     @property
     def passed_count(self) -> int:
-        return sum(item.passed for item in self.criteria)
+        return sum(item.passed for item in self.criteria if item.required)
+
+    @property
+    def required_count(self) -> int:
+        return sum(item.required for item in self.criteria)
 
     @property
     def failed_criteria(self) -> tuple[CriterionName, ...]:
-        return tuple(item.name for item in self.criteria if not item.passed)
+        return tuple(
+            item.name for item in self.criteria if item.required and not item.passed
+        )

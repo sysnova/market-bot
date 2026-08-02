@@ -135,9 +135,9 @@ class PostgresMarketRotationStore:
             unique = tuple(dict.fromkeys(additions))
             for symbol in unique:
                 await connection.execute(
-                    text("""insert into stock.watchlist_symbol (watchlist_id,symbol,status,notes,metadata_json)
+                    text("""insert into stock.watchlist_symbol as existing (watchlist_id,symbol,status,notes,metadata_json)
                   select w.id,:symbol,'active','ROT: agregado por MarketBot',cast(:metadata as jsonb) from stock.watchlist w where w.customer_id=:customer and w.code='default'
-                  on conflict (watchlist_id,symbol) do update set status='active',notes='ROT: actualizado por MarketBot',metadata_json=excluded.metadata_json,updated_at=now()"""),
+                  on conflict (watchlist_id,symbol) do update set status='active',notes='ROT: actualizado por MarketBot',metadata_json=coalesce(existing.metadata_json,'{}'::jsonb) || excluded.metadata_json,updated_at=now()"""),
                     {
                         "symbol": symbol,
                         "customer": customer_id,

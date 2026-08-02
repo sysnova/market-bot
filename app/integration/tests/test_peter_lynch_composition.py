@@ -80,7 +80,7 @@ async def test_manual_run_evaluates_once_and_saves_only_non_transient_results() 
     assert saved[1].eligible is False
     assert progress[0] == "Watchlist: 3 símbolos activos."
     assert any("[1/3] GOOD: consultando fundamentales SEC" in item for item in progress)
-    assert any("GOOD: seleccionado 7/7" in item for item in progress)
+    assert any("GOOD: seleccionado 6/6" in item for item in progress)
     assert any("UNSUPPORTED: no soportado" in item for item in progress)
     assert any("BROKEN: error SEC" in item for item in progress)
     assert progress[-1] == "Persistencia: 2 evaluaciones actualizadas."

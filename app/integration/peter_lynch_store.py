@@ -164,6 +164,7 @@ def _evaluation_detail(evaluation: PeterLynchEvaluation) -> dict[str, Any]:
         "eligible": evaluation.eligible,
         "category": evaluation.category.value,
         "passedCount": evaluation.passed_count,
+        "requiredCount": evaluation.required_count,
         "metrics": metrics,
         "criteria": [
             {
@@ -172,6 +173,7 @@ def _evaluation_detail(evaluation: PeterLynchEvaluation) -> dict[str, Any]:
                 "value": _json_decimal(item.value),
                 "threshold": item.threshold,
                 "reason": item.reason,
+                "required": item.required,
             }
             for item in evaluation.criteria
         ],

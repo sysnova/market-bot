@@ -159,7 +159,8 @@ class PeterLynchRunService:
                 outcome = "descartado"
             self.progress(
                 f"[{position}/{len(symbols)}] {symbol}: {outcome} "
-                f"{evaluation.passed_count}/7 ({evaluation.category.value})."
+                f"{evaluation.passed_count}/{evaluation.required_count} "
+                f"({evaluation.category.value})."
             )
         if evaluations:
             self.progress(f"Persistencia: guardando {len(evaluations)} evaluaciones.")

@@ -48,18 +48,20 @@ def criteria(evaluation: object) -> dict[CriterionName, object]:
     return {item.name: item for item in evaluation.criteria}  # type: ignore[attr-defined]
 
 
-def test_candidate_requires_all_seven_strict_criteria() -> None:
+def test_candidate_requires_all_six_financial_criteria() -> None:
     result = PeterLynchEngine().evaluate(snapshot())
 
     assert result.eligible is True
-    assert result.passed_count == 7
+    assert result.passed_count == 6
+    assert result.required_count == 6
     assert result.category is LynchCategory.FAST_GROWER
     assert result.metrics.trailing_pe == Decimal("10")
     assert result.metrics.debt_to_equity_percent == Decimal("20")
     assert result.metrics.market_cap == Decimal("6000000000")
     assert result.metrics.eps_cagr_percent is not None
     assert result.metrics.projected_forward_pe is not None
-    assert all(item.passed for item in result.criteria)
+    assert all(item.passed for item in result.criteria if item.required)
+    assert criteria(result)[CriterionName.INSIDER_BUYING].required is False  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(
@@ -92,7 +94,6 @@ def test_candidate_requires_all_seven_strict_criteria() -> None:
             CriterionName.PEG,
         ),
         ({"shares_outstanding": Decimal("250000000")}, CriterionName.MARKET_CAP),
-        ({"insider_open_market_purchase_count": 0}, CriterionName.INSIDER_BUYING),
     ],
 )
 def test_each_threshold_can_reject_candidate(
@@ -102,6 +103,22 @@ def test_each_threshold_can_reject_candidate(
 
     assert result.eligible is False
     assert criteria(result)[criterion].passed is False  # type: ignore[attr-defined]
+
+
+def test_insider_buying_is_informational_and_does_not_reject_candidate() -> None:
+    result = PeterLynchEngine().evaluate(
+        snapshot(
+            insider_open_market_purchase_count=0,
+            latest_insider_purchase_at=None,
+        )
+    )
+
+    insider = criteria(result)[CriterionName.INSIDER_BUYING]
+    assert result.eligible is True
+    assert result.passed_count == result.required_count == 6
+    assert insider.passed is False  # type: ignore[attr-defined]
+    assert insider.required is False  # type: ignore[attr-defined]
+    assert CriterionName.INSIDER_BUYING not in result.failed_criteria
 
 
 def test_missing_and_non_positive_values_fail_closed() -> None:
@@ -120,7 +137,9 @@ def test_missing_and_non_positive_values_fail_closed() -> None:
     assert result.metrics.eps_cagr_percent is None
     assert result.metrics.debt_to_equity_percent is None
     assert result.metrics.market_cap is None
-    assert result.failed_criteria == tuple(item.name for item in result.criteria)
+    assert result.failed_criteria == tuple(
+        item.name for item in result.criteria if item.required
+    )
 
 
 @pytest.mark.parametrize(

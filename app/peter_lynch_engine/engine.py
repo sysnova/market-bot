@@ -36,8 +36,8 @@ _CYCLICAL_SIC_CODES = frozenset({2911, 3011, 3711, 4011, 4412, 4512, 5511})
 class PeterLynchEngine:
     """Evaluate one normalized snapshot without I/O, clocks, or mutable state."""
 
-    ENGINE_VERSION = "1.0.0"
-    POLICY_VERSION = "peter-lynch-screen-1.0.0"
+    ENGINE_VERSION = "1.1.0"
+    POLICY_VERSION = "peter-lynch-screen-1.1.0"
 
     def evaluate(self, snapshot: PeterLynchSnapshot) -> PeterLynchEvaluation:
         price = _positive(snapshot.price)
@@ -110,12 +110,13 @@ class PeterLynchEngine:
                 snapshot.insider_open_market_purchase_count,
                 ">= 1 open-market purchase in 365d",
                 lambda x: x >= 1,
+                required=False,
             ),
         )
         return PeterLynchEvaluation(
             symbol=snapshot.symbol.strip().upper(),
             as_of=snapshot.as_of,
-            eligible=all(item.passed for item in criteria),
+            eligible=all(item.passed for item in criteria if item.required),
             category=_classify(snapshot, metrics),
             metrics=metrics,
             criteria=criteria,
@@ -132,9 +133,18 @@ def _criterion(
     value: Decimal | int | None,
     threshold: str,
     predicate: Callable[[Decimal | int], bool],
+    *,
+    required: bool = True,
 ) -> CriterionResult:
     if value is None:
-        return CriterionResult(name, False, None, threshold, "required_data_unavailable")
+        return CriterionResult(
+            name,
+            False,
+            None,
+            threshold,
+            "required_data_unavailable",
+            required=required,
+        )
     passed = predicate(value)
     return CriterionResult(
         name=name,
@@ -142,6 +152,7 @@ def _criterion(
         value=value,
         threshold=threshold,
         reason="passed" if passed else "threshold_not_met",
+        required=required,
     )
 
 

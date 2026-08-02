@@ -61,6 +61,11 @@ def test_metadata_merge_is_idempotent_and_preserves_other_indicators() -> None:
     assert selected["indicatorDetails"]["LYNCH"]["category"] == LynchCategory.FAST_GROWER
     assert selected["indicatorDetails"]["LYNCH"]["priceAsOf"] == "2026-07-31"
     assert selected["indicatorDetails"]["LYNCH"]["fundamentalsAsOf"] == "2026-06-30"
+    assert selected["indicatorDetails"]["LYNCH"]["passedCount"] == 6
+    assert selected["indicatorDetails"]["LYNCH"]["requiredCount"] == 6
+    insider = selected["indicatorDetails"]["LYNCH"]["criteria"][-1]
+    assert insider["name"] == "insider_buying"
+    assert insider["required"] is False
     assert selected["custom"] == "keep"
     assert rejected["indicators"] == ["Q", "ROT"]
     assert rejected["indicatorDetails"]["LYNCH"]["eligible"] is False
