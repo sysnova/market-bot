@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -15,6 +15,16 @@ class _FrozenModel(BaseModel):
 class PortfolioAllocation(_FrozenModel):
     symbol: str = Field(pattern=r"^[A-Z][A-Z0-9.-]{0,14}$")
     weight_percent: Decimal = Field(gt=Decimal("0"), le=Decimal("100"))
+
+
+class LongPortfolioState(_FrozenModel):
+    """Compact restart state; historical analysis payloads remain outside the engine."""
+
+    symbol: str = Field(pattern=r"^[A-Z][A-Z0-9.-]{0,14}$")
+    rule_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+    qualified_sessions: tuple[date, ...] = Field(max_length=10)
+    last_emitted: datetime | None = None
+    updated_at: datetime
 
 
 class LongPortfolioPolicy(_FrozenModel):

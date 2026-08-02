@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, datetime
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import cast
@@ -17,7 +18,7 @@ from app.contracts import (
     PatternDirection,
 )
 
-from .models import LongPortfolioPolicy, PortfolioAllocation
+from .models import LongPortfolioPolicy, LongPortfolioState, PortfolioAllocation
 
 HUNDRED = Decimal("100")
 
@@ -27,10 +28,26 @@ class LongPortfolioEngine:
 
     engine_id = "long-portfolio"
 
-    def __init__(self, policy: LongPortfolioPolicy) -> None:
+    def __init__(
+        self,
+        policy: LongPortfolioPolicy,
+        *,
+        restored_states: Iterable[LongPortfolioState] = (),
+    ) -> None:
         self._policy = policy
         self._qualified_sessions: dict[str, list[date]] = {}
         self._last_emitted: dict[str, datetime] = {}
+        for state in restored_states:
+            if (
+                state.rule_version != policy.rule_version
+                or policy.allocation_for(state.symbol) is None
+            ):
+                continue
+            self._qualified_sessions[state.symbol] = sorted(set(state.qualified_sessions))[
+                -policy.minimum_qualified_sessions :
+            ]
+            if state.last_emitted is not None:
+                self._last_emitted[state.symbol] = state.last_emitted
 
     def ingest(
         self,
@@ -42,6 +59,7 @@ class LongPortfolioEngine:
         allocation = self._policy.allocation_for(result.symbol)
         if allocation is None or result.horizon is not AnalysisHorizon.LONG_TERM:
             return None
+        self._prune_sessions(result.symbol, now=now)
         if result.as_of > now or now - result.as_of > self._policy.maximum_signal_age:
             return None
         if not self._qualifies(result):
@@ -52,6 +70,7 @@ class LongPortfolioEngine:
         session = result.as_of.date()
         if session not in sessions:
             sessions.append(session)
+            sessions.sort()
         sessions[:] = sessions[-self._policy.minimum_qualified_sessions :]
         if len(sessions) < self._policy.minimum_qualified_sessions:
             return None
@@ -63,6 +82,28 @@ class LongPortfolioEngine:
         if alert is not None:
             self._last_emitted[result.symbol] = now
         return alert
+
+    def state_for(self, symbol: str, *, updated_at: datetime) -> LongPortfolioState | None:
+        """Return only the bounded state required to continue after a restart."""
+
+        normalized = symbol.strip().upper()
+        if self._policy.allocation_for(normalized) is None:
+            return None
+        self._prune_sessions(normalized, now=updated_at)
+        return LongPortfolioState(
+            symbol=normalized,
+            rule_version=self._policy.rule_version,
+            qualified_sessions=tuple(self._qualified_sessions.get(normalized, ())),
+            last_emitted=self._last_emitted.get(normalized),
+            updated_at=updated_at,
+        )
+
+    def _prune_sessions(self, symbol: str, *, now: datetime) -> None:
+        sessions = self._qualified_sessions.get(symbol)
+        if sessions is None:
+            return
+        cutoff = (now - self._policy.maximum_signal_age).date()
+        sessions[:] = [session for session in sessions if session >= cutoff]
 
     def _qualifies(self, result: AnalysisResult) -> bool:
         metrics = _metrics(result)

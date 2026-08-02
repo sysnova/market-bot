@@ -93,3 +93,17 @@ async def test_holding_quantity_uses_authoritative_customer_holding() -> None:
 
     assert quantity == Decimal("28")
     assert connection.scalar.await_args.args[1]["symbol"] == "HIMS"
+
+
+@pytest.mark.unit
+async def test_holding_quantities_are_loaded_in_one_query() -> None:
+    engine = _engine_with_rows(
+        [
+            SimpleNamespace(symbol="hims", quantity=Decimal("28")),
+            SimpleNamespace(symbol="NVO", quantity=Decimal("12.5")),
+        ]
+    )
+
+    quantities = await PostgresUniverseClient(engine).get_holding_quantities()
+
+    assert quantities == {"HIMS": Decimal("28"), "NVO": Decimal("12.5")}

@@ -400,6 +400,23 @@ class LongPortfolioAlertRecord(Base):
     )
 
 
+class LongPortfolioStateRecord(Base):
+    """Minimal mutable confirmation state for restart-safe LONG portfolio processing."""
+
+    __tablename__ = "long_portfolio_states"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(qualified_sessions) = 'array'", name="sessions_array"),
+        Index("long_portfolio_states_updated_idx", "updated_at"),
+        {"schema": SCHEMA},
+    )
+
+    rule_version: Mapped[str] = mapped_column(Text, primary_key=True)
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    qualified_sessions: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    last_emitted: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class MarketBarRecord(Base):
     """Recoverable normalized bar cache written only by MarketData History."""
 

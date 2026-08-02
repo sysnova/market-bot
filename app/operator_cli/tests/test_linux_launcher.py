@@ -30,6 +30,15 @@ def test_linux_launcher_starts_market_history_before_analytical_engines() -> Non
     assert script.index(history) < script.index(long_term)
 
 
+def test_linux_launcher_readies_long_portfolio_before_long_snapshot() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    portfolio = "start_background long-portfolio-v1 run marketbot engine long-portfolio"
+    portfolio_ready = 'wait_ready "$STATUS_ROOT/long-portfolio-v1.ready.json"'
+    long_term = "start_background long-term-v2 run marketbot engine long"
+    assert script.index(portfolio) < script.index(portfolio_ready) < script.index(long_term)
+
+
 def test_history_dependent_tmux_roles_wait_for_market_history() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     wait = 'wait_ready "$STATUS_ROOT/market-history-v1.ready.json"'

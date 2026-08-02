@@ -4,6 +4,7 @@ import asyncio
 import json
 import selectors
 from collections.abc import Coroutine
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -330,6 +331,53 @@ def signal_fusion_process(
 
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
+
+nats_admin = typer.Typer(name="nats", help="Inspect and maintain local NATS JetStream.")
+app.add_typer(nats_admin, name="nats")
+
+
+@nats_admin.command("cleanup-consumers")
+def cleanup_nats_consumers(
+    apply: Annotated[
+        bool,
+        typer.Option("--apply/--dry-run", help="Delete candidates; defaults to preview only."),
+    ] = False,
+    minimum_age_minutes: Annotated[
+        int,
+        typer.Option(help="Protect disconnected consumers newer than this many minutes."),
+    ] = 10,
+    stream: Annotated[str, typer.Option(help="JetStream stream to inspect.")] = "MARKETBOT",
+) -> None:
+    """Remove only disconnected legacy consumers whose generated name starts with mb_."""
+
+    if minimum_age_minutes <= 0:
+        raise typer.BadParameter("minimum age must be positive")
+    from app.common.settings import AppSettings
+    from app.event_bus.consumer_maintenance import run_orphan_consumer_cleanup
+
+    settings = AppSettings()
+    summary = _run_async(
+        run_orphan_consumer_cleanup(
+            nats_url=settings.nats_url.get_secret_value(),
+            stream=stream,
+            minimum_age=timedelta(minutes=minimum_age_minutes),
+            apply=apply,
+        )
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "stream": stream,
+                "mode": "apply" if apply else "dry-run",
+                "scanned": summary.scanned,
+                "candidates": len(summary.candidates),
+                "deleted": len(summary.deleted),
+                "candidate_preview": list(summary.candidates[:20]),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 @market.command("stream")

@@ -196,6 +196,19 @@ Table market_bot.long_portfolio_alerts {
   }
 }
 
+Table market_bot.long_portfolio_states {
+  rule_version text [not null]
+  symbol text [not null]
+  qualified_sessions jsonb [not null]
+  last_emitted timestamptz
+  updated_at timestamptz [not null]
+
+  indexes {
+    (rule_version, symbol) [pk]
+    updated_at [name: "long_portfolio_states_updated_idx"]
+  }
+}
+
 Table market_bot.market_bars {
   symbol text [not null]
   timeframe text [not null]

@@ -296,6 +296,10 @@ run_control() {
   start_background market-history-v1 run marketbot market history \
     --ready-path "$STATUS_ROOT/market-history-v1.ready.json"
   wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
+  start_background long-portfolio-v1 run marketbot engine long-portfolio \
+    --runtime-root "$RUNTIME_ROOT" \
+    --ready-path "$STATUS_ROOT/long-portfolio-v1.ready.json"
+  wait_ready "$STATUS_ROOT/long-portfolio-v1.ready.json"
   start_background long-term-v2 run marketbot engine long \
     --ready-path "$STATUS_ROOT/long-term-v2.ready.json" "${symbol_args[@]}"
   start_background swing-v2 run marketbot engine swing \
@@ -306,17 +310,13 @@ run_control() {
     --ready-path "$STATUS_ROOT/market-rotation-v1.ready.json"
   start_background portfolio-flow-v1 run marketbot engine portfolio-flow \
     --ready-path "$STATUS_ROOT/portfolio-flow-v1.ready.json"
-  start_background long-portfolio-v1 run marketbot engine long-portfolio \
-    --runtime-root "$RUNTIME_ROOT" \
-    --ready-path "$STATUS_ROOT/long-portfolio-v1.ready.json"
   wait_ready \
     "$STATUS_ROOT/long-term-v2.ready.json" \
     "$STATUS_ROOT/swing-v2.ready.json" \
     "$STATUS_ROOT/intraday-v2.ready.json" \
     "$STATUS_ROOT/market-rotation-v1.ready.json"
   wait_ready "$STATUS_ROOT/portfolio-flow-v1.ready.json"
-  wait_ready "$STATUS_ROOT/long-portfolio-v1.ready.json" \
-    "$STATUS_ROOT/long-portfolio-monitor.ready.json"
+  wait_ready "$STATUS_ROOT/long-portfolio-monitor.ready.json"
   wait_ready "$STATUS_ROOT/patreon-caps-v1.ready.json" \
     "$STATUS_ROOT/patreon-caps-analysis.ready.json" \
     "$STATUS_ROOT/patreon-caps-alerts.ready.json"

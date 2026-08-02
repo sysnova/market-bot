@@ -225,6 +225,16 @@ Watch all live MarketBot messages with formatted JSON from PowerShell:
 
 Use `-Subject marketbot.v1.analysis.result.>` to narrow the subscription to analytical results.
 
+Legacy releases created durable consumers with generated `mb_*` names. Preview and remove only
+the disconnected consumers older than ten minutes with:
+
+```powershell
+uv run marketbot nats cleanup-consumers --dry-run
+uv run marketbot nats cleanup-consumers --apply
+```
+
+The cleanup preserves connected consumers, stable named consumers, and every stream message.
+
 ## PatreonCaps v1 SHADOW
 
 PatreonCaps usa por defecto el artefacto inmutable

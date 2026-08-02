@@ -18,6 +18,7 @@ from .models import (
     EntryWatchRecord,
     EntryWatchTransitionRecord,
     LongPortfolioAlertRecord,
+    LongPortfolioStateRecord,
     OutboxEvent,
     PatreonCapsTransitionRecord,
     PatreonCapsWatchRecord,
@@ -353,3 +354,32 @@ class PatreonCapsRepository(Repository):
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none() is not None
+
+
+class LongPortfolioStateRepository(Repository):
+    """Load and upsert bounded confirmation state by rule version and symbol."""
+
+    async def load(self, *, rule_version: str) -> tuple[LongPortfolioStateRecord, ...]:
+        records = await self._session.scalars(
+            select(LongPortfolioStateRecord)
+            .where(LongPortfolioStateRecord.rule_version == rule_version)
+            .order_by(LongPortfolioStateRecord.symbol)
+        )
+        return tuple(records.all())
+
+    async def upsert(self, record: LongPortfolioStateRecord) -> None:
+        values = {
+            column.name: getattr(record, column.name)
+            for column in LongPortfolioStateRecord.__table__.columns
+        }
+        statement = insert(LongPortfolioStateRecord).values(**values)
+        await self._session.execute(
+            statement.on_conflict_do_update(
+                index_elements=["rule_version", "symbol"],
+                set_={
+                    "qualified_sessions": statement.excluded.qualified_sessions,
+                    "last_emitted": statement.excluded.last_emitted,
+                    "updated_at": statement.excluded.updated_at,
+                },
+            )
+        )

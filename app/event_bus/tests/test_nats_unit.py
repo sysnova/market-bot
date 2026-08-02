@@ -196,6 +196,21 @@ async def test_subscribe_can_hydrate_only_latest_message_per_subject() -> None:
 
 
 @pytest.mark.unit
+async def test_subscribe_without_explicit_durable_is_ephemeral() -> None:
+    from nats.js.api import DeliverPolicy
+
+    js = FakeJetStream()
+    bus = NatsJetStreamEventBus(client=None, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]
+
+    await bus.subscribe("v1.alert.local.>", _discard)
+
+    _, durable, config = js.subscribed[0]
+    assert durable is None
+    assert config.durable_name is None  # type: ignore[attr-defined]
+    assert config.deliver_policy is DeliverPolicy.NEW  # type: ignore[attr-defined]
+
+
+@pytest.mark.unit
 async def test_close_unsubscribes_and_drains_once() -> None:
     js = FakeJetStream()
     client = FakeClient(js)

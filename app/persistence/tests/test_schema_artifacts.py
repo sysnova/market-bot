@@ -16,6 +16,7 @@ TABLES = {
     "entry_watch_transitions",
     "entry_watches",
     "long_portfolio_alerts",
+    "long_portfolio_states",
     "market_bars",
     "outbox_events",
     "patreon_caps_transitions",
@@ -146,3 +147,17 @@ def test_market_bar_cache_has_composite_identity_and_runtime_upsert_access() -> 
     assert "grant delete on market_bot.market_bars" not in sql
     assert "function market_bot.prune_market_bars" in sql
     assert "grant execute on function market_bot.prune_market_bars" in sql
+
+
+@pytest.mark.unit
+def test_long_portfolio_state_is_compact_and_updateable() -> None:
+    sql = all_migration_sql()
+
+    assert "primary key (rule_version, symbol)" in sql
+    assert "qualified_sessions jsonb not null" in sql
+    assert re.search(
+        r"grant select, insert, update on market_bot\.long_portfolio_states "
+        r"to market_bot_runtime",
+        sql,
+    )
+    assert "grant delete on market_bot.long_portfolio_states" not in sql

@@ -12,6 +12,7 @@ from app.contracts import (
 from app.long_portfolio_engine import (
     LongPortfolioEngine,
     LongPortfolioPolicy,
+    LongPortfolioState,
     PortfolioAllocation,
 )
 
@@ -122,3 +123,21 @@ def test_does_not_emit_buy_when_current_holding_reaches_target() -> None:
     assert (
         engine.ingest(_analysis(), now=NOW, held_quantity=Decimal("300")) is None
     )
+
+
+def test_restores_previous_qualified_session_without_replaying_nats() -> None:
+    restored = LongPortfolioState(
+        symbol="HIMS",
+        rule_version="1.0.0",
+        qualified_sessions=((NOW - timedelta(days=1)).date(),),
+        last_emitted=None,
+        updated_at=NOW - timedelta(days=1),
+    )
+    engine = LongPortfolioEngine(_policy(), restored_states=(restored,))
+
+    alert = engine.ingest(_analysis(), now=NOW)
+
+    assert alert is not None
+    state = engine.state_for("HIMS", updated_at=NOW)
+    assert state is not None
+    assert state.qualified_sessions == ((NOW - timedelta(days=1)).date(), NOW.date())

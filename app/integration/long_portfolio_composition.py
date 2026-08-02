@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from app.alert_engine.sinks import NdjsonAlertSink
@@ -41,7 +43,6 @@ async def run_long_portfolio_process(
     portfolio_data = PostgresUniverseClient(database)
     allocations = await portfolio_data.get_portfolio_allocations()
     policy = load_long_portfolio_policy(config_path, allocations=allocations)
-    engine = LongPortfolioEngine(policy)
     ledger = NdjsonAlertSink(runtime_root / "alerts" / "long-portfolio-alerts.ndjson")
     clock = SystemClock()
     store = PostgresLongPortfolioAlertStore(create_session_factory(database))
@@ -49,13 +50,21 @@ async def run_long_portfolio_process(
         await database.dispose()
         raise RuntimeError(
             "LONG portfolio alert schema is unavailable; apply "
-            "20260731210000_long_portfolio_alerts.sql"
+            "20260802223000_long_portfolio_states.sql"
         )
+    engine = LongPortfolioEngine(
+        policy,
+        restored_states=await store.load_states(rule_version=policy.rule_version),
+    )
+    holding_quantities = await portfolio_data.get_holding_quantities()
+    holdings_loaded_at = clock.now()
+    holdings_lock = asyncio.Lock()
     bus = await NatsJetStreamEventBus.connect(
         servers=[settings.nats_url.get_secret_value()], prefix="marketbot", stream="MARKETBOT"
     )
 
     async def handle(envelope: EventEnvelope) -> None:
+        nonlocal holding_quantities, holdings_loaded_at
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
             return
         result = (
@@ -63,10 +72,20 @@ async def run_long_portfolio_process(
             if isinstance(envelope.payload, AnalysisResult)
             else AnalysisResult.model_validate(envelope.payload, strict=False)
         )
-        held_quantity = await portfolio_data.get_holding_quantity(result.symbol)
-        alert = engine.ingest(result, now=clock.now(), held_quantity=held_quantity)
-        if alert is None or not await store.save(alert):
+        if policy.allocation_for(result.symbol) is None:
             return
+        now = clock.now()
+        if now - holdings_loaded_at >= timedelta(minutes=5):
+            async with holdings_lock:
+                if now - holdings_loaded_at >= timedelta(minutes=5):
+                    holding_quantities = await portfolio_data.get_holding_quantities()
+                    holdings_loaded_at = now
+        held_quantity = holding_quantities.get(result.symbol, Decimal())
+        alert = engine.ingest(result, now=now, held_quantity=held_quantity)
+        state = engine.state_for(result.symbol, updated_at=now)
+        if state is None or not await store.save_evaluation(state, alert):
+            return
+        assert alert is not None
         ledger.emit(alert)
         await bus.publish(
             local_alert_subject(alert.severity, alert.symbol),
@@ -82,7 +101,11 @@ async def run_long_portfolio_process(
     subscription = await bus.subscribe(
         "marketbot.v1.analysis.result.LONG_TERM.>",
         handle,
-        options=SubscriptionOptions(replay_all=True, ack_wait_seconds=60),
+        options=SubscriptionOptions(
+            durable_name="marketbot-long-portfolio-v1",
+            replay_all=False,
+            ack_wait_seconds=60,
+        ),
     )
     try:
         details = {
@@ -93,7 +116,8 @@ async def run_long_portfolio_process(
             "monitored_symbols": len(policy.allocations),
             "universe_source": "postgresql-local:watchlist:PORT_YTD",
             "input_subject": "marketbot.v1.analysis.result.LONG_TERM.>",
-            "replay_recent": True,
+            "replay_recent": False,
+            "state_restore": "postgresql-local:long_portfolio_states",
             "persistence": "postgresql+ndjson",
         }
         if ready_path is not None:

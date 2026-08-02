@@ -208,6 +208,33 @@ class PostgresUniverseClient:
             ) from error
         return Decimal(str(value or 0))
 
+    async def get_holding_quantities(self) -> dict[str, Decimal]:
+        """Load all active positive holdings in one round trip for bounded caching."""
+
+        try:
+            async with self._engine.connect() as connection:
+                rows = (
+                    await connection.execute(
+                        text(
+                            """
+                            select h.symbol, h.quantity
+                            from stock.customer_holding h
+                            join stock.customer c on c.id = h.customer_id
+                            where c.slug = :customer_slug
+                              and c.status = 'active'
+                              and h.status = 'active'
+                              and h.quantity > 0
+                            """
+                        ),
+                        {"customer_slug": self._customer_slug},
+                    )
+                ).all()
+        except SQLAlchemyError as error:
+            raise PostgresUniverseError("Local PostgreSQL holdings query failed") from error
+        return {
+            str(row.symbol).strip().upper(): Decimal(str(row.quantity)) for row in rows
+        }
+
 
 def fallback_universe(symbols: Sequence[str], *, source: str = "env-fallback") -> UniverseSnapshot:
     normalized = _normalize_symbols(symbols)

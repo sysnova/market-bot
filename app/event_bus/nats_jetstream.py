@@ -6,7 +6,6 @@ import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from time import monotonic
 from typing import Protocol, cast
-from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -237,8 +236,6 @@ class NatsJetStreamEventBus:
             deliver_policy = DeliverPolicy.NEW
 
         durable_name = resolved.durable_name
-        if durable_name is None and not resolved.replay_latest_per_subject:
-            durable_name = f"mb_{uuid4().hex}"
 
         config = ConsumerConfig(
             durable_name=durable_name,
