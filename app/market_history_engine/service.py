@@ -34,6 +34,7 @@ _MINIMUM_RETENTION = {
 class BarCoverage:
     count: int
     latest: datetime | None
+    downloaded_at: datetime | None = None
 
 
 class MarketBarRepository(Protocol):
@@ -54,13 +55,17 @@ class MarketHistoryService:
         repository: MarketBarRepository,
         feed: str,
         batch_size: int,
+        freshness: timedelta = timedelta(hours=1),
     ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
+        if freshness <= timedelta(0):
+            raise ValueError("freshness must be positive")
         self._rest = rest
         self._repository = repository
         self._normalizer = AlpacaEventNormalizer(feed=feed)
         self._batch_size = batch_size
+        self._freshness = freshness
         self._registered: dict[str, MarketHistoryRequest] = {}
         self._sync_lock = asyncio.Lock()
 
@@ -116,6 +121,13 @@ class MarketHistoryService:
         for requirement in request.requirements:
             coverage = await self._repository.coverage(request.symbols, requirement.timeframe)
             for batch in _batches(request.symbols, self._batch_size):
+                if _batch_is_fresh(
+                    batch,
+                    coverage,
+                    as_of=request.requested_at,
+                    freshness=self._freshness,
+                ):
+                    continue
                 start = _sync_start(
                     batch,
                     coverage,
@@ -175,6 +187,23 @@ def _sync_start(
         return as_of - requirement.lookback
     return min(
         item.latest - _overlap(requirement.timeframe) for item in values if item.latest is not None
+    )
+
+
+def _batch_is_fresh(
+    symbols: tuple[str, ...],
+    coverage: Mapping[str, BarCoverage],
+    *,
+    as_of: datetime,
+    freshness: timedelta,
+) -> bool:
+    threshold = as_of - freshness
+    return all(
+        item.count > 0
+        and item.latest is not None
+        and item.downloaded_at is not None
+        and item.downloaded_at >= threshold
+        for item in (coverage[symbol] for symbol in symbols)
     )
 
 

@@ -74,6 +74,7 @@ run_long_portfolio_monitor() {
 run_patreon_caps_analysis() {
   cd "$PROJECT_ROOT"
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
+  wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
   rm -f "$STATUS_ROOT/patreon-caps-v1.ready.json" \
     "$STATUS_ROOT/patreon-caps-analysis.ready.json"
   uv run marketbot engine patreon-caps \
@@ -106,6 +107,7 @@ run_patreon_caps_alerts() {
 run_elliott_wave() {
   cd "$PROJECT_ROOT"
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
+  wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
   rm -f "$STATUS_ROOT/elliott-wave-v0.ready.json" \
     "$STATUS_ROOT/elliott-wave-analysis.ready.json"
   uv run marketbot engine elliott-wave \
@@ -140,6 +142,7 @@ run_elliott_wave() {
 run_support_confirmation() {
   cd "$PROJECT_ROOT"
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
+  wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
   rm -f "$STATUS_ROOT/support-confirmation-v0.ready.json" \
     "$STATUS_ROOT/support-confirmation-analysis.ready.json"
   uv run marketbot engine support-confirmation \
@@ -394,6 +397,8 @@ launch_tmux() {
     exec tmux attach-session -t "$SESSION"
   fi
 
+  mkdir -p "$STATUS_ROOT"
+  rm -f "$STATUS_ROOT/market-history-v1.ready.json"
   tmux new-session -d -s "$SESSION" -n MarketBot "$control"
   tmux set-window-option -t "$SESSION":0 window-size latest
   tmux set-option -t "$SESSION" pane-border-status top

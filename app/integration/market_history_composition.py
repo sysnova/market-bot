@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -123,6 +123,7 @@ async def run_market_history_process(*, ready_path: Path | None = None) -> None:
         repository=repository,
         feed=settings.alpaca_data_feed,
         batch_size=settings.alpaca_rest_batch_size,
+        freshness=timedelta(seconds=settings.market_history_refresh_seconds),
     )
     server: NatsMarketHistoryServer | None = None
     try:

@@ -80,7 +80,7 @@ async def test_repository_upserts_bars_in_one_database_transaction() -> None:
 
 
 async def test_repository_reports_coverage_and_loads_latest_market_bars() -> None:
-    rows = [SimpleNamespace(symbol="TGT", count=500, latest=NOW)]
+    rows = [SimpleNamespace(symbol="TGT", count=500, latest=NOW, downloaded_at=NOW)]
     loaded = [
         SimpleNamespace(
             symbol="TGT",
@@ -107,6 +107,7 @@ async def test_repository_reports_coverage_and_loads_latest_market_bars() -> Non
     )
 
     assert coverage["TGT"].count == 500
+    assert coverage["TGT"].downloaded_at == NOW
     assert coverage["ADUR"].count == 0
     assert bars == (bar(),)
 

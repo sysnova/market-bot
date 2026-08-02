@@ -126,6 +126,29 @@ async def test_incremental_sync_uses_latest_bar_with_timeframe_overlap() -> None
     assert rest.calls[0]["start"] == latest - timedelta(minutes=2)
 
 
+async def test_fresh_cache_skips_rest_during_engine_startup() -> None:
+    downloaded_at = NOW - timedelta(minutes=10)
+    rest = FakeRest()
+    repository = FakeRepository(
+        {
+            "TGT": BarCoverage(count=500, latest=NOW, downloaded_at=downloaded_at),
+            "ADUR": BarCoverage(count=120, latest=NOW, downloaded_at=downloaded_at),
+        }
+    )
+    service = MarketHistoryService(
+        rest=rest,
+        repository=repository,
+        feed="sip",
+        batch_size=20,
+        freshness=timedelta(hours=1),
+    )
+
+    response = await service.ensure(request(BarTimeframe.MINUTE_1, timedelta(days=7), 500))
+
+    assert response.persisted_bars == 0
+    assert rest.calls == []
+
+
 async def test_registered_requirements_are_merged_for_hourly_refresh() -> None:
     rest = FakeRest()
     repository = FakeRepository({})

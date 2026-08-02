@@ -9,7 +9,7 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
     assert "start_background long-portfolio-v1 run marketbot engine long-portfolio" in script
-    assert 'run marketbot alerts long-portfolio' in script
+    assert "run marketbot alerts long-portfolio" in script
     assert "--role long-portfolio" in script
     assert "LONG PORTFOLIO 2026" in script
     assert '"$STATUS_ROOT/long-portfolio-v1.ready.json"' in script
@@ -28,6 +28,22 @@ def test_linux_launcher_starts_market_history_before_analytical_engines() -> Non
     assert history in script
     assert 'wait_ready "$STATUS_ROOT/market-history-v1.ready.json"' in script
     assert script.index(history) < script.index(long_term)
+
+
+def test_history_dependent_tmux_roles_wait_for_market_history() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    wait = 'wait_ready "$STATUS_ROOT/market-history-v1.ready.json"'
+
+    for start, end in (
+        ("run_patreon_caps_analysis()", "run_patreon_caps_alerts()"),
+        ("run_elliott_wave()", "run_support_confirmation()"),
+        ("run_support_confirmation()", "run_signal_fusion_analysis()"),
+    ):
+        role = script.split(start, 1)[1].split(end, 1)[0]
+        assert wait in role
+
+    new_session = script.split('tmux new-session -d -s "$SESSION"', 1)[0]
+    assert 'rm -f "$STATUS_ROOT/market-history-v1.ready.json"' in new_session
 
 
 def test_linux_launcher_starts_patreon_caps_and_dedicated_tmux_window() -> None:

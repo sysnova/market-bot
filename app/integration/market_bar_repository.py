@@ -34,7 +34,8 @@ class PostgresMarketBarRepository:
                 await connection.execute(
                     text(
                         """
-                        select symbol, count(*)::integer as count, max(timestamp) as latest
+                        select symbol, count(*)::integer as count, max(timestamp) as latest,
+                               max(downloaded_at) as downloaded_at
                         from market_bot.market_bars
                         where symbol = any(:symbols) and timeframe = :timeframe
                         group by symbol
@@ -46,7 +47,11 @@ class PostgresMarketBarRepository:
         output: dict[str, BarCoverage] = {}
         for raw_row in rows:
             row = cast(Any, raw_row)
-            output[str(row.symbol)] = BarCoverage(count=int(row.count), latest=row.latest)
+            output[str(row.symbol)] = BarCoverage(
+                count=int(row.count),
+                latest=row.latest,
+                downloaded_at=row.downloaded_at,
+            )
         return {
             symbol: output.get(symbol, BarCoverage(count=0, latest=None)) for symbol in normalized
         }
