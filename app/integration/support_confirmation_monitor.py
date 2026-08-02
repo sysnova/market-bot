@@ -9,9 +9,12 @@ from typing import TextIO
 from app.common.settings import AppSettings
 from app.contracts import (
     SUPPORT_ASSESSMENT_EVENT,
+    SUPPORT_TRANSITION_EVENT,
     EventEnvelope,
     SubscriptionOptions,
     SupportAssessment,
+    SupportState,
+    SupportTransition,
 )
 from app.event_bus import NatsJetStreamEventBus
 
@@ -19,7 +22,10 @@ from .distributed_composition import write_ready
 
 
 async def run_support_confirmation_monitor(
-    *, ready_path: Path | None = None, stream: TextIO | None = None
+    *,
+    ready_path: Path | None = None,
+    stream: TextIO | None = None,
+    bell: bool = True,
 ) -> None:
     import sys
 
@@ -31,7 +37,7 @@ async def run_support_confirmation_monitor(
         stream="MARKETBOT",
     )
 
-    async def handle(envelope: EventEnvelope) -> None:
+    async def handle_assessment(envelope: EventEnvelope) -> None:
         if envelope.event_type != SUPPORT_ASSESSMENT_EVENT:
             return
         assessment = (
@@ -41,11 +47,33 @@ async def run_support_confirmation_monitor(
         )
         print(_format_assessment(assessment), file=output, flush=True)
 
-    subscription = await bus.subscribe(
+    async def handle_transition(envelope: EventEnvelope) -> None:
+        if envelope.event_type != SUPPORT_TRANSITION_EVENT:
+            return
+        transition = (
+            envelope.payload
+            if isinstance(envelope.payload, SupportTransition)
+            else SupportTransition.model_validate(envelope.payload, strict=False)
+        )
+        if not _is_reentry_transition(transition):
+            return
+        if bell:
+            print("\a", end="", file=output, flush=True)
+        print(_format_reentry(transition), file=output, flush=True)
+
+    assessment_subscription = await bus.subscribe(
         "marketbot.v1.support-confirmation.assessment.>",
-        handle,
+        handle_assessment,
         options=SubscriptionOptions(
             replay_latest_per_subject=True,
+            ack_wait_seconds=60,
+        ),
+    )
+    transition_subscription = await bus.subscribe(
+        "marketbot.v1.support-confirmation.transition.>",
+        handle_transition,
+        options=SubscriptionOptions(
+            replay_all=False,
             ack_wait_seconds=60,
         ),
     )
@@ -66,7 +94,8 @@ async def run_support_confirmation_monitor(
         )
         await asyncio.Event().wait()
     finally:
-        await subscription.unsubscribe()
+        await assessment_subscription.unsubscribe()
+        await transition_subscription.unsubscribe()
         await bus.close()
 
 
@@ -83,4 +112,21 @@ def _format_assessment(item: SupportAssessment) -> str:
         f"PX {item.current_price} Z {_display(item.zone_low)}-"
         f"{_display(item.zone_high)} INV {_display(item.invalidation)} "
         f"B-RISK {risk}"
+    )
+
+
+def _is_reentry_transition(item: SupportTransition) -> bool:
+    return item.state in {
+        SupportState.STRUCTURE_CONFIRMED,
+        SupportState.RETEST_CONFIRMED,
+    }
+
+
+def _format_reentry(item: SupportTransition) -> str:
+    return (
+        f"*** REENTRY ARMED {item.symbol} {item.state.value} "
+        f"{item.confirmation_type.value} SUP {item.support_score} "
+        f"REACT {item.reaction_score} REV {item.reversal_score} "
+        f"Z {_display(item.zone_low)}-{_display(item.zone_high)} "
+        f"INV {_display(item.invalidation)} ***"
     )

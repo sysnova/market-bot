@@ -59,6 +59,8 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.alpaca_data_feed == "sip"
     assert settings.alpaca_adjustment == "split"
     assert settings.alpaca_rest_batch_size == 20
+    assert settings.market_history_refresh_seconds == 3600
+    assert settings.market_history_request_timeout_seconds == 600
     assert settings.alpaca_execution_enabled is False
     serialized = json.dumps(settings.redacted())
     assert "paper-key-id" not in serialized

@@ -19,6 +19,7 @@ from app.contracts import (
 from app.event_bus import NatsJetStreamEventBus
 from app.persistence import create_database_engine, create_session_factory
 
+from .alert_sounds import play_patreon_confirmation_sound
 from .distributed_composition import write_ready
 from .patreon_caps_store import PostgresPatreonCapsStore
 
@@ -82,7 +83,7 @@ async def run_patreon_caps_monitor(
             PatreonCapsState.CONFIRMED_BASE,
             PatreonCapsState.IMPULSE_RETEST,
         }:
-            print("\a", end="", file=output, flush=True)
+            play_patreon_confirmation_sound(fallback=output)
 
     if mode == "alerts":
         for transition in await store.recent(limit=history):

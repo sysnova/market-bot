@@ -37,6 +37,8 @@ class AppSettings(BaseSettings):
     alpaca_data_feed: Literal["iex", "sip", "delayed_sip", "boats", "overnight"] = "iex"
     alpaca_adjustment: Literal["raw", "split", "dividend", "all"] = "split"
     alpaca_rest_batch_size: int = Field(default=20, ge=1, le=100)
+    market_history_refresh_seconds: int = Field(default=3600, ge=60, le=86400)
+    market_history_request_timeout_seconds: int = Field(default=600, ge=10, le=3600)
     alpaca_data_base_url: HttpUrl = HttpUrl("https://data.alpaca.markets")
     alpaca_market_data_stream_url: AnyUrl = AnyUrl("wss://stream.data.alpaca.markets/v2")
     alpaca_execution_enabled: Literal[False] = False
@@ -53,8 +55,7 @@ class AppSettings(BaseSettings):
             self.alpaca_api_key_id and self.alpaca_api_key_id.get_secret_value().strip()
         )
         secret_configured = bool(
-            self.alpaca_api_secret_key
-            and self.alpaca_api_secret_key.get_secret_value().strip()
+            self.alpaca_api_secret_key and self.alpaca_api_secret_key.get_secret_value().strip()
         )
         if key_configured != secret_configured:
             raise ValueError("Alpaca API key and secret must be configured together")

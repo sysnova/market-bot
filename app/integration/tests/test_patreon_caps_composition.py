@@ -28,7 +28,12 @@ from app.contracts import (
 )
 from app.integration import patreon_caps_store as store_module
 from app.integration.distributed_composition import _stream_symbols
-from app.integration.patreon_caps_composition import PatreonCapsRuntime, _local_alert
+from app.integration.patreon_caps_composition import (
+    PatreonCapsRuntime,
+    _hydrate_latest_analyses,
+    _local_alert,
+    _subscribe_live_analyses,
+)
 from app.integration.patreon_caps_monitor import _format_assessment, _format_transition
 from app.integration.patreon_caps_store import PostgresPatreonCapsStore, _deduplication_key
 from app.patreon_caps_engine import PatreonCapsEvaluation, PatreonCapsWatch
@@ -194,12 +199,94 @@ class _Portfolio:
         return Decimal("3")
 
 
+class _LatestAnalysisBus:
+    def __init__(self, envelopes: dict[str, EventEnvelope]) -> None:
+        self.envelopes = envelopes
+        self.subjects: list[str] = []
+
+    async def get_last(self, subject: str) -> EventEnvelope | None:
+        self.subjects.append(subject)
+        return self.envelopes.get(subject)
+
+
+class _AnalysisCollector:
+    def __init__(self) -> None:
+        self.envelopes: list[EventEnvelope] = []
+
+    async def handle_analysis(self, envelope: EventEnvelope) -> None:
+        self.envelopes.append(envelope)
+
+
+class _FakeSubscription:
+    async def unsubscribe(self) -> None:
+        return None
+
+
+class _LiveAnalysisBus:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, Any, Any]] = []
+
+    async def subscribe(
+        self,
+        subject: str,
+        handler: Any,
+        *,
+        options: Any = None,
+    ) -> _FakeSubscription:
+        self.calls.append((subject, handler, options))
+        return _FakeSubscription()
+
+
 def test_market_stream_unions_macro_proxies_without_duplicates() -> None:
     assert _stream_symbols(("NVO", "SPY"), ("UUP", "SPY", "TLT")) == (
         "NVO",
         "SPY",
         "UUP",
         "TLT",
+    )
+
+
+async def test_hydration_reads_only_latest_exact_horizons_for_portfolio() -> None:
+    nvo = EventEnvelope(
+        event_type=ANALYSIS_RESULT_EVENT,
+        occurred_at=NOW,
+        source="long-term-v2",
+        subject="NVO",
+        payload=_analysis(),
+    )
+    bus = _LatestAnalysisBus(
+        {"marketbot.v1.analysis.result.LONG_TERM.NVO": nvo}
+    )
+    runtime = _AnalysisCollector()
+
+    await _hydrate_latest_analyses(bus, runtime, ("NVO", "TGT"))
+
+    assert bus.subjects == [
+        "marketbot.v1.analysis.result.LONG_TERM.NVO",
+        "marketbot.v1.analysis.result.SWING.NVO",
+        "marketbot.v1.analysis.result.INTRADAY.NVO",
+        "marketbot.v1.analysis.result.LONG_TERM.TGT",
+        "marketbot.v1.analysis.result.SWING.TGT",
+        "marketbot.v1.analysis.result.INTRADAY.TGT",
+    ]
+    assert runtime.envelopes == [nvo]
+
+
+async def test_live_analysis_subscriptions_use_one_subject_per_horizon_without_replay() -> None:
+    bus = _LiveAnalysisBus()
+    runtime = _AnalysisCollector()
+
+    subscriptions = await _subscribe_live_analyses(bus, runtime)
+
+    assert len(subscriptions) == 3
+    assert [subject for subject, _, _ in bus.calls] == [
+        "marketbot.v1.analysis.result.LONG_TERM.>",
+        "marketbot.v1.analysis.result.SWING.>",
+        "marketbot.v1.analysis.result.INTRADAY.>",
+    ]
+    assert all(options.replay_all is False for _, _, options in bus.calls)
+    assert all(
+        options.replay_latest_per_subject is False for _, _, options in bus.calls
     )
 
 

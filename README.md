@@ -4,7 +4,7 @@ MarketBot is a Python 3.14 event-driven market analysis monorepo. Engines are is
 `app/<engine>/`; they communicate through stable contracts rather than direct imports.
 
 The current MVP is deliberately analysis-only. Long v2, Swing v3, Intraday v3, Entry Watcher v3,
-Alert v2, and the Alpaca WebSocket ingress run as independent operating-system processes. NATS JetStream distributes
+Alert v2, Market History, and the Alpaca WebSocket ingress run as independent operating-system processes. NATS JetStream distributes
 live market bars and analytical results between them. An independent daily bot checks recent SEC
 EDGAR filings. There is no order adapter and configuration enforces
 `MARKETBOT_ALPACA_EXECUTION_ENABLED=false`.
@@ -57,16 +57,20 @@ uv run marketbot entry-watch serve
 uv run marketbot engine long
 uv run marketbot engine swing
 uv run marketbot engine intraday
+uv run marketbot market history
 uv run marketbot market stream
 ```
 
-By default, every process starts from the same universe as Stock Analyzer: the Supabase watchlist
-plus symbols with positive holdings. The universe refreshes dynamically from PostgreSQL. Use
+By default, every process starts from the same universe as Stock Analyzer: the local PostgreSQL
+watchlist plus symbols with positive holdings. The universe refreshes dynamically from PostgreSQL. Use
 `--symbols AAPL,NVDA` for a temporary manual universe.
 
-Historical bars use Alpaca's split adjustment. Weekly bars are treated as complete only after the
-market week closes. The distributed Long process receives completed daily and weekly updates from
-NATS after its private bootstrap.
+Historical bars use Alpaca's split adjustment. A single Market History process owns Alpaca REST,
+stores the shared cache in local PostgreSQL, and refreshes registered requirements once per hour.
+On restart, an engine requests only its missing interval over NATS Core and then reads PostgreSQL;
+historical bars do not enter JetStream. Weekly bars are treated as complete only after the market
+week closes. The WebSocket process never writes bars to PostgreSQL: it publishes live updates only
+through NATS.
 
 Alert v2 consumes every engine's `AnalysisResult` from NATS and emits named `LONG_BUY_ZONE`,
 `SWING_SETUP`, `ENTRY_CONFIRMED`, and `HIGH_CONVICTION_BUY` notifications. Alerts appear with their actionable context: current price, buy zone,
@@ -134,7 +138,8 @@ and follows new allocation-aware LONG entries. The control pane also owns the
 
 The same launcher also creates sibling `PatreonCaps`, `ElliottWave`, and
 `SupportConfirmation` windows. Support Confirmation is a holdings-only SHADOW view and keeps its
-reaction and structural-reversal scores separate.
+reaction and structural-reversal scores separate. A new structural confirmation rings a
+`REENTRY ARMED` prealert without replaying historical transitions.
 
 `SignalFusion` is a fifth sibling window. Its upper pane shows support zone (`Z`), reaction (`R`),
 structural confirmation (`S`), and every remaining cross-engine gate. Its lower pane shows only
@@ -145,7 +150,7 @@ confirmed purchases. Pressing `Ctrl+C` in the control pane stops all MarketBot p
 # Market Rotation local
 
 MarketBot incluye un proceso independiente que reutiliza los perfiles sectoriales migrados en
-PostgreSQL local, consulta barras diarias de Alpaca, guarda cada ejecución en las tablas
+PostgreSQL local, lee barras diarias del cache central, guarda cada ejecución en las tablas
 `stock.market_rotation_*`, agrega candidatos con metadata `ROT` a la watchlist y publica el
 reporte completo en `marketbot.v1.rotation.result` para que aparezca en el monitor JetStream.
 

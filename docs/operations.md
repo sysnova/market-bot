@@ -53,8 +53,8 @@ The PowerShell launcher resolves the repository location automatically. With no 
 starts every engine as an independent process. Three consoles remain visible and are tiled as
 full-width horizontal rows on the primary monitor: supervisor/control at the top, analysis in the
 middle, and confirmed buys at the bottom. Technical processes stay hidden and write individual
-logs. Each engine loads its own REST history and writes readiness under `.runtime/status`; only
-after all consumers are ready does the launcher start the Alpaca WebSocket-to-NATS process:
+logs. The launcher starts Market History before the analytical engines; only after all consumers
+are ready does it start the Alpaca WebSocket-to-NATS process:
 
 ```powershell
 .\scripts\windows\start-market-bot.ps1
@@ -97,10 +97,24 @@ uv run marketbot live --symbols AAPL,NVDA
 
 `--symbols` is a temporary override for that process and does not modify the shared watchlist.
 
-Historical bar requests default to `MARKETBOT_ALPACA_ADJUSTMENT=split`. MarketBot excludes the
-still-open weekly aggregate and refreshes recent completed weekly bars every Saturday at 02:00
-America/New_York. The refresh temporarily mutes historical reactions and then reevaluates only the
-long-term horizon. REST backfills split large universes into batches of
+Historical bar requests default to `MARKETBOT_ALPACA_ADJUSTMENT=split`. The centralized Market
+History process is the sole owner of historical Alpaca REST bar downloads. Engines register their
+symbol, timeframe, lookback, and maximum-bar requirements through the NATS Core request subject
+`marketbot.rpc.v1.market.history.ensure`, then read the resulting bars from local PostgreSQL. This
+RPC subject intentionally sits outside `marketbot.v1.>` and is not retained by JetStream.
+
+Market History refreshes registered requirements once per hour. On restart, coverage in PostgreSQL
+determines the missing interval, so only the gap plus a small overlap is downloaded. The WebSocket
+ingress publishes live bars through NATS and never persists them. A restart within the hour can
+therefore re-download at most that recent gap. PostgreSQL retention is bounded per symbol and
+timeframe (currently 750 one-minute, 250 fifteen-minute, 650 hourly, 650 daily, and 500 weekly bars,
+or a larger registered engine requirement plus margin).
+
+Before the first run, apply `supabase/migrations/20260802170000_market_bar_cache.sql` to the local
+`postgres-local` database. The directory name is retained for versioned schema compatibility; no
+Supabase service or external database is queried at runtime.
+
+MarketBot excludes the still-open weekly aggregate. REST backfills split large universes into batches of
 `MARKETBOT_ALPACA_REST_BATCH_SIZE` symbols (20 by default), so Alpaca pagination is bounded per
 batch instead of accumulating across the complete watchlist. The 15-minute warmup covers 14
 calendar days, comfortably exceeding the 160-bar Swing working set without downloading 45 days
@@ -108,9 +122,9 @@ that the in-memory store discarded. Before publishing, each timeframe is trimmed
 working set consumed by its engines (221 weekly, 260 daily, 160 swing and 500 minute bars per
 symbol), preventing unused history from entering the event bus.
 
-In distributed mode, historical REST bars never enter an event bus: each engine loads them directly
-into its private store. WebSocket updates, analysis results, service health, and final alerts use
-NATS. Useful standalone process commands are:
+In distributed mode, historical REST bars never enter an event bus: Market History persists them
+once and each engine loads them into its private store from PostgreSQL. WebSocket updates, analysis
+results, service health, and final alerts use NATS. Useful standalone process commands are:
 
 ```powershell
 uv run marketbot alerts serve
@@ -119,6 +133,7 @@ uv run marketbot engine long
 uv run marketbot engine swing
 uv run marketbot engine intraday
 uv run marketbot engine patreon-caps
+uv run marketbot market history
 uv run marketbot market stream
 uv run marketbot monitor patreon-caps
 uv run marketbot alerts patreon-caps
@@ -248,7 +263,9 @@ tmux select-window -t marketbot:PatreonCaps
 
 Si la sesion ya existe, el launcher no la mata ni la duplica; solamente agrega la ventana cuando
 falta. El panel de alertas recupera las ultimas 50 transiciones desde PostgreSQL y la campana suena
-unicamente para `PATREON_CAPS_BUY`.
+unicamente para `PATREON_CAPS_BUY`. En WSL, las confirmaciones `CONFIRMED_V`, `CONFIRMED_BASE` e
+`IMPULSE_RETEST` reproducen un chime nativo de Windows de tres tonos ascendentes (650, 850 y
+1100 Hz), incluso con TMUX detached. Si PowerShell no esta disponible, usa el bell del terminal.
 
 ## Elliott Wave v0 SHADOW — solo tenencias
 
@@ -283,6 +300,12 @@ propios de NATS:
 marketbot.v1.support-confirmation.assessment.<SYMBOL>
 marketbot.v1.support-confirmation.transition.<STATE>.<SYMBOL>
 ```
+
+El monitor emite una prealerta sonora `REENTRY ARMED` solo ante una transicion nueva a
+`STRUCTURE_CONFIRMED` o `RETEST_CONFIRMED`. Las transiciones historicas no se reproducen para esta
+alarma, de modo que reiniciar el panel no hace sonar estados viejos. `--no-bell` desactiva el sonido
+sin interrumpir la publicacion NATS. Esta prealerta no equivale a una compra: `BUY_CONFIRMED` sigue
+reservado para Signal Fusion cuando tambien pasan Long, timing, ejecucion, SEC, cartera y R/R.
 
 JetStream conserva assessments y transiciones durante la retencion general de 15 dias y permite
 restaurar el ultimo estado al reiniciar. No alimenta PatreonCaps, ElliottWave ni Alert v2 en esta

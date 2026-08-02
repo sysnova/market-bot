@@ -8,9 +8,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).parents[3]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-market-bot.ps1"
 SEC_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-sec-bot.ps1"
-JETSTREAM_MONITOR_SCRIPT_PATH = (
-    PROJECT_ROOT / "scripts" / "windows" / "watch-jetstream.ps1"
-)
+JETSTREAM_MONITOR_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "watch-jetstream.ps1"
 LONG_TMUX_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-long-portfolio-tmux.ps1"
 POWERSHELL = shutil.which("powershell")
 
@@ -127,6 +125,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert [process["name"] for process in plan["processes"]] == [
         "alerts-v2",
         "entry-watcher-v3",
+        "market-history-v1",
         "long-term-v2",
         "swing-v2",
         "intraday-v2",
@@ -140,6 +139,12 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["processes"][2]["arguments"][:4] == [
         "run",
         "marketbot",
+        "market",
+        "history",
+    ]
+    assert plan["processes"][3]["arguments"][:4] == [
+        "run",
+        "marketbot",
         "engine",
         "long",
     ]
@@ -149,31 +154,31 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "market",
         "stream",
     ]
-    assert plan["processes"][5]["arguments"][:4] == [
+    assert plan["processes"][6]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "rotation",
     ]
-    assert plan["processes"][6]["arguments"][:4] == [
+    assert plan["processes"][7]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "portfolio-flow",
     ]
-    assert plan["processes"][7]["arguments"][:4] == [
+    assert plan["processes"][8]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "long-portfolio",
     ]
-    assert plan["processes"][8]["arguments"][:4] == [
+    assert plan["processes"][9]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "patreon-caps",
     ]
-    assert plan["processes"][9]["arguments"][:4] == [
+    assert plan["processes"][10]["arguments"][:4] == [
         "run",
         "marketbot",
         "alerts",

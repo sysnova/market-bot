@@ -76,6 +76,13 @@ from .enums import (
 )
 from .event_bus import EventBus, EventHandler, Subscription, SubscriptionOptions
 from .market_analysis import AnalysisResult, LocalAlert, MarketBar
+from .market_history import (
+    MARKET_HISTORY_ENSURE_SUBJECT,
+    MarketHistoryRequest,
+    MarketHistoryRequirement,
+    MarketHistoryResponse,
+    MarketHistoryStatus,
+)
 from .market_rotation import MarketRotationReport, RotationSector
 from .patreon_caps import PatreonCapsAssessment, PatreonCapsTransition
 from .rules import (
@@ -113,6 +120,7 @@ __all__ = [
     "LOCAL_ALERT_EVENT",
     "MARKET_BAR_EVENT",
     "MARKET_BAR_UPDATED_EVENT",
+    "MARKET_HISTORY_ENSURE_SUBJECT",
     "MARKET_ROTATION_EVENT",
     "MARKET_ROTATION_SUBJECT",
     "PATREON_CAPS_ASSESSMENT_EVENT",
@@ -147,6 +155,10 @@ __all__ = [
     "LocalAlert",
     "MacroRegime",
     "MarketBar",
+    "MarketHistoryRequest",
+    "MarketHistoryRequirement",
+    "MarketHistoryResponse",
+    "MarketHistoryStatus",
     "MarketRotationReport",
     "MarketSession",
     "NamedValue",

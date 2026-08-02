@@ -81,6 +81,7 @@ $LogRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "logs"
 $ReadyFiles = [ordered]@{
     "alerts-v2" = Join-Path -Path $StatusRoot -ChildPath "alert-v2.ready.json"
     "entry-watcher-v3" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher-v3.ready.json"
+    "market-history-v1" = Join-Path -Path $StatusRoot -ChildPath "market-history-v1.ready.json"
     "long-term-v2" = Join-Path -Path $StatusRoot -ChildPath "long-term-v2.ready.json"
     "swing-v2" = Join-Path -Path $StatusRoot -ChildPath "swing-v2.ready.json"
     "intraday-v2" = Join-Path -Path $StatusRoot -ChildPath "intraday-v2.ready.json"
@@ -139,6 +140,12 @@ $EntryWatchArguments = @(
     $ReadyFiles["entry-watcher-v3"]
 )
 $ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher-v3" -Arguments $EntryWatchArguments))
+
+$MarketHistoryArguments = @(
+    "run", "marketbot", "market", "history",
+    "--ready-path", $ReadyFiles["market-history-v1"]
+)
+$ProcessSpecs.Add((New-ProcessSpec -Name "market-history-v1" -Arguments $MarketHistoryArguments))
 
 foreach ($Definition in @(
     [pscustomobject]@{ Name = "long-term-v2"; Command = "long" },
@@ -475,7 +482,12 @@ try {
         $ReadyFiles["entry-watcher-v3"]
     )
 
-    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[9]
+    $HistoryChild = Start-MarketBotProcess -Spec $ProcessSpecs[2]
+    $Children.Add($HistoryChild)
+    Write-Host "Started market-history-v1 (PID $($HistoryChild.process.Id))"
+    Wait-MarketBotReadiness -Paths @($ReadyFiles["market-history-v1"])
+
+    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[10]
     $Children.Add($ConfirmedChild)
     Write-Host "Started confirmed-buy monitor (PID $($ConfirmedChild.process.Id))"
     Wait-MarketBotReadiness -Paths @($ReadyFiles["confirmed-buy-monitor"])
@@ -484,7 +496,7 @@ try {
         -AnalysisProcess $AlertChild.process `
         -ConfirmedBuyProcess $ConfirmedChild.process
 
-    for ($Index = 2; $Index -lt 9; $Index++) {
+    for ($Index = 3; $Index -lt 10; $Index++) {
         $Child = Start-MarketBotProcess -Spec $ProcessSpecs[$Index]
         $Children.Add($Child)
         Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
@@ -495,11 +507,11 @@ try {
         $ReadyFiles["intraday-v2"],
         $ReadyFiles["market-rotation-v1"],
         $ReadyFiles["portfolio-flow-v1"],
-        $ReadyFiles["long-portfolio-v1"]
+        $ReadyFiles["long-portfolio-v1"],
         $ReadyFiles["patreon-caps-v1"]
     )
 
-    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[10]
+    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[11]
     $Children.Add($StreamChild)
     $TmuxLauncher = Join-Path $PSScriptRoot "start-long-portfolio-tmux.ps1"
     $TmuxArguments = @(

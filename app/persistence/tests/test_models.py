@@ -23,6 +23,7 @@ EXPECTED_TABLES = {
     "entry_watch_transitions",
     "entry_watches",
     "long_portfolio_alerts",
+    "market_bars",
     "outbox_events",
     "patreon_caps_transitions",
     "patreon_caps_watches",

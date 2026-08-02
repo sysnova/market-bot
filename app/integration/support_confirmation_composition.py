@@ -8,7 +8,6 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Protocol
 
-from app.alpaca_market_data import AlpacaEventNormalizer
 from app.common.clock import SystemClock
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
@@ -32,18 +31,23 @@ from app.support_confirmation_engine import SupportConfirmationEngine, SupportCo
 
 from .distributed_composition import (
     HistoryRequest,
-    build_rest,
     connect_nats,
-    load_history,
     write_ready,
 )
 from .market_bar_store import MarketBarStore
+from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
 
 SUPPORT_HISTORY_REQUESTS = (
-    HistoryRequest(BarTimeframe.DAY_1, timedelta(days=800), 520),
-    HistoryRequest(BarTimeframe.WEEK_1, timedelta(days=365 * 8), 420),
-    HistoryRequest(BarTimeframe.HOUR_1, timedelta(days=90), 500),
+    HistoryRequest(
+        timeframe=BarTimeframe.DAY_1, lookback=timedelta(days=800), max_bars_per_symbol=520
+    ),
+    HistoryRequest(
+        timeframe=BarTimeframe.WEEK_1, lookback=timedelta(days=365 * 8), max_bars_per_symbol=420
+    ),
+    HistoryRequest(
+        timeframe=BarTimeframe.HOUR_1, lookback=timedelta(days=90), max_bars_per_symbol=500
+    ),
 )
 
 
@@ -69,9 +73,7 @@ async def load_support_holdings(provider: HoldingsProvider) -> UniverseSnapshot:
 
 
 class SupportConfirmationRuntime:
-    def __init__(
-        self, *, engine: SupportEngine, publisher: SupportPublisher
-    ) -> None:
+    def __init__(self, *, engine: SupportEngine, publisher: SupportPublisher) -> None:
         self._engine = engine
         self._publisher = publisher
         self._bars = MarketBarStore(capacity_per_series=650)
@@ -90,9 +92,7 @@ class SupportConfirmationRuntime:
         if previous is None or assessment.occurred_at >= previous.occurred_at:
             self._latest[assessment.symbol] = assessment
 
-    async def bootstrap(
-        self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]
-    ) -> int:
+    async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {symbol.strip().upper() for symbol in symbols}
         for bar in bars:
             if bar.symbol in self._symbols:
@@ -124,17 +124,11 @@ class SupportConfirmationRuntime:
             await self._evaluate(bar.symbol)
 
     async def _evaluate(self, symbol: str) -> bool:
-        daily = self._bars.history(
-            symbol, BarTimeframe.DAY_1, limit=520, final_only=True
-        )
+        daily = self._bars.history(symbol, BarTimeframe.DAY_1, limit=520, final_only=True)
         if len(daily) < 15:
             return False
-        weekly = self._bars.history(
-            symbol, BarTimeframe.WEEK_1, limit=420, final_only=True
-        )
-        hourly = self._bars.history(
-            symbol, BarTimeframe.HOUR_1, limit=500, final_only=True
-        )
+        weekly = self._bars.history(symbol, BarTimeframe.WEEK_1, limit=420, final_only=True)
+        hourly = self._bars.history(symbol, BarTimeframe.HOUR_1, limit=500, final_only=True)
         previous = self._latest.get(symbol)
         assessment = self._engine.evaluate(
             SupportContext(
@@ -197,9 +191,7 @@ class SupportConfirmationRuntime:
         )
 
 
-def _same_observation(
-    previous: SupportAssessment, current: SupportAssessment
-) -> bool:
+def _same_observation(previous: SupportAssessment, current: SupportAssessment) -> bool:
     return (
         previous.context_hash == current.context_hash
         and previous.engine_version == current.engine_version
@@ -222,14 +214,11 @@ async def run_support_confirmation_process(
     )
     provider = PostgresUniverseClient(database)
     bus: NatsJetStreamEventBus | None = None
-    rest = None
     subscriptions: list[Subscription] = []
     try:
         holdings = await load_support_holdings(provider)
         bus = await connect_nats(settings)
-        runtime = SupportConfirmationRuntime(
-            engine=SupportConfirmationEngine(), publisher=bus
-        )
+        runtime = SupportConfirmationRuntime(engine=SupportConfirmationEngine(), publisher=bus)
         restore_subscription = await bus.subscribe(
             "marketbot.v1.support-confirmation.assessment.>",
             runtime.restore_assessment,
@@ -240,14 +229,13 @@ async def run_support_confirmation_process(
         )
         subscriptions.append(restore_subscription)
         await bus.wait_until_caught_up(restore_subscription, timeout_seconds=60)
-        rest = build_rest(settings)
-        bars = await load_history(
-            rest,
-            AlpacaEventNormalizer(feed=settings.alpaca_data_feed),
-            holdings.symbols,
-            SUPPORT_HISTORY_REQUESTS,
+        bars = await load_market_history(
+            settings,
+            database,
+            engine_id="support-confirmation-v0",
+            symbols=holdings.symbols,
+            requirements=SUPPORT_HISTORY_REQUESTS,
             as_of=SystemClock().now(),
-            batch_size=settings.alpaca_rest_batch_size,
         )
         published = await runtime.bootstrap(bars, symbols=holdings.symbols)
         summary: dict[str, object] = {
@@ -287,8 +275,6 @@ async def run_support_confirmation_process(
     finally:
         for subscription in subscriptions:
             await subscription.unsubscribe()
-        if rest is not None:
-            await rest.close()
         if bus is not None:
             await bus.close()
         await database.dispose()

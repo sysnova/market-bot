@@ -12,11 +12,9 @@ from app.contracts import (
     ServiceHealth,
 )
 from app.integration.distributed_composition import (
-    _batches,
     _build_worker,
     _publish_health,
     _service_name,
-    _weekly_bar_is_complete,
     _write_ready,
     engine_history_requests,
     engine_live_subjects,
@@ -26,6 +24,7 @@ from app.integration.intraday_worker import IntradayWorker
 from app.integration.long_term_worker import LongTermWorker
 from app.integration.swing_worker import SwingWorker
 from app.intraday_engine import IntradayEngineV3
+from app.market_history_engine.service import _batches, _weekly_bar_is_complete
 from app.swing_engine import SwingEngineV3
 
 

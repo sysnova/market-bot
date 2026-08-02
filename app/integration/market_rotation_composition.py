@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from datetime import timedelta
-from decimal import Decimal
 from pathlib import Path
 
 from app.common.clock import SystemClock
@@ -13,6 +11,7 @@ from app.common.settings import AppSettings, Environment
 from app.contracts import (
     MARKET_ROTATION_EVENT,
     MARKET_ROTATION_SUBJECT,
+    BarTimeframe,
     EventEnvelope,
     MarketRotationReport,
     RotationSector,
@@ -21,8 +20,18 @@ from app.event_bus import NatsJetStreamEventBus
 from app.market_rotation_engine import Bar, RotationEngine
 from app.persistence import create_database_engine
 
-from .distributed_composition import build_rest, write_ready
+from .distributed_composition import HistoryRequest, write_ready
+from .market_bar_repository import PostgresMarketBarRepository
+from .market_history_composition import load_market_history
 from .market_rotation_store import PostgresMarketRotationStore
+
+ROTATION_HISTORY_REQUESTS = (
+    HistoryRequest(
+        timeframe=BarTimeframe.DAY_1,
+        lookback=timedelta(days=140),
+        max_bars_per_symbol=100,
+    ),
+)
 
 
 async def run_market_rotation_process(
@@ -37,11 +46,22 @@ async def run_market_rotation_process(
     bus = await NatsJetStreamEventBus.connect(
         servers=[settings.nats_url.get_secret_value()], prefix="marketbot", stream="MARKETBOT"
     )
-    rest = build_rest(settings)
     store = PostgresMarketRotationStore(database)
+    bars_repository = PostgresMarketBarRepository(database)
     calculator = RotationEngine()
     try:
         profiles = await store.load_profiles()
+        symbols = tuple(
+            dict.fromkeys(s for p in profiles for s in (*p.symbols, p.proxy, p.benchmark))
+        )
+        await load_market_history(
+            settings,
+            database,
+            engine_id="market-rotation-v1",
+            symbols=symbols,
+            requirements=ROTATION_HISTORY_REQUESTS,
+            as_of=clock.now(),
+        )
         if ready_path is not None:
             write_ready(
                 ready_path,
@@ -53,24 +73,16 @@ async def run_market_rotation_process(
             )
         while True:
             now = clock.now()
-            symbols = tuple(
-                dict.fromkeys(s for p in profiles for s in (*p.symbols, p.proxy, p.benchmark))
+            bars = await bars_repository.load_latest(
+                symbols,
+                BarTimeframe.DAY_1,
+                limit_per_symbol=ROTATION_HISTORY_REQUESTS[0].max_bars_per_symbol,
             )
-            raw: dict[str, list[Mapping[str, object]]] = {}
-            for index in range(0, len(symbols), settings.alpaca_rest_batch_size):
-                raw.update(
-                    await rest.fetch_bars(
-                        symbols[index : index + settings.alpaca_rest_batch_size],
-                        timeframe="1Day",
-                        start=now - timedelta(days=140),
-                        end=now,
-                    )
-                )
             history = {
                 symbol: tuple(
-                    Bar(Decimal(str(item["c"])), Decimal(str(item["v"]))) for item in records
+                    Bar(item.close, item.volume) for item in bars if item.symbol == symbol
                 )
-                for symbol, records in raw.items()
+                for symbol in symbols
             }
             results = calculator.analyze(profiles, history)
             run_id, additions = await store.save(results, generated_at=now)
@@ -112,6 +124,5 @@ async def run_market_rotation_process(
                 return summary
             await asyncio.sleep(interval_minutes * 60)
     finally:
-        await rest.close()
         await bus.close()
         await database.dispose()

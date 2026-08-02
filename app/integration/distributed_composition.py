@@ -7,18 +7,16 @@ import json
 import os
 import sys
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.alert_engine import AlertDispatcher, AlertEngineV2, ConsoleAlertSink, NdjsonAlertSink
 from app.alpaca_market_data import AlpacaEventNormalizer, AlpacaMarketDataEngine
-from app.alpaca_market_data.ports import EventPublisher, MarketDataRest
+from app.alpaca_market_data.ports import EventPublisher
 from app.alpaca_market_data.rest import AlpacaRestClient
 from app.alpaca_market_data.transports import HttpxTransport, WebsocketsConnector
 from app.alpaca_market_data.websocket import AlpacaMarketDataStream
@@ -37,6 +35,7 @@ from app.contracts import (
     EntryWatchTransition,
     EventEnvelope,
     MarketBar,
+    MarketHistoryRequirement,
     MarketRotationReport,
     NamedValue,
     ServiceHealth,
@@ -57,6 +56,7 @@ from .alert_publisher import AlertEventPublisher
 from .entry_watch_store import PostgresEntryWatchStore
 from .intraday_worker import IntradayWorker
 from .long_term_worker import LongTermWorker
+from .market_history_composition import load_market_history
 from .postgres_universe import (
     PostgresUniverseClient,
     UniverseSnapshot,
@@ -64,14 +64,7 @@ from .postgres_universe import (
 )
 from .swing_worker import SwingWorker
 
-_NEW_YORK = ZoneInfo("America/New_York")
-
-
-@dataclass(frozen=True, slots=True)
-class HistoryRequest:
-    timeframe: BarTimeframe
-    lookback: timedelta
-    max_bars_per_symbol: int
+HistoryRequest = MarketHistoryRequirement
 
 
 class HorizonWorker(Protocol):
@@ -88,14 +81,32 @@ class HorizonWorker(Protocol):
 def engine_history_requests(horizon: AnalysisHorizon) -> tuple[HistoryRequest, ...]:
     return {
         AnalysisHorizon.LONG_TERM: (
-            HistoryRequest(BarTimeframe.DAY_1, timedelta(days=400), 260),
-            HistoryRequest(BarTimeframe.WEEK_1, timedelta(days=365 * 5), 220),
+            HistoryRequest(
+                timeframe=BarTimeframe.DAY_1, lookback=timedelta(days=400), max_bars_per_symbol=260
+            ),
+            HistoryRequest(
+                timeframe=BarTimeframe.WEEK_1,
+                lookback=timedelta(days=365 * 5),
+                max_bars_per_symbol=220,
+            ),
         ),
         AnalysisHorizon.SWING: (
-            HistoryRequest(BarTimeframe.DAY_1, timedelta(days=220), 120),
-            HistoryRequest(BarTimeframe.MINUTE_15, timedelta(days=14), 160),
+            HistoryRequest(
+                timeframe=BarTimeframe.DAY_1, lookback=timedelta(days=220), max_bars_per_symbol=120
+            ),
+            HistoryRequest(
+                timeframe=BarTimeframe.MINUTE_15,
+                lookback=timedelta(days=14),
+                max_bars_per_symbol=160,
+            ),
         ),
-        AnalysisHorizon.INTRADAY: (HistoryRequest(BarTimeframe.MINUTE_1, timedelta(days=5), 500),),
+        AnalysisHorizon.INTRADAY: (
+            HistoryRequest(
+                timeframe=BarTimeframe.MINUTE_1,
+                lookback=timedelta(days=5),
+                max_bars_per_symbol=500,
+            ),
+        ),
     }.get(horizon, ())
 
 
@@ -147,21 +158,23 @@ async def run_engine_process(
     clock = SystemClock()
     http_client = httpx.AsyncClient()
     bus: NatsJetStreamEventBus | None = None
-    rest: MarketDataRest | None = None
+    database: AsyncEngine | None = None
     subscriptions: list[Subscription] = []
     try:
         universe = await _resolve_universe(settings, symbols)
         bus = await _connect_nats(settings)
-        rest = _build_rest(settings)
-        normalizer = AlpacaEventNormalizer(feed=settings.alpaca_data_feed)
+        database = create_database_engine(
+            settings.database_url.get_secret_value(),
+            require_ssl=settings.environment is Environment.PRODUCTION,
+        )
         as_of = clock.now()
-        bars = await _load_history(
-            rest,
-            normalizer,
-            universe.symbols,
-            engine_history_requests(horizon),
+        bars = await load_market_history(
+            settings,
+            database,
+            engine_id=_service_name(horizon),
+            symbols=universe.symbols,
+            requirements=engine_history_requests(horizon),
             as_of=as_of,
-            batch_size=settings.alpaca_rest_batch_size,
         )
         worker = _build_worker(
             horizon,
@@ -205,13 +218,14 @@ async def run_engine_process(
                         current_symbols = set(refreshed.symbols)
                         if not added:
                             return
-                        refresh_bars = await _load_history(
-                            rest,
-                            normalizer,
-                            added,
-                            engine_history_requests(horizon),
+                        assert database is not None
+                        refresh_bars = await load_market_history(
+                            settings,
+                            database,
+                            engine_id=_service_name(horizon),
+                            symbols=added,
+                            requirements=engine_history_requests(horizon),
                             as_of=clock.now(),
-                            batch_size=settings.alpaca_rest_batch_size,
                         )
                         refreshed_results = await worker.bootstrap(refresh_bars, symbols=added)
                         await logger.ainfo(
@@ -254,8 +268,8 @@ async def run_engine_process(
     finally:
         for subscription in subscriptions:
             await subscription.unsubscribe()
-        if rest is not None:
-            await rest.close()
+        if database is not None:
+            await database.dispose()
         await http_client.aclose()
         if bus is not None:
             await bus.close()
@@ -613,7 +627,7 @@ def _build_stream_engine(
     secret = settings.alpaca_api_secret_key.get_secret_value()
     feed = settings.alpaca_data_feed
     return AlpacaMarketDataEngine(
-        rest=_build_rest(settings),
+        rest=None,
         stream=AlpacaMarketDataStream(
             api_key_id=key,
             api_secret_key=secret,
@@ -624,61 +638,6 @@ def _build_stream_engine(
         publisher=publisher,
         normalizer=AlpacaEventNormalizer(feed=feed),
         rest_batch_size=settings.alpaca_rest_batch_size,
-    )
-
-
-async def _load_history(
-    rest: MarketDataRest,
-    normalizer: AlpacaEventNormalizer,
-    symbols: tuple[str, ...],
-    requests: tuple[HistoryRequest, ...],
-    *,
-    as_of: datetime,
-    batch_size: int,
-) -> tuple[MarketBar, ...]:
-    output: list[MarketBar] = []
-    for request in requests:
-        for batch in _batches(symbols, batch_size):
-            raw = await rest.fetch_bars(
-                batch,
-                timeframe=request.timeframe.value,
-                start=as_of - request.lookback,
-                end=as_of,
-                limit=10_000,
-            )
-            for symbol in batch:
-                records = raw.get(symbol, [])[-request.max_bars_per_symbol :]
-                for record in records:
-                    payload = normalizer.rest_bar(
-                        symbol, request.timeframe.value, record
-                    ).envelope.payload
-                    if not isinstance(payload, MarketBar):
-                        raise TypeError("normalized REST bar did not produce MarketBar")
-                    if payload.timeframe is BarTimeframe.WEEK_1 and not _weekly_bar_is_complete(
-                        payload.timestamp, as_of
-                    ):
-                        continue
-                    output.append(payload)
-    return tuple(output)
-
-
-async def load_history(
-    rest: MarketDataRest,
-    normalizer: AlpacaEventNormalizer,
-    symbols: tuple[str, ...],
-    requests: tuple[HistoryRequest, ...],
-    *,
-    as_of: datetime,
-    batch_size: int,
-) -> tuple[MarketBar, ...]:
-    """Load the bounded, completed history used by integration composition roots."""
-    return await _load_history(
-        rest,
-        normalizer,
-        symbols,
-        requests,
-        as_of=as_of,
-        batch_size=batch_size,
     )
 
 
@@ -730,18 +689,6 @@ def _service_name(horizon: AnalysisHorizon) -> str:
         AnalysisHorizon.SWING: "swing-v2",
         AnalysisHorizon.INTRADAY: "intraday-v2",
     }[horizon]
-
-
-def _batches(symbols: tuple[str, ...], size: int) -> tuple[tuple[str, ...], ...]:
-    normalized = tuple(dict.fromkeys(symbol.strip().upper() for symbol in symbols))
-    return tuple(normalized[index : index + size] for index in range(0, len(normalized), size))
-
-
-def _weekly_bar_is_complete(timestamp: datetime, as_of: datetime) -> bool:
-    local_date = timestamp.astimezone(_NEW_YORK).date()
-    week_start = local_date - timedelta(days=local_date.weekday())
-    completion = datetime.combine(week_start + timedelta(days=5), time(), _NEW_YORK)
-    return as_of.astimezone(_NEW_YORK) >= completion
 
 
 def _write_ready(path: Path, summary: Mapping[str, object]) -> None:

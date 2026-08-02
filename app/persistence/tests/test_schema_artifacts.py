@@ -16,6 +16,7 @@ TABLES = {
     "entry_watch_transitions",
     "entry_watches",
     "long_portfolio_alerts",
+    "market_bars",
     "outbox_events",
     "patreon_caps_transitions",
     "patreon_caps_watches",
@@ -36,8 +37,7 @@ def migration_sql() -> str:
 
 def all_migration_sql() -> str:
     return "\n".join(
-        path.read_text(encoding="utf-8").lower()
-        for path in sorted(MIGRATIONS.glob("*.sql"))
+        path.read_text(encoding="utf-8").lower() for path in sorted(MIGRATIONS.glob("*.sql"))
     )
 
 
@@ -131,3 +131,18 @@ def test_dbml_documents_exact_version_identity() -> None:
 
     assert "(engine_id, rule_id, version) [unique" in dbml
     assert "(engine_id, strategy_id, version) [unique" in dbml
+
+
+@pytest.mark.unit
+def test_market_bar_cache_has_composite_identity_and_runtime_upsert_access() -> None:
+    sql = all_migration_sql()
+
+    assert "primary key (symbol, timeframe, timestamp)" in sql
+    assert re.search(
+        r"grant select, insert, update on market_bot\.market_bars "
+        r"to market_bot_runtime",
+        sql,
+    )
+    assert "grant delete on market_bot.market_bars" not in sql
+    assert "function market_bot.prune_market_bars" in sql
+    assert "grant execute on function market_bot.prune_market_bars" in sql

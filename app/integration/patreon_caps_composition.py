@@ -9,7 +9,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
 
-from app.alpaca_market_data import AlpacaEventNormalizer
 from app.common.clock import SystemClock
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
@@ -25,6 +24,7 @@ from app.contracts import (
     AnalysisResult,
     BarTimeframe,
     EventEnvelope,
+    EventHandler,
     LocalAlert,
     MarketBar,
     NamedValue,
@@ -33,6 +33,7 @@ from app.contracts import (
     PatreonCapsTransition,
     Subscription,
     SubscriptionOptions,
+    analysis_result_subject,
     local_alert_subject,
     patreon_caps_assessment_subject,
     patreon_caps_transition_subject,
@@ -50,35 +51,65 @@ from app.persistence import create_database_engine, create_session_factory
 from .bar_aggregator import MinuteBarAggregator
 from .distributed_composition import (
     HistoryRequest,
-    build_rest,
     connect_nats,
-    load_history,
     write_ready,
 )
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
+from .market_history_composition import load_market_history
 from .patreon_caps_store import PostgresPatreonCapsStore
 from .postgres_universe import PostgresUniverseClient
 
 PATREON_HISTORY_REQUESTS = (
-    HistoryRequest(BarTimeframe.DAY_1, timedelta(days=400), 260),
-    HistoryRequest(BarTimeframe.WEEK_1, timedelta(days=365 * 5), 220),
-    HistoryRequest(BarTimeframe.HOUR_1, timedelta(days=60), 220),
-    HistoryRequest(BarTimeframe.MINUTE_15, timedelta(days=14), 160),
-    HistoryRequest(BarTimeframe.MINUTE_1, timedelta(days=7), 500),
+    HistoryRequest(
+        timeframe=BarTimeframe.DAY_1, lookback=timedelta(days=400), max_bars_per_symbol=260
+    ),
+    HistoryRequest(
+        timeframe=BarTimeframe.WEEK_1, lookback=timedelta(days=365 * 5), max_bars_per_symbol=220
+    ),
+    HistoryRequest(
+        timeframe=BarTimeframe.HOUR_1, lookback=timedelta(days=60), max_bars_per_symbol=220
+    ),
+    HistoryRequest(
+        timeframe=BarTimeframe.MINUTE_15, lookback=timedelta(days=14), max_bars_per_symbol=160
+    ),
+    HistoryRequest(
+        timeframe=BarTimeframe.MINUTE_1, lookback=timedelta(days=7), max_bars_per_symbol=500
+    ),
+)
+PATREON_ANALYSIS_HORIZONS = (
+    AnalysisHorizon.LONG_TERM,
+    AnalysisHorizon.SWING,
+    AnalysisHorizon.INTRADAY,
 )
 
 
 class PatreonCapsStore(Protocol):
     async def save(self, evaluation: PatreonCapsEvaluation) -> bool: ...
 
-    async def latest_transition_times(
-        self, *, rule_version: str
-    ) -> dict[str, datetime]: ...
+    async def latest_transition_times(self, *, rule_version: str) -> dict[str, datetime]: ...
 
 
 class PortfolioData(Protocol):
     async def get_holding_quantity(self, symbol: str) -> Decimal: ...
+
+
+class LatestEventReader(Protocol):
+    async def get_last(self, subject: str) -> EventEnvelope | None: ...
+
+
+class AnalysisHandler(Protocol):
+    async def handle_analysis(self, envelope: EventEnvelope) -> None: ...
+
+
+class LiveEventSubscriber(Protocol):
+    async def subscribe(
+        self,
+        subject: str,
+        handler: EventHandler,
+        *,
+        options: SubscriptionOptions | None = None,
+    ) -> Subscription: ...
 
 
 class PatreonCapsRuntime:
@@ -138,11 +169,7 @@ class PatreonCapsRuntime:
             if isinstance(envelope.payload, AnalysisResult)
             else AnalysisResult.model_validate(envelope.payload, strict=False)
         )
-        if result.symbol not in self._symbols or result.horizon not in {
-            AnalysisHorizon.LONG_TERM,
-            AnalysisHorizon.SWING,
-            AnalysisHorizon.INTRADAY,
-        }:
+        if result.symbol not in self._symbols or result.horizon not in PATREON_ANALYSIS_HORIZONS:
             return
         async with self._state_lock:
             values = self._analyses.setdefault(result.symbol, {})
@@ -181,12 +208,16 @@ class PatreonCapsRuntime:
                     self._bars.add(aggregate)
                 if aggregates and not self._hydrating:
                     generation = self._next_generation(bar.symbol)
-            elif bar.timeframe in {
-                BarTimeframe.DAY_1,
-                BarTimeframe.WEEK_1,
-                BarTimeframe.HOUR_1,
-                BarTimeframe.MINUTE_15,
-            } and not self._hydrating:
+            elif (
+                bar.timeframe
+                in {
+                    BarTimeframe.DAY_1,
+                    BarTimeframe.WEEK_1,
+                    BarTimeframe.HOUR_1,
+                    BarTimeframe.MINUTE_15,
+                }
+                and not self._hydrating
+            ):
                 generation = self._next_generation(bar.symbol)
 
         if generation is not None:
@@ -215,9 +246,7 @@ class PatreonCapsRuntime:
 
     def _refresh_macro(self) -> None:
         series = {
-            symbol: self._bars.history(
-                symbol, BarTimeframe.DAY_1, limit=260, final_only=True
-            )
+            symbol: self._bars.history(symbol, BarTimeframe.DAY_1, limit=260, final_only=True)
             for symbol in self._macro_symbols
         }
         self._macro = classify_macro_regime(series)
@@ -225,12 +254,8 @@ class PatreonCapsRuntime:
     async def _evaluate(self, symbol: str) -> None:
         daily = self._bars.history(symbol, BarTimeframe.DAY_1, limit=260, final_only=True)
         weekly = self._bars.history(symbol, BarTimeframe.WEEK_1, limit=220, final_only=True)
-        intraday = self._bars.history(
-            symbol, BarTimeframe.MINUTE_15, limit=160, final_only=True
-        )
-        hourly = self._bars.history(
-            symbol, BarTimeframe.HOUR_1, limit=220, final_only=True
-        )
+        intraday = self._bars.history(symbol, BarTimeframe.MINUTE_15, limit=160, final_only=True)
+        hourly = self._bars.history(symbol, BarTimeframe.HOUR_1, limit=220, final_only=True)
         if (
             len(daily) < 260
             or len(weekly) < 220
@@ -338,28 +363,22 @@ async def run_patreon_caps_process(
     allocation_map = {item.symbol: item.weight_percent for item in allocations}
     symbols = tuple(dict.fromkeys((*universe.symbols, *policy.macro_symbols)))
     bus: NatsJetStreamEventBus | None = None
-    rest = None
     subscriptions: list[Subscription] = []
     try:
         bus = await connect_nats(settings)
-        rest = build_rest(settings)
         clock = SystemClock()
-        bars = await load_history(
-            rest,
-            AlpacaEventNormalizer(feed=settings.alpaca_data_feed),
-            symbols,
-            PATREON_HISTORY_REQUESTS,
+        bars = await load_market_history(
+            settings,
+            database,
+            engine_id="patreon-caps-v1",
+            symbols=symbols,
+            requirements=PATREON_HISTORY_REQUESTS,
             as_of=clock.now(),
-            batch_size=settings.alpaca_rest_batch_size,
         )
         restored = tuple(
-            item
-            for item in await store.load_active()
-            if item.rule_version == policy.rule_version
+            item for item in await store.load_active() if item.rule_version == policy.rule_version
         )
-        last_evaluated_at = await store.latest_transition_times(
-            rule_version=policy.rule_version
-        )
+        last_evaluated_at = await store.latest_transition_times(rule_version=policy.rule_version)
         engine = PatreonCapsEngine(policy, restored_watches=restored)
         runtime = PatreonCapsRuntime(
             engine=engine,
@@ -373,15 +392,8 @@ async def run_patreon_caps_process(
             last_evaluated_at=last_evaluated_at,
         )
         await runtime.bootstrap(bars, symbols=symbols)
-        analysis_subscription = await bus.subscribe(
-            "marketbot.v1.analysis.result.>",
-            runtime.handle_analysis,
-            options=SubscriptionOptions(
-                replay_latest_per_subject=True,
-                ack_wait_seconds=60,
-            ),
-        )
-        subscriptions.append(analysis_subscription)
+        subscriptions.extend(await _subscribe_live_analyses(bus, runtime))
+        await _hydrate_latest_analyses(bus, runtime, universe.symbols)
         for index, subject in enumerate(
             (
                 "marketbot.v1.market.bar.1Min.>",
@@ -401,10 +413,6 @@ async def run_patreon_caps_process(
                     ),
                 )
             )
-        await bus.wait_until_caught_up(
-            analysis_subscription,
-            timeout_seconds=60,
-        )
         await runtime.complete_hydration()
         if ready_path is not None:
             write_ready(
@@ -422,11 +430,48 @@ async def run_patreon_caps_process(
     finally:
         for subscription in subscriptions:
             await subscription.unsubscribe()
-        if rest is not None:
-            await rest.close()
         if bus is not None:
             await bus.close()
         await database.dispose()
+
+
+async def _hydrate_latest_analyses(
+    bus: LatestEventReader,
+    runtime: AnalysisHandler,
+    symbols: tuple[str, ...],
+) -> None:
+    """Restore only the exact latest analysis inputs required by PatreonCaps."""
+
+    subjects = tuple(
+        analysis_result_subject(horizon, symbol)
+        for symbol in symbols
+        for horizon in PATREON_ANALYSIS_HORIZONS
+    )
+    envelopes = await asyncio.gather(*(bus.get_last(subject) for subject in subjects))
+    for envelope in envelopes:
+        if envelope is not None:
+            await runtime.handle_analysis(envelope)
+
+
+async def _subscribe_live_analyses(
+    bus: LiveEventSubscriber,
+    runtime: AnalysisHandler,
+) -> tuple[Subscription, ...]:
+    """Listen to new analyses using one lightweight consumer per horizon."""
+
+    subscriptions: list[Subscription] = []
+    for horizon in PATREON_ANALYSIS_HORIZONS:
+        subscriptions.append(
+            await bus.subscribe(
+                f"marketbot.v1.analysis.result.{horizon.value}.>",
+                runtime.handle_analysis,
+                options=SubscriptionOptions(
+                    replay_all=False,
+                    ack_wait_seconds=60,
+                ),
+            )
+        )
+    return tuple(subscriptions)
 
 
 def _local_alert(transition: PatreonCapsTransition) -> LocalAlert:

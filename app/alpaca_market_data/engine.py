@@ -19,7 +19,7 @@ class AlpacaMarketDataEngine:
     def __init__(
         self,
         *,
-        rest: MarketDataRest,
+        rest: MarketDataRest | None,
         stream: MarketDataStream,
         publisher: EventPublisher,
         backfill_publisher: EventPublisher | None = None,
@@ -31,9 +31,7 @@ class AlpacaMarketDataEngine:
         self._rest = rest
         self._stream = stream
         self._publisher = publisher
-        self._backfill_publisher = (
-            publisher if backfill_publisher is None else backfill_publisher
-        )
+        self._backfill_publisher = publisher if backfill_publisher is None else backfill_publisher
         self._normalizer = normalizer
         self._rest_batch_size = rest_batch_size
 
@@ -47,6 +45,8 @@ class AlpacaMarketDataEngine:
         limit: int = 10_000,
         max_bars_per_symbol: int | None = None,
     ) -> int:
+        if self._rest is None:
+            raise RuntimeError("REST adapter is unavailable in WebSocket-only mode")
         if max_bars_per_symbol is not None and (
             isinstance(max_bars_per_symbol, bool) or max_bars_per_symbol < 1
         ):
@@ -78,6 +78,8 @@ class AlpacaMarketDataEngine:
         return count
 
     async def publish_snapshots(self, symbols: tuple[str, ...]) -> int:
+        if self._rest is None:
+            raise RuntimeError("REST adapter is unavailable in WebSocket-only mode")
         count = 0
         for batch in _symbol_batches(symbols, self._rest_batch_size):
             snapshots = await self._rest.fetch_snapshots(batch)
@@ -116,15 +118,14 @@ class AlpacaMarketDataEngine:
     async def close(self) -> None:
         """Release the owned REST transport; stream sessions close themselves."""
 
-        await self._rest.close()
+        if self._rest is not None:
+            await self._rest.close()
 
     async def _publish(self, publication: Publication) -> None:
         await self._publish_to(self._publisher, publication)
 
     @staticmethod
-    async def _publish_to(
-        publisher: EventPublisher, publication: Publication
-    ) -> None:
+    async def _publish_to(publisher: EventPublisher, publication: Publication) -> None:
         await publisher.publish(publication.subject, publication.envelope)
 
 
@@ -135,13 +136,10 @@ def _weekly_bar_is_complete(timestamp: datetime, as_of: datetime) -> bool:
     return as_of.astimezone(_NEW_YORK) >= completion
 
 
-def _symbol_batches(
-    symbols: tuple[str, ...], batch_size: int
-) -> tuple[tuple[str, ...], ...]:
+def _symbol_batches(symbols: tuple[str, ...], batch_size: int) -> tuple[tuple[str, ...], ...]:
     normalized = tuple(dict.fromkeys(symbol.strip().upper() for symbol in symbols))
     if not normalized or any(not symbol for symbol in normalized):
         raise ValueError("at least one non-blank symbol is required")
     return tuple(
-        normalized[index : index + batch_size]
-        for index in range(0, len(normalized), batch_size)
+        normalized[index : index + batch_size] for index in range(0, len(normalized), batch_size)
     )

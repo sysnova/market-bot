@@ -72,9 +72,7 @@ class Run(Base):
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -101,9 +99,7 @@ class RuleVersion(Base):
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     rule_id: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[str] = mapped_column(Text, nullable=False)
     family: Mapped[str] = mapped_column(Text, nullable=False)
@@ -128,9 +124,7 @@ class StrategyVersion(Base):
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     strategy_id: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[str] = mapped_column(Text, nullable=False)
     family: Mapped[str] = mapped_column(Text, nullable=False)
@@ -145,12 +139,8 @@ class StrategyVersion(Base):
 class RunStrategy(Base):
     __tablename__ = "run_strategies"
     __table_args__ = (
-        UniqueConstraint(
-            "run_id", "strategy_version_id", name="run_strategies_assignment_key"
-        ),
-        CheckConstraint(
-            "mode in ('PRIMARY', 'SHADOW', 'RESEARCH', 'DISABLED')", name="mode"
-        ),
+        UniqueConstraint("run_id", "strategy_version_id", name="run_strategies_assignment_key"),
+        CheckConstraint("mode in ('PRIMARY', 'SHADOW', 'RESEARCH', 'DISABLED')", name="mode"),
         Index(
             "run_strategies_one_primary_per_scope_idx",
             "run_id",
@@ -163,9 +153,7 @@ class RunStrategy(Base):
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey(f"{SCHEMA}.runs.id", ondelete="RESTRICT"),
@@ -193,9 +181,7 @@ class ProcessedEvent(Base):
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     consumer_name: Mapped[str] = mapped_column(Text, nullable=False)
     event_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     run_id: Mapped[UUID | None] = mapped_column(
@@ -225,9 +211,7 @@ class OutboxEvent(Base):
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     aggregate_type: Mapped[str] = mapped_column(Text, nullable=False)
     aggregate_id: Mapped[str] = mapped_column(Text, nullable=False)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -247,16 +231,12 @@ class OutboxEvent(Base):
 class ConsumerCheckpoint(Base):
     __tablename__ = "consumer_checkpoints"
     __table_args__ = (
-        UniqueConstraint(
-            "consumer_name", "stream", name="consumer_checkpoints_position_key"
-        ),
+        UniqueConstraint("consumer_name", "stream", name="consumer_checkpoints_position_key"),
         CheckConstraint("sequence >= 0", name="sequence_nonnegative"),
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     consumer_name: Mapped[str] = mapped_column(Text, nullable=False)
     stream: Mapped[str] = mapped_column(Text, nullable=False)
     sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -269,15 +249,11 @@ class ServiceHealthRecord(Base):
     __tablename__ = "service_health"
     __table_args__ = (
         UniqueConstraint("service_name", name="service_health_service_name_key"),
-        CheckConstraint(
-            "status in ('HEALTHY', 'DEGRADED', 'UNHEALTHY', 'UNKNOWN')", name="status"
-        ),
+        CheckConstraint("status in ('HEALTHY', 'DEGRADED', 'UNHEALTHY', 'UNKNOWN')", name="status"),
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     service_name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -294,9 +270,7 @@ class ControlEvent(Base):
         {"schema": SCHEMA},
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=new_entity_id
-    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
     run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.runs.id", ondelete="RESTRICT")
@@ -314,9 +288,7 @@ class EntryWatchRecord(Base):
             "status in ('ARMED', 'IN_ZONE', 'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
             name="status",
         ),
-        CheckConstraint(
-            "invalidation < zone_low and zone_low <= zone_high", name="level_order"
-        ),
+        CheckConstraint("invalidation < zone_low and zone_low <= zone_high", name="level_order"),
         CheckConstraint("correction_target_percent >= 0", name="correction_nonnegative"),
         CheckConstraint("expires_at > armed_at", name="expiry_after_arm"),
         CheckConstraint(f"source_context_hash ~ '{SHA256_PATTERN}'", name="context_hash_format"),
@@ -343,9 +315,7 @@ class EntryWatchRecord(Base):
     invalidation: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
     original_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
     current_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
-    correction_target_percent: Mapped[Decimal] = mapped_column(
-        Numeric(12, 4), nullable=False
-    )
+    correction_target_percent: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     source_analysis_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     source_context_hash: Mapped[str] = mapped_column(Text, nullable=False)
     anchor_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
@@ -430,6 +400,43 @@ class LongPortfolioAlertRecord(Base):
     )
 
 
+class MarketBarRecord(Base):
+    """Recoverable normalized bar cache written only by MarketData History."""
+
+    __tablename__ = "market_bars"
+    __table_args__ = (
+        CheckConstraint(
+            "timeframe in ('1Min', '15Min', '1Hour', '1Day', '1Week')",
+            name="timeframe",
+        ),
+        CheckConstraint("volume >= 0", name="volume_nonnegative"),
+        CheckConstraint(
+            "high >= open and high >= low and high >= close "
+            "and low <= open and low <= high and low <= close",
+            name="ohlc",
+        ),
+        Index("market_bars_history_idx", "symbol", "timeframe", "timestamp"),
+        {"schema": SCHEMA},
+    )
+
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    timeframe: Mapped[str] = mapped_column(Text, primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    open: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    high: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    low: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    close: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    volume: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    trade_count: Mapped[int | None] = mapped_column(BigInteger)
+    vwap: Mapped[Decimal | None] = mapped_column(Numeric(28, 8))
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    feed: Mapped[str] = mapped_column(Text, nullable=False)
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    downloaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
 class PatreonCapsWatchRecord(Base):
     __tablename__ = "patreon_caps_watches"
     __table_args__ = (
@@ -439,8 +446,7 @@ class PatreonCapsWatchRecord(Base):
             name="state",
         ),
         CheckConstraint(
-            "invalidation < zone_low and zone_low <= zone_center "
-            "and zone_center <= zone_high",
+            "invalidation < zone_low and zone_low <= zone_center and zone_center <= zone_high",
             name="levels",
         ),
         Index(

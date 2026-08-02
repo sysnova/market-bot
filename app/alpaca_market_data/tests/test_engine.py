@@ -34,17 +34,11 @@ class FakeRest:
         }
 
     async def fetch_snapshots(self, symbols: tuple[str, ...]) -> dict[str, dict[str, object]]:
-        return {
-            "AAPL": {
-                "latestTrade": {"p": 100.5, "s": 1, "t": "2026-07-24T14:31:00Z"}
-            }
-        }
+        return {"AAPL": {"latestTrade": {"p": 100.5, "s": 1, "t": "2026-07-24T14:31:00Z"}}}
 
 
 class FakeStream:
-    async def messages(
-        self, *args: object, **kwargs: object
-    ) -> AsyncIterator[dict[str, object]]:
+    async def messages(self, *args: object, **kwargs: object) -> AsyncIterator[dict[str, object]]:
         yield {
             "T": "q",
             "S": "AAPL",
@@ -105,14 +99,10 @@ class BatchTrackingRest(FakeRest):
             for symbol in symbols
         }
 
-    async def fetch_snapshots(
-        self, symbols: tuple[str, ...]
-    ) -> dict[str, dict[str, object]]:
+    async def fetch_snapshots(self, symbols: tuple[str, ...]) -> dict[str, dict[str, object]]:
         self.snapshot_calls.append(symbols)
         return {
-            symbol: {
-                "latestTrade": {"p": 100.5, "s": 1, "t": "2026-07-24T14:31:00Z"}
-            }
+            symbol: {"latestTrade": {"p": 100.5, "s": 1, "t": "2026-07-24T14:31:00Z"}}
             for symbol in symbols
         }
 
@@ -135,6 +125,23 @@ class MultiBarRest(FakeRest):
             ]
             for symbol in symbols
         }
+
+
+@pytest.mark.asyncio
+async def test_stream_only_engine_never_requires_a_rest_adapter() -> None:
+    publisher = FakePublisher()
+    engine = AlpacaMarketDataEngine(
+        rest=None,
+        stream=FakeStream(),
+        publisher=publisher,
+        normalizer=AlpacaEventNormalizer(feed="sip"),
+    )
+
+    count = await engine.stream_once(("AAPL",), trades=False, bars=False)
+    await engine.close()
+
+    assert count == 1
+    assert len(publisher.events) == 1
 
 
 @pytest.mark.asyncio

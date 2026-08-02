@@ -53,6 +53,7 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("engine", "swing"),
         ("engine", "intraday"),
         ("market", "stream"),
+        ("market", "history"),
         ("alerts", "serve"),
         ("entry-watch", "serve"),
         ("engine", "patreon-caps"),
@@ -93,6 +94,7 @@ def test_peter_lynch_command_runs_once_and_prints_json() -> None:
         "errors": 0,
         "saved": 2,
     }
+
     async def fake_run(*, progress: Callable[[str], None]) -> dict[str, object]:
         progress("Watchlist: 2 símbolos activos.")
         progress("[1/2] TEST: seleccionado 6/6 (FAST_GROWER).")

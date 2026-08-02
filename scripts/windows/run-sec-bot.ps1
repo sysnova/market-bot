@@ -62,7 +62,7 @@ Write-Host "Starting bounded SEC daily scan..." -ForegroundColor Cyan
 Write-Host "Project: $ProjectRoot"
 Write-Host "Filing window: last $LookbackDays day(s), inclusive"
 if ([string]::IsNullOrWhiteSpace($Symbols)) {
-    Write-Host "Universe: Supabase configuration"
+    Write-Host "Universe: local PostgreSQL configuration"
 }
 else {
     Write-Host "Universe: $Symbols"

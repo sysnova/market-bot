@@ -7,6 +7,7 @@ ROLE="launcher"
 RUNTIME_ROOT="$PROJECT_ROOT/.runtime"
 SYMBOLS=""
 NO_BELL=0
+DETACH=0
 READY_TIMEOUT=600
 SESSION="marketbot"
 
@@ -18,6 +19,7 @@ Options:
   --symbols AAPL,MSFT   Override the PostgreSQL universe for this run.
   --runtime-root PATH   Runtime directory (default: .runtime).
   --no-bell             Disable alert bells.
+  --detach              Create the tmux runtime without attaching a client.
   --ready-timeout SEC   Readiness timeout (default: 600).
   --session NAME        tmux session name (default: marketbot).
   -h, --help            Show this help.
@@ -30,6 +32,7 @@ while (($#)); do
     --symbols) SYMBOLS="$2"; shift 2 ;;
     --runtime-root) RUNTIME_ROOT="$2"; shift 2 ;;
     --no-bell) NO_BELL=1; shift ;;
+    --detach) DETACH=1; shift ;;
     --ready-timeout) READY_TIMEOUT="$2"; shift 2 ;;
     --session) SESSION="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -159,8 +162,10 @@ run_support_confirmation() {
     fi
     sleep 0.2
   done
-  uv run marketbot monitor support-confirmation \
-    --ready-path "$STATUS_ROOT/support-confirmation-analysis.ready.json" &
+  local monitor_args=(run marketbot monitor support-confirmation \
+    --ready-path "$STATUS_ROOT/support-confirmation-analysis.ready.json")
+  ((NO_BELL)) && monitor_args+=(--no-bell)
+  uv "${monitor_args[@]}" &
   monitor_pid=$!
   local status=0
   wait -n "$engine_pid" "$monitor_pid" || status=$?
@@ -272,7 +277,7 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,market-history-v1,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
@@ -285,6 +290,9 @@ run_control() {
 
   local symbol_args=()
   [[ -n "$SYMBOLS" ]] && symbol_args=(--symbols "$SYMBOLS")
+  start_background market-history-v1 run marketbot market history \
+    --ready-path "$STATUS_ROOT/market-history-v1.ready.json"
+  wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
   start_background long-term-v2 run marketbot engine long \
     --ready-path "$STATUS_ROOT/long-term-v2.ready.json" "${symbol_args[@]}"
   start_background swing-v2 run marketbot engine swing \
@@ -382,6 +390,7 @@ launch_tmux() {
       tmux select-pane -t "$SESSION":SignalFusion.0 -T 'FUSION — Z/R/S + GATES'
       tmux select-pane -t "$SESSION":SignalFusion.1 -T 'FUSION — BUY CONFIRMED'
     fi
+    ((DETACH)) && return
     exec tmux attach-session -t "$SESSION"
   fi
 
@@ -415,6 +424,7 @@ launch_tmux() {
   tmux select-pane -t "$SESSION":SignalFusion.0 -T 'FUSION — Z/R/S + GATES'
   tmux select-pane -t "$SESSION":SignalFusion.1 -T 'FUSION — BUY CONFIRMED'
   tmux select-pane -t "$SESSION":0.0
+  ((DETACH)) && return
   exec tmux attach-session -t "$SESSION"
 }
 

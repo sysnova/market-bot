@@ -161,7 +161,7 @@ def swing_engine_process(
     once: Annotated[bool, typer.Option(help="Bootstrap and evaluate once, then exit.")] = False,
     symbols: Annotated[
         str | None,
-        typer.Option(help="Comma-separated temporary universe; overrides Supabase."),
+        typer.Option(help="Comma-separated temporary universe; overrides PostgreSQL."),
     ] = None,
     ready_path: Annotated[
         Path,
@@ -178,7 +178,7 @@ def intraday_engine_process(
     once: Annotated[bool, typer.Option(help="Bootstrap and evaluate once, then exit.")] = False,
     symbols: Annotated[
         str | None,
-        typer.Option(help="Comma-separated temporary universe; overrides Supabase."),
+        typer.Option(help="Comma-separated temporary universe; overrides PostgreSQL."),
     ] = None,
     ready_path: Annotated[
         Path,
@@ -253,11 +253,13 @@ def long_portfolio_process(
 
     from app.integration.long_portfolio_composition import run_long_portfolio_process
 
-    _run_async(run_long_portfolio_process(
-        config_path=config_path,
-        runtime_root=runtime_root,
-        ready_path=ready_path,
-    ))
+    _run_async(
+        run_long_portfolio_process(
+            config_path=config_path,
+            runtime_root=runtime_root,
+            ready_path=ready_path,
+        )
+    )
 
 
 @engine.command("patreon-caps")
@@ -273,9 +275,7 @@ def patreon_caps_process(
 
     from app.integration.patreon_caps_composition import run_patreon_caps_process
 
-    _run_async(
-        run_patreon_caps_process(config_path=config_path, ready_path=ready_path)
-    )
+    _run_async(run_patreon_caps_process(config_path=config_path, ready_path=ready_path))
 
 
 @engine.command("elliott-wave")
@@ -307,9 +307,7 @@ def support_confirmation_process(
         run_support_confirmation_process,
     )
 
-    summary = _run_async(
-        run_support_confirmation_process(ready_path=ready_path, once=once)
-    )
+    summary = _run_async(run_support_confirmation_process(ready_path=ready_path, once=once))
     if summary is not None:
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
@@ -338,7 +336,7 @@ app.add_typer(market, name="market")
 def market_stream_process(
     symbols: Annotated[
         str | None,
-        typer.Option(help="Comma-separated temporary universe; overrides Supabase."),
+        typer.Option(help="Comma-separated temporary universe; overrides PostgreSQL."),
     ] = None,
 ) -> None:
     """Run the Alpaca WebSocket-to-NATS process."""
@@ -350,6 +348,20 @@ def market_stream_process(
             symbols=tuple(symbols.split(",")) if symbols else None,
         )
     )
+
+
+@market.command("history")
+def market_history_process(
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after the NATS RPC subscription exists."),
+    ] = Path(".runtime/status/market-history-v1.ready.json"),
+) -> None:
+    """Run the centralized incremental Alpaca REST history process."""
+
+    from app.integration.market_history_composition import run_market_history_process
+
+    _run_async(run_market_history_process(ready_path=ready_path))
 
 
 alerts = typer.Typer(name="alerts", help="Run the independent alert aggregation process.")
@@ -416,9 +428,7 @@ def long_portfolio_monitor(
 
     from app.integration.long_portfolio_monitor import run_long_portfolio_monitor
 
-    _run_async(run_long_portfolio_monitor(
-        ready_path=ready_path, bell=bell, history=history
-    ))
+    _run_async(run_long_portfolio_monitor(ready_path=ready_path, bell=bell, history=history))
 
 
 @alerts.command("patreon-caps")
@@ -483,6 +493,9 @@ def elliott_wave_analysis_monitor(
 
 @monitor.command("support-confirmation")
 def support_confirmation_monitor(
+    bell: Annotated[
+        bool, typer.Option(help="Ring for new structurally confirmed reentries.")
+    ] = True,
     ready_path: Annotated[
         Path, typer.Option(help="Readiness file written after subscribing to NATS.")
     ] = Path(".runtime/status/support-confirmation-analysis.ready.json"),
@@ -493,7 +506,7 @@ def support_confirmation_monitor(
         run_support_confirmation_monitor,
     )
 
-    _run_async(run_support_confirmation_monitor(ready_path=ready_path))
+    _run_async(run_support_confirmation_monitor(ready_path=ready_path, bell=bell))
 
 
 @monitor.command("signal-fusion")

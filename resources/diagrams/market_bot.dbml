@@ -196,6 +196,28 @@ Table market_bot.long_portfolio_alerts {
   }
 }
 
+Table market_bot.market_bars {
+  symbol text [not null]
+  timeframe text [not null]
+  timestamp timestamptz [not null]
+  open numeric(28,8) [not null]
+  high numeric(28,8) [not null]
+  low numeric(28,8) [not null]
+  close numeric(28,8) [not null]
+  volume numeric(28,8) [not null]
+  trade_count bigint
+  vwap numeric(28,8)
+  source text [not null]
+  feed text [not null]
+  is_final boolean [not null, default: true]
+  downloaded_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (symbol, timeframe, timestamp) [pk]
+    (symbol, timeframe, timestamp) [name: "market_bars_history_idx"]
+  }
+}
+
 Table market_bot.patreon_caps_watches {
   id uuid [pk]
   symbol text [not null]

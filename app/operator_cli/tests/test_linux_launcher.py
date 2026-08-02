@@ -20,6 +20,16 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     assert "tmux kill-pane -a" not in script
 
 
+def test_linux_launcher_starts_market_history_before_analytical_engines() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    history = "start_background market-history-v1 run marketbot market history"
+    long_term = "start_background long-term-v2 run marketbot engine long"
+    assert history in script
+    assert 'wait_ready "$STATUS_ROOT/market-history-v1.ready.json"' in script
+    assert script.index(history) < script.index(long_term)
+
+
 def test_linux_launcher_starts_patreon_caps_and_dedicated_tmux_window() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 

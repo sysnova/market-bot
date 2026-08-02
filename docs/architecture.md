@@ -86,11 +86,16 @@ There is no Trading API, order intent, position sizing, or account state in this
   Swing, Intraday, dilution SEC, and PatreonCaps. It does not import or invoke those engines.
   PatreonCaps is derived context and is never counted as another independent Long/Swing vote.
   Fusion publishes its own assessment, transition, and SHADOW buy-confirmed subjects.
-- REST historical bars stay process-local and are reloaded independently after a restart.
+- Market History is the single owner of Alpaca REST historical bars. Engines request missing
+  coverage through NATS Core, then load the shared bounded cache from local PostgreSQL. Historical
+  bars and RPC requests are not retained by JetStream.
+- The WebSocket ingress publishes live bars through NATS only. Market History reconciles recent
+  REST coverage once per hour and after an engine restart.
 - Local alerts are fsync'd as canonical NDJSON, rotated by New York market date, and deduplicated
   across restarts within each daily ledger.
-- PostgreSQL stores durable entry theses and transitions. Analytical indicator calculation remains
-  in each engine's memory; no engine queries PostgreSQL for every tick.
+- PostgreSQL stores bounded historical bars, durable entry theses, and transitions. Engines read
+  history only during bootstrap/refresh; analytical calculation and live bars remain in memory, so
+  no engine queries PostgreSQL for every tick.
 
 ## Determinism
 

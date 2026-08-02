@@ -1,7 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -12,16 +14,23 @@ from app.contracts import (
     BarTimeframe,
     EventEnvelope,
     MarketBar,
+    SubscriptionOptions,
     SupportAssessment,
     SupportConfirmationType,
     SupportState,
     SupportTransition,
 )
+from app.integration import support_confirmation_monitor
 from app.integration.support_confirmation_composition import (
     SupportConfirmationRuntime,
     load_support_holdings,
 )
-from app.integration.support_confirmation_monitor import _format_assessment
+from app.integration.support_confirmation_monitor import (
+    _format_assessment,
+    _format_reentry,
+    _is_reentry_transition,
+    run_support_confirmation_monitor,
+)
 from app.support_confirmation_engine import SupportContext
 
 
@@ -68,6 +77,13 @@ def test_tmux_launcher_has_a_sibling_support_confirmation_window() -> None:
     assert "SUPPORT CONFIRMATION" in launcher
 
 
+def test_tmux_launcher_can_leave_the_runtime_detached() -> None:
+    launcher = Path("scripts/linux/start-market-bot.sh").read_text(encoding="utf-8")
+
+    assert "--detach" in launcher
+    assert "((DETACH)) && return" in launcher
+
+
 def test_panel_separates_reaction_from_reversal() -> None:
     item = SimpleNamespace(
         occurred_at=datetime(2026, 8, 2, 20, tzinfo=UTC),
@@ -90,6 +106,55 @@ def test_panel_separates_reaction_from_reversal() -> None:
     assert "REACT 82" in text
     assert "REV 25" in text
     assert "B-RISK YES" in text
+
+
+def test_reentry_alarm_only_accepts_structural_confirmation() -> None:
+    assessment = SupportAssessment(
+        symbol="ADUR",
+        occurred_at=datetime(2026, 8, 2, 20, tzinfo=UTC),
+        engine_version="0.1.0",
+        state=SupportState.STRUCTURE_CONFIRMED,
+        confirmation_type=SupportConfirmationType.SWEEP_RECLAIM,
+        current_price=Decimal("13.78"),
+        zone_low=Decimal("12.75"),
+        zone_center=Decimal("13.10"),
+        zone_high=Decimal("13.53"),
+        invalidation=Decimal("11.78"),
+        support_score=Decimal("100"),
+        reaction_score=Decimal("93"),
+        reversal_score=Decimal("70"),
+        confidence=Decimal("1"),
+        reasons=("fixture",),
+        context_hash=f"sha256:{'9' * 64}",
+    )
+    structural = SupportTransition(
+        assessment_id=assessment.assessment_id,
+        symbol=assessment.symbol,
+        occurred_at=assessment.occurred_at,
+        engine_version=assessment.engine_version,
+        previous_state=SupportState.RECLAIMED,
+        state=SupportState.STRUCTURE_CONFIRMED,
+        confirmation_type=assessment.confirmation_type,
+        support_score=assessment.support_score,
+        reaction_score=assessment.reaction_score,
+        reversal_score=assessment.reversal_score,
+        zone_low=assessment.zone_low,
+        zone_high=assessment.zone_high,
+        invalidation=assessment.invalidation,
+        reasons=assessment.reasons,
+        context_hash=assessment.context_hash,
+    )
+    reclaimed = structural.model_copy(
+        update={
+            "previous_state": SupportState.LIQUIDITY_SWEEP,
+            "state": SupportState.RECLAIMED,
+        }
+    )
+
+    assert _is_reentry_transition(structural) is True
+    assert _is_reentry_transition(reclaimed) is False
+    assert "REENTRY ARMED" in _format_reentry(structural)
+    assert "ADUR" in _format_reentry(structural)
 
 
 class _Publisher:
@@ -230,3 +295,102 @@ async def test_runtime_restores_state_and_ignores_irrelevant_market_events() -> 
     )
     await runtime.handle_market(_envelope(_bar(15, timeframe=BarTimeframe.WEEK_1)))
     assert publisher.items == []
+
+
+class _Subscription:
+    def __init__(self) -> None:
+        self.unsubscribed = False
+
+    async def unsubscribe(self) -> None:
+        self.unsubscribed = True
+
+
+class _MonitorBus:
+    assessment: EventEnvelope
+    transition: EventEnvelope
+    instance: _MonitorBus | None = None
+
+    def __init__(self) -> None:
+        self.subscriptions: list[
+            tuple[str, SubscriptionOptions, _Subscription]
+        ] = []
+        self.closed = False
+        type(self).instance = self
+
+    @classmethod
+    async def connect(cls, **_: Any) -> _MonitorBus:
+        return cls()
+
+    async def subscribe(
+        self, subject: str, handler: Any, *, options: SubscriptionOptions
+    ) -> _Subscription:
+        subscription = _Subscription()
+        self.subscriptions.append((subject, options, subscription))
+        envelope = self.transition if ".transition." in subject else self.assessment
+        await handler(envelope)
+        return subscription
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _StopEvent:
+    async def wait(self) -> None:
+        raise RuntimeError("stop monitor")
+
+
+async def test_monitor_rings_only_for_a_new_structural_reentry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _Engine()
+    assessment = engine.evaluate(
+        SupportContext(symbol="TGT", daily_bars=tuple(_bar(index) for index in range(15)))
+    )
+    transition = SupportTransition(
+        assessment_id=assessment.assessment_id,
+        symbol=assessment.symbol,
+        occurred_at=assessment.occurred_at,
+        engine_version=assessment.engine_version,
+        previous_state=SupportState.RECLAIMED,
+        state=SupportState.STRUCTURE_CONFIRMED,
+        confirmation_type=assessment.confirmation_type,
+        support_score=assessment.support_score,
+        reaction_score=assessment.reaction_score,
+        reversal_score=Decimal("70"),
+        zone_low=assessment.zone_low,
+        zone_high=assessment.zone_high,
+        invalidation=assessment.invalidation,
+        reasons=("fixture",),
+        context_hash=assessment.context_hash,
+    )
+    _MonitorBus.assessment = EventEnvelope(
+        event_type=SUPPORT_ASSESSMENT_EVENT,
+        occurred_at=assessment.occurred_at,
+        source="fixture",
+        subject=assessment.symbol,
+        payload=assessment,
+    )
+    _MonitorBus.transition = EventEnvelope(
+        event_type=SUPPORT_TRANSITION_EVENT,
+        occurred_at=transition.occurred_at,
+        source="fixture",
+        subject=transition.symbol,
+        payload=transition,
+    )
+    monkeypatch.setattr(support_confirmation_monitor, "NatsJetStreamEventBus", _MonitorBus)
+    monkeypatch.setattr(support_confirmation_monitor.asyncio, "Event", _StopEvent)
+    output = StringIO()
+
+    with pytest.raises(RuntimeError, match="stop monitor"):
+        await run_support_confirmation_monitor(stream=output, bell=True)
+
+    assert output.getvalue().count("\a") == 1
+    assert "REENTRY ARMED TGT STRUCTURE_CONFIRMED" in output.getvalue()
+    assert _MonitorBus.instance is not None
+    transition_options = _MonitorBus.instance.subscriptions[1][1]
+    assert transition_options.replay_all is False
+    assert all(
+        subscription.unsubscribed
+        for _, _, subscription in _MonitorBus.instance.subscriptions
+    )
+    assert _MonitorBus.instance.closed is True

@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
-from app.alpaca_market_data import AlpacaEventNormalizer
 from app.common.clock import SystemClock
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
@@ -29,17 +28,20 @@ from app.persistence import create_database_engine
 
 from .distributed_composition import (
     HistoryRequest,
-    build_rest,
     connect_nats,
-    load_history,
     write_ready,
 )
 from .market_bar_store import MarketBarStore
+from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
 
 ELLIOTT_HISTORY_REQUESTS = (
-    HistoryRequest(BarTimeframe.DAY_1, timedelta(days=600), 400),
-    HistoryRequest(BarTimeframe.HOUR_1, timedelta(days=90), 500),
+    HistoryRequest(
+        timeframe=BarTimeframe.DAY_1, lookback=timedelta(days=600), max_bars_per_symbol=400
+    ),
+    HistoryRequest(
+        timeframe=BarTimeframe.HOUR_1, lookback=timedelta(days=90), max_bars_per_symbol=500
+    ),
 )
 
 
@@ -68,9 +70,7 @@ class ElliottWaveRuntime:
         self._symbols: set[str] = set()
         self._last_evaluated_at: dict[str, datetime] = {}
 
-    async def bootstrap(
-        self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]
-    ) -> int:
+    async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {symbol.strip().upper() for symbol in symbols}
         for bar in bars:
             if bar.symbol in self._symbols:
@@ -137,19 +137,17 @@ async def run_elliott_wave_process(
     )
     provider = PostgresUniverseClient(database)
     bus: NatsJetStreamEventBus | None = None
-    rest = None
     subscriptions: list[Subscription] = []
     try:
         holdings = await load_held_symbols(provider)
         bus = await connect_nats(settings)
-        rest = build_rest(settings)
-        bars = await load_history(
-            rest,
-            AlpacaEventNormalizer(feed=settings.alpaca_data_feed),
-            holdings.symbols,
-            ELLIOTT_HISTORY_REQUESTS,
+        bars = await load_market_history(
+            settings,
+            database,
+            engine_id="elliott-wave-v0",
+            symbols=holdings.symbols,
+            requirements=ELLIOTT_HISTORY_REQUESTS,
             as_of=SystemClock().now(),
-            batch_size=settings.alpaca_rest_batch_size,
         )
         runtime = ElliottWaveRuntime(engine=ElliottWaveEngine(), publisher=bus)
         published = await runtime.bootstrap(bars, symbols=holdings.symbols)
@@ -182,8 +180,6 @@ async def run_elliott_wave_process(
     finally:
         for subscription in subscriptions:
             await subscription.unsubscribe()
-        if rest is not None:
-            await rest.close()
         if bus is not None:
             await bus.close()
         await database.dispose()
