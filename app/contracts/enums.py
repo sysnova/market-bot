@@ -157,6 +157,30 @@ class WavePhase(ContractEnum):
     UNRESOLVED = "UNRESOLVED"
 
 
+class SupportState(ContractEnum):
+    """Lifecycle of an independently observed higher-timeframe support thesis."""
+
+    NO_KEY_SUPPORT = "NO_KEY_SUPPORT"
+    WATCH_KEY_SUPPORT = "WATCH_KEY_SUPPORT"
+    FIRST_TOUCH = "FIRST_TOUCH"
+    REACTION_CONFIRMED = "REACTION_CONFIRMED"
+    BASE_BUILDING = "BASE_BUILDING"
+    LIQUIDITY_SWEEP = "LIQUIDITY_SWEEP"
+    RECLAIMED = "RECLAIMED"
+    STRUCTURE_CONFIRMED = "STRUCTURE_CONFIRMED"
+    RETEST_CONFIRMED = "RETEST_CONFIRMED"
+    B_WAVE_RISK = "B_WAVE_RISK"
+    INVALIDATED = "INVALIDATED"
+    EXPIRED = "EXPIRED"
+
+
+class SupportConfirmationType(ContractEnum):
+    NONE = "NONE"
+    V_RECOVERY = "V_RECOVERY"
+    BASE_BREAKOUT = "BASE_BREAKOUT"
+    SWEEP_RECLAIM = "SWEEP_RECLAIM"
+
+
 class MacroRegime(ContractEnum):
     RISK_ON = "RISK_ON"
     NEUTRAL = "NEUTRAL"

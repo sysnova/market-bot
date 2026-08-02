@@ -80,6 +80,8 @@ There is no Trading API, order intent, position sizing, or account state in this
 - Durable NATS consumers are distinct per engine; they are not a shared queue group, so every
   required engine receives its own copy of each live bar.
 - NATS JetStream retains live market updates, engine results, service health, and final alerts.
+- Support Confirmation persists holdings-only assessments and state transitions in JetStream. It
+  remains a SHADOW producer and has no dependency edge into PatreonCaps, ElliottWave, or Alert v2.
 - REST historical bars stay process-local and are reloaded independently after a restart.
 - Local alerts are fsync'd as canonical NDJSON, rotated by New York market date, and deduplicated
   across restarts within each daily ledger.

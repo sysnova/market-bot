@@ -94,9 +94,13 @@ class _JetStream(Protocol):
 class _JetStreamSubscription(Subscription):
     def __init__(self, subscription: _NatsSubscription) -> None:
         self._subscription = subscription
+        self._closed = False
 
     async def unsubscribe(self) -> None:
+        if self._closed:
+            return
         await self._subscription.unsubscribe()
+        self._closed = True
 
     async def wait_until_caught_up(self, *, timeout_seconds: float = 30.0) -> None:
         deadline = monotonic() + timeout_seconds

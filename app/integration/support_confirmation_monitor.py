@@ -1,0 +1,86 @@
+"""Dedicated panel for Support Confirmation assessments of held symbols."""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from typing import TextIO
+
+from app.common.settings import AppSettings
+from app.contracts import (
+    SUPPORT_ASSESSMENT_EVENT,
+    EventEnvelope,
+    SubscriptionOptions,
+    SupportAssessment,
+)
+from app.event_bus import NatsJetStreamEventBus
+
+from .distributed_composition import write_ready
+
+
+async def run_support_confirmation_monitor(
+    *, ready_path: Path | None = None, stream: TextIO | None = None
+) -> None:
+    import sys
+
+    output = stream or sys.stdout
+    settings = AppSettings()
+    bus = await NatsJetStreamEventBus.connect(
+        servers=[settings.nats_url.get_secret_value()],
+        prefix="marketbot",
+        stream="MARKETBOT",
+    )
+
+    async def handle(envelope: EventEnvelope) -> None:
+        if envelope.event_type != SUPPORT_ASSESSMENT_EVENT:
+            return
+        assessment = (
+            envelope.payload
+            if isinstance(envelope.payload, SupportAssessment)
+            else SupportAssessment.model_validate(envelope.payload, strict=False)
+        )
+        print(_format_assessment(assessment), file=output, flush=True)
+
+    subscription = await bus.subscribe(
+        "marketbot.v1.support-confirmation.assessment.>",
+        handle,
+        options=SubscriptionOptions(
+            replay_latest_per_subject=True,
+            ack_wait_seconds=60,
+        ),
+    )
+    try:
+        if ready_path is not None:
+            write_ready(
+                ready_path,
+                {
+                    "service": "support-confirmation-monitor",
+                    "universe": "positive-holdings-only",
+                    "mode": "SHADOW",
+                },
+            )
+        print(
+            "SUPPORT CONFIRMATION — TENENCIAS — esperando análisis NATS...",
+            file=output,
+            flush=True,
+        )
+        await asyncio.Event().wait()
+    finally:
+        await subscription.unsubscribe()
+        await bus.close()
+
+
+def _display(value: object | None) -> str:
+    return "-" if value is None else str(value)
+
+
+def _format_assessment(item: SupportAssessment) -> str:
+    risk = "YES" if item.b_wave_risk else "NO"
+    return (
+        f"{item.occurred_at:%H:%M} {item.symbol:<6} {item.state.value:<20} "
+        f"{item.confirmation_type.value:<15} SUP {item.support_score} "
+        f"REACT {item.reaction_score} REV {item.reversal_score} "
+        f"PX {item.current_price} Z {_display(item.zone_low)}-"
+        f"{_display(item.zone_high)} INV {_display(item.invalidation)} "
+        f"B-RISK {risk}"
+    )

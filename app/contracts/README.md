@@ -50,6 +50,9 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   `WavePhase`, niveles, alternativa, evidencia y hash del contexto. Usa
   `elliott_wave_assessment_subject()` y `ELLIOTT_WAVE_ASSESSMENT_EVENT`; no ocupa un
   `AnalysisHorizon` y por eso no reemplaza el estado de Long, Swing o Intraday.
+- Support Confirmation: `SupportAssessment` separa evidencia de reaccion local de evidencia de
+  reversion estructural; `SupportTransition` conserva cada cambio de estado. Sus subjects viven en
+  `marketbot.v1.support-confirmation.*` y no modifican eventos de PatreonCaps.
 
 ## Invariantes comprobadas
 

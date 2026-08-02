@@ -267,3 +267,35 @@ tmux select-window -t marketbot:ElliottWave
 
 Es una lectura SHADOW: identifica candidatos de fin de onda 2/4 e impulso 3/5 activo, pero no emite
 ordenes ni alertas de compra.
+
+## Support Confirmation v0 SHADOW — solo tenencias
+
+`support-confirmation@0.1.0` busca soporte relevante de temporalidad mayor y clasifica tres
+reacciones: recuperacion en V, construccion/ruptura de base y barrido de liquidez con reclaim. El
+score `REACT` mide la validez del rebote local; `REV` solo sube cuando aparece evidencia de nueva
+estructura alcista, especialmente higher high y higher low. Mientras falte esa estructura el panel
+mantiene `B-RISK YES`, porque el rebote todavia puede ser una onda B.
+
+El proceso usa exclusivamente tenencias positivas de PostgreSQL local y publica en subjects
+propios de NATS:
+
+```text
+marketbot.v1.support-confirmation.assessment.<SYMBOL>
+marketbot.v1.support-confirmation.transition.<STATE>.<SYMBOL>
+```
+
+JetStream conserva assessments y transiciones durante la retencion general de 15 dias y permite
+restaurar el ultimo estado al reiniciar. No alimenta PatreonCaps, ElliottWave ni Alert v2 en esta
+fase de prueba, y no emite ordenes o alertas de compra.
+
+El launcher crea una cuarta ventana hermana, independiente de las otras tres:
+
+```bash
+tmux select-window -t marketbot:SupportConfirmation
+```
+
+Para ejecutar una foto puntual sin dejar el proceso activo:
+
+```bash
+uv run marketbot engine support-confirmation --once
+```

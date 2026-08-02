@@ -188,6 +188,20 @@ async def test_close_unsubscribes_and_drains_once() -> None:
 
 
 @pytest.mark.unit
+async def test_close_does_not_unsubscribe_an_explicitly_closed_subscription_twice() -> None:
+    js = FakeJetStream()
+    client = FakeClient(js)
+    bus = NatsJetStreamEventBus(client=client, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]
+    subscription = await bus.subscribe("prices.updated", _discard)
+
+    await subscription.unsubscribe()
+    await bus.close()
+
+    assert js.subscription.unsubscribed == 1
+    assert client.drains == 1
+
+
+@pytest.mark.unit
 async def test_valid_message_acks_only_after_handler_success(event: EventEnvelope) -> None:
     js = FakeJetStream()
     bus = NatsJetStreamEventBus(client=None, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]

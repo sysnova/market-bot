@@ -281,6 +281,26 @@ def elliott_wave_process(
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
+@engine.command("support-confirmation")
+def support_confirmation_process(
+    once: Annotated[bool, typer.Option(help="Analyze held positions once and exit.")] = False,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after NATS and holdings are ready.")
+    ] = Path(".runtime/status/support-confirmation-v0.ready.json"),
+) -> None:
+    """Run independent support confirmation for positive local holdings."""
+
+    from app.integration.support_confirmation_composition import (
+        run_support_confirmation_process,
+    )
+
+    summary = _run_async(
+        run_support_confirmation_process(ready_path=ready_path, once=once)
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
 
@@ -430,6 +450,21 @@ def elliott_wave_analysis_monitor(
     from app.integration.elliott_wave_monitor import run_elliott_wave_monitor
 
     _run_async(run_elliott_wave_monitor(ready_path=ready_path))
+
+
+@monitor.command("support-confirmation")
+def support_confirmation_monitor(
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after subscribing to NATS.")
+    ] = Path(".runtime/status/support-confirmation-analysis.ready.json"),
+) -> None:
+    """Show support-reaction and reversal evidence for held positions."""
+
+    from app.integration.support_confirmation_monitor import (
+        run_support_confirmation_monitor,
+    )
+
+    _run_async(run_support_confirmation_monitor(ready_path=ready_path))
 
 
 entry_watch = typer.Typer(

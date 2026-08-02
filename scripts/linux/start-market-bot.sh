@@ -134,6 +134,40 @@ run_elliott_wave() {
   return "$status"
 }
 
+run_support_confirmation() {
+  cd "$PROJECT_ROOT"
+  mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
+  rm -f "$STATUS_ROOT/support-confirmation-v0.ready.json" \
+    "$STATUS_ROOT/support-confirmation-analysis.ready.json"
+  uv run marketbot engine support-confirmation \
+    --ready-path "$STATUS_ROOT/support-confirmation-v0.ready.json" \
+    >>"$LOG_ROOT/support-confirmation-v0.log" 2>&1 &
+  local engine_pid=$!
+  local monitor_pid=""
+  cleanup_support_confirmation() {
+    trap - EXIT INT TERM
+    kill "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
+    wait "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
+  }
+  trap cleanup_support_confirmation EXIT INT TERM
+  while [[ ! -f "$STATUS_ROOT/support-confirmation-v0.ready.json" ]]; do
+    if ! kill -0 "$engine_pid" 2>/dev/null; then
+      local status=0
+      wait "$engine_pid" || status=$?
+      cleanup_support_confirmation
+      return "$status"
+    fi
+    sleep 0.2
+  done
+  uv run marketbot monitor support-confirmation \
+    --ready-path "$STATUS_ROOT/support-confirmation-analysis.ready.json" &
+  monitor_pid=$!
+  local status=0
+  wait -n "$engine_pid" "$monitor_pid" || status=$?
+  cleanup_support_confirmation
+  return "$status"
+}
+
 wait_ready() {
   local deadline=$((SECONDS + READY_TIMEOUT)) missing path
   while :; do
@@ -194,7 +228,7 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis}.ready.json
+  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis}.ready.json
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
@@ -233,6 +267,8 @@ run_control() {
     "$STATUS_ROOT/patreon-caps-alerts.ready.json"
   wait_ready "$STATUS_ROOT/elliott-wave-v0.ready.json" \
     "$STATUS_ROOT/elliott-wave-analysis.ready.json"
+  wait_ready "$STATUS_ROOT/support-confirmation-v0.ready.json" \
+    "$STATUS_ROOT/support-confirmation-analysis.ready.json"
 
   start_background alpaca-market-stream run marketbot market stream "${symbol_args[@]}"
   echo "All engines ready. Logs: $LOG_ROOT"
@@ -263,7 +299,7 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed long_portfolio patreon_analysis patreon_alerts elliott_wave
+  local control analysis confirmed long_portfolio patreon_analysis patreon_alerts elliott_wave support_confirmation
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
@@ -271,6 +307,7 @@ launch_tmux() {
   printf -v patreon_analysis '%q ' "${base[@]}" --role patreon-analysis
   printf -v patreon_alerts '%q ' "${base[@]}" --role patreon-alerts
   printf -v elliott_wave '%q ' "${base[@]}" --role elliott-wave
+  printf -v support_confirmation '%q ' "${base[@]}" --role support-confirmation
 
   if tmux has-session -t "$SESSION" 2>/dev/null; then
     if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'PatreonCaps'; then
@@ -283,6 +320,11 @@ launch_tmux() {
       tmux new-window -d -t "$SESSION" -n ElliottWave "$elliott_wave"
       tmux set-window-option -t "$SESSION":ElliottWave remain-on-exit on
       tmux select-pane -t "$SESSION":ElliottWave.0 -T 'ELLIOTT WAVE — TENENCIAS'
+    fi
+    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'SupportConfirmation'; then
+      tmux new-window -d -t "$SESSION" -n SupportConfirmation "$support_confirmation"
+      tmux set-window-option -t "$SESSION":SupportConfirmation remain-on-exit on
+      tmux select-pane -t "$SESSION":SupportConfirmation.0 -T 'SUPPORT CONFIRMATION — TENENCIAS'
     fi
     exec tmux attach-session -t "$SESSION"
   fi
@@ -308,6 +350,9 @@ launch_tmux() {
   tmux new-window -d -t "$SESSION" -n ElliottWave "$elliott_wave"
   tmux set-window-option -t "$SESSION":ElliottWave remain-on-exit on
   tmux select-pane -t "$SESSION":ElliottWave.0 -T 'ELLIOTT WAVE — TENENCIAS'
+  tmux new-window -d -t "$SESSION" -n SupportConfirmation "$support_confirmation"
+  tmux set-window-option -t "$SESSION":SupportConfirmation remain-on-exit on
+  tmux select-pane -t "$SESSION":SupportConfirmation.0 -T 'SUPPORT CONFIRMATION — TENENCIAS'
   tmux select-pane -t "$SESSION":0.0
   exec tmux attach-session -t "$SESSION"
 }
@@ -321,5 +366,6 @@ case "$ROLE" in
   patreon-analysis) run_patreon_caps_analysis ;;
   patreon-alerts) run_patreon_caps_alerts ;;
   elliott-wave) run_elliott_wave ;;
+  support-confirmation) run_support_confirmation ;;
   *) echo "Invalid internal role: $ROLE" >&2; exit 2 ;;
 esac

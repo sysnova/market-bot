@@ -16,6 +16,8 @@ from .analysis_events import (
     PATREON_CAPS_ASSESSMENT_EVENT,
     PATREON_CAPS_TRANSITION_EVENT,
     SERVICE_HEALTH_EVENT,
+    SUPPORT_ASSESSMENT_EVENT,
+    SUPPORT_TRANSITION_EVENT,
     analysis_result_subject,
     elliott_wave_assessment_subject,
     entry_watch_transition_subject,
@@ -24,6 +26,8 @@ from .analysis_events import (
     patreon_caps_assessment_subject,
     patreon_caps_transition_subject,
     service_health_subject,
+    support_assessment_subject,
+    support_transition_subject,
 )
 from .domain import (
     AlertDecision,
@@ -58,6 +62,8 @@ from .enums import (
     RuleType,
     ServiceStatus,
     StrategyMode,
+    SupportConfirmationType,
+    SupportState,
     TradeSide,
     WavePhase,
 )
@@ -87,6 +93,7 @@ from .strategy import (
     StrategySpec,
     validate_primary_uniqueness,
 )
+from .support_confirmation import SupportAssessment, SupportTransition
 
 __all__ = [
     "ANALYSIS_RESULT_EVENT",
@@ -100,6 +107,8 @@ __all__ = [
     "PATREON_CAPS_ASSESSMENT_EVENT",
     "PATREON_CAPS_TRANSITION_EVENT",
     "SERVICE_HEALTH_EVENT",
+    "SUPPORT_ASSESSMENT_EVENT",
+    "SUPPORT_TRANSITION_EVENT",
     "AlertDecision",
     "AlertKind",
     "AlertPolicy",
@@ -161,6 +170,10 @@ __all__ = [
     "StrictFrozenModel",
     "Subscription",
     "SubscriptionOptions",
+    "SupportAssessment",
+    "SupportConfirmationType",
+    "SupportState",
+    "SupportTransition",
     "TradePlan",
     "TradeSide",
     "WaveAssessment",
@@ -174,5 +187,7 @@ __all__ = [
     "patreon_caps_assessment_subject",
     "patreon_caps_transition_subject",
     "service_health_subject",
+    "support_assessment_subject",
+    "support_transition_subject",
     "validate_primary_uniqueness",
 ]

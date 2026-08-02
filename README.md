@@ -132,6 +132,10 @@ The fourth pane, `LONG PORTFOLIO 2026`, loads persisted alerts from local Postgr
 and follows new allocation-aware LONG entries. The control pane also owns the
 `long-portfolio-v1` engine, so `Ctrl+C` stops it together with the rest of MarketBot.
 
+The same launcher also creates sibling `PatreonCaps`, `ElliottWave`, and
+`SupportConfirmation` windows. Support Confirmation is a holdings-only SHADOW view and keeps its
+reaction and structural-reversal scores separate.
+
 The top pane controls lifecycle, the middle pane displays analyses, and the bottom pane displays
 confirmed purchases. Pressing `Ctrl+C` in the control pane stops all MarketBot processes.
 # Market Rotation local

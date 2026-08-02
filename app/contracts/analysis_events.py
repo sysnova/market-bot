@@ -13,6 +13,8 @@ ENTRY_WATCH_TRANSITION_EVENT: Final = "entry-watch.transitioned"
 PATREON_CAPS_ASSESSMENT_EVENT: Final = "patreon-caps.assessed"
 PATREON_CAPS_TRANSITION_EVENT: Final = "patreon-caps.transitioned"
 ELLIOTT_WAVE_ASSESSMENT_EVENT: Final = "elliott-wave.assessed"
+SUPPORT_ASSESSMENT_EVENT: Final = "support-confirmation.assessed"
+SUPPORT_TRANSITION_EVENT: Final = "support-confirmation.transitioned"
 MARKET_ROTATION_EVENT: Final = "market-rotation.analyzed"
 MARKET_ROTATION_SUBJECT: Final = "marketbot.v1.rotation.result"
 
@@ -50,6 +52,17 @@ def patreon_caps_transition_subject(status: object, symbol: str) -> str:
 
 def elliott_wave_assessment_subject(symbol: str) -> str:
     return f"marketbot.v1.elliott-wave.assessment.{_symbol_token(symbol)}"
+
+
+def support_assessment_subject(symbol: str) -> str:
+    return f"marketbot.v1.support-confirmation.assessment.{_symbol_token(symbol)}"
+
+
+def support_transition_subject(state: object, symbol: str) -> str:
+    value = getattr(state, "value", state)
+    if not isinstance(value, str) or not value:
+        raise ValueError("support state is invalid")
+    return f"marketbot.v1.support-confirmation.transition.{value}.{_symbol_token(symbol)}"
 
 
 def _symbol_token(symbol: str) -> str:
