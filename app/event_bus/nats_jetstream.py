@@ -90,6 +90,8 @@ class _JetStream(Protocol):
 
     async def update_stream(self, *, config: _StreamConfig) -> object: ...
 
+    async def get_last_msg(self, stream: str, subject: str) -> _NatsMessage: ...
+
 
 class _JetStreamSubscription(Subscription):
     def __init__(self, subscription: _NatsSubscription) -> None:
@@ -122,11 +124,13 @@ class NatsJetStreamEventBus:
         client: _NatsClient | None,
         jetstream: _JetStream,
         prefix: str = "marketbot",
+        stream: str = "MARKETBOT",
     ) -> None:
         validate_publish_subject(prefix)
         self._client = client
         self._jetstream = jetstream
         self._prefix = prefix
+        self._stream = stream
         self._subscriptions: list[Subscription] = []
         self._closed = False
 
@@ -173,7 +177,24 @@ class NatsJetStreamEventBus:
             client=cast(_NatsClient, client),
             jetstream=typed_jetstream,
             prefix=prefix,
+            stream=stream,
         )
+
+    async def get_last(self, subject: str) -> EventEnvelope | None:
+        """Read the last message for one exact subject without creating a consumer."""
+
+        self._require_open()
+        validate_publish_subject(subject)
+        from nats.js.errors import NotFoundError
+
+        try:
+            message = await self._jetstream.get_last_msg(
+                self._stream,
+                self._qualify(subject),
+            )
+        except NotFoundError:
+            return None
+        return decode_envelope(message.data)
 
     async def publish(self, subject: str, envelope: EventEnvelope) -> None:
         self._require_open()

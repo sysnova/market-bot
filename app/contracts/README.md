@@ -54,6 +54,12 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   reversion estructural; `SupportTransition` conserva cada cambio de estado. Sus subjects viven en
   `marketbot.v1.support-confirmation.*` y no modifican eventos de PatreonCaps.
 
+- Signal Fusion combina mensajes existentes sin recalcularlos. `FusionAssessment` separa zona de
+  soporte valida (`support_zone_gate`), reaccion/defensa (`support_reaction_gate`) y reversion
+  estructural (`support_gate`). `FusionTransition` conserva cambios y
+  `signal-fusion.buy-confirmed` solo se publica cuando todos los gates deterministas pasan.
+  PatreonCaps es contexto derivado, no un voto adicional.
+
 ## Invariantes comprobadas
 
 Cada `PipelineStep` fija `rule_id` y `rule_version` SemVer exactos; bindings y scoring

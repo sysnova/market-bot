@@ -15,6 +15,9 @@ PATREON_CAPS_TRANSITION_EVENT: Final = "patreon-caps.transitioned"
 ELLIOTT_WAVE_ASSESSMENT_EVENT: Final = "elliott-wave.assessed"
 SUPPORT_ASSESSMENT_EVENT: Final = "support-confirmation.assessed"
 SUPPORT_TRANSITION_EVENT: Final = "support-confirmation.transitioned"
+FUSION_ASSESSMENT_EVENT: Final = "signal-fusion.assessed"
+FUSION_TRANSITION_EVENT: Final = "signal-fusion.transitioned"
+FUSION_BUY_CONFIRMED_EVENT: Final = "signal-fusion.buy-confirmed"
 MARKET_ROTATION_EVENT: Final = "market-rotation.analyzed"
 MARKET_ROTATION_SUBJECT: Final = "marketbot.v1.rotation.result"
 
@@ -63,6 +66,21 @@ def support_transition_subject(state: object, symbol: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError("support state is invalid")
     return f"marketbot.v1.support-confirmation.transition.{value}.{_symbol_token(symbol)}"
+
+
+def fusion_assessment_subject(symbol: str) -> str:
+    return f"marketbot.v1.signal-fusion.assessment.{_symbol_token(symbol)}"
+
+
+def fusion_transition_subject(state: object, symbol: str) -> str:
+    value = getattr(state, "value", state)
+    if not isinstance(value, str) or not value:
+        raise ValueError("fusion state is invalid")
+    return f"marketbot.v1.signal-fusion.transition.{value}.{_symbol_token(symbol)}"
+
+
+def fusion_buy_confirmed_subject(symbol: str) -> str:
+    return f"marketbot.v1.signal-fusion.buy-confirmed.{_symbol_token(symbol)}"
 
 
 def _symbol_token(symbol: str) -> str:

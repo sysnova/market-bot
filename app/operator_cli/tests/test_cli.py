@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
@@ -79,6 +80,26 @@ def test_sec_daily_help_exposes_bounded_filing_scan() -> None:
     assert result.exit_code == 0
     assert "filing" in output.lower()
     assert "--lookback-days" in output
+
+
+def test_peter_lynch_command_runs_once_and_prints_json() -> None:
+    summary = {
+        "service": "peter-lynch-v1",
+        "evaluated": 2,
+        "selected": 1,
+        "discarded": 1,
+        "unsupported": 0,
+        "errors": 0,
+        "saved": 2,
+    }
+    with patch(
+        "app.integration.peter_lynch_composition.run_peter_lynch_once",
+        new=AsyncMock(return_value=summary),
+    ):
+        result = runner.invoke(app, ["engine", "peter-lynch"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == summary
 
 
 def test_version_is_available_without_runtime_dependencies() -> None:

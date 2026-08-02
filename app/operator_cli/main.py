@@ -5,7 +5,7 @@ import json
 import selectors
 from collections.abc import Coroutine
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import typer
 
@@ -212,6 +212,16 @@ def rotation_engine_process(
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
+@engine.command("peter-lynch")
+def peter_lynch_engine_process() -> None:
+    """Evaluate the active watchlist once with the Peter Lynch fundamental screen."""
+
+    from app.integration.peter_lynch_composition import run_peter_lynch_once
+
+    summary = _run_async(run_peter_lynch_once())
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 @engine.command("portfolio-flow")
 def portfolio_flow_process(
     ready_path: Annotated[Path, typer.Option(help="Archivo de readiness del proceso.")] = Path(
@@ -297,6 +307,22 @@ def support_confirmation_process(
     summary = _run_async(
         run_support_confirmation_process(ready_path=ready_path, once=once)
     )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@engine.command("signal-fusion")
+def signal_fusion_process(
+    once: Annotated[bool, typer.Option(help="Fuse the latest held-position inputs once.")] = False,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after source replay is complete.")
+    ] = Path(".runtime/status/signal-fusion-v0.ready.json"),
+) -> None:
+    """Run holdings-only cross-engine fusion in SHADOW mode."""
+
+    from app.integration.signal_fusion_composition import run_signal_fusion_process
+
+    summary = _run_async(run_signal_fusion_process(ready_path=ready_path, once=once))
     if summary is not None:
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
@@ -465,6 +491,30 @@ def support_confirmation_monitor(
     )
 
     _run_async(run_support_confirmation_monitor(ready_path=ready_path))
+
+
+@monitor.command("signal-fusion")
+def signal_fusion_monitor(
+    mode: Annotated[
+        Literal["analysis", "buys"],
+        typer.Option(help="Show every decision or only current confirmed buys."),
+    ] = "analysis",
+    bell: Annotated[bool, typer.Option(help="Ring for new confirmed buys.")] = True,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after replay is complete.")
+    ] = Path(".runtime/status/signal-fusion-analysis.ready.json"),
+) -> None:
+    """Show Signal Fusion evidence or current SHADOW buy confirmations."""
+
+    from app.integration.signal_fusion_monitor import run_signal_fusion_monitor
+
+    _run_async(
+        run_signal_fusion_monitor(
+            mode=mode,
+            ready_path=ready_path,
+            bell=bell,
+        )
+    )
 
 
 entry_watch = typer.Typer(

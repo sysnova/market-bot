@@ -299,3 +299,37 @@ Para ejecutar una foto puntual sin dejar el proceso activo:
 ```bash
 uv run marketbot engine support-confirmation --once
 ```
+
+## Signal Fusion v0 SHADOW — confirmacion multi-engine
+
+`signal-fusion@0.2.0` consume exclusivamente los contratos persistidos en NATS para las tenencias
+positivas. No vuelve a calcular indicadores ni llama Alpaca. El avance del soporte se muestra como
+zona valida (`Z`), reaccion/defensa con score minimo 60 (`R`) y reversion estructural confirmada
+(`S`). Los demas gates visibles son tendencia Long (`L`), timing Swing/Elliott (`T`), ejecucion
+Intraday (`X`), dilucion SEC (`D`), cartera (`P`) y beneficio/riesgo (`RR`). PatreonCaps aparece como contexto,
+pero no suma un voto independiente porque ya deriva parte de Long y Swing.
+
+Los subjects propios son:
+
+```text
+marketbot.v1.signal-fusion.assessment.<SYMBOL>
+marketbot.v1.signal-fusion.transition.<STATE>.<SYMBOL>
+marketbot.v1.signal-fusion.buy-confirmed.<SYMBOL>
+```
+
+`BUY_CONFIRMED` exige que todos los gates pasen, una invalidacion por debajo de la entrada, un
+objetivo por encima y `R/R >= 2`. La ausencia de un assessment SEC se muestra como `UNAVAILABLE` y
+no suma puntos; un resultado SEC `CAUTION` o `AVOID` aplica veto. Todo permanece en SHADOW y no
+envia ordenes al broker.
+
+`Z:Y R:Y S:N` no significa que falte soporte: indica que la zona sigue valida y fue defendida, pero
+todavia no aparecieron el higher high, higher low y reversal score necesarios para confirmar una
+nueva estructura alcista. Solo `S` participa como gate duro de compra.
+
+El launcher agrega la ventana `SignalFusion` con dos paneles: evidencia/`ARMED` arriba y compras
+confirmadas abajo. El panel inferior no hace sonar el replay historico, solo transiciones nuevas:
+
+```bash
+tmux select-window -t marketbot:SignalFusion
+uv run marketbot engine signal-fusion --once
+```

@@ -1,0 +1,254 @@
+"""Composition root for the one-shot manual Peter Lynch watchlist screen."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Protocol, cast
+
+import httpx
+
+from app.common.clock import SystemClock
+from app.common.settings import AppSettings, Environment
+from app.dilution_sec_engine import (
+    SecAdapterError,
+    SecEdgarConfig,
+    SecTickerNotFoundError,
+    SecTickerResolver,
+)
+from app.persistence import create_database_engine
+from app.peter_lynch_engine import PeterLynchEngine, PeterLynchEvaluation, PeterLynchSnapshot
+
+from .distributed_composition import build_rest
+from .peter_lynch_sec_adapter import PeterLynchSecAdapter, SecPeterLynchFacts
+from .peter_lynch_store import PostgresPeterLynchStore
+
+
+class WatchlistStore(Protocol):
+    async def load_symbols(self) -> tuple[str, ...]: ...
+
+    async def save(self, evaluations: tuple[PeterLynchEvaluation, ...]) -> int: ...
+
+
+class SnapshotPriceProvider(Protocol):
+    async def fetch_snapshots(
+        self, symbols: tuple[str, ...]
+    ) -> dict[str, Mapping[str, object]]: ...
+
+
+class TickerResolver(Protocol):
+    async def resolve(self, symbol: str) -> str: ...
+
+
+class SecFactsProvider(Protocol):
+    async def load(
+        self, *, cik: str | int, symbol: str, as_of: date
+    ) -> SecPeterLynchFacts: ...
+
+
+@dataclass(slots=True)
+class PeterLynchRunService:
+    """Coordinate one bounded run while isolating transient failures by symbol."""
+
+    store: WatchlistStore
+    prices: SnapshotPriceProvider
+    ticker_resolver: TickerResolver
+    sec: SecFactsProvider
+    batch_size: int = 20
+    calculator: PeterLynchEngine = field(default_factory=PeterLynchEngine)
+
+    async def run(self, *, now: datetime) -> dict[str, object]:
+        if now.tzinfo is None:
+            raise ValueError("Peter Lynch run time must be timezone-aware")
+        if self.batch_size < 1:
+            raise ValueError("Peter Lynch batch size must be positive")
+        symbols = await self.store.load_symbols()
+        as_of = now.astimezone(UTC).date()
+        snapshots: dict[str, Mapping[str, object]] = {}
+        failed_price_symbols: set[str] = set()
+        for index in range(0, len(symbols), self.batch_size):
+            batch = symbols[index : index + self.batch_size]
+            try:
+                snapshots.update(await self.prices.fetch_snapshots(batch))
+            except Exception:
+                failed_price_symbols.update(batch)
+
+        evaluations: list[PeterLynchEvaluation] = []
+        selected = 0
+        discarded = 0
+        unsupported = 0
+        errors = len(failed_price_symbols)
+        evaluated = 0
+        for symbol in symbols:
+            if symbol in failed_price_symbols:
+                continue
+            price, price_as_of = _snapshot_price(snapshots.get(symbol, {}), as_of=as_of)
+            try:
+                cik = await self.ticker_resolver.resolve(symbol)
+            except SecTickerNotFoundError:
+                unsupported += 1
+                evaluations.append(
+                    self.calculator.evaluate(
+                        _unsupported_snapshot(
+                            symbol=symbol,
+                            as_of=as_of,
+                            price=price,
+                            price_as_of=price_as_of,
+                        )
+                    )
+                )
+                continue
+            except SecAdapterError:
+                errors += 1
+                continue
+            try:
+                facts = await self.sec.load(cik=cik, symbol=symbol, as_of=as_of)
+            except SecAdapterError:
+                errors += 1
+                continue
+            evaluation = self.calculator.evaluate(
+                _combined_snapshot(
+                    facts,
+                    as_of=as_of,
+                    price=price,
+                    price_as_of=price_as_of,
+                )
+            )
+            evaluations.append(evaluation)
+            evaluated += 1
+            if evaluation.eligible:
+                selected += 1
+            else:
+                discarded += 1
+        saved = await self.store.save(tuple(evaluations)) if evaluations else 0
+        return {
+            "service": "peter-lynch-v1",
+            "evaluated": evaluated,
+            "selected": selected,
+            "discarded": discarded,
+            "unsupported": unsupported,
+            "errors": errors,
+            "saved": saved,
+        }
+
+
+async def run_peter_lynch_once() -> dict[str, object]:
+    """Build production adapters, evaluate the active watchlist once, and exit."""
+
+    settings = AppSettings()
+    if not settings.alpaca_configured:
+        raise ValueError("Alpaca market-data credentials are not configured")
+    if not settings.sec_configured or settings.sec_user_agent is None:
+        raise ValueError("MARKETBOT_SEC_USER_AGENT must include a contact email")
+    database = create_database_engine(
+        settings.database_url.get_secret_value(),
+        require_ssl=settings.environment is Environment.PRODUCTION,
+    )
+    rest = build_rest(settings)
+    client = httpx.AsyncClient()
+    sec_config = SecEdgarConfig(user_agent=settings.sec_user_agent)
+    resolver = SecTickerResolver(sec_config, client=client)
+    sec = PeterLynchSecAdapter(user_agent=settings.sec_user_agent, client=client)
+    try:
+        return await PeterLynchRunService(
+            store=PostgresPeterLynchStore(database),
+            prices=rest,
+            ticker_resolver=resolver,
+            sec=sec,
+            batch_size=settings.alpaca_rest_batch_size,
+        ).run(now=SystemClock().now())
+    finally:
+        await rest.close()
+        await client.aclose()
+        await database.dispose()
+
+
+def _combined_snapshot(
+    facts: SecPeterLynchFacts,
+    *,
+    as_of: date,
+    price: Decimal | None,
+    price_as_of: date | None,
+) -> PeterLynchSnapshot:
+    return PeterLynchSnapshot(
+        symbol=facts.symbol,
+        as_of=as_of,
+        price=price,
+        price_as_of=price_as_of,
+        ttm_eps=facts.ttm_eps,
+        prior_ttm_eps=facts.prior_ttm_eps,
+        annual_eps=facts.annual_eps,
+        debt=facts.debt,
+        equity=facts.equity,
+        goodwill=facts.goodwill,
+        intangibles_ex_goodwill=facts.intangibles_ex_goodwill,
+        shares_outstanding=facts.shares_outstanding,
+        sic=facts.sic,
+        insider_open_market_purchase_count=facts.insider_open_market_purchase_count,
+        fundamentals_as_of=facts.fundamentals_as_of,
+        latest_insider_purchase_at=facts.latest_insider_purchase_at,
+    )
+
+
+def _unsupported_snapshot(
+    *, symbol: str, as_of: date, price: Decimal | None, price_as_of: date | None
+) -> PeterLynchSnapshot:
+    return PeterLynchSnapshot(
+        symbol=symbol,
+        as_of=as_of,
+        price=price,
+        price_as_of=price_as_of,
+        ttm_eps=None,
+        prior_ttm_eps=None,
+        annual_eps=(),
+        debt=None,
+        equity=None,
+        goodwill=None,
+        intangibles_ex_goodwill=None,
+        shares_outstanding=None,
+        sic=None,
+        insider_open_market_purchase_count=None,
+        fundamentals_as_of=None,
+        latest_insider_purchase_at=None,
+    )
+
+
+def _snapshot_price(
+    snapshot: Mapping[str, object], *, as_of: date
+) -> tuple[Decimal | None, date | None]:
+    for snapshot_field, price_field in (("latestTrade", "p"), ("dailyBar", "c")):
+        raw = snapshot.get(snapshot_field)
+        if not isinstance(raw, Mapping):
+            continue
+        typed_raw = cast("Mapping[str, object]", raw)
+        price = _decimal(typed_raw.get(price_field))
+        observed_at = _timestamp_date(typed_raw.get("t"))
+        if (
+            price is not None
+            and price > 0
+            and observed_at is not None
+            and 0 <= (as_of - observed_at).days <= 5
+        ):
+            return price, observed_at
+    return None, None
+
+
+def _decimal(value: object) -> Decimal | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        parsed = Decimal(str(value))
+    except InvalidOperation:
+        return None
+    return parsed if parsed.is_finite() else None
+
+
+def _timestamp_date(value: object) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None

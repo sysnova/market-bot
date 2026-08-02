@@ -82,6 +82,10 @@ There is no Trading API, order intent, position sizing, or account state in this
 - NATS JetStream retains live market updates, engine results, service health, and final alerts.
 - Support Confirmation persists holdings-only assessments and state transitions in JetStream. It
   remains a SHADOW producer and has no dependency edge into PatreonCaps, ElliottWave, or Alert v2.
+- Signal Fusion consumes the stable NATS outputs from Support Confirmation, Elliott Wave, Long,
+  Swing, Intraday, dilution SEC, and PatreonCaps. It does not import or invoke those engines.
+  PatreonCaps is derived context and is never counted as another independent Long/Swing vote.
+  Fusion publishes its own assessment, transition, and SHADOW buy-confirmed subjects.
 - REST historical bars stay process-local and are reloaded independently after a restart.
 - Local alerts are fsync'd as canonical NDJSON, rotated by New York market date, and deduplicated
   across restarts within each daily ledger.

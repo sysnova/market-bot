@@ -181,6 +181,18 @@ class SupportConfirmationType(ContractEnum):
     SWEEP_RECLAIM = "SWEEP_RECLAIM"
 
 
+class FusionState(ContractEnum):
+    """Lifecycle of a cross-engine entry decision."""
+
+    INCOMPLETE = "INCOMPLETE"
+    OBSERVING = "OBSERVING"
+    ARMED = "ARMED"
+    BUY_CONFIRMED = "BUY_CONFIRMED"
+    VETOED = "VETOED"
+    INVALIDATED = "INVALIDATED"
+    EXPIRED = "EXPIRED"
+
+
 class MacroRegime(ContractEnum):
     RISK_ON = "RISK_ON"
     NEUTRAL = "NEUTRAL"

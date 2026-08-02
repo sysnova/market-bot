@@ -168,6 +168,50 @@ run_support_confirmation() {
   return "$status"
 }
 
+run_signal_fusion_analysis() {
+  cd "$PROJECT_ROOT"
+  mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
+  rm -f "$STATUS_ROOT/signal-fusion-v0.ready.json" \
+    "$STATUS_ROOT/signal-fusion-analysis.ready.json"
+  uv run marketbot engine signal-fusion \
+    --ready-path "$STATUS_ROOT/signal-fusion-v0.ready.json" \
+    >>"$LOG_ROOT/signal-fusion-v0.log" 2>&1 &
+  local engine_pid=$!
+  local monitor_pid=""
+  cleanup_signal_fusion() {
+    trap - EXIT INT TERM
+    kill "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
+    wait "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
+  }
+  trap cleanup_signal_fusion EXIT INT TERM
+  while [[ ! -f "$STATUS_ROOT/signal-fusion-v0.ready.json" ]]; do
+    if ! kill -0 "$engine_pid" 2>/dev/null; then
+      local status=0
+      wait "$engine_pid" || status=$?
+      cleanup_signal_fusion
+      return "$status"
+    fi
+    sleep 0.2
+  done
+  uv run marketbot monitor signal-fusion --mode analysis --no-bell \
+    --ready-path "$STATUS_ROOT/signal-fusion-analysis.ready.json" &
+  monitor_pid=$!
+  local status=0
+  wait -n "$engine_pid" "$monitor_pid" || status=$?
+  cleanup_signal_fusion
+  return "$status"
+}
+
+run_signal_fusion_buys() {
+  cd "$PROJECT_ROOT"
+  mkdir -p "$STATUS_ROOT"
+  rm -f "$STATUS_ROOT/signal-fusion-buys.ready.json"
+  local args=(run marketbot monitor signal-fusion --mode buys \
+    --ready-path "$STATUS_ROOT/signal-fusion-buys.ready.json")
+  ((NO_BELL)) && args+=(--no-bell)
+  exec uv "${args[@]}"
+}
+
 wait_ready() {
   local deadline=$((SECONDS + READY_TIMEOUT)) missing path
   while :; do
@@ -228,7 +272,7 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis}.ready.json
+  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
@@ -269,6 +313,9 @@ run_control() {
     "$STATUS_ROOT/elliott-wave-analysis.ready.json"
   wait_ready "$STATUS_ROOT/support-confirmation-v0.ready.json" \
     "$STATUS_ROOT/support-confirmation-analysis.ready.json"
+  wait_ready "$STATUS_ROOT/signal-fusion-v0.ready.json" \
+    "$STATUS_ROOT/signal-fusion-analysis.ready.json" \
+    "$STATUS_ROOT/signal-fusion-buys.ready.json"
 
   start_background alpaca-market-stream run marketbot market stream "${symbol_args[@]}"
   echo "All engines ready. Logs: $LOG_ROOT"
@@ -299,7 +346,7 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed long_portfolio patreon_analysis patreon_alerts elliott_wave support_confirmation
+  local control analysis confirmed long_portfolio patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
@@ -308,6 +355,8 @@ launch_tmux() {
   printf -v patreon_alerts '%q ' "${base[@]}" --role patreon-alerts
   printf -v elliott_wave '%q ' "${base[@]}" --role elliott-wave
   printf -v support_confirmation '%q ' "${base[@]}" --role support-confirmation
+  printf -v signal_fusion_analysis '%q ' "${base[@]}" --role signal-fusion-analysis
+  printf -v signal_fusion_buys '%q ' "${base[@]}" --role signal-fusion-buys
 
   if tmux has-session -t "$SESSION" 2>/dev/null; then
     if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'PatreonCaps'; then
@@ -325,6 +374,13 @@ launch_tmux() {
       tmux new-window -d -t "$SESSION" -n SupportConfirmation "$support_confirmation"
       tmux set-window-option -t "$SESSION":SupportConfirmation remain-on-exit on
       tmux select-pane -t "$SESSION":SupportConfirmation.0 -T 'SUPPORT CONFIRMATION — TENENCIAS'
+    fi
+    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'SignalFusion'; then
+      tmux new-window -d -t "$SESSION" -n SignalFusion "$signal_fusion_analysis"
+      tmux set-window-option -t "$SESSION":SignalFusion remain-on-exit on
+      tmux split-window -v -t "$SESSION":SignalFusion "$signal_fusion_buys"
+      tmux select-pane -t "$SESSION":SignalFusion.0 -T 'FUSION — Z/R/S + GATES'
+      tmux select-pane -t "$SESSION":SignalFusion.1 -T 'FUSION — BUY CONFIRMED'
     fi
     exec tmux attach-session -t "$SESSION"
   fi
@@ -353,6 +409,11 @@ launch_tmux() {
   tmux new-window -d -t "$SESSION" -n SupportConfirmation "$support_confirmation"
   tmux set-window-option -t "$SESSION":SupportConfirmation remain-on-exit on
   tmux select-pane -t "$SESSION":SupportConfirmation.0 -T 'SUPPORT CONFIRMATION — TENENCIAS'
+  tmux new-window -d -t "$SESSION" -n SignalFusion "$signal_fusion_analysis"
+  tmux set-window-option -t "$SESSION":SignalFusion remain-on-exit on
+  tmux split-window -v -t "$SESSION":SignalFusion "$signal_fusion_buys"
+  tmux select-pane -t "$SESSION":SignalFusion.0 -T 'FUSION — Z/R/S + GATES'
+  tmux select-pane -t "$SESSION":SignalFusion.1 -T 'FUSION — BUY CONFIRMED'
   tmux select-pane -t "$SESSION":0.0
   exec tmux attach-session -t "$SESSION"
 }
@@ -367,5 +428,7 @@ case "$ROLE" in
   patreon-alerts) run_patreon_caps_alerts ;;
   elliott-wave) run_elliott_wave ;;
   support-confirmation) run_support_confirmation ;;
+  signal-fusion-analysis) run_signal_fusion_analysis ;;
+  signal-fusion-buys) run_signal_fusion_buys ;;
   *) echo "Invalid internal role: $ROLE" >&2; exit 2 ;;
 esac

@@ -136,6 +136,10 @@ The same launcher also creates sibling `PatreonCaps`, `ElliottWave`, and
 `SupportConfirmation` windows. Support Confirmation is a holdings-only SHADOW view and keeps its
 reaction and structural-reversal scores separate.
 
+`SignalFusion` is a fifth sibling window. Its upper pane shows support zone (`Z`), reaction (`R`),
+structural confirmation (`S`), and every remaining cross-engine gate. Its lower pane shows only
+current SHADOW `BUY_CONFIRMED` decisions; no broker execution is enabled.
+
 The top pane controls lifecycle, the middle pane displays analyses, and the bottom pane displays
 confirmed purchases. Pressing `Ctrl+C` in the control pane stops all MarketBot processes.
 # Market Rotation local

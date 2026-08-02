@@ -37,6 +37,7 @@ class FakeJetStream:
     subscribed: list[tuple[str, str | None, object]] = field(default_factory=list)
     stream_queries: list[str] = field(default_factory=list)
     streams_added: list[tuple[str, list[str], float]] = field(default_factory=list)
+    last_messages: dict[str, FakeMessage] = field(default_factory=dict)
 
     async def publish(
         self, subject: str, payload: bytes, *, headers: dict[str, str] | None = None
@@ -66,6 +67,10 @@ class FakeJetStream:
     ) -> object:
         self.streams_added.append((name, subjects, max_age))
         return object()
+
+    async def get_last_msg(self, stream: str, subject: str) -> FakeMessage:
+        assert stream == "MARKETBOT"
+        return self.last_messages[subject]
 
 
 @dataclass
@@ -124,6 +129,23 @@ async def test_publish_does_not_duplicate_an_already_qualified_prefix(
     await bus.publish("marketbot.v1.market.bar.1Min.AAPL", event)
 
     assert js.published[0][0] == "marketbot.v1.market.bar.1Min.AAPL"
+
+
+@pytest.mark.unit
+async def test_get_last_reads_one_exact_subject_without_creating_consumer(
+    event: EventEnvelope,
+) -> None:
+    js = FakeJetStream()
+    js.last_messages["marketbot.v1.analysis.result.LONG_TERM.TGT"] = FakeMessage(
+        "marketbot.v1.analysis.result.LONG_TERM.TGT",
+        encode_envelope(event),
+    )
+    bus = NatsJetStreamEventBus(client=None, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]
+
+    restored = await bus.get_last("marketbot.v1.analysis.result.LONG_TERM.TGT")
+
+    assert restored == event
+    assert js.subscribed == []
 
 
 @pytest.mark.unit
