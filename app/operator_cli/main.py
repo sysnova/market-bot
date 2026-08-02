@@ -265,6 +265,22 @@ def patreon_caps_process(
     )
 
 
+@engine.command("elliott-wave")
+def elliott_wave_process(
+    once: Annotated[bool, typer.Option(help="Analyze held positions once and exit.")] = False,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after NATS and holdings are ready.")
+    ] = Path(".runtime/status/elliott-wave-v0.ready.json"),
+) -> None:
+    """Run Elliott Wave shadow analysis only for positive local holdings."""
+
+    from app.integration.elliott_wave_composition import run_elliott_wave_process
+
+    summary = _run_async(run_elliott_wave_process(ready_path=ready_path, once=once))
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
 
@@ -401,6 +417,19 @@ def patreon_caps_analysis_monitor(
             bell=False,
         )
     )
+
+
+@monitor.command("elliott-wave")
+def elliott_wave_analysis_monitor(
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after subscribing to NATS.")
+    ] = Path(".runtime/status/elliott-wave-analysis.ready.json"),
+) -> None:
+    """Show live Elliott Wave assessments for held positions."""
+
+    from app.integration.elliott_wave_monitor import run_elliott_wave_monitor
+
+    _run_async(run_elliott_wave_monitor(ready_path=ready_path))
 
 
 entry_watch = typer.Typer(

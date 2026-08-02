@@ -249,3 +249,21 @@ tmux select-window -t marketbot:PatreonCaps
 Si la sesion ya existe, el launcher no la mata ni la duplica; solamente agrega la ventana cuando
 falta. El panel de alertas recupera las ultimas 50 transiciones desde PostgreSQL y la campana suena
 unicamente para `PATREON_CAPS_BUY`.
+
+## Elliott Wave v0 SHADOW — solo tenencias
+
+El engine `elliott-wave@0.1.0` corre en paralelo y no altera Long, Swing, Intraday, AlertEngine ni
+PatreonCaps. Su universo se obtiene exclusivamente de `stock.customer_holding` en PostgreSQL local,
+filtrando posiciones activas con cantidad positiva; la watchlist no se incorpora. Publica un
+`WaveAssessment` por tenencia en `marketbot.v1.elliott-wave.assessment.<SYMBOL>`, retenido por
+JetStream durante 15 dias.
+
+El launcher agrega una tercera ventana hermana llamada `ElliottWave`, con un panel que muestra la
+hipotesis, score, confianza, zona, trigger, invalidacion y objetivos:
+
+```bash
+tmux select-window -t marketbot:ElliottWave
+```
+
+Es una lectura SHADOW: identifica candidatos de fin de onda 2/4 e impulso 3/5 activo, pero no emite
+ordenes ni alertas de compra.

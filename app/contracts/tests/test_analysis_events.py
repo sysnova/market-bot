@@ -7,6 +7,7 @@ from app.contracts import (
     EntryWatchStatus,
     PatreonCapsState,
     analysis_result_subject,
+    elliott_wave_assessment_subject,
     entry_watch_transition_subject,
     local_alert_subject,
     market_bar_subject,
@@ -35,6 +36,9 @@ def test_stable_analysis_subjects_are_partitioned_by_kind_and_symbol() -> None:
     )
     assert patreon_caps_transition_subject(PatreonCapsState.SUPPORT_TEST, "BRK.B") == (
         "marketbot.v1.patreon-caps.transition.SUPPORT_TEST.BRK_B"
+    )
+    assert elliott_wave_assessment_subject("BRK.B") == (
+        "marketbot.v1.elliott-wave.assessment.BRK_B"
     )
 
 

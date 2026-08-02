@@ -6,6 +6,7 @@ Only symbols imported here are part of the supported public contract surface.
 from ._base import Identifier, NonEmptyStr, SemVer, Sha256, StrictFrozenModel, new_uuid7
 from .analysis_events import (
     ANALYSIS_RESULT_EVENT,
+    ELLIOTT_WAVE_ASSESSMENT_EVENT,
     ENTRY_WATCH_TRANSITION_EVENT,
     LOCAL_ALERT_EVENT,
     MARKET_BAR_EVENT,
@@ -16,6 +17,7 @@ from .analysis_events import (
     PATREON_CAPS_TRANSITION_EVENT,
     SERVICE_HEALTH_EVENT,
     analysis_result_subject,
+    elliott_wave_assessment_subject,
     entry_watch_transition_subject,
     local_alert_subject,
     market_bar_subject,
@@ -35,6 +37,7 @@ from .domain import (
     ServiceHealth,
     TradePlan,
 )
+from .elliott_wave import WaveAssessment
 from .entry_watch import EntryWatchTransition
 from .enums import (
     AlertKind,
@@ -56,6 +59,7 @@ from .enums import (
     ServiceStatus,
     StrategyMode,
     TradeSide,
+    WavePhase,
 )
 from .event_bus import EventBus, EventHandler, Subscription, SubscriptionOptions
 from .market_analysis import AnalysisResult, LocalAlert, MarketBar
@@ -86,6 +90,7 @@ from .strategy import (
 
 __all__ = [
     "ANALYSIS_RESULT_EVENT",
+    "ELLIOTT_WAVE_ASSESSMENT_EVENT",
     "ENTRY_WATCH_TRANSITION_EVENT",
     "LOCAL_ALERT_EVENT",
     "MARKET_BAR_EVENT",
@@ -158,7 +163,10 @@ __all__ = [
     "SubscriptionOptions",
     "TradePlan",
     "TradeSide",
+    "WaveAssessment",
+    "WavePhase",
     "analysis_result_subject",
+    "elliott_wave_assessment_subject",
     "entry_watch_transition_subject",
     "local_alert_subject",
     "market_bar_subject",

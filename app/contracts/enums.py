@@ -146,6 +146,17 @@ class PatreonCapsState(ContractEnum):
     EXPIRED = "EXPIRED"
 
 
+class WavePhase(ContractEnum):
+    """Observable Elliott hypothesis; never an execution instruction."""
+
+    WAVE_2_ENDING = "WAVE_2_ENDING"
+    WAVE_3_ACTIVE = "WAVE_3_ACTIVE"
+    WAVE_4_ENDING = "WAVE_4_ENDING"
+    WAVE_5_ACTIVE = "WAVE_5_ACTIVE"
+    ABC_INCOMPLETE = "ABC_INCOMPLETE"
+    UNRESOLVED = "UNRESOLVED"
+
+
 class MacroRegime(ContractEnum):
     RISK_ON = "RISK_ON"
     NEUTRAL = "NEUTRAL"

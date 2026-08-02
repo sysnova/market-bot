@@ -46,6 +46,11 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
 `patreon_caps_transition_subject()`. Las constantes de tipo de evento son
 `PATREON_CAPS_ASSESSMENT_EVENT` y `PATREON_CAPS_TRANSITION_EVENT`.
 
+- Elliott Wave: `WaveAssessment` publica una hipotesis observacional independiente con
+  `WavePhase`, niveles, alternativa, evidencia y hash del contexto. Usa
+  `elliott_wave_assessment_subject()` y `ELLIOTT_WAVE_ASSESSMENT_EVENT`; no ocupa un
+  `AnalysisHorizon` y por eso no reemplaza el estado de Long, Swing o Intraday.
+
 ## Invariantes comprobadas
 
 Cada `PipelineStep` fija `rule_id` y `rule_version` SemVer exactos; bindings y scoring

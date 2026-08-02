@@ -26,6 +26,13 @@
 - Before handoff run `uv run ruff check .`, `uv run pyright`, and `uv run pytest`.
 - Never commit credentials. Configuration exposed in diagnostics must redact `SecretStr` values.
 
+## Runtime data sources
+
+- Do not query Supabase, its dashboard, Data API, MCP server, or remote projects for this repository unless the user explicitly requests Supabase.
+- Runtime persistence is local PostgreSQL configured by `MARKETBOT_DATABASE_URL` and local NATS JetStream configured by `MARKETBOT_NATS_URL`/`MARKETBOT_*` settings.
+- Treat files under `supabase/migrations/` as versioned PostgreSQL schema artifacts; their presence does not authorize or imply a Supabase lookup.
+- For persisted analytical events, inspect the local `MARKETBOT` JetStream and filter `marketbot.v1.analysis.result.>`.
+
 ## Change coordination
 
 - Respect folder ownership during parallel work and do not revert unrelated edits.

@@ -12,6 +12,7 @@ SERVICE_HEALTH_EVENT: Final = "service.health.reported"
 ENTRY_WATCH_TRANSITION_EVENT: Final = "entry-watch.transitioned"
 PATREON_CAPS_ASSESSMENT_EVENT: Final = "patreon-caps.assessed"
 PATREON_CAPS_TRANSITION_EVENT: Final = "patreon-caps.transitioned"
+ELLIOTT_WAVE_ASSESSMENT_EVENT: Final = "elliott-wave.assessed"
 MARKET_ROTATION_EVENT: Final = "market-rotation.analyzed"
 MARKET_ROTATION_SUBJECT: Final = "marketbot.v1.rotation.result"
 
@@ -45,6 +46,10 @@ def patreon_caps_transition_subject(status: object, symbol: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError("PatreonCaps state is invalid")
     return f"marketbot.v1.patreon-caps.transition.{value}.{_symbol_token(symbol)}"
+
+
+def elliott_wave_assessment_subject(symbol: str) -> str:
+    return f"marketbot.v1.elliott-wave.assessment.{_symbol_token(symbol)}"
 
 
 def _symbol_token(symbol: str) -> str:
