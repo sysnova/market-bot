@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
@@ -65,6 +65,12 @@ _NONCURRENT_DEBT_CONCEPTS = (
     "LongTermDebtNoncurrent",
 )
 
+ProgressReporter = Callable[[str], None]
+
+
+def _ignore_progress(_message: str) -> None:
+    """Default reporter for adapter callers that do not need progress events."""
+
 
 @dataclass(frozen=True, slots=True)
 class SecPeterLynchFacts:
@@ -114,6 +120,7 @@ class PeterLynchSecAdapter:
         timeout_seconds: float = 15.0,
         minimum_request_interval_seconds: float = 0.11,
         max_form4_documents: int = 100,
+        progress: ProgressReporter | None = None,
     ) -> None:
         config = SecEdgarConfig(user_agent=user_agent, timeout_seconds=timeout_seconds)
         if minimum_request_interval_seconds < 0:
@@ -125,6 +132,7 @@ class PeterLynchSecAdapter:
         self._owns_client = client is None
         self._minimum_interval = minimum_request_interval_seconds
         self._max_form4_documents = max_form4_documents
+        self._progress = progress or _ignore_progress
         self._request_lock = asyncio.Lock()
         self._last_request_at: float | None = None
 
@@ -144,11 +152,14 @@ class PeterLynchSecAdapter:
             await self._client.aclose()
 
     async def load(self, *, cik: str | int, symbol: str, as_of: date) -> SecPeterLynchFacts:
+        symbol = symbol.strip().upper()
         normalized_cik = SecEdgarAdapter.normalize_cik(cik)
+        self._progress(f"{symbol}: descargando submissions SEC.")
         submissions = _mapping(
             await self._request_json(f"/submissions/CIK{normalized_cik}.json"),
             "submissions",
         )
+        self._progress(f"{symbol}: descargando CompanyFacts SEC.")
         companyfacts = _mapping(
             await self._request_json(
                 f"/api/xbrl/companyfacts/CIK{normalized_cik}.json"
@@ -156,12 +167,24 @@ class PeterLynchSecAdapter:
             "companyfacts",
         )
         filings = await self._form4_references(submissions, as_of=as_of)
+        filings = filings[: self._max_form4_documents]
+        self._progress(f"{symbol}: {len(filings)} Form 4 para revisar.")
         purchases: list[date] = []
-        for reference in filings[: self._max_form4_documents]:
+        for position, reference in enumerate(filings, start=1):
+            self._progress(
+                f"{symbol}: revisando Form 4 {position}/{len(filings)} "
+                f"({reference.filed.isoformat()})."
+            )
             document = await self._request_text(
                 _archive_path(normalized_cik, reference)
             )
-            purchases.extend(_open_market_purchase_dates(document, as_of=as_of))
+            document_purchases = _open_market_purchase_dates(document, as_of=as_of)
+            purchases.extend(document_purchases)
+            if document_purchases:
+                self._progress(
+                    f"{symbol}: compra insider encontrada "
+                    f"({max(document_purchases).isoformat()})."
+                )
 
         facts = _mapping(companyfacts.get("facts"), "companyfacts.facts")
         eps = _first_series(
@@ -209,8 +232,8 @@ class PeterLynchSecAdapter:
             if item is not None
         ]
         selected.extend(annual_facts[-1:])
-        return SecPeterLynchFacts(
-            symbol=symbol.strip().upper(),
+        result = SecPeterLynchFacts(
+            symbol=symbol,
             ttm_eps=ttm_eps,
             prior_ttm_eps=prior_ttm_eps,
             annual_eps=annual_eps,
@@ -224,6 +247,8 @@ class PeterLynchSecAdapter:
             latest_insider_purchase_at=max(purchases, default=None),
             fundamentals_as_of=max((item.end for item in selected), default=None),
         )
+        self._progress(f"{symbol}: fundamentales SEC normalizados.")
+        return result
 
     async def _form4_references(
         self, submissions: Mapping[str, object], *, as_of: date

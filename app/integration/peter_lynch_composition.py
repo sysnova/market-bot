@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
@@ -24,6 +24,12 @@ from app.peter_lynch_engine import PeterLynchEngine, PeterLynchEvaluation, Peter
 from .distributed_composition import build_rest
 from .peter_lynch_sec_adapter import PeterLynchSecAdapter, SecPeterLynchFacts
 from .peter_lynch_store import PostgresPeterLynchStore
+
+ProgressReporter = Callable[[str], None]
+
+
+def _ignore_progress(_message: str) -> None:
+    """Default reporter for library callers that do not need console output."""
 
 
 class WatchlistStore(Protocol):
@@ -58,6 +64,7 @@ class PeterLynchRunService:
     sec: SecFactsProvider
     batch_size: int = 20
     calculator: PeterLynchEngine = field(default_factory=PeterLynchEngine)
+    progress: ProgressReporter = field(default=_ignore_progress, repr=False)
 
     async def run(self, *, now: datetime) -> dict[str, object]:
         if now.tzinfo is None:
@@ -65,15 +72,26 @@ class PeterLynchRunService:
         if self.batch_size < 1:
             raise ValueError("Peter Lynch batch size must be positive")
         symbols = await self.store.load_symbols()
+        self.progress(f"Watchlist: {len(symbols)} símbolos activos.")
         as_of = now.astimezone(UTC).date()
         snapshots: dict[str, Mapping[str, object]] = {}
         failed_price_symbols: set[str] = set()
         for index in range(0, len(symbols), self.batch_size):
             batch = symbols[index : index + self.batch_size]
+            first = index + 1
+            last = index + len(batch)
+            self.progress(
+                f"Alpaca: descargando precios {first}-{last} de {len(symbols)}."
+            )
             try:
                 snapshots.update(await self.prices.fetch_snapshots(batch))
+                self.progress(f"Alpaca: precios {first}-{last} recibidos.")
             except Exception:
                 failed_price_symbols.update(batch)
+                self.progress(
+                    f"Alpaca: error en precios {first}-{last}; "
+                    "se preservan las etiquetas existentes."
+                )
 
         evaluations: list[PeterLynchEvaluation] = []
         selected = 0
@@ -81,14 +99,18 @@ class PeterLynchRunService:
         unsupported = 0
         errors = len(failed_price_symbols)
         evaluated = 0
-        for symbol in symbols:
+        for position, symbol in enumerate(symbols, start=1):
             if symbol in failed_price_symbols:
                 continue
             price, price_as_of = _snapshot_price(snapshots.get(symbol, {}), as_of=as_of)
+            self.progress(f"[{position}/{len(symbols)}] {symbol}: resolviendo CIK SEC.")
             try:
                 cik = await self.ticker_resolver.resolve(symbol)
             except SecTickerNotFoundError:
                 unsupported += 1
+                self.progress(
+                    f"[{position}/{len(symbols)}] {symbol}: no soportado por SEC."
+                )
                 evaluations.append(
                     self.calculator.evaluate(
                         _unsupported_snapshot(
@@ -102,11 +124,22 @@ class PeterLynchRunService:
                 continue
             except SecAdapterError:
                 errors += 1
+                self.progress(
+                    f"[{position}/{len(symbols)}] {symbol}: error SEC al resolver CIK; "
+                    "se preserva la etiqueta existente."
+                )
                 continue
+            self.progress(
+                f"[{position}/{len(symbols)}] {symbol}: consultando fundamentales SEC."
+            )
             try:
                 facts = await self.sec.load(cik=cik, symbol=symbol, as_of=as_of)
             except SecAdapterError:
                 errors += 1
+                self.progress(
+                    f"[{position}/{len(symbols)}] {symbol}: error SEC; "
+                    "se preserva la etiqueta existente."
+                )
                 continue
             evaluation = self.calculator.evaluate(
                 _combined_snapshot(
@@ -120,9 +153,20 @@ class PeterLynchRunService:
             evaluated += 1
             if evaluation.eligible:
                 selected += 1
+                outcome = "seleccionado"
             else:
                 discarded += 1
-        saved = await self.store.save(tuple(evaluations)) if evaluations else 0
+                outcome = "descartado"
+            self.progress(
+                f"[{position}/{len(symbols)}] {symbol}: {outcome} "
+                f"{evaluation.passed_count}/7 ({evaluation.category.value})."
+            )
+        if evaluations:
+            self.progress(f"Persistencia: guardando {len(evaluations)} evaluaciones.")
+            saved = await self.store.save(tuple(evaluations))
+        else:
+            saved = 0
+        self.progress(f"Persistencia: {saved} evaluaciones actualizadas.")
         return {
             "service": "peter-lynch-v1",
             "evaluated": evaluated,
@@ -134,9 +178,13 @@ class PeterLynchRunService:
         }
 
 
-async def run_peter_lynch_once() -> dict[str, object]:
+async def run_peter_lynch_once(
+    *, progress: ProgressReporter | None = None
+) -> dict[str, object]:
     """Build production adapters, evaluate the active watchlist once, and exit."""
 
+    report = progress or _ignore_progress
+    report("Inicializando configuración y conexiones.")
     settings = AppSettings()
     if not settings.alpaca_configured:
         raise ValueError("Alpaca market-data credentials are not configured")
@@ -150,7 +198,11 @@ async def run_peter_lynch_once() -> dict[str, object]:
     client = httpx.AsyncClient()
     sec_config = SecEdgarConfig(user_agent=settings.sec_user_agent)
     resolver = SecTickerResolver(sec_config, client=client)
-    sec = PeterLynchSecAdapter(user_agent=settings.sec_user_agent, client=client)
+    sec = PeterLynchSecAdapter(
+        user_agent=settings.sec_user_agent,
+        client=client,
+        progress=report,
+    )
     try:
         return await PeterLynchRunService(
             store=PostgresPeterLynchStore(database),
@@ -158,6 +210,7 @@ async def run_peter_lynch_once() -> dict[str, object]:
             ticker_resolver=resolver,
             sec=sec,
             batch_size=settings.alpaca_rest_batch_size,
+            progress=report,
         ).run(now=SystemClock().now())
     finally:
         await rest.close()

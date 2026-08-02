@@ -218,7 +218,10 @@ def peter_lynch_engine_process() -> None:
 
     from app.integration.peter_lynch_composition import run_peter_lynch_once
 
-    summary = _run_async(run_peter_lynch_once())
+    def report(message: str) -> None:
+        typer.echo(f"[Peter Lynch] {message}", err=True)
+
+    summary = _run_async(run_peter_lynch_once(progress=report))
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 

@@ -82,6 +82,7 @@ def _submissions() -> dict[str, object]:
 @pytest.mark.unit
 async def test_maps_companyfacts_ttm_debt_equity_and_form4_purchase() -> None:
     requests: list[str] = []
+    progress: list[str] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
         requests.append(request.url.path)
@@ -101,7 +102,9 @@ async def test_maps_companyfacts_ttm_debt_equity_and_form4_purchase() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         result = await PeterLynchSecAdapter(
-            user_agent="MarketBot/0.1 operator@marketbot.test", client=client
+            user_agent="MarketBot/0.1 operator@marketbot.test",
+            client=client,
+            progress=progress.append,
         ).load(cik="1", symbol="TEST", as_of=date(2026, 8, 2))
 
     assert result.symbol == "TEST"
@@ -116,6 +119,14 @@ async def test_maps_companyfacts_ttm_debt_equity_and_form4_purchase() -> None:
     assert result.latest_insider_purchase_at == date(2026, 6, 9)
     assert requests[-1].endswith("/form4.xml")
     assert all("old-form4.xml" not in path for path in requests)
+    assert progress == [
+        "TEST: descargando submissions SEC.",
+        "TEST: descargando CompanyFacts SEC.",
+        "TEST: 1 Form 4 para revisar.",
+        "TEST: revisando Form 4 1/1 (2026-06-10).",
+        "TEST: compra insider encontrada (2026-06-09).",
+        "TEST: fundamentales SEC normalizados.",
+    ]
 
 
 @pytest.mark.unit

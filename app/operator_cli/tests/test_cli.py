@@ -1,8 +1,9 @@
 import asyncio
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -92,14 +93,18 @@ def test_peter_lynch_command_runs_once_and_prints_json() -> None:
         "errors": 0,
         "saved": 2,
     }
-    with patch(
-        "app.integration.peter_lynch_composition.run_peter_lynch_once",
-        new=AsyncMock(return_value=summary),
-    ):
+    async def fake_run(*, progress: Callable[[str], None]) -> dict[str, object]:
+        progress("Watchlist: 2 símbolos activos.")
+        progress("[1/2] TEST: seleccionado 7/7 (FAST_GROWER).")
+        return summary
+
+    with patch("app.integration.peter_lynch_composition.run_peter_lynch_once", new=fake_run):
         result = runner.invoke(app, ["engine", "peter-lynch"])
 
     assert result.exit_code == 0
     assert json.loads(result.stdout) == summary
+    assert "[Peter Lynch] Watchlist: 2 símbolos activos." in result.stderr
+    assert "[Peter Lynch] [1/2] TEST: seleccionado 7/7" in result.stderr
 
 
 def test_version_is_available_without_runtime_dependencies() -> None:

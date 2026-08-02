@@ -38,6 +38,7 @@ def facts(symbol: str) -> SecPeterLynchFacts:
 
 @pytest.mark.unit
 async def test_manual_run_evaluates_once_and_saves_only_non_transient_results() -> None:
+    progress: list[str] = []
     store = AsyncMock()
     store.load_symbols.return_value = ("GOOD", "UNSUPPORTED", "BROKEN")
     prices = AsyncMock()
@@ -61,6 +62,7 @@ async def test_manual_run_evaluates_once_and_saves_only_non_transient_results() 
         ticker_resolver=resolver,
         sec=sec,
         batch_size=100,
+        progress=progress.append,
     ).run(now=datetime(2026, 8, 2, 12, tzinfo=UTC))
 
     assert summary == {
@@ -76,6 +78,12 @@ async def test_manual_run_evaluates_once_and_saves_only_non_transient_results() 
     assert [item.symbol for item in saved] == ["GOOD", "UNSUPPORTED"]
     assert saved[0].eligible is True
     assert saved[1].eligible is False
+    assert progress[0] == "Watchlist: 3 símbolos activos."
+    assert any("[1/3] GOOD: consultando fundamentales SEC" in item for item in progress)
+    assert any("GOOD: seleccionado 7/7" in item for item in progress)
+    assert any("UNSUPPORTED: no soportado" in item for item in progress)
+    assert any("BROKEN: error SEC" in item for item in progress)
+    assert progress[-1] == "Persistencia: 2 evaluaciones actualizadas."
 
 
 @pytest.mark.unit
