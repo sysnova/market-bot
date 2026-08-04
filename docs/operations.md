@@ -4,6 +4,20 @@ The `marketbot` command is the stable operator entry point. Its `rules`, `strate
 `supervisor`, and `infra` groups are registered even when an optional operator module is absent. An
 absent module reports that fact and never pretends an operation succeeded.
 
+On native Windows, initialize the locked Python environment once before the first launch:
+
+```powershell
+.\scripts\windows\setup-market-bot.ps1
+```
+
+Windows launchers always use `.venv-windows`; Linux and WSL launchers use `.venv-linux`. This avoids
+the incompatible symlinks and interpreter paths produced when both operating systems share `.venv`.
+For manual Windows `uv` commands in the examples below, first run:
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = Join-Path (Get-Location) ".venv-windows"
+```
+
 ```shell
 uv run marketbot --help
 uv run marketbot --version

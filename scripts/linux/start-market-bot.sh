@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
 ROLE="launcher"
 RUNTIME_ROOT="$PROJECT_ROOT/.runtime"

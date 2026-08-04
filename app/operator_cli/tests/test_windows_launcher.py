@@ -7,9 +7,11 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).parents[3]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-market-bot.ps1"
+BOOTSTRAP_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "setup-market-bot.ps1"
 SEC_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-sec-bot.ps1"
 JETSTREAM_MONITOR_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "watch-jetstream.ps1"
 LONG_TMUX_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-long-portfolio-tmux.ps1"
+VISIBLE_HOST_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-visible-marketbot.ps1"
 POWERSHELL = shutil.which("powershell")
 
 
@@ -40,6 +42,37 @@ def test_windows_launcher_tiles_three_visible_windows_vertically() -> None:
     assert "Automatic mosaic failed but MarketBot will continue" in script
 
 
+def test_visible_windows_reselect_the_native_environment() -> None:
+    script = VISIBLE_HOST_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert '"environment.ps1"' in script
+    assert "Set-MarketBotWindowsEnvironment -ProjectRoot $ProjectRoot" in script
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_windows_bootstrap_uses_a_platform_specific_environment() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(BOOTSTRAP_SCRIPT_PATH),
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["environment"].endswith(".venv-windows")
+    assert plan["python"] == "3.14"
+    assert plan["sync_arguments"] == ["sync", "--locked"]
+
+
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
 def test_jetstream_monitor_builds_subscription_without_connecting() -> None:
     result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
@@ -63,7 +96,7 @@ def test_jetstream_monitor_builds_subscription_without_connecting() -> None:
     command = json.loads(result.stdout)
     assert command["subject"] == "marketbot.v1.analysis.result.>"
     assert command["nats_url"] == "nats://127.0.0.1:4222"
-    assert command["executable"].endswith(".venv\\Scripts\\python.exe")
+    assert command["executable"].endswith(".venv-windows\\Scripts\\python.exe")
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
@@ -92,6 +125,7 @@ def test_windows_launcher_builds_live_command_without_running_it() -> None:
     command = json.loads(result.stdout)
     assert command["working_directory"] == str(PROJECT_ROOT)
     assert command["executable"].endswith("uv.exe")
+    assert command["environment"].endswith(".venv-windows")
     assert command["arguments"][:3] == ["run", "marketbot", "live"]
     assert "--once" in command["arguments"]
     assert "--no-nats" in command["arguments"]
@@ -122,6 +156,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert result.returncode == 0, result.stderr
     plan = json.loads(result.stdout)
     assert plan["mode"] == "distributed"
+    assert plan["environment"].endswith(".venv-windows")
     assert [process["name"] for process in plan["processes"]] == [
         "alerts-v2",
         "entry-watcher-v3",

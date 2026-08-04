@@ -12,6 +12,7 @@ from app.contracts import (
     ELLIOTT_WAVE_ASSESSMENT_EVENT,
     FUSION_ASSESSMENT_EVENT,
     FUSION_BUY_CONFIRMED_EVENT,
+    FUSION_RECOVERY_CONFIRMED_EVENT,
     FUSION_TRANSITION_EVENT,
     PATREON_CAPS_ASSESSMENT_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
@@ -94,6 +95,7 @@ def test_fusion_panel_exposes_every_hard_gate() -> None:
         dilution_gate=True,
         portfolio_gate=True,
         reward_risk_gate=True,
+        recovery_gate=False,
         current_price=Decimal("105"),
         trigger_price=Decimal("106"),
         invalidation=Decimal("99"),
@@ -125,6 +127,7 @@ def test_fusion_panel_distinguishes_defended_zone_from_structure() -> None:
         dilution_gate=True,
         portfolio_gate=True,
         reward_risk_gate=True,
+        recovery_gate=False,
         current_price=Decimal("13.78"),
         trigger_price=Decimal("13.86"),
         invalidation=Decimal("12.9477"),
@@ -159,7 +162,11 @@ class _Engine:
         source = context.support or context.wave
         if source is None:
             raise AssertionError("fixture requires a price source")
-        confirmed = self.state is FusionState.BUY_CONFIRMED
+        confirmed = self.state in {
+            FusionState.BUY_CONFIRMED,
+            FusionState.RECOVERY_CONFIRMED,
+        }
+        recovery = self.state is FusionState.RECOVERY_CONFIRMED
         return FusionAssessment(
             symbol=context.symbol,
             occurred_at=source.occurred_at,
@@ -177,6 +184,7 @@ class _Engine:
             dilution_gate=True,
             portfolio_gate=True,
             reward_risk_gate=True,
+            recovery_gate=recovery,
             trigger_price=Decimal("103"),
             entry_price=Decimal("105"),
             invalidation=Decimal("100"),
@@ -249,6 +257,15 @@ async def test_runtime_deduplicates_and_emits_buy_only_on_state_change() -> None
         FUSION_BUY_CONFIRMED_EVENT,
     ]
     assert engine.contexts[-1].holding_quantity == Decimal("10")
+
+    engine.state = FusionState.RECOVERY_CONFIRMED
+    engine.hash = f"sha256:{'8' * 64}"
+    await runtime.handle_source(_support_event(support))
+    assert [item.event_type for _, item in publisher.items[-3:]] == [
+        FUSION_ASSESSMENT_EVENT,
+        FUSION_TRANSITION_EVENT,
+        FUSION_RECOVERY_CONFIRMED_EVENT,
+    ]
 
 
 def _wave() -> WaveAssessment:
@@ -435,3 +452,31 @@ async def test_analysis_monitor_replays_and_cleans_up(monkeypatch: pytest.Monkey
     assert _MonitorBus.instance is not None
     assert _MonitorBus.instance.subscription.unsubscribed is True
     assert _MonitorBus.instance.closed is True
+
+
+async def test_buy_monitor_includes_recovery_confirmations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _Engine()
+    engine.state = FusionState.RECOVERY_CONFIRMED
+    assessment = engine.evaluate(
+        SignalFusionContext(
+            symbol="TGT",
+            support=_support(),
+            wave=None,
+            analyses=(),
+            holding_quantity=Decimal("1"),
+        )
+    )
+    _MonitorBus.envelope = _event(FUSION_RECOVERY_CONFIRMED_EVENT, assessment)
+    monkeypatch.setattr(signal_fusion_monitor, "NatsJetStreamEventBus", _MonitorBus)
+    monkeypatch.setattr(signal_fusion_monitor.asyncio, "Event", _StopEvent)
+    output = StringIO()
+
+    with pytest.raises(RuntimeError, match="stop monitor"):
+        await run_signal_fusion_monitor(mode="buys", stream=output, bell=False)
+
+    assert "RECOVERY_CONFIRMED" in output.getvalue()
+    assert "marketbot.v1.signal-fusion.recovery-confirmed.>" in (
+        _MonitorBus.instance.subjects if _MonitorBus.instance is not None else []
+    )

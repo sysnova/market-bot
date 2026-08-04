@@ -72,10 +72,13 @@ def _display(value: object | None) -> str:
 
 
 def _format_assessment(item: WaveAssessment) -> str:
+    assessed_at = getattr(item, "assessed_at", None) or item.occurred_at
+    data_as_of = getattr(item, "data_as_of", None) or item.occurred_at
     return (
-        f"{item.occurred_at:%H:%M} {item.symbol:<6} {item.phase.value:<18} "
+        f"{assessed_at:%H:%M} {item.symbol:<6} {item.phase.value:<18} "
         f"SCORE {item.score} CONF {item.confidence} PX {item.current_price} "
         f"Z {_display(item.entry_zone_low)}-{_display(item.entry_zone_high)} "
         f"TRG {_display(item.trigger_price)} INV {_display(item.invalidation)} "
-        f"TGT {_display(item.target_low)}-{_display(item.target_high)}"
+        f"TGT {_display(item.target_low)}-{_display(item.target_high)} "
+        f"DATA {data_as_of:%m-%d %H:%M}"
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.contracts import (
@@ -33,7 +34,7 @@ class SignalFusionEngine:
     """Require independent structure, trend, timing, execution, and risk gates."""
 
     engine_id = "signal-fusion"
-    engine_version = "0.2.0"
+    engine_version = "0.3.0"
 
     def evaluate(self, context: SignalFusionContext) -> FusionAssessment:
         analyses = {item.horizon: item for item in context.analyses}
@@ -43,9 +44,7 @@ class SignalFusionEngine:
         swing = analyses.get(AnalysisHorizon.SWING)
         intraday = analyses.get(AnalysisHorizon.INTRADAY)
         dilution = analyses.get(AnalysisHorizon.DILUTION)
-        current_price = (
-            support.current_price if support is not None else _require_wave(wave).current_price
-        )
+        current_price = _current_price(intraday, support, wave)
 
         missing = tuple(
             name
@@ -83,11 +82,23 @@ class SignalFusionEngine:
         portfolio_gate = context.holding_quantity > ZERO
 
         trigger = _trigger_price(wave, intraday, current_price)
-        invalidation = _invalidation(context, current_price)
-        target = _target(context, current_price)
-        reward_risk = _reward_risk(current_price, invalidation, target)
-        reward_risk_gate = bool(
-            reward_risk is not None and reward_risk >= MIN_REWARD_RISK
+        standard_invalidation = _invalidation(context, current_price)
+        standard_target = _target(context, current_price)
+        standard_reward_risk = _reward_risk(
+            current_price, standard_invalidation, standard_target
+        )
+        standard_reward_risk_gate = bool(
+            standard_reward_risk is not None
+            and standard_reward_risk >= MIN_REWARD_RISK
+        )
+        recovery_invalidation = _recovery_invalidation(intraday, current_price)
+        recovery_target = _recovery_target(wave, swing, current_price)
+        recovery_reward_risk = _reward_risk(
+            current_price, recovery_invalidation, recovery_target
+        )
+        recovery_reward_risk_gate = bool(
+            recovery_reward_risk is not None
+            and recovery_reward_risk >= MIN_REWARD_RISK
         )
 
         invalidated = bool(
@@ -106,7 +117,18 @@ class SignalFusionEngine:
                 execution_gate,
                 dilution_gate,
                 portfolio_gate,
-                reward_risk_gate,
+                standard_reward_risk_gate,
+            )
+        )
+        recovery_gate = all(
+            (
+                support_zone_gate,
+                support_reaction_gate,
+                wave_gate,
+                execution_gate,
+                dilution_gate,
+                portfolio_gate,
+                recovery_reward_risk_gate,
             )
         )
         if invalidated:
@@ -117,13 +139,28 @@ class SignalFusionEngine:
             state = FusionState.INCOMPLETE
         elif all_gates:
             state = FusionState.BUY_CONFIRMED
+        elif recovery_gate:
+            state = FusionState.RECOVERY_CONFIRMED
         elif support_gate and trend_gate and timing_gate:
             state = FusionState.ARMED
         else:
             state = FusionState.OBSERVING
 
+        if state is FusionState.RECOVERY_CONFIRMED:
+            invalidation = recovery_invalidation
+            target = recovery_target
+            reward_risk = recovery_reward_risk
+            reward_risk_gate = recovery_reward_risk_gate
+        else:
+            invalidation = standard_invalidation
+            target = standard_target
+            reward_risk = standard_reward_risk
+            reward_risk_gate = standard_reward_risk_gate
+
         score = _score(
             support,
+            support_zone_gate=support_zone_gate,
+            support_reaction_gate=support_reaction_gate,
             support_gate=support_gate,
             trend_gate=trend_gate,
             swing_gate=swing_gate,
@@ -146,6 +183,8 @@ class SignalFusionEngine:
             dilution_available=dilution is not None,
             portfolio_gate=portfolio_gate,
             reward_risk_gate=reward_risk_gate,
+            recovery_gate=recovery_gate,
+            support=support,
             patreon=context.patreon,
         )
         assessment_ids = tuple(
@@ -180,6 +219,7 @@ class SignalFusionEngine:
             dilution_gate=dilution_gate,
             portfolio_gate=portfolio_gate,
             reward_risk_gate=reward_risk_gate,
+            recovery_gate=recovery_gate,
             trigger_price=trigger,
             entry_price=current_price if invalidation is not None and target is not None else None,
             invalidation=invalidation,
@@ -205,9 +245,28 @@ def _require_wave(wave: WaveAssessment | None) -> WaveAssessment:
     return wave
 
 
+def _current_price(
+    intraday: AnalysisResult | None,
+    support: SupportAssessment | None,
+    wave: WaveAssessment | None,
+) -> Decimal:
+    candidates: list[tuple[datetime, Decimal]] = []
+    intraday_price = _decimal_metric(intraday, "reference_price")
+    if intraday is not None and intraday_price is not None:
+        candidates.append((intraday.as_of, intraday_price))
+    if support is not None:
+        candidates.append((support.occurred_at, support.current_price))
+    if wave is not None:
+        candidates.append((wave.occurred_at, wave.current_price))
+    if not candidates:
+        return _require_wave(wave).current_price
+    return max(candidates, key=lambda item: item[0])[1]
+
+
 def _support_zone_gate(support: SupportAssessment | None) -> bool:
     if support is None or support.state in {
         SupportState.NO_KEY_SUPPORT,
+        SupportState.NO_NEARBY_SUPPORT,
         SupportState.INVALIDATED,
         SupportState.EXPIRED,
     }:
@@ -302,6 +361,28 @@ def _target(context: SignalFusionContext, current: Decimal) -> Decimal | None:
     return min(valid, default=None)
 
 
+def _recovery_invalidation(
+    intraday: AnalysisResult | None, current: Decimal
+) -> Decimal | None:
+    invalidation = _decimal_metric(intraday, "invalidation_level")
+    if invalidation is None or not ZERO < invalidation < current:
+        return None
+    return invalidation
+
+
+def _recovery_target(
+    wave: WaveAssessment | None,
+    swing: AnalysisResult | None,
+    current: Decimal,
+) -> Decimal | None:
+    values = (
+        wave.target_low if wave is not None else None,
+        _decimal_metric(swing, "target_2r"),
+    )
+    valid = tuple(item for item in values if item is not None and item > current)
+    return min(valid, default=None)
+
+
 def _reward_risk(
     entry: Decimal, invalidation: Decimal | None, target: Decimal | None
 ) -> Decimal | None:
@@ -313,6 +394,8 @@ def _reward_risk(
 def _score(
     support: SupportAssessment | None,
     *,
+    support_zone_gate: bool,
+    support_reaction_gate: bool,
     support_gate: bool,
     trend_gate: bool,
     swing_gate: bool,
@@ -323,11 +406,13 @@ def _score(
     portfolio_gate: bool,
     reward_risk_gate: bool,
 ) -> Decimal:
-    support_points = (
-        Decimal("30")
-        if support_gate
-        else (support.reversal_score * Decimal("0.30") if support is not None else ZERO)
-    )
+    support_points = Decimal("30") if support_gate else ZERO
+    if not support_gate and support is not None:
+        support_points = support.reversal_score * Decimal("0.30")
+        if support_zone_gate:
+            support_points = max(support_points, Decimal("10"))
+        if support_reaction_gate:
+            support_points = max(support_points, Decimal("15"))
     return min(
         HUNDRED,
         support_points
@@ -354,6 +439,8 @@ def _reasons(
     dilution_available: bool,
     portfolio_gate: bool,
     reward_risk_gate: bool,
+    recovery_gate: bool,
+    support: SupportAssessment | None,
     patreon: PatreonCapsAssessment | None,
 ) -> tuple[str, ...]:
     reasons: list[str] = [f"fusion_state_{state.value.lower()}"]
@@ -375,6 +462,19 @@ def _reasons(
         reasons.append("portfolio_holding_required")
     if not reward_risk_gate:
         reasons.append("reward_risk_below_two")
+    if recovery_gate:
+        reasons.extend(
+            (
+                "elliott_trigger_with_intraday_confirmation",
+                "recovery_entry_tactical_size_only",
+            )
+        )
+        if not support_gate:
+            reasons.append("support_structure_pending_for_scale_in")
+        if not trend_gate:
+            reasons.append("long_trend_pending_for_scale_in")
+        if support is not None and support.b_wave_risk:
+            reasons.append("support_b_wave_risk")
     if patreon is not None:
         reasons.append(f"patreon_context:{patreon.state.value}")
     return tuple(reasons)

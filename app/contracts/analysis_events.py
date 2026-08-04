@@ -18,6 +18,7 @@ SUPPORT_TRANSITION_EVENT: Final = "support-confirmation.transitioned"
 FUSION_ASSESSMENT_EVENT: Final = "signal-fusion.assessed"
 FUSION_TRANSITION_EVENT: Final = "signal-fusion.transitioned"
 FUSION_BUY_CONFIRMED_EVENT: Final = "signal-fusion.buy-confirmed"
+FUSION_RECOVERY_CONFIRMED_EVENT: Final = "signal-fusion.recovery-confirmed"
 MARKET_ROTATION_EVENT: Final = "market-rotation.analyzed"
 MARKET_ROTATION_SUBJECT: Final = "marketbot.v1.rotation.result"
 
@@ -81,6 +82,10 @@ def fusion_transition_subject(state: object, symbol: str) -> str:
 
 def fusion_buy_confirmed_subject(symbol: str) -> str:
     return f"marketbot.v1.signal-fusion.buy-confirmed.{_symbol_token(symbol)}"
+
+
+def fusion_recovery_confirmed_subject(symbol: str) -> str:
+    return f"marketbot.v1.signal-fusion.recovery-confirmed.{_symbol_token(symbol)}"
 
 
 def _symbol_token(symbol: str) -> str:

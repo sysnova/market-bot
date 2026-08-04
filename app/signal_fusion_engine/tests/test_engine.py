@@ -29,6 +29,9 @@ def _analysis(
     *,
     verdict: AnalysisVerdict = AnalysisVerdict.FAVORABLE,
     score: str = "80",
+    reference_price: str = "105",
+    invalidation_level: str = "100",
+    objective_level: str = "116",
 ) -> AnalysisResult:
     hash_tokens = {
         AnalysisHorizon.LONG_TERM: "1",
@@ -44,9 +47,10 @@ def _analysis(
         )
     elif horizon is AnalysisHorizon.INTRADAY:
         metrics = (
+            NamedValue(name="reference_price", value=Decimal(reference_price)),
             NamedValue(name="confirmation_gate_passed", value=True),
-            NamedValue(name="invalidation_level", value=Decimal("100")),
-            NamedValue(name="objective_level", value=Decimal("116")),
+            NamedValue(name="invalidation_level", value=Decimal(invalidation_level)),
+            NamedValue(name="objective_level", value=Decimal(objective_level)),
             NamedValue(name="reward_risk_ratio", value=Decimal("2.2")),
         )
     return AnalysisResult(
@@ -95,28 +99,30 @@ def _support(**updates: object) -> SupportAssessment:
     return SupportAssessment(**values)  # type: ignore[arg-type]
 
 
-def _wave() -> WaveAssessment:
-    return WaveAssessment(
-        symbol="TGT",
-        occurred_at=NOW,
-        engine_version="0.1.0",
-        primary_timeframe=BarTimeframe.DAY_1,
-        phase=WavePhase.WAVE_3_ACTIVE,
-        score=Decimal("85"),
-        confidence=Decimal("0.85"),
-        current_price=Decimal("105"),
-        wave1_origin=Decimal("80"),
-        wave1_peak=Decimal("110"),
-        corrective_low=Decimal("96"),
-        entry_zone_low=Decimal("96"),
-        entry_zone_high=Decimal("101"),
-        trigger_price=Decimal("103"),
-        invalidation=Decimal("94"),
-        target_low=Decimal("125"),
-        target_high=Decimal("132"),
-        reasons=("fixture",),
-        context_hash=f"sha256:{'b' * 64}",
-    )
+def _wave(**updates: object) -> WaveAssessment:
+    values: dict[str, object] = {
+        "symbol": "TGT",
+        "occurred_at": NOW,
+        "engine_version": "0.1.0",
+        "primary_timeframe": BarTimeframe.DAY_1,
+        "phase": WavePhase.WAVE_3_ACTIVE,
+        "score": Decimal("85"),
+        "confidence": Decimal("0.85"),
+        "current_price": Decimal("105"),
+        "wave1_origin": Decimal("80"),
+        "wave1_peak": Decimal("110"),
+        "corrective_low": Decimal("96"),
+        "entry_zone_low": Decimal("96"),
+        "entry_zone_high": Decimal("101"),
+        "trigger_price": Decimal("103"),
+        "invalidation": Decimal("94"),
+        "target_low": Decimal("125"),
+        "target_high": Decimal("132"),
+        "reasons": ("fixture",),
+        "context_hash": f"sha256:{'b' * 64}",
+    }
+    values.update(updates)
+    return WaveAssessment(**values)  # type: ignore[arg-type]
 
 
 def _patreon() -> PatreonCapsAssessment:
@@ -185,13 +191,99 @@ def test_strong_reaction_with_b_wave_risk_stays_observing() -> None:
         b_wave_risk=True,
     )
 
-    result = SignalFusionEngine().evaluate(_context(support=support))
+    analyses = (
+        _analysis(AnalysisHorizon.LONG_TERM),
+        _analysis(AnalysisHorizon.SWING),
+        _analysis(
+            AnalysisHorizon.INTRADAY,
+            verdict=AnalysisVerdict.WATCH,
+            score="50",
+        ),
+    )
+
+    result = SignalFusionEngine().evaluate(
+        _context(support=support, analyses=analyses)
+    )
 
     assert result.state is FusionState.OBSERVING
     assert result.support_zone_gate is True
     assert result.support_reaction_gate is True
     assert result.support_gate is False
     assert "support_structure_unconfirmed" in result.reasons
+
+
+def test_elliott_trigger_and_intraday_confirmation_open_recovery_path() -> None:
+    support = _support(
+        state=SupportState.REACTION_CONFIRMED,
+        current_price=Decimal("104"),
+        reversal_score=Decimal("10"),
+        higher_high=False,
+        higher_low=False,
+        b_wave_risk=True,
+    )
+    analyses = (
+        _analysis(
+            AnalysisHorizon.LONG_TERM,
+            verdict=AnalysisVerdict.WATCH,
+            score="20",
+        ),
+        _analysis(AnalysisHorizon.SWING),
+        _analysis(
+            AnalysisHorizon.INTRADAY,
+            reference_price="105",
+            invalidation_level="100",
+            objective_level="112.5",
+        ),
+    )
+
+    result = SignalFusionEngine().evaluate(
+        _context(support=support, analyses=analyses)
+    )
+
+    assert result.state is FusionState.RECOVERY_CONFIRMED
+    assert result.current_price == Decimal("105")
+    assert result.recovery_gate is True
+    assert result.support_zone_gate is True
+    assert result.support_reaction_gate is True
+    assert result.support_gate is False
+    assert result.trend_gate is False
+    assert result.timing_gate is True
+    assert result.execution_gate is True
+    assert result.invalidation == Decimal("100")
+    assert result.target_price == Decimal("120")
+    assert result.reward_risk_ratio == Decimal("3.0000")
+    assert "elliott_trigger_with_intraday_confirmation" in result.reasons
+    assert "recovery_entry_tactical_size_only" in result.reasons
+
+
+def test_recovery_path_waits_for_elliott_trigger() -> None:
+    support = _support(
+        state=SupportState.REACTION_CONFIRMED,
+        reversal_score=Decimal("10"),
+        higher_high=False,
+        higher_low=False,
+    )
+    analyses = (
+        _analysis(
+            AnalysisHorizon.LONG_TERM,
+            verdict=AnalysisVerdict.WATCH,
+            score="20",
+        ),
+        _analysis(AnalysisHorizon.SWING),
+        _analysis(AnalysisHorizon.INTRADAY),
+    )
+    wave = _wave(
+        phase=WavePhase.WAVE_2_ENDING,
+        trigger_price=Decimal("106"),
+    )
+
+    result = SignalFusionEngine().evaluate(
+        _context(support=support, wave=wave, analyses=analyses)
+    )
+
+    assert result.state is FusionState.OBSERVING
+    assert result.recovery_gate is False
+    assert result.timing_gate is True  # Swing is favorable but cannot replace Elliott here.
 
 
 def test_sec_avoid_is_a_hard_veto() -> None:

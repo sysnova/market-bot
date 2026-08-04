@@ -17,6 +17,8 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = [System.IO.Path]::GetFullPath(
     (Join-Path -Path $PSScriptRoot -ChildPath "..\..")
 )
+. (Join-Path -Path $PSScriptRoot -ChildPath "environment.ps1")
+$WindowsEnvironment = Set-MarketBotWindowsEnvironment -ProjectRoot $ProjectRoot
 
 if ([System.IO.Path]::IsPathRooted($RuntimeRoot)) {
     $ResolvedRuntimeRoot = [System.IO.Path]::GetFullPath($RuntimeRoot)
@@ -60,6 +62,7 @@ if ($Once -or $NoNats) {
     if ($DryRun) {
         [pscustomobject]@{
             executable = $UvCommand.Source
+            environment = $WindowsEnvironment
             arguments = $MarketBotArguments.ToArray()
             working_directory = $ProjectRoot
         } | ConvertTo-Json -Depth 3
@@ -215,6 +218,7 @@ if ($DryRun) {
     [pscustomobject]@{
         mode = "distributed"
         executable = $UvCommand.Source
+        environment = $WindowsEnvironment
         working_directory = $ProjectRoot
         processes = $ProcessSpecs.ToArray()
     } | ConvertTo-Json -Depth 5

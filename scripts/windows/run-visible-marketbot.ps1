@@ -13,6 +13,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $PSScriptRoot -ChildPath "..\.."))
+. (Join-Path -Path $PSScriptRoot -ChildPath "environment.ps1")
+$null = Set-MarketBotWindowsEnvironment -ProjectRoot $ProjectRoot
 $WindowTitle = if ($Role -eq "analysis") {
     "MarketBot Analysis"
 }

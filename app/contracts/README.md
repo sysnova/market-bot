@@ -49,16 +49,25 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
 - Elliott Wave: `WaveAssessment` publica una hipotesis observacional independiente con
   `WavePhase`, niveles, alternativa, evidencia y hash del contexto. Usa
   `elliott_wave_assessment_subject()` y `ELLIOTT_WAVE_ASSESSMENT_EVENT`; no ocupa un
-  `AnalysisHorizon` y por eso no reemplaza el estado de Long, Swing o Intraday.
+  `AnalysisHorizon` y por eso no reemplaza el estado de Long, Swing o Intraday. Los campos
+  aditivos `data_as_of` y `assessed_at` separan la vela estructural de la hora real de evaluacion;
+  `occurred_at` conserva el valor historico de `data_as_of` por compatibilidad v1.
 - Support Confirmation: `SupportAssessment` separa evidencia de reaccion local de evidencia de
   reversion estructural; `SupportTransition` conserva cada cambio de estado. Sus subjects viven en
-  `marketbot.v1.support-confirmation.*` y no modifican eventos de PatreonCaps.
+  `marketbot.v1.support-confirmation.*` y no modifican eventos de PatreonCaps. Comparte la misma
+  separacion aditiva `data_as_of`/`assessed_at` que Elliott Wave. `NO_NEARBY_SUPPORT` distingue la
+  ausencia de una zona accionable cercana de la ausencia de estructura: `structural_supports`
+  conserva referencias higher-timeframe y los campos `impulse_*` describen el ultimo pivote que
+  inicio un avance confirmado.
 
 - Signal Fusion combina mensajes existentes sin recalcularlos. `FusionAssessment` separa zona de
   soporte valida (`support_zone_gate`), reaccion/defensa (`support_reaction_gate`) y reversion
-  estructural (`support_gate`). `FusionTransition` conserva cambios y
-  `signal-fusion.buy-confirmed` solo se publica cuando todos los gates deterministas pasan.
-  PatreonCaps es contexto derivado, no un voto adicional.
+  estructural (`support_gate`). `FusionTransition` conserva cambios. El evento
+  `signal-fusion.buy-confirmed` exige todos los gates estructurales; el evento aditivo
+  `signal-fusion.recovery-confirmed` permite una entrada tactica cuando zona y reaccion de soporte,
+  trigger Elliott, confirmacion Intraday, SEC, cartera y beneficio/riesgo pasan, aunque Long y la
+  estructura de soporte todavia no hayan confirmado. PatreonCaps es contexto derivado, no un voto
+  adicional.
 
 ## Invariantes comprobadas
 

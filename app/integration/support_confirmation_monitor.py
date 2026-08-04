@@ -11,6 +11,7 @@ from app.contracts import (
     SUPPORT_ASSESSMENT_EVENT,
     SUPPORT_TRANSITION_EVENT,
     EventEnvelope,
+    StructuralSupportReference,
     SubscriptionOptions,
     SupportAssessment,
     SupportState,
@@ -105,14 +106,60 @@ def _display(value: object | None) -> str:
 
 def _format_assessment(item: SupportAssessment) -> str:
     risk = "YES" if item.b_wave_risk else "NO"
+    assessed_at = getattr(item, "assessed_at", None) or item.occurred_at
+    data_as_of = getattr(item, "data_as_of", None) or item.occurred_at
+    structural = _format_structural_supports(
+        getattr(item, "structural_supports", ())
+    )
+    impulse = _format_impulse(item)
     return (
-        f"{item.occurred_at:%H:%M} {item.symbol:<6} {item.state.value:<20} "
+        f"{assessed_at:%H:%M} {item.symbol:<6} {item.state.value:<20} "
         f"{item.confirmation_type.value:<15} SUP {item.support_score} "
         f"REACT {item.reaction_score} REV {item.reversal_score} "
         f"PX {item.current_price} Z {_display(item.zone_low)}-"
         f"{_display(item.zone_high)} INV {_display(item.invalidation)} "
-        f"B-RISK {risk}"
+        f"B-RISK {risk} STRUCT {structural} IMP {impulse} "
+        f"DATA {data_as_of:%m-%d %H:%M}"
     )
+
+
+def _format_structural_supports(
+    items: tuple[StructuralSupportReference, ...],
+) -> str:
+    if not items:
+        return "-"
+    return ",".join(
+        f"{_support_label(str(item.source))}:"
+        f"{item.price}(-{item.distance_percent}%)"
+        for item in items
+    )
+
+
+def _support_label(source: str) -> str:
+    labels = {
+        "daily_sma50": "D-SMA50",
+        "daily_sma200": "D-SMA200",
+        "weekly_sma10": "W-SMA10",
+        "weekly_sma30": "W-SMA30",
+        "weekly_sma50": "W-SMA50",
+        "weekly_sma200": "W-SMA200",
+    }
+    if source in labels:
+        return labels[source]
+    if source.startswith("pivot_daily_"):
+        return "D-PIVOT"
+    if source.startswith("pivot_weekly_"):
+        return "W-PIVOT"
+    return source.upper()
+
+
+def _format_impulse(item: SupportAssessment) -> str:
+    origin = getattr(item, "impulse_origin", None)
+    origin_at = getattr(item, "impulse_origin_at", None)
+    advance = getattr(item, "impulse_advance_percent", None)
+    if origin is None or origin_at is None or advance is None:
+        return "-"
+    return f"{origin}@{origin_at:%m-%d} +{advance}%"
 
 
 def _is_reentry_transition(item: SupportTransition) -> bool:

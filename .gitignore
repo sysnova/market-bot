@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .python-version.local
 .venv/
+.venv-windows/
+.venv-linux/
 .uv-cache/
 dist/
 build/

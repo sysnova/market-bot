@@ -16,6 +16,7 @@ from app.contracts import (
     ELLIOTT_WAVE_ASSESSMENT_EVENT,
     FUSION_ASSESSMENT_EVENT,
     FUSION_BUY_CONFIRMED_EVENT,
+    FUSION_RECOVERY_CONFIRMED_EVENT,
     FUSION_TRANSITION_EVENT,
     PATREON_CAPS_ASSESSMENT_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
@@ -34,6 +35,7 @@ from app.contracts import (
     elliott_wave_assessment_subject,
     fusion_assessment_subject,
     fusion_buy_confirmed_subject,
+    fusion_recovery_confirmed_subject,
     fusion_transition_subject,
     patreon_caps_assessment_subject,
     support_assessment_subject,
@@ -184,6 +186,17 @@ class SignalFusionRuntime:
                 fusion_buy_confirmed_subject(assessment.symbol),
                 EventEnvelope(
                     event_type=FUSION_BUY_CONFIRMED_EVENT,
+                    occurred_at=assessment.occurred_at,
+                    source="signal-fusion-v0-shadow",
+                    subject=assessment.symbol,
+                    payload=assessment,
+                ),
+            )
+        if assessment.state is FusionState.RECOVERY_CONFIRMED and changed:
+            await self._publisher.publish(
+                fusion_recovery_confirmed_subject(assessment.symbol),
+                EventEnvelope(
+                    event_type=FUSION_RECOVERY_CONFIRMED_EVENT,
                     occurred_at=assessment.occurred_at,
                     source="signal-fusion-v0-shadow",
                     subject=assessment.symbol,

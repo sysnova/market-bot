@@ -161,6 +161,7 @@ class SupportState(ContractEnum):
     """Lifecycle of an independently observed higher-timeframe support thesis."""
 
     NO_KEY_SUPPORT = "NO_KEY_SUPPORT"
+    NO_NEARBY_SUPPORT = "NO_NEARBY_SUPPORT"
     WATCH_KEY_SUPPORT = "WATCH_KEY_SUPPORT"
     FIRST_TOUCH = "FIRST_TOUCH"
     REACTION_CONFIRMED = "REACTION_CONFIRMED"
@@ -187,6 +188,7 @@ class FusionState(ContractEnum):
     INCOMPLETE = "INCOMPLETE"
     OBSERVING = "OBSERVING"
     ARMED = "ARMED"
+    RECOVERY_CONFIRMED = "RECOVERY_CONFIRMED"
     BUY_CONFIRMED = "BUY_CONFIRMED"
     VETOED = "VETOED"
     INVALIDATED = "INVALIDATED"

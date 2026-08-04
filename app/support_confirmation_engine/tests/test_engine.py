@@ -138,7 +138,7 @@ def test_short_consolidation_remains_base_building_without_breakout() -> None:
     assert result.reversal_score < Decimal("60")
 
 
-def test_without_confluence_engine_reports_no_key_support() -> None:
+def test_without_confluence_engine_reports_no_nearby_support() -> None:
     bars = tuple(
         _bar(
             index,
@@ -154,9 +154,10 @@ def test_without_confluence_engine_reports_no_key_support() -> None:
         SupportContext(symbol="TGT", daily_bars=bars)
     )
 
-    assert result.state is SupportState.NO_KEY_SUPPORT
+    assert result.state is SupportState.NO_NEARBY_SUPPORT
     assert result.zone_low is None
     assert result.b_wave_risk is False
+    assert "no_nearby_higher_timeframe_support" in result.reasons
 
 
 def test_engine_discovers_higher_timeframe_support_confluence() -> None:
@@ -195,9 +196,49 @@ def test_engine_discovers_higher_timeframe_support_confluence() -> None:
         SupportContext(symbol="TGT", daily_bars=daily, weekly_bars=weekly)
     )
 
-    assert result.state is not SupportState.NO_KEY_SUPPORT
+    assert result.state is not SupportState.NO_NEARBY_SUPPORT
     assert result.zone_low is not None
     assert len(result.support_sources) >= 2
+
+
+def test_engine_preserves_origin_of_a_recent_violent_impulse() -> None:
+    prices = (
+        *("100" for _ in range(15)),
+        "82",
+        "85",
+        "88",
+        "92",
+        "96",
+        "100",
+        "104",
+        "108",
+        "111",
+        "113",
+        "114",
+        "115",
+        "116",
+        "117",
+        "118",
+    )
+    bars = tuple(
+        _bar(
+            index,
+            open_=price,
+            high=str(Decimal(price) + Decimal("2")),
+            low=("80" if index == 15 else str(Decimal(price) - Decimal("1"))),
+            close=price,
+        )
+        for index, price in enumerate(prices)
+    )
+
+    result = SupportConfirmationEngine().evaluate(
+        SupportContext(symbol="TGT", daily_bars=bars)
+    )
+
+    assert result.impulse_origin == Decimal("80")
+    assert result.impulse_origin_at == bars[15].timestamp
+    assert result.impulse_peak == Decimal("120")
+    assert result.impulse_advance_percent == Decimal("50.0000")
 
 
 def test_failed_reaction_keeps_explicit_b_wave_risk() -> None:

@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
 
 from app.contracts import (
     MarketBar,
     NamedValue,
+    StructuralSupportReference,
     SupportAssessment,
     SupportConfirmationType,
     SupportState,
@@ -21,6 +23,9 @@ from .models import SupportContext, SupportZoneHint
 ZERO = Decimal()
 HUNDRED = Decimal("100")
 FOUR_PLACES = Decimal("0.0001")
+MIN_IMPULSE_PERCENT = Decimal("15")
+MIN_IMPULSE_ATR_MULTIPLE = Decimal("4")
+IMPULSE_LOOKBACK_BARS = 80
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,11 +35,19 @@ class _Level:
     points: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class _ImpulseReference:
+    origin: Decimal
+    origin_at: datetime
+    peak: Decimal
+    advance_percent: Decimal
+
+
 class SupportConfirmationEngine:
     """Keep reaction evidence separate from confirmation of a new uptrend."""
 
     engine_id = "support-confirmation"
-    engine_version = "0.1.0"
+    engine_version = "0.2.0"
 
     def evaluate(self, context: SupportContext) -> SupportAssessment:
         daily = tuple(bar for bar in context.daily_bars if bar.is_final)
@@ -43,19 +56,31 @@ class SupportConfirmationEngine:
         if len(daily) < 15:
             raise ValueError("Support Confirmation requires 15 completed daily bars")
         atr14 = _atr(daily)
+        current_price = daily[-1].close
+        structural_supports = _structural_supports(
+            _support_levels(daily, weekly, atr14), current_price, atr14
+        )
+        impulse = _recent_impulse(daily, atr14)
         zone = context.zone_hint or _best_zone(daily, weekly, atr14)
         if zone is None:
             return SupportAssessment(
                 symbol=context.symbol.strip().upper(),
                 occurred_at=daily[-1].timestamp,
                 engine_version=self.engine_version,
-                state=SupportState.NO_KEY_SUPPORT,
-                current_price=daily[-1].close,
+                state=SupportState.NO_NEARBY_SUPPORT,
+                current_price=current_price,
                 support_score=ZERO,
                 reaction_score=ZERO,
                 reversal_score=ZERO,
                 confidence=ZERO,
-                reasons=("no_key_higher_timeframe_support",),
+                structural_supports=structural_supports,
+                impulse_origin=impulse.origin if impulse is not None else None,
+                impulse_origin_at=impulse.origin_at if impulse is not None else None,
+                impulse_peak=impulse.peak if impulse is not None else None,
+                impulse_advance_percent=(
+                    impulse.advance_percent if impulse is not None else None
+                ),
+                reasons=("no_nearby_higher_timeframe_support",),
                 context_hash=_context_hash(daily, weekly, hourly),
             )
 
@@ -92,6 +117,11 @@ class SupportConfirmationEngine:
             higher_low=features.higher_low,
             b_wave_risk=b_wave_risk,
             support_sources=zone.sources,
+            structural_supports=structural_supports,
+            impulse_origin=impulse.origin if impulse is not None else None,
+            impulse_origin_at=impulse.origin_at if impulse is not None else None,
+            impulse_peak=impulse.peak if impulse is not None else None,
+            impulse_advance_percent=(impulse.advance_percent if impulse is not None else None),
             reasons=reasons,
             metrics=(
                 NamedValue(name="atr14_daily", value=_rounded(atr14)),
@@ -377,6 +407,64 @@ def _support_levels(
     round_level = (daily[-1].close / increment).quantize(Decimal("1")) * increment
     output.append(_Level(round_level, "round_number", Decimal("5")))
     return tuple(output)
+
+
+def _structural_supports(
+    levels: tuple[_Level, ...], price: Decimal, atr14: Decimal
+) -> tuple[StructuralSupportReference, ...]:
+    below = sorted(
+        (
+            level
+            for level in levels
+            if level.value < price and level.source != "round_number"
+        ),
+        key=lambda item: item.value,
+        reverse=True,
+    )
+    selected = list(below[:3])
+    weekly_sma200 = next(
+        (level for level in below if level.source == "weekly_sma200"), None
+    )
+    if weekly_sma200 is not None and all(
+        item.source != weekly_sma200.source for item in selected
+    ):
+        selected.append(weekly_sma200)
+    return tuple(
+        StructuralSupportReference(
+            source=level.source,
+            price=_rounded(level.value),
+            distance_percent=_rounded((price - level.value) / price * HUNDRED),
+            distance_atr=_rounded((price - level.value) / atr14),
+        )
+        for level in selected
+    )
+
+
+def _recent_impulse(
+    daily: tuple[MarketBar, ...], atr14: Decimal
+) -> _ImpulseReference | None:
+    pivot_lows, _ = _confirmed_pivots(daily)
+    minimum_index = max(0, len(daily) - IMPULSE_LOOKBACK_BARS)
+    for index in reversed(pivot_lows):
+        if index < minimum_index:
+            break
+        origin = daily[index].low
+        if origin >= daily[-1].close:
+            continue
+        peak = max(bar.high for bar in daily[index:])
+        advance = peak - origin
+        advance_percent = advance / origin * HUNDRED
+        if (
+            advance_percent >= MIN_IMPULSE_PERCENT
+            and advance >= atr14 * MIN_IMPULSE_ATR_MULTIPLE
+        ):
+            return _ImpulseReference(
+                origin=_rounded(origin),
+                origin_at=daily[index].timestamp,
+                peak=_rounded(peak),
+                advance_percent=_rounded(advance_percent),
+            )
+    return None
 
 
 def _confirmed_pivots(

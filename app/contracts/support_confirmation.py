@@ -22,6 +22,15 @@ from .enums import SupportConfirmationType, SupportState
 from .rules import NamedValue
 
 
+class StructuralSupportReference(StrictFrozenModel):
+    """Higher-timeframe support retained even when it is not actionable nearby."""
+
+    source: NonEmptyStr
+    price: PositiveDecimal
+    distance_percent: Decimal = Field(ge=Decimal("0"))
+    distance_atr: Decimal = Field(ge=Decimal("0"))
+
+
 class SupportAssessment(StrictFrozenModel):
     """Current support reaction and structural-reversal evidence for one symbol."""
 
@@ -40,11 +49,18 @@ class SupportAssessment(StrictFrozenModel):
     reaction_score: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
     reversal_score: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
     confidence: UnitInterval
+    data_as_of: datetime | None = None
+    assessed_at: datetime | None = None
     liquidity_sweep: bool = False
     higher_high: bool = False
     higher_low: bool = False
     b_wave_risk: bool = False
     support_sources: tuple[NonEmptyStr, ...] = ()
+    structural_supports: tuple[StructuralSupportReference, ...] = ()
+    impulse_origin: PositiveDecimal | None = None
+    impulse_origin_at: datetime | None = None
+    impulse_peak: PositiveDecimal | None = None
+    impulse_advance_percent: Decimal | None = Field(default=None, ge=Decimal("0"))
     reasons: tuple[NonEmptyStr, ...] = Field(min_length=1)
     metrics: tuple[NamedValue, ...] = ()
     context_hash: Sha256
@@ -53,8 +69,16 @@ class SupportAssessment(StrictFrozenModel):
     def validate_assessment(self) -> SupportAssessment:
         if self.assessment_id.version != 7:
             raise ValueError("assessment_id must be UUIDv7")
+        if self.data_as_of is not None and self.data_as_of != self.occurred_at:
+            raise ValueError("data_as_of must match legacy occurred_at")
+        data_as_of = self.data_as_of or self.occurred_at
+        if self.assessed_at is not None and self.assessed_at < data_as_of:
+            raise ValueError("assessed_at cannot precede data_as_of")
         levels = (self.zone_low, self.zone_center, self.zone_high, self.invalidation)
-        if self.state is not SupportState.NO_KEY_SUPPORT and any(
+        if self.state not in {
+            SupportState.NO_KEY_SUPPORT,
+            SupportState.NO_NEARBY_SUPPORT,
+        } and any(
             level is None for level in levels
         ):
             raise ValueError("support state requires a complete zone")
@@ -67,6 +91,29 @@ class SupportAssessment(StrictFrozenModel):
                 raise ValueError("support zone levels are out of order")
         if len(self.support_sources) != len(set(self.support_sources)):
             raise ValueError("support sources must be unique")
+        structural_sources = tuple(item.source for item in self.structural_supports)
+        if len(structural_sources) != len(set(structural_sources)):
+            raise ValueError("structural support sources must be unique")
+        if any(item.price >= self.current_price for item in self.structural_supports):
+            raise ValueError("structural support references must be below current price")
+        impulse = (
+            self.impulse_origin,
+            self.impulse_origin_at,
+            self.impulse_peak,
+            self.impulse_advance_percent,
+        )
+        if any(item is not None for item in impulse) and not all(
+            item is not None for item in impulse
+        ):
+            raise ValueError("impulse reference fields must be complete")
+        if (
+            self.impulse_origin is not None
+            and self.impulse_peak is not None
+            and self.impulse_origin >= self.impulse_peak
+        ):
+            raise ValueError("impulse peak must be above its origin")
+        if self.impulse_origin is not None and self.impulse_origin >= self.current_price:
+            raise ValueError("impulse origin support must be below current price")
         metric_names = tuple(item.name for item in self.metrics)
         if len(metric_names) != len(set(metric_names)):
             raise ValueError("support metrics must be unique by name")

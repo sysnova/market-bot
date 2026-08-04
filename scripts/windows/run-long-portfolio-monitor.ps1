@@ -7,6 +7,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
+. (Join-Path -Path $PSScriptRoot -ChildPath "environment.ps1")
+$null = Set-MarketBotWindowsEnvironment -ProjectRoot $ProjectRoot
 Set-Location -LiteralPath $ProjectRoot
 $Arguments = @(
     "run", "marketbot", "alerts", "long-portfolio", "--ready-path", $ReadyPath

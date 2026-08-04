@@ -11,11 +11,10 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = [System.IO.Path]::GetFullPath(
     (Join-Path -Path $PSScriptRoot -ChildPath "..\..")
 )
-$Python = Join-Path -Path $ProjectRoot -ChildPath ".venv\Scripts\python.exe"
+. (Join-Path -Path $PSScriptRoot -ChildPath "environment.ps1")
+$WindowsEnvironment = Set-MarketBotWindowsEnvironment -ProjectRoot $ProjectRoot
+$Python = Join-Path -Path $WindowsEnvironment -ChildPath "Scripts\python.exe"
 
-if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
-    throw "MarketBot virtual environment was not found at $Python"
-}
 if ([string]::IsNullOrWhiteSpace($Subject)) {
     throw "Subject cannot be blank."
 }
@@ -31,6 +30,10 @@ if ($DryRun) {
         working_directory = $ProjectRoot
     } | ConvertTo-Json -Depth 2
     exit 0
+}
+if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
+    $SetupScript = Join-Path -Path $PSScriptRoot -ChildPath "setup-market-bot.ps1"
+    throw "MarketBot Windows environment was not found at $Python. Run $SetupScript first."
 }
 
 $MonitorSource = @'

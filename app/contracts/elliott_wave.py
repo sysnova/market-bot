@@ -34,6 +34,8 @@ class WaveAssessment(StrictFrozenModel):
     score: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
     confidence: UnitInterval
     current_price: PositiveDecimal
+    data_as_of: datetime | None = None
+    assessed_at: datetime | None = None
     wave1_origin: PositiveDecimal | None = None
     wave1_peak: PositiveDecimal | None = None
     wave2_low: PositiveDecimal | None = None
@@ -57,6 +59,11 @@ class WaveAssessment(StrictFrozenModel):
     def validate_assessment(self) -> WaveAssessment:
         if self.assessment_id.version != 7:
             raise ValueError("assessment_id must be UUIDv7")
+        if self.data_as_of is not None and self.data_as_of != self.occurred_at:
+            raise ValueError("data_as_of must match legacy occurred_at")
+        data_as_of = self.data_as_of or self.occurred_at
+        if self.assessed_at is not None and self.assessed_at < data_as_of:
+            raise ValueError("assessed_at cannot precede data_as_of")
         actionable = {
             WavePhase.WAVE_2_ENDING,
             WavePhase.WAVE_3_ACTIVE,

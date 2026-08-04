@@ -41,6 +41,7 @@ class FusionAssessment(StrictFrozenModel):
     dilution_gate: bool = False
     portfolio_gate: bool = False
     reward_risk_gate: bool = False
+    recovery_gate: bool = False
     trigger_price: PositiveDecimal | None = None
     entry_price: PositiveDecimal | None = None
     invalidation: PositiveDecimal | None = None
@@ -85,6 +86,28 @@ class FusionAssessment(StrictFrozenModel):
             )
             if any(level is None for level in levels):
                 raise ValueError("BUY_CONFIRMED requires complete trade levels")
+        if self.state is FusionState.RECOVERY_CONFIRMED:
+            gates = (
+                self.support_zone_gate,
+                self.support_reaction_gate,
+                self.timing_gate,
+                self.execution_gate,
+                self.dilution_gate,
+                self.portfolio_gate,
+                self.reward_risk_gate,
+                self.recovery_gate,
+            )
+            if not all(gates):
+                raise ValueError("RECOVERY_CONFIRMED requires all recovery gates")
+            levels = (
+                self.trigger_price,
+                self.entry_price,
+                self.invalidation,
+                self.target_price,
+                self.reward_risk_ratio,
+            )
+            if any(level is None for level in levels):
+                raise ValueError("RECOVERY_CONFIRMED requires complete trade levels")
         if (
             self.entry_price is not None
             and self.invalidation is not None

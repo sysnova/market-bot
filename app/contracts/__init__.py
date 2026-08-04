@@ -10,6 +10,7 @@ from .analysis_events import (
     ENTRY_WATCH_TRANSITION_EVENT,
     FUSION_ASSESSMENT_EVENT,
     FUSION_BUY_CONFIRMED_EVENT,
+    FUSION_RECOVERY_CONFIRMED_EVENT,
     FUSION_TRANSITION_EVENT,
     LOCAL_ALERT_EVENT,
     MARKET_BAR_EVENT,
@@ -26,6 +27,7 @@ from .analysis_events import (
     entry_watch_transition_subject,
     fusion_assessment_subject,
     fusion_buy_confirmed_subject,
+    fusion_recovery_confirmed_subject,
     fusion_transition_subject,
     local_alert_subject,
     market_bar_subject,
@@ -108,7 +110,11 @@ from .strategy import (
     StrategySpec,
     validate_primary_uniqueness,
 )
-from .support_confirmation import SupportAssessment, SupportTransition
+from .support_confirmation import (
+    StructuralSupportReference,
+    SupportAssessment,
+    SupportTransition,
+)
 
 __all__ = [
     "ANALYSIS_RESULT_EVENT",
@@ -116,6 +122,7 @@ __all__ = [
     "ENTRY_WATCH_TRANSITION_EVENT",
     "FUSION_ASSESSMENT_EVENT",
     "FUSION_BUY_CONFIRMED_EVENT",
+    "FUSION_RECOVERY_CONFIRMED_EVENT",
     "FUSION_TRANSITION_EVENT",
     "LOCAL_ALERT_EVENT",
     "MARKET_BAR_EVENT",
@@ -194,6 +201,7 @@ __all__ = [
     "StrategyPolicies",
     "StrategySpec",
     "StrictFrozenModel",
+    "StructuralSupportReference",
     "Subscription",
     "SubscriptionOptions",
     "SupportAssessment",
@@ -209,6 +217,7 @@ __all__ = [
     "entry_watch_transition_subject",
     "fusion_assessment_subject",
     "fusion_buy_confirmed_subject",
+    "fusion_recovery_confirmed_subject",
     "fusion_transition_subject",
     "local_alert_subject",
     "market_bar_subject",

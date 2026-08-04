@@ -20,8 +20,32 @@ tests.
 
 ## Bootstrap
 
+Native Windows and Linux/WSL environments are deliberately separate. A virtual environment
+created by Linux contains links and interpreter paths that `uv.exe` cannot reuse on Windows.
+
+On Windows PowerShell, use the repository bootstrap. It installs Python 3.14 when needed and
+synchronizes the lockfile into `.venv-windows`:
+
+```powershell
+.\scripts\windows\setup-market-bot.ps1
+```
+
+Use `-Recreate` when you intentionally want to replace that disposable Windows environment.
+Every script under `scripts/windows/` selects `.venv-windows` automatically.
+
+On Linux or WSL, the launchers select `.venv-linux`. For a manual development shell, set the same
+path before using `uv`:
+
 ```shell
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv-linux"
 uv python install 3.14
+uv sync --locked
+```
+
+For manual `uv` commands in Windows PowerShell, select the Windows environment for that shell:
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = Join-Path (Get-Location) ".venv-windows"
 uv sync --locked
 uv run marketbot --help
 ```
@@ -89,6 +113,12 @@ as an independent warning but never penalizes, gates, or invalidates an entry. A
 database or migration is unavailable, the distributed launcher stops before opening the market
 stream so it cannot silently lose persistent opportunity tracking. The legacy `live` diagnostic
 continues without it and logs that persistent entry watching is disabled.
+
+Entry Watcher v3 also preserves a recent zone touch through a moderate opening gap or breakaway.
+For 72 hours it may confirm outside the frozen zone when extension stays within 4% and 0.75 ATR,
+Intraday v3 confirms, anchored VWAP remains healthy, and live reward/risk is at least 2. This path
+emits an early breakaway watch before `ENTRY TRIGGERED`; moves beyond the chase cap are labelled
+`ENTRY EXTENDED WAIT` and require a retest.
 
 Run the bounded SEC scan manually with `.\scripts\windows\run-sec-bot.ps1`. It checks only the
 configured recent filing-date window (two days by default), considers dilution-related forms, and

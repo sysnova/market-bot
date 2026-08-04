@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from app.common.clock import FrozenClock
 from app.contracts import (
     MARKET_BAR_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
@@ -87,6 +88,8 @@ def test_tmux_launcher_can_leave_the_runtime_detached() -> None:
 def test_panel_separates_reaction_from_reversal() -> None:
     item = SimpleNamespace(
         occurred_at=datetime(2026, 8, 2, 20, tzinfo=UTC),
+        data_as_of=datetime(2026, 8, 2, 4, tzinfo=UTC),
+        assessed_at=datetime(2026, 8, 2, 20, tzinfo=UTC),
         symbol="TGT",
         state=SupportState.RECLAIMED,
         confirmation_type=SupportConfirmationType.SWEEP_RECLAIM,
@@ -98,14 +101,30 @@ def test_panel_separates_reaction_from_reversal() -> None:
         zone_high=Decimal("101"),
         invalidation=Decimal("96"),
         b_wave_risk=True,
+        structural_supports=(
+            SimpleNamespace(
+                source="weekly_sma200",
+                price=Decimal("391.03"),
+                distance_percent=Decimal("19.81"),
+                distance_atr=Decimal("5.53"),
+            ),
+        ),
+        impulse_origin=Decimal("377.39"),
+        impulse_origin_at=datetime(2026, 7, 23, tzinfo=UTC),
+        impulse_peak=Decimal("491.65"),
+        impulse_advance_percent=Decimal("30.28"),
     )
 
     text = _format_assessment(item)
 
     assert "RECLAIMED" in text
+    assert text.startswith("20:00 TGT")
+    assert "DATA 08-02 04:00" in text
     assert "REACT 82" in text
     assert "REV 25" in text
     assert "B-RISK YES" in text
+    assert "STRUCT W-SMA200:391.03" in text
+    assert "IMP 377.39@07-23 +30.28%" in text
 
 
 def test_reentry_alarm_only_accepts_structural_confirmation() -> None:
@@ -228,7 +247,12 @@ def _envelope(bar: MarketBar, *, event_type: str = MARKET_BAR_EVENT) -> EventEnv
 async def test_runtime_publishes_assessment_transition_and_deduplicates() -> None:
     publisher = _Publisher()
     engine = _Engine()
-    runtime = SupportConfirmationRuntime(engine=engine, publisher=publisher)
+    assessed_at = datetime(2026, 8, 3, 22, 30, tzinfo=UTC)
+    runtime = SupportConfirmationRuntime(
+        engine=engine,
+        publisher=publisher,
+        clock=FrozenClock(assessed_at),
+    )
 
     published = await runtime.bootstrap(
         (*(_bar(index) for index in range(15)), _bar(1, symbol="WATCH")),
@@ -242,6 +266,13 @@ async def test_runtime_publishes_assessment_transition_and_deduplicates() -> Non
     ]
     assert publisher.items[0][0].endswith("assessment.TGT")
     assert publisher.items[1][0].endswith("transition.RECLAIMED.TGT")
+    assessment_envelope = publisher.items[0][1]
+    assessment = assessment_envelope.payload
+    assert isinstance(assessment, SupportAssessment)
+    assert assessment.data_as_of == _bar(14).timestamp
+    assert assessment.assessed_at == assessed_at
+    assert assessment_envelope.occurred_at == assessed_at
+    assert publisher.items[1][1].occurred_at == assessed_at
 
     await runtime.handle_market(_envelope(_bar(15)))
     assert len(publisher.items) == 2

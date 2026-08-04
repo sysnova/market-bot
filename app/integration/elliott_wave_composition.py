@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
-from app.common.clock import SystemClock
+from app.common.clock import Clock, SystemClock
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ELLIOTT_WAVE_ASSESSMENT_EVENT,
@@ -63,9 +63,16 @@ async def load_held_symbols(provider: HoldingsProvider) -> UniverseSnapshot:
 
 
 class ElliottWaveRuntime:
-    def __init__(self, *, engine: ElliottWaveEngine, publisher: WavePublisher) -> None:
+    def __init__(
+        self,
+        *,
+        engine: ElliottWaveEngine,
+        publisher: WavePublisher,
+        clock: Clock | None = None,
+    ) -> None:
         self._engine = engine
         self._publisher = publisher
+        self._clock = clock or SystemClock()
         self._bars = MarketBarStore(capacity_per_series=600)
         self._symbols: set[str] = set()
         self._last_evaluated_at: dict[str, datetime] = {}
@@ -107,9 +114,10 @@ class ElliottWaveRuntime:
         latest = daily[-1].timestamp
         if self._last_evaluated_at.get(symbol) == latest:
             return False
-        assessment = self._engine.evaluate(
+        raw_assessment = self._engine.evaluate(
             WaveContext(symbol=symbol, daily_bars=daily, hourly_bars=hourly)
         )
+        assessment = _stamp_assessment(raw_assessment, self._clock.now())
         await self._publish(assessment)
         self._last_evaluated_at[symbol] = latest
         return True
@@ -119,12 +127,24 @@ class ElliottWaveRuntime:
             elliott_wave_assessment_subject(assessment.symbol),
             EventEnvelope(
                 event_type=ELLIOTT_WAVE_ASSESSMENT_EVENT,
-                occurred_at=assessment.occurred_at,
+                occurred_at=assessment.assessed_at or assessment.occurred_at,
                 source="elliott-wave-v0",
                 subject=assessment.symbol,
                 payload=assessment,
             ),
         )
+
+
+def _stamp_assessment(
+    assessment: WaveAssessment, assessed_at: datetime
+) -> WaveAssessment:
+    return WaveAssessment.model_validate(
+        {
+            **assessment.model_dump(mode="python"),
+            "data_as_of": assessment.occurred_at,
+            "assessed_at": assessed_at,
+        }
+    )
 
 
 async def run_elliott_wave_process(

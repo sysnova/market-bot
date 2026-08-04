@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
-from app.common.clock import SystemClock
+from app.common.clock import Clock, SystemClock
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     MARKET_BAR_EVENT,
@@ -73,9 +73,16 @@ async def load_support_holdings(provider: HoldingsProvider) -> UniverseSnapshot:
 
 
 class SupportConfirmationRuntime:
-    def __init__(self, *, engine: SupportEngine, publisher: SupportPublisher) -> None:
+    def __init__(
+        self,
+        *,
+        engine: SupportEngine,
+        publisher: SupportPublisher,
+        clock: Clock | None = None,
+    ) -> None:
         self._engine = engine
         self._publisher = publisher
+        self._clock = clock or SystemClock()
         self._bars = MarketBarStore(capacity_per_series=650)
         self._symbols: set[str] = set()
         self._latest: dict[str, SupportAssessment] = {}
@@ -130,7 +137,7 @@ class SupportConfirmationRuntime:
         weekly = self._bars.history(symbol, BarTimeframe.WEEK_1, limit=420, final_only=True)
         hourly = self._bars.history(symbol, BarTimeframe.HOUR_1, limit=500, final_only=True)
         previous = self._latest.get(symbol)
-        assessment = self._engine.evaluate(
+        raw_assessment = self._engine.evaluate(
             SupportContext(
                 symbol=symbol,
                 daily_bars=daily,
@@ -139,6 +146,7 @@ class SupportConfirmationRuntime:
                 previous_assessment=previous,
             )
         )
+        assessment = _stamp_assessment(raw_assessment, self._clock.now())
         if previous is not None and _same_observation(previous, assessment):
             return False
         self._latest[symbol] = assessment
@@ -152,7 +160,7 @@ class SupportConfirmationRuntime:
             support_assessment_subject(assessment.symbol),
             EventEnvelope(
                 event_type=SUPPORT_ASSESSMENT_EVENT,
-                occurred_at=assessment.occurred_at,
+                occurred_at=assessment.assessed_at or assessment.occurred_at,
                 source="support-confirmation-v0",
                 subject=assessment.symbol,
                 payload=assessment,
@@ -165,7 +173,7 @@ class SupportConfirmationRuntime:
         transition = SupportTransition(
             assessment_id=assessment.assessment_id,
             symbol=assessment.symbol,
-            occurred_at=assessment.occurred_at,
+            occurred_at=assessment.assessed_at or assessment.occurred_at,
             engine_version=assessment.engine_version,
             previous_state=previous.state if previous is not None else None,
             state=assessment.state,
@@ -201,6 +209,23 @@ def _same_observation(previous: SupportAssessment, current: SupportAssessment) -
         and previous.reaction_score == current.reaction_score
         and previous.reversal_score == current.reversal_score
         and previous.b_wave_risk is current.b_wave_risk
+        and previous.current_price == current.current_price
+        and previous.structural_supports == current.structural_supports
+        and previous.impulse_origin == current.impulse_origin
+        and previous.impulse_peak == current.impulse_peak
+        and previous.impulse_advance_percent == current.impulse_advance_percent
+    )
+
+
+def _stamp_assessment(
+    assessment: SupportAssessment, assessed_at: datetime
+) -> SupportAssessment:
+    return SupportAssessment.model_validate(
+        {
+            **assessment.model_dump(mode="python"),
+            "data_as_of": assessment.occurred_at,
+            "assessed_at": assessed_at,
+        }
     )
 
 
