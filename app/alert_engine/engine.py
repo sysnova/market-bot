@@ -79,15 +79,33 @@ class AlertEngine:
             EntryWatchStatus.EXPIRED: (AlertSeverity.INFO, Decimal("10")),
         }[transition.status]
         status = transition.status.value
+        breakaway_pending = "breakaway_continuation_pending" in transition.reasons
+        chase_cap_exceeded = "continuation_chase_cap_exceeded" in transition.reasons
+        if breakaway_pending:
+            severity, score = AlertSeverity.WATCH, Decimal("75")
+            title = f"{transition.symbol} ENTRY BREAKAWAY WATCH"
+            decision = (
+                "recent zone touch remains valid; moderate continuation is awaiting "
+                "fresh intraday confirmation"
+            )
+        elif transition.status is EntryWatchStatus.IN_ZONE:
+            title = f"{transition.symbol} ENTRY IN_ZONE EARLY WATCH"
+            decision = "early entry watch; price reached the frozen thesis zone"
+        elif chase_cap_exceeded:
+            title = f"{transition.symbol} ENTRY EXTENDED WAIT"
+            decision = "continuation exceeded the chase cap; wait for a retest"
+        else:
+            title = f"{transition.symbol} ENTRY {status}"
+            decision = "entry-watch thesis updated"
         fresh = self._fresh_values(transition.symbol, now)
         return LocalAlert(
             symbol=transition.symbol,
             created_at=now,
             kind=AlertKind.ENTRY_WATCH,
             severity=severity,
-            title=f"{transition.symbol} ENTRY {status}",
+            title=title,
             message=(
-                f"price {transition.current_price}; original zone "
+                f"{decision}; price {transition.current_price}; original zone "
                 f"{transition.zone_low}-{transition.zone_high}; "
                 f"invalidation {transition.invalidation}"
             ),

@@ -24,6 +24,7 @@ from .models import EntryWatch
 from .ports import EntryWatchStore
 
 FOUR_PLACES = Decimal("0.0001")
+TWO_PLACES = Decimal("0.01")
 type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None
 _ACTIVE = {EntryWatchStatus.ARMED, EntryWatchStatus.IN_ZONE}
 _ARMABLE_CLASSIFICATIONS = {"buy_zone", "extended", "setup", "watch_pullback"}
@@ -49,6 +50,11 @@ def _default_max_ages() -> dict[AnalysisHorizon, timedelta]:
 class EntryWatcherPolicy:
     ttl: timedelta = timedelta(weeks=8)
     max_ages: dict[AnalysisHorizon, timedelta] = field(default_factory=_default_max_ages)
+    continuation_grace: timedelta = timedelta(hours=72)
+    continuation_max_percent: Decimal = Decimal("4")
+    continuation_max_atr: Decimal = Decimal("0.75")
+    continuation_fallback_percent: Decimal = Decimal("2")
+    continuation_min_reward_risk: Decimal = Decimal("2")
 
     def __post_init__(self) -> None:
         if self.ttl <= timedelta(0):
@@ -57,6 +63,20 @@ class EntryWatcherPolicy:
             raise ValueError("entry watch policy must configure every horizon")
         if any(value <= timedelta(0) for value in self.max_ages.values()):
             raise ValueError("entry watch freshness must be positive")
+        if self.continuation_grace <= timedelta(0):
+            raise ValueError("entry continuation grace must be positive")
+        if any(
+            value <= Decimal("0")
+            for value in (
+                self.continuation_max_percent,
+                self.continuation_max_atr,
+                self.continuation_fallback_percent,
+                self.continuation_min_reward_risk,
+            )
+        ):
+            raise ValueError("entry continuation limits must be positive")
+        if self.continuation_fallback_percent > self.continuation_max_percent:
+            raise ValueError("fallback continuation percent cannot exceed the hard cap")
 
 
 class EntryWatcher:
@@ -127,6 +147,38 @@ class EntryWatcher:
                 analyses=latest,
             )
 
+        continuation = self._continuation_candidate(
+            active,
+            current_price=current_price,
+            analyses=latest,
+            now=now,
+        )
+        if continuation is not None and self._continuation_confirmed(latest, now=now):
+            reward_risk = self._continuation_reward_risk(
+                active,
+                current_price=current_price,
+                analyses=latest,
+            )
+            if (
+                reward_risk is not None
+                and reward_risk >= self._policy.continuation_min_reward_risk
+            ):
+                extension_percent, extension_atr = continuation
+                return await self._change(
+                    active,
+                    EntryWatchStatus.TRIGGERED,
+                    now=now,
+                    price=current_price,
+                    reasons=(
+                        "breakaway_continuation_confirmed",
+                        f"continuation_extension_percent:{extension_percent}",
+                        f"continuation_extension_atr:{extension_atr}",
+                        f"continuation_reward_risk:{reward_risk}",
+                        self._dilution_warning(latest),
+                    ),
+                    analyses=latest,
+                )
+
         reached_zone = active.invalidation < current_price <= active.zone_high
         if active.status is EntryWatchStatus.ARMED and reached_zone:
             return await self._change(
@@ -138,12 +190,33 @@ class EntryWatcher:
                 analyses=latest,
             )
         if active.status is EntryWatchStatus.IN_ZONE and current_price > active.zone_high:
+            if continuation is not None:
+                touched_at = self._zone_touched_at(active)
+                return await self._change(
+                    active,
+                    EntryWatchStatus.ARMED,
+                    now=now,
+                    price=current_price,
+                    reasons=(
+                        "breakaway_continuation_pending",
+                        "awaiting_fresh_intraday_confirmation",
+                    ),
+                    analyses=latest,
+                    anchor_updates=(
+                        {"zone_touched_at": touched_at.isoformat()}
+                        if touched_at is not None
+                        else None
+                    ),
+                )
+            reasons = ["left_target_zone_without_confirmation"]
+            if self._recent_zone_touch(active, now=now):
+                reasons.append("continuation_chase_cap_exceeded")
             return await self._change(
                 active,
                 EntryWatchStatus.ARMED,
                 now=now,
                 price=current_price,
-                reasons=("left_target_zone_without_confirmation",),
+                reasons=tuple(reasons),
                 analyses=latest,
             )
         return None
@@ -176,6 +249,23 @@ class EntryWatcher:
             else EntryWatchStatus.ARMED
         )
         correction = max(Decimal("0"), (price - zone_high) / price * Decimal("100"))
+        anchor_snapshot: dict[str, Any] = {
+            "classification": classification,
+            "engine_version": result.engine_version,
+            "watcher_engine_version": self.engine_version,
+            "score": str(result.score),
+            "reasons": list(result.reasons),
+            "metrics": _json_value(metrics),
+            "confirmation_policy": {
+                "long": "bullish_and_not_avoid",
+                "dilution": "warning_only_not_a_gate",
+                "swing": "favorable_pullback_or_breakout",
+                "intraday": "favorable_bullish",
+                "continuation": "recent_zone_touch_with_distance_and_live_rr_caps",
+            },
+        }
+        if status is EntryWatchStatus.IN_ZONE:
+            anchor_snapshot["zone_touched_at"] = now.isoformat()
         watch = EntryWatch(
             watch_id=self._id_factory(),
             symbol=result.symbol,
@@ -193,20 +283,7 @@ class EntryWatcher:
             ),
             source_analysis_id=result.analysis_id,
             source_context_hash=result.context_hash,
-            anchor_snapshot={
-                "classification": classification,
-                "engine_version": result.engine_version,
-                "watcher_engine_version": self.engine_version,
-                "score": str(result.score),
-                "reasons": list(result.reasons),
-                "metrics": _json_value(metrics),
-                "confirmation_policy": {
-                    "long": "bullish_and_not_avoid",
-                    "dilution": "warning_only_not_a_gate",
-                    "swing": "favorable_pullback_or_breakout",
-                    "intraday": "favorable_bullish",
-                },
-            },
+            anchor_snapshot=anchor_snapshot,
         )
         transition = self._transition(
             watch,
@@ -236,14 +313,21 @@ class EntryWatcher:
         price: Decimal,
         reasons: tuple[str, ...],
         analyses: dict[AnalysisHorizon, AnalysisResult],
+        anchor_updates: dict[str, JsonValue] | None = None,
     ) -> EntryWatchTransition:
         terminal_at = now if status not in _ACTIVE else None
+        snapshot = dict(watch.anchor_snapshot)
+        if status is EntryWatchStatus.IN_ZONE:
+            snapshot["zone_touched_at"] = now.isoformat()
+        if anchor_updates:
+            snapshot.update(anchor_updates)
         updated = watch.model_copy(
             update={
                 "status": status,
                 "updated_at": now,
                 "current_price": price,
                 "terminal_at": terminal_at,
+                "anchor_snapshot": snapshot,
             }
         )
         transition = self._transition(
@@ -314,6 +398,119 @@ class EntryWatcher:
             and intraday.direction is PatternDirection.BULLISH
             and intraday.verdict is AnalysisVerdict.FAVORABLE
         )
+
+    def _continuation_confirmed(
+        self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime
+    ) -> bool:
+        return self._confirmed(analyses, now=now)
+
+    def _continuation_candidate(
+        self,
+        watch: EntryWatch,
+        *,
+        current_price: Decimal,
+        analyses: dict[AnalysisHorizon, AnalysisResult],
+        now: datetime,
+    ) -> tuple[Decimal, Decimal | str] | None:
+        touched_at = self._zone_touched_at(watch)
+        if (
+            touched_at is None
+            or now - touched_at > self._policy.continuation_grace
+            or current_price <= watch.zone_high
+        ):
+            return None
+        extension = current_price - watch.zone_high
+        extension_percent = (
+            extension / watch.zone_high * Decimal("100")
+        ).quantize(FOUR_PLACES, rounding=ROUND_HALF_UP)
+        if extension_percent > self._policy.continuation_max_percent:
+            return None
+        atr14 = self._latest_decimal_metric(
+            analyses,
+            "atr14",
+            horizons=(AnalysisHorizon.SWING, AnalysisHorizon.LONG_TERM),
+        )
+        if atr14 is None or atr14 <= Decimal("0"):
+            if extension_percent > self._policy.continuation_fallback_percent:
+                return None
+            return extension_percent, "unavailable"
+        extension_atr = (extension / atr14).quantize(
+            FOUR_PLACES, rounding=ROUND_HALF_UP
+        )
+        if extension_atr > self._policy.continuation_max_atr:
+            return None
+        return extension_percent, extension_atr
+
+    def _continuation_reward_risk(
+        self,
+        watch: EntryWatch,
+        *,
+        current_price: Decimal,
+        analyses: dict[AnalysisHorizon, AnalysisResult],
+    ) -> Decimal | None:
+        target = self._latest_decimal_metric(
+            analyses,
+            "target_2r",
+            "objective_level",
+            horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        )
+        invalidation_candidates = [watch.invalidation]
+        for horizon, names in (
+            (AnalysisHorizon.SWING, ("invalidation",)),
+            (AnalysisHorizon.INTRADAY, ("invalidation_level",)),
+        ):
+            value = self._latest_decimal_metric(
+                analyses,
+                *names,
+                horizons=(horizon,),
+            )
+            if value is not None and value < current_price:
+                invalidation_candidates.append(value)
+        invalidation = max(invalidation_candidates)
+        if target is None or target <= current_price or invalidation >= current_price:
+            return None
+        return ((target - current_price) / (current_price - invalidation)).quantize(
+            TWO_PLACES,
+            rounding=ROUND_HALF_UP,
+        )
+
+    def _recent_zone_touch(self, watch: EntryWatch, *, now: datetime) -> bool:
+        touched_at = self._zone_touched_at(watch)
+        return bool(
+            touched_at is not None
+            and timedelta(0) <= now - touched_at <= self._policy.continuation_grace
+        )
+
+    @staticmethod
+    def _zone_touched_at(watch: EntryWatch) -> datetime | None:
+        value = watch.anchor_snapshot.get("zone_touched_at")
+        if isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value)
+            except ValueError:
+                return None
+            if parsed.tzinfo is not None:
+                return parsed
+        if watch.status is EntryWatchStatus.IN_ZONE:
+            return watch.updated_at
+        return None
+
+    @staticmethod
+    def _latest_decimal_metric(
+        analyses: dict[AnalysisHorizon, AnalysisResult],
+        *names: str,
+        horizons: tuple[AnalysisHorizon, ...],
+    ) -> Decimal | None:
+        for horizon in horizons:
+            result = analyses.get(horizon)
+            if result is None:
+                continue
+            metrics = _metrics(result)
+            for name in names:
+                value = _decimal(metrics.get(name))
+                if value is not None:
+                    return value
+        return None
 
     def _confirmation_reasons(
         self, analyses: dict[AnalysisHorizon, AnalysisResult]

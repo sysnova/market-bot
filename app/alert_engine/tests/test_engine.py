@@ -331,3 +331,60 @@ def test_triggered_entry_watch_becomes_an_action_alert() -> None:
     assert alert.severity is AlertSeverity.ACTION
     assert "ENTRY TRIGGERED" in alert.title
     assert alert.deduplication_key.endswith(":triggered")
+
+
+@pytest.mark.unit
+def test_in_zone_entry_watch_is_an_explicit_early_entry_watch() -> None:
+    transition = EntryWatchTransition(
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000001"),
+        symbol="TEST",
+        previous_status=EntryWatchStatus.ARMED,
+        status=EntryWatchStatus.IN_ZONE,
+        occurred_at=NOW,
+        zone_low=Decimal("100"),
+        zone_high=Decimal("105"),
+        invalidation=Decimal("92"),
+        current_price=Decimal("103"),
+        watch_expires_at=NOW + timedelta(weeks=8),
+        reasons=("target_zone_reached", "awaiting_entry_confirmation"),
+        horizons=(AnalysisHorizon.LONG_TERM,),
+        source_analysis_ids=(
+            UUID("0195f3a5-9000-7000-8000-000000000002"),
+        ),
+    )
+
+    alert = AlertEngine().ingest_entry_watch(transition, now=NOW)
+
+    assert alert.severity is AlertSeverity.WATCH
+    assert "ENTRY IN_ZONE EARLY WATCH" in alert.title
+    assert "early entry watch" in alert.message.lower()
+
+
+@pytest.mark.unit
+def test_moderate_breakaway_emits_watch_while_intraday_confirmation_is_pending() -> None:
+    transition = EntryWatchTransition(
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000001"),
+        symbol="TEST",
+        previous_status=EntryWatchStatus.IN_ZONE,
+        status=EntryWatchStatus.ARMED,
+        occurred_at=NOW,
+        zone_low=Decimal("100"),
+        zone_high=Decimal("105"),
+        invalidation=Decimal("92"),
+        current_price=Decimal("107"),
+        watch_expires_at=NOW + timedelta(weeks=8),
+        reasons=(
+            "breakaway_continuation_pending",
+            "awaiting_fresh_intraday_confirmation",
+        ),
+        horizons=(AnalysisHorizon.LONG_TERM, AnalysisHorizon.SWING),
+        source_analysis_ids=(
+            UUID("0195f3a5-9000-7000-8000-000000000002"),
+        ),
+    )
+
+    alert = AlertEngine().ingest_entry_watch(transition, now=NOW)
+
+    assert alert.severity is AlertSeverity.WATCH
+    assert "ENTRY BREAKAWAY WATCH" in alert.title
+    assert "recent zone touch" in alert.message.lower()
