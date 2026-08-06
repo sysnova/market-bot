@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import Literal, TextIO
 
+from app.alert_engine.confirmed import BuyMaturity
 from app.common.settings import AppSettings
 from app.contracts import (
     FUSION_ASSESSMENT_EVENT,
@@ -18,7 +19,11 @@ from app.contracts import (
 )
 from app.event_bus import NatsJetStreamEventBus
 
+from .alert_sounds import play_buy_maturity_sound
 from .distributed_composition import write_ready
+
+_SOLID_BUY_STYLE = "\x1b[1;97;45m"
+_RESET_STYLE = "\x1b[0m"
 
 
 async def run_signal_fusion_monitor(
@@ -64,9 +69,10 @@ async def run_signal_fusion_monitor(
             if isinstance(envelope.payload, FusionAssessment)
             else FusionAssessment.model_validate(envelope.payload, strict=False)
         )
-        if bell:
-            print("\a", end="", file=output, flush=True)
+        print(_format_solid_banner(item, color=True), file=output, flush=True)
         print(_format_assessment(item), file=output, flush=True)
+        if bell:
+            play_buy_maturity_sound(BuyMaturity.FULLY_MATURED, fallback=output)
 
     async def handle_recovery(envelope: EventEnvelope) -> None:
         if envelope.event_type != FUSION_RECOVERY_CONFIRMED_EVENT:
@@ -76,9 +82,10 @@ async def run_signal_fusion_monitor(
             if isinstance(envelope.payload, FusionAssessment)
             else FusionAssessment.model_validate(envelope.payload, strict=False)
         )
-        if bell:
-            print("\a", end="", file=output, flush=True)
+        print(_format_solid_banner(item, color=True), file=output, flush=True)
         print(_format_assessment(item), file=output, flush=True)
+        if bell:
+            play_buy_maturity_sound(BuyMaturity.FULLY_MATURED, fallback=output)
 
     assessment_subscription = await bus.subscribe(
         "marketbot.v1.signal-fusion.assessment.>",
@@ -147,6 +154,15 @@ def _yn(value: bool) -> str:
 
 def _display(value: object | None) -> str:
     return "-" if value is None else str(value)
+
+
+def _format_solid_banner(item: FusionAssessment, *, color: bool) -> str:
+    """Render an unmistakable execution-ready Fusion confirmation."""
+
+    price = item.entry_price or item.current_price
+    label = item.state.value.replace("_", " ")
+    banner = f"{item.symbol} | BUY L4 ${price} | FUSION {label}"
+    return f"{_SOLID_BUY_STYLE} {banner} {_RESET_STYLE}" if color else banner
 
 
 def _format_assessment(item: FusionAssessment) -> str:

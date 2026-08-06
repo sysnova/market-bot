@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.alert_engine.confirmed import BuyMaturity
 from app.integration import alert_sounds
 
 
@@ -37,3 +38,51 @@ def test_patreon_confirmation_falls_back_to_terminal_bell(
 
     assert alert_sounds.play_patreon_confirmation_sound(fallback=output) is False
     assert output.getvalue() == "\a"
+
+
+def test_solid_buy_uses_a_distinct_native_alarm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launched: list[tuple[list[str], dict[str, object]]] = []
+    monkeypatch.setattr(alert_sounds.shutil, "which", lambda _: "powershell.exe")
+    monkeypatch.setattr(
+        alert_sounds.subprocess,
+        "Popen",
+        lambda command, **options: launched.append((command, options))
+        or SimpleNamespace(),
+    )
+
+    assert alert_sounds.play_solid_buy_sound(fallback=StringIO()) is True
+    script = launched[0][0][-1]
+    assert "Beep(1200, 220)" in script
+    assert "Beep(1600, 500)" in script
+    assert script != alert_sounds._PATREON_CONFIRMATION_SCRIPT
+
+
+@pytest.mark.parametrize(
+    ("maturity", "tone", "tone_count"),
+    (
+        (BuyMaturity.TACTICAL_RECOVERY, "Beep(780, 260)", 1),
+        (BuyMaturity.SWING_CONFIRMED, "Beep(1150, 320)", 2),
+        (BuyMaturity.HIGH_CONVICTION, "Beep(1550, 380)", 3),
+        (BuyMaturity.FULLY_MATURED, "Beep(1600, 500)", 3),
+    ),
+)
+def test_each_buy_maturity_has_its_own_native_pattern(
+    monkeypatch: pytest.MonkeyPatch,
+    maturity: BuyMaturity,
+    tone: str,
+    tone_count: int,
+) -> None:
+    launched: list[list[str]] = []
+    monkeypatch.setattr(alert_sounds.shutil, "which", lambda _: "powershell.exe")
+    monkeypatch.setattr(
+        alert_sounds.subprocess,
+        "Popen",
+        lambda command, **_: launched.append(command) or SimpleNamespace(),
+    )
+
+    assert alert_sounds.play_buy_maturity_sound(maturity, fallback=StringIO()) is True
+    script = launched[0][-1]
+    assert tone in script
+    assert script.count("[console]::Beep") == tone_count

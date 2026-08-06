@@ -84,7 +84,7 @@ def live_analysis(
     ] = Path(".runtime"),
     bell: Annotated[
         bool,
-        typer.Option(help="Ring the terminal bell for each local alert."),
+        typer.Option(help="Ring only for explicit L1-L4 buy alerts."),
     ] = True,
     nats: Annotated[
         bool,
@@ -424,7 +424,7 @@ def alert_process(
     ] = Path(".runtime"),
     bell: Annotated[
         bool,
-        typer.Option(help="Ring the terminal bell for each final human alert."),
+        typer.Option(help="Ring only for explicit L1-L4 buy alerts."),
     ] = True,
     ready_path: Annotated[
         Path,
@@ -448,14 +448,14 @@ def alert_process(
 def confirmed_buy_monitor(
     bell: Annotated[
         bool,
-        typer.Option(help="Ring the terminal bell for each confirmed buy."),
+        typer.Option(help="Play the native pattern for each L1-L4 buy alert."),
     ] = True,
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after subscribing to NATS."),
     ] = Path(".runtime/status/confirmed-buy-monitor.ready.json"),
 ) -> None:
-    """Show only confirmed buy events received through NATS."""
+    """Show solid buys and portfolio-protection events received through NATS."""
 
     from app.integration.confirmed_buy_monitor import run_confirmed_buy_monitor
 
@@ -468,6 +468,14 @@ def long_portfolio_monitor(
     history: Annotated[
         int, typer.Option(min=1, max=500, help="Persisted PostgreSQL alerts shown on startup.")
     ] = 25,
+    progress_minutes: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            max=1440,
+            help="Minutes between per-symbol LONG validation progress snapshots.",
+        ),
+    ] = 60,
     ready_path: Annotated[
         Path, typer.Option(help="Readiness file written after history and NATS are ready.")
     ] = Path(".runtime/status/long-portfolio-monitor.ready.json"),
@@ -476,7 +484,14 @@ def long_portfolio_monitor(
 
     from app.integration.long_portfolio_monitor import run_long_portfolio_monitor
 
-    _run_async(run_long_portfolio_monitor(ready_path=ready_path, bell=bell, history=history))
+    _run_async(
+        run_long_portfolio_monitor(
+            ready_path=ready_path,
+            bell=bell,
+            history=history,
+            progress_interval=timedelta(minutes=progress_minutes),
+        )
+    )
 
 
 @alerts.command("patreon-caps")

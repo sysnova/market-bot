@@ -95,7 +95,8 @@ class AlertEngineV2(AlertEngine):
     ) -> LocalAlert | None:
         score = _combined_score(components, self._policy)
         severity = _severity(kind, score, self._policy.critical_threshold)
-        state_key = (symbol, kind.value)
+        component_key = "-".join(item.horizon.value.lower() for item in components)
+        state_key = (symbol, f"{kind.value}:{component_key}")
         previous = self._last_emitted.get(state_key)
         if previous is not None:
             previous_at, previous_severity = previous
@@ -106,7 +107,8 @@ class AlertEngineV2(AlertEngine):
                 return None
         window = int(now.timestamp()) // int(self._policy.cooldown.total_seconds())
         deduplication_key = (
-            f"alert:v2:{symbol.lower()}:{kind.value.lower()}:{severity.value.lower()}:{window}"
+            f"alert:v2:{symbol.lower()}:{kind.value.lower()}:{component_key}:"
+            f"{severity.value.lower()}:{window}"
         )
         if deduplication_key in self._emitted_keys:
             return None

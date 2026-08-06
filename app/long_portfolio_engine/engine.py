@@ -18,7 +18,12 @@ from app.contracts import (
     PatternDirection,
 )
 
-from .models import LongPortfolioPolicy, LongPortfolioState, PortfolioAllocation
+from .models import (
+    LongPortfolioPolicy,
+    LongPortfolioState,
+    LongPortfolioValidationGate,
+    PortfolioAllocation,
+)
 
 HUNDRED = Decimal("100")
 
@@ -106,21 +111,56 @@ class LongPortfolioEngine:
         sessions[:] = [session for session in sessions if session >= cutoff]
 
     def _qualifies(self, result: AnalysisResult) -> bool:
+        return all(item.passed for item in self.validation_gates(result))
+
+    def validation_gates(self, result: AnalysisResult) -> tuple[LongPortfolioValidationGate, ...]:
+        """Expose the exact solid-entry gates without mutating confirmation state."""
+
         metrics = _metrics(result)
         risk_flags = _string_tuple(metrics.get("risk_flags"))
         regime = metrics.get("market_regime")
+        setup = _decimal(metrics.get("setup_score"))
+        entry = _decimal(metrics.get("entry_score"))
+        trend = _decimal(metrics.get("trend_template_score"))
+        blocked = tuple(sorted(set(risk_flags) & set(self._policy.blocked_risk_flags)))
         return (
-            result.verdict is AnalysisVerdict.FAVORABLE
-            and result.direction is PatternDirection.BULLISH
-            and result.score >= self._policy.minimum_score
-            and result.confidence >= self._policy.minimum_confidence
-            and metrics.get("classification") == "buy_zone"
-            and _decimal(metrics.get("setup_score")) >= self._policy.minimum_setup_score
-            and _decimal(metrics.get("entry_score")) >= self._policy.minimum_entry_score
-            and _decimal(metrics.get("trend_template_score"))
-            >= self._policy.minimum_trend_template_score
-            and (regime is None or regime in self._policy.allowed_market_regimes)
-            and not set(risk_flags) & set(self._policy.blocked_risk_flags)
+            _gate(
+                "V",
+                result.verdict is AnalysisVerdict.FAVORABLE,
+                result.verdict.value,
+                "FAVORABLE",
+            ),
+            _gate(
+                "D",
+                result.direction is PatternDirection.BULLISH,
+                result.direction.value,
+                "BULLISH",
+            ),
+            _minimum_gate("SC", result.score, self._policy.minimum_score),
+            _minimum_gate("C", result.confidence, self._policy.minimum_confidence),
+            _gate(
+                "Z",
+                metrics.get("classification") == "buy_zone",
+                str(metrics.get("classification")),
+                "buy_zone",
+            ),
+            _minimum_gate("SET", setup, self._policy.minimum_setup_score),
+            _minimum_gate("ENT", entry, self._policy.minimum_entry_score),
+            _minimum_gate("TR", trend, self._policy.minimum_trend_template_score),
+            LongPortfolioValidationGate(
+                code="REG",
+                passed=regime is None or regime in self._policy.allowed_market_regimes,
+                detail=(
+                    "allowed"
+                    if regime is None or regime in self._policy.allowed_market_regimes
+                    else f"{regime} not_allowed"
+                ),
+            ),
+            LongPortfolioValidationGate(
+                code="RF",
+                passed=not blocked,
+                detail="clear" if not blocked else ",".join(blocked),
+            ),
         )
 
     def _build_alert(
@@ -198,18 +238,37 @@ def _metrics(result: AnalysisResult) -> dict[str, object]:
 
 
 def _decimal(value: object) -> Decimal:
-    if not isinstance(value, Decimal):
+    if isinstance(value, bool) or not isinstance(value, (Decimal, int, str)):
         raise ValueError("required long-term Decimal metric is missing")
-    return value
+    try:
+        return Decimal(str(value))
+    except ArithmeticError as error:
+        raise ValueError("required long-term Decimal metric is malformed") from error
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:
-    if not isinstance(value, tuple):
+    if not isinstance(value, (list, tuple)):
         return ()
-    values = cast("tuple[object, ...]", value)
+    values = cast("list[object] | tuple[object, ...]", value)
     if not all(isinstance(item, str) for item in values):
         return ()
     return tuple(str(item) for item in values)
+
+
+def _gate(code: str, passed: bool, actual: str, required: str) -> LongPortfolioValidationGate:
+    return LongPortfolioValidationGate(
+        code=code,
+        passed=passed,
+        detail=actual if passed else f"{actual}!={required}",
+    )
+
+
+def _minimum_gate(code: str, actual: Decimal, minimum: Decimal) -> LongPortfolioValidationGate:
+    return LongPortfolioValidationGate(
+        code=code,
+        passed=actual >= minimum,
+        detail=str(actual) if actual >= minimum else f"{actual}<{minimum}",
+    )
 
 
 def _money(value: Decimal) -> Decimal:

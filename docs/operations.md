@@ -49,6 +49,31 @@ $env:MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION = "2.0.0"
 Do not change an existing manifest in place. Add a new semantic version for every behavioral
 change, and retain old engine classes and manifests for reproducibility.
 
+### Buy maturity presentation and measurement
+
+MarketBot preserves each valid confirmation path and displays its maturity instead of collapsing all
+buys into one label:
+
+| Level | Evidence | Color | Native pattern |
+|---|---|---|---|
+| L1 Tactical recovery | Long + Intraday | Yellow | One tone |
+| L2 Swing confirmed | Swing + Intraday | Blue | Two ascending tones |
+| L3 High conviction | Long + Swing + Intraday | Green | Three ascending tones |
+| L4 Fully matured | Entry Watcher, strict Portfolio, PatreonCaps, or Fusion confirmation | Magenta | Three emphatic tones |
+
+Long + Intraday is intentional: it preserves a tactical recovery when the Long backdrop remains
+bullish but Swing has not recovered its daily/anchored-VWAP structure. Swing consumes daily and
+15-minute/hourly bars, not weekly bars. A genuinely broken weekly thesis makes Long `AVOID` and
+therefore cannot enter L1. A Long buy zone, Swing setup, armed watcher, or other incomplete analysis
+remains silent and receives no maturity banner.
+
+The displayed price is the current or most recent tactical reference price, never the midpoint of a
+stale buy zone. `app.alert_engine.evaluate_solid_buy_outcomes()` measures persisted buy alerts
+against finalized one-minute bars without using bars at or before the signal. It reports the rule
+manifest outcomes at 15, 30, and 60 minutes and the market close, plus 60-minute MFE, MAE, and the
+first target/invalidation level reached. Engine and entry-confirmation rule versions remain attached
+to each measurement so different rule generations can be compared independently.
+
 ## Realtime analysis
 
 Configure Alpaca market-data credentials only in the ignored `.env` file. The independent SEC bot

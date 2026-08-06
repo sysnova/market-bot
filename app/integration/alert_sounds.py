@@ -6,6 +6,8 @@ import shutil
 import subprocess
 from typing import TextIO
 
+from app.alert_engine.confirmed import BuyMaturity
+
 _PATREON_CONFIRMATION_SCRIPT = (
     "[console]::Beep(650, 180); "
     "Start-Sleep -Milliseconds 70; "
@@ -13,11 +15,47 @@ _PATREON_CONFIRMATION_SCRIPT = (
     "Start-Sleep -Milliseconds 70; "
     "[console]::Beep(1100, 300)"
 )
+_SOLID_BUY_SCRIPT = (
+    "[console]::Beep(1200, 220); "
+    "Start-Sleep -Milliseconds 90; "
+    "[console]::Beep(1200, 220); "
+    "Start-Sleep -Milliseconds 90; "
+    "[console]::Beep(1600, 500)"
+)
+_BUY_MATURITY_SCRIPTS = {
+    BuyMaturity.TACTICAL_RECOVERY: "[console]::Beep(780, 260)",
+    BuyMaturity.SWING_CONFIRMED: (
+        "[console]::Beep(850, 180); Start-Sleep -Milliseconds 90; "
+        "[console]::Beep(1150, 320)"
+    ),
+    BuyMaturity.HIGH_CONVICTION: (
+        "[console]::Beep(1000, 160); Start-Sleep -Milliseconds 70; "
+        "[console]::Beep(1250, 190); Start-Sleep -Milliseconds 70; "
+        "[console]::Beep(1550, 380)"
+    ),
+    BuyMaturity.FULLY_MATURED: _SOLID_BUY_SCRIPT,
+}
 
 
 def play_patreon_confirmation_sound(*, fallback: TextIO) -> bool:
     """Launch the Patreon three-tone Windows chime or emit a terminal bell."""
 
+    return _play_windows_sound(_PATREON_CONFIRMATION_SCRIPT, fallback=fallback)
+
+
+def play_solid_buy_sound(*, fallback: TextIO) -> bool:
+    """Backward-compatible alias for the fully-matured buy alarm."""
+
+    return _play_windows_sound(_SOLID_BUY_SCRIPT, fallback=fallback)
+
+
+def play_buy_maturity_sound(maturity: BuyMaturity, *, fallback: TextIO) -> bool:
+    """Play the distinct native pattern assigned to one buy maturity."""
+
+    return _play_windows_sound(_BUY_MATURITY_SCRIPTS[maturity], fallback=fallback)
+
+
+def _play_windows_sound(script: str, *, fallback: TextIO) -> bool:
     executable = shutil.which("powershell.exe")
     if executable is None:
         _terminal_bell(fallback)
@@ -32,7 +70,7 @@ def play_patreon_confirmation_sound(*, fallback: TextIO) -> bool:
                 "-WindowStyle",
                 "Hidden",
                 "-Command",
-                _PATREON_CONFIRMATION_SCRIPT,
+                script,
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

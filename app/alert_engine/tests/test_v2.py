@@ -81,6 +81,54 @@ def test_v2_confirms_entry_when_swing_and_intraday_are_bullish() -> None:
 
 
 @pytest.mark.unit
+def test_v2_preserves_tactical_confirmation_from_long_and_intraday() -> None:
+    engine = AlertEngineV2()
+    engine.ingest(analysis(AnalysisHorizon.LONG_TERM), now=NOW)
+
+    alert = engine.ingest(analysis(AnalysisHorizon.INTRADAY), now=NOW)
+
+    assert alert is not None
+    assert alert.kind is AlertKind.ENTRY_CONFIRMED
+    assert alert.horizons == (
+        AnalysisHorizon.LONG_TERM,
+        AnalysisHorizon.INTRADAY,
+    )
+
+
+@pytest.mark.unit
+def test_v2_emits_a_new_alert_when_entry_maturity_changes() -> None:
+    engine = AlertEngineV2()
+    engine.ingest(analysis(AnalysisHorizon.LONG_TERM), now=NOW)
+    tactical = engine.ingest(analysis(AnalysisHorizon.INTRADAY), now=NOW)
+    engine.ingest(
+        analysis(
+            AnalysisHorizon.LONG_TERM,
+            direction=PatternDirection.BEARISH,
+            verdict=AnalysisVerdict.CAUTION,
+            as_of=NOW + timedelta(minutes=1),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    swing_confirmed = engine.ingest(
+        analysis(AnalysisHorizon.SWING, as_of=NOW + timedelta(minutes=2)),
+        now=NOW + timedelta(minutes=2),
+    )
+
+    assert tactical is not None
+    assert swing_confirmed is not None
+    assert tactical.horizons == (
+        AnalysisHorizon.LONG_TERM,
+        AnalysisHorizon.INTRADAY,
+    )
+    assert swing_confirmed.horizons == (
+        AnalysisHorizon.SWING,
+        AnalysisHorizon.INTRADAY,
+    )
+    assert tactical.deduplication_key != swing_confirmed.deduplication_key
+
+
+@pytest.mark.unit
 def test_v2_high_conviction_requires_all_three_bullish_engines() -> None:
     engine = AlertEngineV2()
     engine.ingest(analysis(AnalysisHorizon.LONG_TERM), now=NOW)

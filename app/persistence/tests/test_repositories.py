@@ -229,6 +229,21 @@ async def test_entry_watch_loads_only_active_symbol_thesis() -> None:
 
 
 @pytest.mark.unit
+async def test_entry_watch_loads_latest_thesis_regardless_of_status() -> None:
+    session = AsyncMock()
+    session.scalar.return_value = None
+    repository = EntryWatchRepository(session)
+
+    assert await repository.load_latest("aapl") is None
+    statement = session.scalar.await_args.args[0]
+    sql = str(statement.compile(dialect=repository.dialect))
+
+    assert "entry_watches.symbol" in sql
+    assert "entry_watches.status IN" not in sql
+    assert "entry_watches.updated_at DESC" in sql
+
+
+@pytest.mark.unit
 async def test_entry_watch_transition_uses_optimistic_status_guard() -> None:
     session = AsyncMock()
     session.execute.return_value = ScalarResult(ENTITY_ID)

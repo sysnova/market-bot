@@ -36,6 +36,11 @@ class PostgresEntryWatchStore:
             record = await unit.entry_watches.load_active(symbol)
         return _to_domain(record) if record is not None else None
 
+    async def load_latest(self, symbol: str) -> EntryWatch | None:
+        async with PersistenceUnitOfWork(self._session_factory) as unit:
+            record = await unit.entry_watches.load_latest(symbol)
+        return _to_domain(record) if record is not None else None
+
     async def create(
         self, watch: EntryWatch, transition: EntryWatchTransition
     ) -> None:

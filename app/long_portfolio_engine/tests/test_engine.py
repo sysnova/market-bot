@@ -141,3 +141,66 @@ def test_restores_previous_qualified_session_without_replaying_nats() -> None:
     state = engine.state_for("HIMS", updated_at=NOW)
     assert state is not None
     assert state.qualified_sessions == ((NOW - timedelta(days=1)).date(), NOW.date())
+
+
+def test_exposes_each_long_portfolio_validation_gate_for_progress_views() -> None:
+    engine = LongPortfolioEngine(_policy())
+
+    passing = engine.validation_gates(_analysis())
+
+    assert tuple(item.code for item in passing) == (
+        "V",
+        "D",
+        "SC",
+        "C",
+        "Z",
+        "SET",
+        "ENT",
+        "TR",
+        "REG",
+        "RF",
+    )
+    assert all(item.passed for item in passing)
+
+    rejected = engine.validation_gates(
+        _analysis().model_copy(
+            update={
+                "verdict": AnalysisVerdict.WATCH,
+                "score": Decimal("60"),
+            }
+        )
+    )
+    failed = {item.code: item.detail for item in rejected if not item.passed}
+
+    assert failed == {
+        "V": "WATCH!=FAVORABLE",
+        "SC": "60<72",
+    }
+
+
+def test_validation_gates_accept_metrics_restored_from_jetstream_json() -> None:
+    restored = AnalysisResult.model_validate_json(_analysis().model_dump_json())
+
+    gates = LongPortfolioEngine(_policy()).validation_gates(restored)
+
+    assert all(item.passed for item in gates)
+
+
+def test_validation_gates_preserve_blocked_risk_flags_from_jetstream_json() -> None:
+    analysis = _analysis().model_copy(
+        update={
+            "metrics": tuple(
+                NamedValue(name=item.name, value=("weekly_distribution",))
+                if item.name == "risk_flags"
+                else item
+                for item in _analysis().metrics
+            )
+        }
+    )
+    restored = AnalysisResult.model_validate_json(analysis.model_dump_json())
+
+    gates = LongPortfolioEngine(_policy()).validation_gates(restored)
+
+    risk = next(item for item in gates if item.code == "RF")
+    assert risk.passed is False
+    assert risk.detail == "weekly_distribution"

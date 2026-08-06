@@ -37,6 +37,9 @@ def analysis(
     engine_version: str = "1.0.0",
     score: str = "80",
     confidence: str = "0.8",
+    zone_low: str = "100",
+    zone_high: str = "105",
+    invalidation: str = "92",
     extra_metrics: tuple[NamedValue, ...] = (),
 ) -> AnalysisResult:
     metrics = [
@@ -46,9 +49,9 @@ def analysis(
     if horizon is AnalysisHorizon.LONG_TERM:
         metrics.extend(
             (
-                NamedValue(name="buy_zone_low", value=Decimal("100")),
-                NamedValue(name="buy_zone_high", value=Decimal("105")),
-                NamedValue(name="invalidation", value=Decimal("92")),
+                NamedValue(name="buy_zone_low", value=Decimal(zone_low)),
+                NamedValue(name="buy_zone_high", value=Decimal(zone_high)),
+                NamedValue(name="invalidation", value=Decimal(invalidation)),
                 NamedValue(name="support", value=Decimal("96")),
             )
         )
@@ -164,6 +167,85 @@ async def test_zone_is_remembered_until_swing_and_intraday_confirm() -> None:
     assert "multi_horizon_entry_confirmed" in triggered.reasons
     assert "dilution_warning:unavailable" in triggered.reasons
     assert await store.load_active("AAPL") is None
+
+
+@pytest.mark.unit
+async def test_triggered_thesis_is_not_immediately_rearmed_by_same_long_result() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcher(store=store)
+    await watcher.ingest(long_watch(), now=NOW)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="pullback",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=1),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    triggered = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="vwap_reclaim",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=2),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+
+    rearmed = await watcher.ingest(
+        long_watch(as_of=NOW + timedelta(minutes=3)),
+        now=NOW + timedelta(minutes=3),
+    )
+
+    assert triggered is not None and triggered.status is EntryWatchStatus.TRIGGERED
+    assert rearmed is None
+    assert await store.load_active("AAPL") is None
+    assert len(store.watches) == 1
+
+
+@pytest.mark.unit
+async def test_materially_changed_long_levels_can_arm_a_new_thesis() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcher(store=store)
+    await watcher.ingest(long_watch(), now=NOW)
+    invalidated = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.LONG_TERM,
+            classification="avoid",
+            verdict=AnalysisVerdict.AVOID,
+            direction=PatternDirection.BEARISH,
+            price="101",
+            as_of=NOW + timedelta(minutes=1),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    rearmed = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.LONG_TERM,
+            classification="extended",
+            verdict=AnalysisVerdict.CAUTION,
+            direction=PatternDirection.BULLISH,
+            price="120",
+            zone_low="110",
+            zone_high="115",
+            invalidation="100",
+            as_of=NOW + timedelta(minutes=2),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+
+    assert invalidated is not None
+    assert invalidated.status is EntryWatchStatus.INVALIDATED
+    assert rearmed is not None and rearmed.status is EntryWatchStatus.ARMED
+    active = await store.load_active("AAPL")
+    assert active is not None and active.zone_low == Decimal("110")
+    assert len(store.watches) == 2
 
 
 @pytest.mark.unit

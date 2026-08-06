@@ -7,19 +7,26 @@ from typing import Any, cast
 
 from app.contracts import AlertKind, AnalysisHorizon, AnalysisResult, LocalAlert
 
+from .confirmed import BuyMaturity, buy_maturity
+
 _HORIZON_LABELS = {
     AnalysisHorizon.LONG_TERM: "LONG",
     AnalysisHorizon.SWING: "SWING",
     AnalysisHorizon.INTRADAY: "INTRADAY",
     AnalysisHorizon.DILUTION: "SEC",
 }
-_BUYABLE_KINDS = {
-    AlertKind.LONG_BUY_ZONE,
-    AlertKind.ENTRY_CONFIRMED,
-    AlertKind.HIGH_CONVICTION_BUY,
-    AlertKind.LONG_PORTFOLIO_BUY,
+_BUY_BANNER_STYLES = {
+    BuyMaturity.TACTICAL_RECOVERY: "\x1b[1;30;43m",
+    BuyMaturity.SWING_CONFIRMED: "\x1b[1;97;44m",
+    BuyMaturity.HIGH_CONVICTION: "\x1b[1;97;42m",
+    BuyMaturity.FULLY_MATURED: "\x1b[1;97;45m",
 }
-_BUY_BANNER_STYLE = "\x1b[1;97;42m"
+_BUY_LABELS = {
+    BuyMaturity.TACTICAL_RECOVERY: "TACTICAL RECOVERY",
+    BuyMaturity.SWING_CONFIRMED: "SWING CONFIRMED",
+    BuyMaturity.HIGH_CONVICTION: "HIGH CONVICTION",
+    BuyMaturity.FULLY_MATURED: "FULLY MATURED",
+}
 _PROTECT_BANNER_STYLE = "\x1b[1;97;41m"
 _RESET_STYLE = "\x1b[0m"
 
@@ -34,10 +41,11 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
         lines.append(
             f"{_PROTECT_BANNER_STYLE} {banner} {_RESET_STYLE}" if color else banner
         )
-    buy_banner = _buy_banner(alert, analyses)
-    if buy_banner is not None:
+    banner_result = _buy_banner(alert, analyses)
+    if banner_result is not None:
+        maturity, buy_banner = banner_result
         lines.append(
-            f"{_BUY_BANNER_STYLE} {buy_banner} {_RESET_STYLE}"
+            f"{_BUY_BANNER_STYLES[maturity]} {buy_banner} {_RESET_STYLE}"
             if color
             else buy_banner
         )
@@ -66,30 +74,28 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
 def _buy_banner(
     alert: LocalAlert,
     analyses: dict[AnalysisHorizon, AnalysisResult],
-) -> str | None:
-    if alert.kind not in _BUYABLE_KINDS and not (
-        alert.kind is AlertKind.ENTRY_WATCH and "ENTRY TRIGGERED" in alert.title.upper()
-    ):
+) -> tuple[BuyMaturity, str] | None:
+    maturity = buy_maturity(alert)
+    if maturity is None:
         return None
     alert_metrics = _metrics(alert)
-    analysis_metrics = [_metrics(item) for item in analyses.values()]
-    zone_low = _first(
-        alert_metrics.get("buy_zone_low"),
-        *(values.get("buy_zone_low") for values in analysis_metrics),
+    confirmed_price = _first(
+        alert_metrics.get("current_price"),
+        *(
+            _metrics(analysis).get("reference_price")
+            for horizon in (
+                AnalysisHorizon.INTRADAY,
+                AnalysisHorizon.SWING,
+                AnalysisHorizon.LONG_TERM,
+            )
+            if (analysis := analyses.get(horizon)) is not None
+        ),
     )
-    zone_high = _first(
-        alert_metrics.get("buy_zone_high"),
-        *(values.get("buy_zone_high") for values in analysis_metrics),
-    )
-    ideal_price = _midpoint(zone_low, zone_high)
-    if ideal_price is None:
-        ideal_price = _first(
-            alert_metrics.get("current_price"),
-            *(values.get("reference_price") for values in reversed(analysis_metrics)),
-        )
-    if ideal_price is None:
+    if confirmed_price is None:
         return None
-    return f"{alert.symbol} | IDEAL BUY {_money(ideal_price)}"
+    level = maturity.value.split("_", maxsplit=1)[0]
+    banner = f"{alert.symbol} | BUY {level} {_money(confirmed_price)} | {_BUY_LABELS[maturity]}"
+    return maturity, banner
 
 
 def _level_line(
@@ -276,15 +282,6 @@ def _number(value: object) -> str:
 
 def _money(value: object) -> str:
     return f"${_number(value)}"
-
-
-def _midpoint(low: object, high: object) -> Decimal | None:
-    if isinstance(low, bool) or isinstance(high, bool):
-        return None
-    try:
-        return (Decimal(str(low)) + Decimal(str(high))) / Decimal("2")
-    except (ValueError, ArithmeticError):
-        return None
 
 
 def _money_or_none(value: object) -> str | None:

@@ -27,6 +27,14 @@ class LongPortfolioState(_FrozenModel):
     updated_at: datetime
 
 
+class LongPortfolioValidationGate(_FrozenModel):
+    """One deterministic eligibility gate exposed to operator progress views."""
+
+    code: str = Field(pattern=r"^[A-Z]{1,3}$")
+    passed: bool
+    detail: str = Field(min_length=1)
+
+
 class LongPortfolioPolicy(_FrozenModel):
     rule_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
     horizon_end: str

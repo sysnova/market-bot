@@ -48,14 +48,14 @@ def alert() -> LocalAlert:
 
 
 @pytest.mark.unit
-def test_console_sink_is_readable_and_bell_is_optional(alert: LocalAlert) -> None:
+def test_console_sink_does_not_ring_for_non_solid_analysis(alert: LocalAlert) -> None:
     stream = StringIO()
 
     ConsoleAlertSink(stream=stream, bell=True).emit(alert)
 
     assert "[ACTION] TEST" in stream.getvalue()
     assert "score=82" in stream.getvalue()
-    assert stream.getvalue().endswith("\a\n")
+    assert "\a" not in stream.getvalue()
 
 
 @pytest.mark.unit
@@ -99,7 +99,7 @@ def test_console_sink_renders_actionable_component_context() -> None:
 
 
 @pytest.mark.unit
-def test_console_sink_highlights_buyable_ticker_and_ideal_price() -> None:
+def test_console_sink_highlights_solid_buy_at_confirmed_market_price() -> None:
     analysis = AnalysisResult(
         engine_id="long-term",
         engine_version="1.1.1",
@@ -123,15 +123,81 @@ def test_console_sink_highlights_buyable_ticker_and_ideal_price() -> None:
             "symbol": "HIMS",
             "kind": AlertKind.HIGH_CONVICTION_BUY,
             "title": "HIMS HIGH CONVICTION BUY",
+            "horizons": (
+                AnalysisHorizon.LONG_TERM,
+                AnalysisHorizon.SWING,
+                AnalysisHorizon.INTRADAY,
+            ),
             "component_analyses": (analysis,),
         }
     )
     stream = StringIO()
 
-    ConsoleAlertSink(stream=stream, color=True).emit(buyable)
+    ConsoleAlertSink(stream=stream, color=True, bell=True).emit(buyable)
 
     first_line = stream.getvalue().splitlines()[0]
-    assert first_line == "\x1b[1;97;42m HIMS | IDEAL BUY $41 \x1b[0m"
+    assert first_line == (
+        "\x1b[1;97;42m HIMS | BUY L3 $41.2 | HIGH CONVICTION \x1b[0m"
+    )
+    assert stream.getvalue().endswith("\a\n")
+
+
+@pytest.mark.unit
+def test_console_sink_does_not_highlight_long_buy_zone_as_solid() -> None:
+    alert = _alert().model_copy(update={"kind": AlertKind.LONG_BUY_ZONE})
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True, bell=True).emit(alert)
+
+    assert "SOLID BUY" not in stream.getvalue()
+    assert "\x1b[" not in stream.getvalue()
+    assert "\a" not in stream.getvalue()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("horizons", "expected"),
+    (
+        (
+            (AnalysisHorizon.LONG_TERM, AnalysisHorizon.INTRADAY),
+            "\x1b[1;30;43m TEST | BUY L1 $103 | TACTICAL RECOVERY \x1b[0m",
+        ),
+        (
+            (AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+            "\x1b[1;97;44m TEST | BUY L2 $103 | SWING CONFIRMED \x1b[0m",
+        ),
+    ),
+)
+def test_console_sink_distinguishes_entry_maturity_by_horizons(
+    horizons: tuple[AnalysisHorizon, ...], expected: str
+) -> None:
+    analysis = AnalysisResult(
+        engine_id="intraday",
+        engine_version="3.0.0",
+        symbol="TEST",
+        horizon=AnalysisHorizon.INTRADAY,
+        as_of=NOW,
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        score=Decimal("85"),
+        confidence=Decimal("0.85"),
+        reasons=("confirmation_gate_passed",),
+        metrics=(NamedValue(name="reference_price", value=Decimal("103")),),
+        context_hash="sha256:" + "c" * 64,
+    )
+    alert = _alert().model_copy(
+        update={
+            "kind": AlertKind.ENTRY_CONFIRMED,
+            "horizons": horizons,
+            "component_analyses": (analysis,),
+        }
+    )
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True, bell=True).emit(alert)
+
+    assert stream.getvalue().splitlines()[0] == expected
+    assert stream.getvalue().endswith("\a\n")
 
 
 @pytest.mark.unit

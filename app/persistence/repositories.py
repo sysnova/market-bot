@@ -240,6 +240,15 @@ class EntryWatchRepository(Repository):
         )
         return await self._session.scalar(statement)
 
+    async def load_latest(self, symbol: str) -> EntryWatchRecord | None:
+        statement = (
+            select(EntryWatchRecord)
+            .where(EntryWatchRecord.symbol == symbol.strip().upper())
+            .order_by(EntryWatchRecord.updated_at.desc())
+            .limit(1)
+        )
+        return await self._session.scalar(statement)
+
     def add(
         self,
         watch: EntryWatchRecord,

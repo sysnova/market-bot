@@ -1,4 +1,4 @@
-"""NATS consumer rendering only confirmed buy alerts."""
+"""NATS consumer rendering buy maturities and portfolio-protection alerts."""
 
 from __future__ import annotations
 
@@ -6,17 +6,18 @@ import asyncio
 import sys
 from pathlib import Path
 
-from app.alert_engine.confirmed import is_portfolio_monitor_alert
+from app.alert_engine.confirmed import buy_maturity, is_portfolio_monitor_alert
 from app.alert_engine.sinks import ConsoleAlertSink
 from app.common.settings import AppSettings
 from app.contracts import LOCAL_ALERT_EVENT, EventEnvelope, LocalAlert, SubscriptionOptions
 from app.event_bus import NatsJetStreamEventBus
 
+from .alert_sounds import play_buy_maturity_sound
 from .distributed_composition import write_ready
 
 
 async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: bool = True) -> None:
-    """Consume new local-alert events and render confirmed buys only."""
+    """Consume new local alerts and render explicit buy maturities and protection."""
 
     settings = AppSettings()
     bus = await NatsJetStreamEventBus.connect(
@@ -24,7 +25,7 @@ async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: boo
         prefix="marketbot",
         stream="MARKETBOT",
     )
-    sink = ConsoleAlertSink(stream=sys.stdout, bell=bell, color=True)
+    sink = ConsoleAlertSink(stream=sys.stdout, bell=False, color=True)
 
     async def handle(envelope: EventEnvelope) -> None:
         if envelope.event_type != LOCAL_ALERT_EVENT:
@@ -36,6 +37,9 @@ async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: boo
         )
         if is_portfolio_monitor_alert(alert):
             sink.emit(alert)
+            maturity = buy_maturity(alert)
+            if bell and maturity is not None:
+                play_buy_maturity_sound(maturity, fallback=sys.stdout)
 
     subscription = await bus.subscribe(
         "marketbot.v1.alert.local.>",
@@ -52,7 +56,7 @@ async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: boo
                     "replay": False,
                 },
             )
-        print("COMPRAS CONFIRMADAS + PROTECCIÓN DE PORTFOLIO — esperando NATS...", flush=True)
+        print("COMPRAS L1-L4 + PROTECCION DE PORTFOLIO - esperando NATS...", flush=True)
         await asyncio.Event().wait()
     finally:
         await subscription.unsubscribe()

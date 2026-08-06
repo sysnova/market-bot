@@ -49,6 +49,7 @@ def _default_max_ages() -> dict[AnalysisHorizon, timedelta]:
 @dataclass(frozen=True, slots=True)
 class EntryWatcherPolicy:
     ttl: timedelta = timedelta(weeks=8)
+    rearm_cooldown: timedelta = timedelta(days=14)
     max_ages: dict[AnalysisHorizon, timedelta] = field(default_factory=_default_max_ages)
     continuation_grace: timedelta = timedelta(hours=72)
     continuation_max_percent: Decimal = Decimal("4")
@@ -59,6 +60,8 @@ class EntryWatcherPolicy:
     def __post_init__(self) -> None:
         if self.ttl <= timedelta(0):
             raise ValueError("entry watch ttl must be positive")
+        if self.rearm_cooldown <= timedelta(0):
+            raise ValueError("entry watch rearm cooldown must be positive")
         if set(self.max_ages) != set(AnalysisHorizon):
             raise ValueError("entry watch policy must configure every horizon")
         if any(value <= timedelta(0) for value in self.max_ages.values()):
@@ -119,6 +122,14 @@ class EntryWatcher:
             )
         if active is None:
             if result.horizon is AnalysisHorizon.LONG_TERM:
+                previous = await self._store.load_latest(result.symbol)
+                if (
+                    previous is not None
+                    and previous.status not in _ACTIVE
+                    and now - previous.updated_at < self._policy.rearm_cooldown
+                    and self._same_thesis(previous, result)
+                ):
+                    return None
                 return await self._arm(result, now=now)
             return None
 
@@ -220,6 +231,15 @@ class EntryWatcher:
                 analyses=latest,
             )
         return None
+
+    @staticmethod
+    def _same_thesis(watch: EntryWatch, result: AnalysisResult) -> bool:
+        metrics = _metrics(result)
+        return (
+            _decimal(metrics.get("buy_zone_low")) == watch.zone_low
+            and _decimal(metrics.get("buy_zone_high")) == watch.zone_high
+            and _decimal(metrics.get("invalidation")) == watch.invalidation
+        )
 
     async def _arm(
         self, result: AnalysisResult, *, now: datetime
