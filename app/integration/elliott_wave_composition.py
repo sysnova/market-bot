@@ -31,6 +31,7 @@ from .distributed_composition import (
     connect_nats,
     write_ready,
 )
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
@@ -148,9 +149,10 @@ def _stamp_assessment(
 
 
 async def run_elliott_wave_process(
-    *, ready_path: Path | None = None, once: bool = False
+    *, ready_path: Path | None = None, once: bool = False, symbol: str | None = None
 ) -> dict[str, object] | None:
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     database = create_database_engine(
         settings.database_url.get_secret_value(),
         require_ssl=settings.environment is Environment.PRODUCTION,
@@ -160,24 +162,37 @@ async def run_elliott_wave_process(
     subscriptions: list[Subscription] = []
     try:
         holdings = await load_held_symbols(provider)
+        requested = symbol.strip().upper() if symbol is not None else None
+        if requested is not None and requested not in holdings.symbols:
+            return {
+                "service": "elliott-wave-v0",
+                "mode": "SHADOW",
+                "requested_symbol": requested,
+                "eligible": False,
+                "reason": "positive_holding_required",
+                "assessments_published": 0,
+            }
+        selected_symbols = (requested,) if requested is not None else holdings.symbols
         bus = await connect_nats(settings)
         bars = await load_market_history(
             settings,
             database,
             engine_id="elliott-wave-v0",
-            symbols=holdings.symbols,
+            symbols=selected_symbols,
             requirements=ELLIOTT_HISTORY_REQUESTS,
             as_of=SystemClock().now(),
         )
-        runtime = ElliottWaveRuntime(engine=ElliottWaveEngine(), publisher=bus)
-        published = await runtime.bootstrap(bars, symbols=holdings.symbols)
+        runtime = ElliottWaveRuntime(engine=assembly.build_elliott_wave(), publisher=bus)
+        published = await runtime.bootstrap(bars, symbols=selected_symbols)
         summary: dict[str, object] = {
             "service": "elliott-wave-v0",
-            "engine_version": ElliottWaveEngine.engine_version,
+            "engine_version": assembly.spec(EngineSlot.ELLIOTT_WAVE).implementation,
+            "engine_strategy_version": assembly.spec(EngineSlot.ELLIOTT_WAVE).strategy.version,
+            "marketbot_definition_version": assembly.definition.version,
             "mode": "SHADOW",
             "universe": "positive-holdings-only",
             "universe_source": holdings.source,
-            "symbols": list(holdings.symbols),
+            "symbols": list(selected_symbols),
             "assessments_published": published,
             "persistence": "nats-jetstream-15d",
         }

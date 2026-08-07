@@ -17,10 +17,11 @@ from app.contracts import (
     RotationSector,
 )
 from app.event_bus import NatsJetStreamEventBus
-from app.market_rotation_engine import Bar, RotationEngine
+from app.market_rotation_engine import Bar
 from app.persistence import create_database_engine
 
 from .distributed_composition import HistoryRequest, write_ready
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_repository import PostgresMarketBarRepository
 from .market_history_composition import load_market_history
 from .market_rotation_store import PostgresMarketRotationStore
@@ -38,6 +39,7 @@ async def run_market_rotation_process(
     *, once: bool = False, interval_minutes: int = 5, ready_path: Path | None = None
 ) -> dict[str, object] | None:
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     clock = SystemClock()
     database = create_database_engine(
         settings.database_url.get_secret_value(),
@@ -48,7 +50,7 @@ async def run_market_rotation_process(
     )
     store = PostgresMarketRotationStore(database)
     bars_repository = PostgresMarketBarRepository(database)
-    calculator = RotationEngine()
+    calculator = assembly.build_market_rotation()
     try:
         profiles = await store.load_profiles()
         symbols = tuple(
@@ -67,6 +69,13 @@ async def run_market_rotation_process(
                 ready_path,
                 {
                     "service": "market-rotation-v1",
+                    "marketbot_definition_version": assembly.definition.version,
+                    "engine_implementation": assembly.spec(
+                        EngineSlot.MARKET_ROTATION
+                    ).implementation,
+                    "engine_strategy_version": assembly.spec(
+                        EngineSlot.MARKET_ROTATION
+                    ).strategy.version,
                     "interval_minutes": interval_minutes,
                     "profiles": len(profiles),
                 },

@@ -7,6 +7,7 @@ from ._base import Identifier, NonEmptyStr, SemVer, Sha256, StrictFrozenModel, n
 from .analysis_events import (
     ANALYSIS_RESULT_EVENT,
     ELLIOTT_WAVE_ASSESSMENT_EVENT,
+    ENTRY_OPPORTUNITY_EVENT,
     ENTRY_WATCH_TRANSITION_EVENT,
     FUSION_ASSESSMENT_EVENT,
     FUSION_BUY_CONFIRMED_EVENT,
@@ -24,6 +25,7 @@ from .analysis_events import (
     SUPPORT_TRANSITION_EVENT,
     analysis_result_subject,
     elliott_wave_assessment_subject,
+    entry_opportunity_subject,
     entry_watch_transition_subject,
     fusion_assessment_subject,
     fusion_buy_confirmed_subject,
@@ -50,6 +52,12 @@ from .domain import (
     TradePlan,
 )
 from .elliott_wave import WaveAssessment
+from .entry_opportunity import (
+    EntryHorizonLeg,
+    EntryMaturityCheckpoint,
+    EntryOpportunity,
+    EntryOpportunityEvent,
+)
 from .entry_watch import EntryWatchTransition
 from .enums import (
     AlertKind,
@@ -59,6 +67,11 @@ from .enums import (
     BarTimeframe,
     DecisionOutcome,
     DependencyPolicy,
+    EntryCheckpointStatus,
+    EntryCloseReason,
+    EntryLegStatus,
+    EntryMaturityLevel,
+    EntryOpportunityStatus,
     EntryWatchStatus,
     FusionState,
     MacroRegime,
@@ -119,6 +132,7 @@ from .support_confirmation import (
 __all__ = [
     "ANALYSIS_RESULT_EVENT",
     "ELLIOTT_WAVE_ASSESSMENT_EVENT",
+    "ENTRY_OPPORTUNITY_EVENT",
     "ENTRY_WATCH_TRANSITION_EVENT",
     "FUSION_ASSESSMENT_EVENT",
     "FUSION_BUY_CONFIRMED_EVENT",
@@ -149,6 +163,15 @@ __all__ = [
     "DecisionTrace",
     "DependencyHealth",
     "DependencyPolicy",
+    "EntryCheckpointStatus",
+    "EntryCloseReason",
+    "EntryHorizonLeg",
+    "EntryLegStatus",
+    "EntryMaturityCheckpoint",
+    "EntryMaturityLevel",
+    "EntryOpportunity",
+    "EntryOpportunityEvent",
+    "EntryOpportunityStatus",
     "EntryWatchStatus",
     "EntryWatchTransition",
     "EvaluationContext",
@@ -214,6 +237,7 @@ __all__ = [
     "WavePhase",
     "analysis_result_subject",
     "elliott_wave_assessment_subject",
+    "entry_opportunity_subject",
     "entry_watch_transition_subject",
     "fusion_assessment_subject",
     "fusion_buy_confirmed_subject",

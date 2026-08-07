@@ -6,6 +6,11 @@
 - `IntradayEngineV2`: versión activa `2.0.0`. Conserva breakout y VWAP reclaim de V1 y
   agrega régimen intradiario, ubicación del cierre dentro de la vela, aceleración del volumen,
   higher low de 5 minutos y calidad de confirmación `weak/standard/strong`.
+- `IntradayEngineV3`: regla reproducible `3.0.0`; agrega persistencia y stops adaptados a ATR.
+- `IntradayEngineV4`: regla activa `4.0.0`; evita perseguir el primer impulso. Un breakout o
+  reclaim sólo queda `FAVORABLE` cuando conserva precio eficiente (máximo 0,50 ATR sobre el
+  trigger y 2 ATR sobre EMA20), confirmación `strong` y higher low de cinco minutos. En otro caso
+  emite `WATCH` con `late_entry_wait_retest` o `mature_retest_pending`.
 
 Un trigger V1 con evidencia débil se degrada a `WATCH` en V2. Entry Watcher sólo acepta una
 confirmación intradiaria favorable y con un setup alcista explícitamente reconocido.
@@ -31,7 +36,8 @@ orders, quantities, position state, execution calls or Trading API concepts.
 input, making repeated evaluations reproducible and auditable. Reasons and all
 calculated evidence are exposed through stable metrics.
 
-La composición live utiliza `IntradayEngineV2`; V1 continúa disponible.
+La composición live utiliza `IntradayEngineV4` por defecto; V1-V3 continúan disponibles para
+rollback y replay.
 
 Run focused verification with:
 

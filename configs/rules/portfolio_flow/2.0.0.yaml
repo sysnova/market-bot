@@ -1,0 +1,14 @@
+rule_id: portfolio_flow
+rule_version: 2.0.0
+behavior: symmetric_aggressive_flow
+thresholds:
+  minimum_trades: 20
+  minimum_volume: 1000
+  sell_ratio: 0.70
+  buy_ratio: 0.70
+  minimum_drop_percent: 0.30
+  minimum_rise_percent: 0.30
+  block_size: 1000
+timing:
+  window_minutes: 3
+  cooldown_minutes: 5

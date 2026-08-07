@@ -3,6 +3,8 @@
 from .database import create_database_engine, create_session_factory, normalize_database_url
 from .models import (
     Base,
+    EntryOpportunityEventRecord,
+    EntryOpportunityRecord,
     EntryWatchRecord,
     EntryWatchTransitionRecord,
     LongPortfolioAlertRecord,
@@ -13,6 +15,7 @@ from .models import (
 )
 from .repositories import (
     CheckpointRepository,
+    EntryOpportunityRepository,
     EntryWatchRepository,
     EventPayloadConflictError,
     HealthRepository,
@@ -28,6 +31,9 @@ from .unit_of_work import PersistenceUnitOfWork
 __all__ = [
     "Base",
     "CheckpointRepository",
+    "EntryOpportunityEventRecord",
+    "EntryOpportunityRecord",
+    "EntryOpportunityRepository",
     "EntryWatchRecord",
     "EntryWatchRepository",
     "EntryWatchTransitionRecord",

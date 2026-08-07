@@ -115,6 +115,20 @@ def test_portfolio_monitor_accepts_protect_alert(alert: LocalAlert) -> None:
     assert not is_confirmed_buy(protect)
 
 
+def test_portfolio_monitor_accepts_buy_pressure_without_promoting_maturity(
+    alert: LocalAlert,
+) -> None:
+    buy_pressure = alert.model_copy(
+        update={
+            "kind": AlertKind.PORTFOLIO_FLOW_BUY,
+            "title": "AGGRESSIVE ENTRY WATCH HIMS",
+        }
+    )
+    assert is_portfolio_monitor_alert(buy_pressure)
+    assert not is_confirmed_buy(buy_pressure)
+    assert buy_maturity(buy_pressure) is None
+
+
 def test_portfolio_monitor_accepts_long_portfolio_buy(alert: LocalAlert) -> None:
     long_buy = alert.model_copy(update={"kind": AlertKind.LONG_PORTFOLIO_BUY})
     assert is_portfolio_monitor_alert(long_buy)

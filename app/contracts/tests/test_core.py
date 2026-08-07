@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.contracts import (
+    AlertKind,
     AlertPolicy,
     EventEnvelope,
     RuleLifecycleStatus,
@@ -26,6 +27,7 @@ def test_public_enums_are_stable() -> None:
         RuleStatus.NOT_APPLICABLE,
         RuleStatus.ERROR,
     }
+    assert AlertKind.PORTFOLIO_FLOW_BUY.value == "PORTFOLIO_FLOW_BUY"
 
 
 def test_models_are_strict_frozen_and_forbid_extra_fields() -> None:

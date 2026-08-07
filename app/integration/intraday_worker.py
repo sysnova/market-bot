@@ -17,7 +17,6 @@ from app.contracts import (
     MarketBar,
     analysis_result_subject,
 )
-from app.intraday_engine import IntradayEngineV2
 from app.intraday_engine.models import IntradayContext
 
 from .bar_aggregator import MinuteBarAggregator
@@ -45,10 +44,10 @@ class IntradayWorker:
         self,
         *,
         publisher: EventPublisher,
-        analyzer: IntradayAnalyzer | None = None,
+        analyzer: IntradayAnalyzer,
     ) -> None:
         self._publisher = publisher
-        self._analyzer = analyzer or IntradayEngineV2()
+        self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=INTRADAY_MINUTE_BARS)
         self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_5,))
 

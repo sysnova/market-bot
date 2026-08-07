@@ -18,7 +18,6 @@ from app.contracts import (
     MarketBar,
     analysis_result_subject,
 )
-from app.long_term_engine import LongTermEngineV2
 from app.long_term_engine.models import LongTermContext
 
 from .event_fanout import EventPublisher
@@ -44,10 +43,10 @@ class LongTermWorker:
         self,
         *,
         publisher: EventPublisher,
-        analyzer: LongTermAnalyzer | None = None,
+        analyzer: LongTermAnalyzer,
     ) -> None:
         self._publisher = publisher
-        self._analyzer = analyzer or LongTermEngineV2()
+        self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=LONG_DAILY_BARS)
 
     async def bootstrap(

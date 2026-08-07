@@ -358,6 +358,97 @@ class EntryWatchTransitionRecord(Base):
     )
 
 
+class EntryOpportunityRecord(Base):
+    """Current materialized paper-opportunity state for one ticker thesis."""
+
+    __tablename__ = "entry_opportunities"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('ARMED', 'IN_ZONE', 'CONFIRMING', 'OPEN', 'CLOSED')",
+            name="status",
+        ),
+        CheckConstraint(
+            "current_maturity in ('ARMED', 'IN_ZONE', 'L1', 'L2', 'L3', 'L4')",
+            name="current_maturity",
+        ),
+        CheckConstraint(
+            "peak_maturity in ('ARMED', 'IN_ZONE', 'L1', 'L2', 'L3', 'L4')",
+            name="peak_maturity",
+        ),
+        CheckConstraint("progress_percent between 0 and 100", name="progress"),
+        CheckConstraint("invalidation < zone_low and zone_low <= zone_high", name="levels"),
+        CheckConstraint("expires_at > armed_at", name="expiry"),
+        CheckConstraint("revision >= 1", name="revision_positive"),
+        CheckConstraint(
+            "(status = 'CLOSED') = (closed_at is not null and close_reason is not null)",
+            name="closure_evidence",
+        ),
+        Index(
+            "entry_opportunities_one_active_per_symbol_idx",
+            "symbol",
+            unique=True,
+            postgresql_where=text("status <> 'CLOSED'"),
+        ),
+        Index("entry_opportunities_status_expires_idx", "status", "expires_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    current_maturity: Mapped[str] = mapped_column(Text, nullable=False)
+    peak_maturity: Mapped[str] = mapped_column(Text, nullable=False)
+    progress_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    original_watch_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA}.entry_watches.id", ondelete="RESTRICT"),
+    )
+    armed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    close_reason: Mapped[str | None] = mapped_column(Text)
+    zone_low: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    zone_high: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    invalidation: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    original_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    current_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class EntryOpportunityEventRecord(Base):
+    """Immutable lifecycle evidence and complete state snapshot."""
+
+    __tablename__ = "entry_opportunity_events"
+    __table_args__ = (
+        Index(
+            "entry_opportunity_events_opportunity_occurred_idx",
+            "opportunity_id",
+            "occurred_at",
+        ),
+        Index("entry_opportunity_events_symbol_occurred_idx", "symbol", "occurred_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    opportunity_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA}.entry_opportunities.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reasons: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
 class LongPortfolioAlertRecord(Base):
     __tablename__ = "long_portfolio_alerts"
     __table_args__ = (

@@ -159,7 +159,8 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["environment"].endswith(".venv-windows")
     assert [process["name"] for process in plan["processes"]] == [
         "alerts-v2",
-        "entry-watcher-v3",
+        "entry-watcher-v4",
+        "entry-opportunity-v1",
         "market-history-v1",
         "long-term-v2",
         "swing-v2",
@@ -174,10 +175,16 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["processes"][2]["arguments"][:4] == [
         "run",
         "marketbot",
+        "entry-opportunity",
+        "serve",
+    ]
+    assert plan["processes"][3]["arguments"][:4] == [
+        "run",
+        "marketbot",
         "market",
         "history",
     ]
-    assert plan["processes"][3]["arguments"][:4] == [
+    assert plan["processes"][4]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
@@ -189,31 +196,31 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "market",
         "stream",
     ]
-    assert plan["processes"][6]["arguments"][:4] == [
+    assert plan["processes"][7]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "rotation",
     ]
-    assert plan["processes"][7]["arguments"][:4] == [
+    assert plan["processes"][8]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "portfolio-flow",
     ]
-    assert plan["processes"][8]["arguments"][:4] == [
+    assert plan["processes"][9]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "long-portfolio",
     ]
-    assert plan["processes"][9]["arguments"][:4] == [
+    assert plan["processes"][10]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "patreon-caps",
     ]
-    assert plan["processes"][10]["arguments"][:4] == [
+    assert plan["processes"][11]["arguments"][:4] == [
         "run",
         "marketbot",
         "alerts",

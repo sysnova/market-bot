@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (
     ConsumerCheckpoint,
+    EntryOpportunityEventRecord,
+    EntryOpportunityRecord,
     EntryWatchRecord,
     EntryWatchTransitionRecord,
     LongPortfolioAlertRecord,
@@ -285,6 +287,102 @@ class EntryWatchRepository(Repository):
         if result.scalar_one_or_none() is None:
             return False
         self._session.add(transition)
+        return True
+
+
+class EntryOpportunityRepository(Repository):
+    """Persist one evolving opportunity per symbol and append immutable events."""
+
+    async def load_active(self, symbol: str) -> EntryOpportunityRecord | None:
+        statement = (
+            select(EntryOpportunityRecord)
+            .where(
+                EntryOpportunityRecord.symbol == symbol.strip().upper(),
+                EntryOpportunityRecord.status != "CLOSED",
+            )
+            .order_by(EntryOpportunityRecord.updated_at.desc())
+            .limit(1)
+        )
+        return await self._session.scalar(statement)
+
+    async def load_latest(self, symbol: str) -> EntryOpportunityRecord | None:
+        statement = (
+            select(EntryOpportunityRecord)
+            .where(EntryOpportunityRecord.symbol == symbol.strip().upper())
+            .order_by(EntryOpportunityRecord.updated_at.desc())
+            .limit(1)
+        )
+        return await self._session.scalar(statement)
+
+    async def list_active(self) -> tuple[EntryOpportunityRecord, ...]:
+        records = await self._session.scalars(
+            select(EntryOpportunityRecord)
+            .where(EntryOpportunityRecord.status != "CLOSED")
+            .order_by(EntryOpportunityRecord.symbol)
+        )
+        return tuple(records.all())
+
+    async def list_recent(self, *, limit: int) -> tuple[EntryOpportunityRecord, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        records = await self._session.scalars(
+            select(EntryOpportunityRecord)
+            .order_by(EntryOpportunityRecord.updated_at.desc())
+            .limit(limit)
+        )
+        return tuple(records.all())
+
+    async def event_seen(self, event_id: UUID) -> bool:
+        statement = select(EntryOpportunityEventRecord.id).where(
+            EntryOpportunityEventRecord.id == event_id
+        )
+        return await self._session.scalar(statement) is not None
+
+    async def save(
+        self,
+        opportunity: EntryOpportunityRecord,
+        event: EntryOpportunityEventRecord | None,
+    ) -> bool:
+        """Apply only a newer snapshot; append its event in the same transaction."""
+
+        values = {
+            column.name: getattr(opportunity, column.name)
+            for column in EntryOpportunityRecord.__table__.columns
+        }
+        base_statement = insert(EntryOpportunityRecord).values(**values)
+        statement = (
+            base_statement.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "status": base_statement.excluded.status,
+                    "current_maturity": base_statement.excluded.current_maturity,
+                    "peak_maturity": base_statement.excluded.peak_maturity,
+                    "progress_percent": base_statement.excluded.progress_percent,
+                    "updated_at": base_statement.excluded.updated_at,
+                    "expires_at": base_statement.excluded.expires_at,
+                    "closed_at": base_statement.excluded.closed_at,
+                    "close_reason": base_statement.excluded.close_reason,
+                    "current_price": base_statement.excluded.current_price,
+                    "revision": base_statement.excluded.revision,
+                    "payload": base_statement.excluded.payload,
+                },
+                where=EntryOpportunityRecord.revision < base_statement.excluded.revision,
+            )
+            .returning(EntryOpportunityRecord.id)
+        )
+        result = await self._session.execute(statement)
+        if result.scalar_one_or_none() is None:
+            return False
+        if event is not None:
+            event_values = {
+                column.name: getattr(event, column.name)
+                for column in EntryOpportunityEventRecord.__table__.columns
+            }
+            await self._session.execute(
+                insert(EntryOpportunityEventRecord)
+                .values(**event_values)
+                .on_conflict_do_nothing(index_elements=["id"])
+            )
         return True
 
 

@@ -42,9 +42,10 @@ from app.contracts import (
 )
 from app.event_bus import NatsJetStreamEventBus
 from app.persistence import create_database_engine
-from app.signal_fusion_engine import SignalFusionContext, SignalFusionEngine
+from app.signal_fusion_engine import SignalFusionContext
 
 from .distributed_composition import connect_nats, write_ready
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
 
 FUSION_SOURCE_SUBJECTS = (
@@ -249,9 +250,10 @@ class SignalFusionRuntime:
 
 
 async def run_signal_fusion_process(
-    *, ready_path: Path | None = None, once: bool = False
+    *, ready_path: Path | None = None, once: bool = False, symbol: str | None = None
 ) -> dict[str, object] | None:
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     database = create_database_engine(
         settings.database_url.get_secret_value(),
         require_ssl=settings.environment is Environment.PRODUCTION,
@@ -261,20 +263,32 @@ async def run_signal_fusion_process(
     subscriptions: list[Subscription] = []
     try:
         holdings = await load_fusion_holdings(provider)
+        requested = symbol.strip().upper() if symbol is not None else None
+        if requested is not None and requested not in holdings.symbols:
+            return {
+                "service": "signal-fusion-v0",
+                "mode": "SHADOW",
+                "requested_symbol": requested,
+                "eligible": False,
+                "reason": "positive_holding_required",
+                "assessments_published": 0,
+                "execution_enabled": False,
+            }
+        selected_symbols = (requested,) if requested is not None else holdings.symbols
         quantities = dict(
             zip(
-                holdings.symbols,
+                selected_symbols,
                 await asyncio.gather(
-                    *(provider.get_holding_quantity(item) for item in holdings.symbols)
+                    *(provider.get_holding_quantity(item) for item in selected_symbols)
                 ),
                 strict=True,
             )
         )
         bus = await connect_nats(settings)
         runtime = SignalFusionRuntime(
-            engine=SignalFusionEngine(),
+            engine=assembly.build_signal_fusion(),
             publisher=bus,
-            symbols=holdings.symbols,
+            symbols=selected_symbols,
             holding_quantities=quantities,
         )
         source_subscriptions = [
@@ -290,15 +304,17 @@ async def run_signal_fusion_process(
             for index, subject in enumerate(FUSION_SOURCE_SUBJECTS, start=1)
         ]
         subscriptions.extend(source_subscriptions)
-        await _hydrate_latest(bus, runtime, holdings.symbols)
+        await _hydrate_latest(bus, runtime, selected_symbols)
         published = await runtime.complete_hydration()
         summary: dict[str, object] = {
             "service": "signal-fusion-v0",
-            "engine_version": SignalFusionEngine.engine_version,
+            "engine_version": assembly.spec(EngineSlot.SIGNAL_FUSION).implementation,
+            "engine_strategy_version": assembly.spec(EngineSlot.SIGNAL_FUSION).strategy.version,
+            "marketbot_definition_version": assembly.definition.version,
             "mode": "SHADOW",
             "universe": "positive-holdings-only",
             "universe_source": holdings.source,
-            "symbols": list(holdings.symbols),
+            "symbols": list(selected_symbols),
             "assessments_published": published,
             "persistence": "nats-jetstream-15d",
             "patreon_is_independent_vote": False,

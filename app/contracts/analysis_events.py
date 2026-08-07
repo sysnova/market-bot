@@ -2,7 +2,13 @@
 
 from typing import Final
 
-from .enums import AlertSeverity, AnalysisHorizon, BarTimeframe, EntryWatchStatus
+from .enums import (
+    AlertSeverity,
+    AnalysisHorizon,
+    BarTimeframe,
+    EntryOpportunityStatus,
+    EntryWatchStatus,
+)
 
 MARKET_BAR_EVENT: Final = "market.bar.received"
 MARKET_BAR_UPDATED_EVENT: Final = "market.bar.updated"
@@ -10,6 +16,7 @@ ANALYSIS_RESULT_EVENT: Final = "analysis.result.produced"
 LOCAL_ALERT_EVENT: Final = "alert.local.produced"
 SERVICE_HEALTH_EVENT: Final = "service.health.reported"
 ENTRY_WATCH_TRANSITION_EVENT: Final = "entry-watch.transitioned"
+ENTRY_OPPORTUNITY_EVENT: Final = "entry-opportunity.updated"
 PATREON_CAPS_ASSESSMENT_EVENT: Final = "patreon-caps.assessed"
 PATREON_CAPS_TRANSITION_EVENT: Final = "patreon-caps.transitioned"
 ELLIOTT_WAVE_ASSESSMENT_EVENT: Final = "elliott-wave.assessed"
@@ -41,6 +48,10 @@ def service_health_subject(service: str) -> str:
 
 def entry_watch_transition_subject(status: EntryWatchStatus, symbol: str) -> str:
     return f"marketbot.v1.entry-watch.transition.{status.value}.{_symbol_token(symbol)}"
+
+
+def entry_opportunity_subject(status: EntryOpportunityStatus, symbol: str) -> str:
+    return f"marketbot.v1.entry-opportunity.transition.{status.value}.{_symbol_token(symbol)}"
 
 
 def patreon_caps_assessment_subject(symbol: str) -> str:

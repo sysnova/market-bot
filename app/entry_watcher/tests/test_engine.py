@@ -17,6 +17,7 @@ from app.entry_watcher import (
     EntryWatcherPolicy,
     EntryWatcherV2,
     EntryWatcherV3,
+    EntryWatcherV4,
     InMemoryEntryWatchStore,
 )
 
@@ -593,3 +594,129 @@ async def test_v3_breakaway_does_not_trigger_when_live_reward_risk_falls_below_t
     assert transition is None
     active = await store.load_active("AAPL")
     assert active is not None and active.status is EntryWatchStatus.ARMED
+
+
+@pytest.mark.unit
+async def test_v4_requires_a_fresh_second_mature_intraday_confirmation() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV4(store=store)
+    await watcher.ingest(long_watch(price="103"), now=NOW)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="pullback",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=1),
+            engine_version="3.0.0",
+            extra_metrics=(NamedValue(name="anchored_vwap_gate_passed", value=True),),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    first = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="bullish_breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=2),
+            setup="bullish_breakout",
+            engine_version="4.0.0",
+            extra_metrics=(
+                NamedValue(name="confirmation_gate_passed", value=True),
+                NamedValue(name="mature_confirmation_gate_passed", value=True),
+                NamedValue(name="entry_efficiency_gate_passed", value=True),
+                NamedValue(name="confirmation_quality", value="strong"),
+                NamedValue(name="five_minute_higher_low", value=True),
+            ),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+    second_result = analysis(
+        AnalysisHorizon.INTRADAY,
+        classification="bullish_breakout",
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        price="103.10",
+        as_of=NOW + timedelta(minutes=5),
+        setup="bullish_breakout",
+        engine_version="4.0.0",
+        extra_metrics=(
+            NamedValue(name="confirmation_gate_passed", value=True),
+            NamedValue(name="mature_confirmation_gate_passed", value=True),
+            NamedValue(name="entry_efficiency_gate_passed", value=True),
+            NamedValue(name="confirmation_quality", value="strong"),
+            NamedValue(name="five_minute_higher_low", value=True),
+        ),
+    ).model_copy(update={"analysis_id": UUID("0195f3a5-9000-7000-8000-000000000099")})
+    second = await watcher.ingest(second_result, now=NOW + timedelta(minutes=5))
+
+    assert first is None
+    assert second is not None
+    assert second.status is EntryWatchStatus.TRIGGERED
+    assert "fresh_mature_intraday_reconfirmed" in second.reasons
+
+
+@pytest.mark.unit
+async def test_v4_does_not_rearm_a_different_zone_immediately_after_trigger() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV4(store=store)
+    await watcher.ingest(long_watch(price="103"), now=NOW)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="pullback",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=1),
+            engine_version="3.0.0",
+            extra_metrics=(NamedValue(name="anchored_vwap_gate_passed", value=True),),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    first_intraday = analysis(
+        AnalysisHorizon.INTRADAY,
+        classification="bullish_breakout",
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        price="103",
+        as_of=NOW + timedelta(minutes=2),
+        setup="bullish_breakout",
+        engine_version="4.0.0",
+        extra_metrics=(
+            NamedValue(name="confirmation_gate_passed", value=True),
+            NamedValue(name="mature_confirmation_gate_passed", value=True),
+            NamedValue(name="entry_efficiency_gate_passed", value=True),
+            NamedValue(name="confirmation_quality", value="strong"),
+            NamedValue(name="five_minute_higher_low", value=True),
+        ),
+    )
+    await watcher.ingest(first_intraday, now=NOW + timedelta(minutes=2))
+    second_intraday = first_intraday.model_copy(
+        update={
+            "analysis_id": UUID("0195f3a5-9000-7000-8000-000000000098"),
+            "as_of": NOW + timedelta(minutes=5),
+        }
+    )
+    triggered = await watcher.ingest(second_intraday, now=NOW + timedelta(minutes=5))
+    rearmed = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.LONG_TERM,
+            classification="buy_zone",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="104",
+            as_of=NOW + timedelta(minutes=6),
+            zone_low="101",
+            zone_high="106",
+            invalidation="93",
+        ),
+        now=NOW + timedelta(minutes=6),
+    )
+
+    assert triggered is not None and triggered.status is EntryWatchStatus.TRIGGERED
+    assert rearmed is None
+    assert await store.load_active("AAPL") is None

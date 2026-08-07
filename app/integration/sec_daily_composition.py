@@ -23,7 +23,6 @@ from app.contracts import (
     analysis_result_subject,
 )
 from app.dilution_sec_engine import (
-    DilutionSecEngine,
     SecEdgarAdapter,
     SecEdgarConfig,
     SecTickerResolver,
@@ -32,6 +31,7 @@ from app.event_bus import InMemoryEventBus, NatsJetStreamEventBus
 from app.persistence import create_database_engine
 
 from .alert_publisher import AlertEventPublisher
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .event_fanout import EventFanoutPublisher, EventPublisher
 from .postgres_universe import (
     PostgresUniverseClient,
@@ -93,6 +93,7 @@ async def run_sec_daily_analysis(
     """Scan only recent dilution-related filings and exit."""
 
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     configure_logging(level=settings.log_level, json_output=settings.log_json)
     logger = get_logger("sec-daily")
     if not settings.sec_enabled or not settings.sec_configured:
@@ -146,7 +147,7 @@ async def run_sec_daily_analysis(
     )
     consumer = _SecAlertConsumer(
         publisher=publisher,
-        alert_engine=AlertEngine(),
+        alert_engine=assembly.build_alert(),
         dispatcher=dispatcher,
         clock=clock,
     )
@@ -175,7 +176,7 @@ async def run_sec_daily_analysis(
     refresher = SecAnalysisRefresher(
         resolver=SecTickerResolver(sec_config, client=http_client),
         loader=SecEdgarAdapter(sec_config, client=http_client),
-        engine=DilutionSecEngine(),
+        engine=assembly.build_dilution_sec(),
         runtime=consumer,
         skip_without_filings=True,
         on_error=lambda symbol, error: _log_sec_error(logger, symbol, error),
@@ -192,6 +193,9 @@ async def run_sec_daily_analysis(
             "execution_enabled": False,
             "universe_source": universe.source,
             "alert_path": str(alert_ledger.path_for(as_of)),
+            "marketbot_definition_version": assembly.definition.version,
+            "engine_implementation": assembly.spec(EngineSlot.DILUTION_SEC).implementation,
+            "engine_strategy_version": assembly.spec(EngineSlot.DILUTION_SEC).strategy.version,
         }
         await logger.ainfo("sec_daily_complete", **result)
         return result

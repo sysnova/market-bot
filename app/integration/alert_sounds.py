@@ -22,11 +22,17 @@ _SOLID_BUY_SCRIPT = (
     "Start-Sleep -Milliseconds 90; "
     "[console]::Beep(1600, 500)"
 )
+_AGGRESSIVE_FLOW_SCRIPT = (
+    "[console]::Beep(1350, 120); Start-Sleep -Milliseconds 60; [console]::Beep(1650, 220)"
+)
+_ENTRY_CLOSE_SCRIPT = (
+    "[console]::Beep(1100, 180); Start-Sleep -Milliseconds 70; "
+    "[console]::Beep(750, 240); Start-Sleep -Milliseconds 70; [console]::Beep(450, 380)"
+)
 _BUY_MATURITY_SCRIPTS = {
     BuyMaturity.TACTICAL_RECOVERY: "[console]::Beep(780, 260)",
     BuyMaturity.SWING_CONFIRMED: (
-        "[console]::Beep(850, 180); Start-Sleep -Milliseconds 90; "
-        "[console]::Beep(1150, 320)"
+        "[console]::Beep(850, 180); Start-Sleep -Milliseconds 90; [console]::Beep(1150, 320)"
     ),
     BuyMaturity.HIGH_CONVICTION: (
         "[console]::Beep(1000, 160); Start-Sleep -Milliseconds 70; "
@@ -53,6 +59,18 @@ def play_buy_maturity_sound(maturity: BuyMaturity, *, fallback: TextIO) -> bool:
     """Play the distinct native pattern assigned to one buy maturity."""
 
     return _play_windows_sound(_BUY_MATURITY_SCRIPTS[maturity], fallback=fallback)
+
+
+def play_aggressive_flow_sound(*, fallback: TextIO) -> bool:
+    """Play the short two-tone alarm for an aggressive buy-pressure watch."""
+
+    return _play_windows_sound(_AGGRESSIVE_FLOW_SCRIPT, fallback=fallback)
+
+
+def play_entry_close_sound(*, fallback: TextIO) -> bool:
+    """Play a descending alarm for invalidation or audited paper-trade closure."""
+
+    return _play_windows_sound(_ENTRY_CLOSE_SCRIPT, fallback=fallback)
 
 
 def _play_windows_sound(script: str, *, fallback: TextIO) -> bool:

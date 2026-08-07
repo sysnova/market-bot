@@ -13,6 +13,7 @@ from app.intraday_engine.engine import IntradayEngine
 from app.intraday_engine.models import IntradayContext
 from app.intraday_engine.v2 import IntradayEngineV2
 from app.intraday_engine.v3 import IntradayEngineV3
+from app.intraday_engine.v4 import IntradayEngineV4
 
 from .helpers import trend_bars
 
@@ -211,3 +212,92 @@ def test_v3_versions_the_gate_and_keeps_stop_outside_minimum_noise() -> None:
     assert _metric(result, "entry_confirmation_rule_version") == "3.0.0"
     assert Decimal(str(_metric(result, "risk_percent"))) >= Decimal("0.25")
     assert isinstance(_metric(result, "confirmation_gate_passed"), bool)
+
+
+def test_v4_rejects_a_persistent_breakout_when_the_entry_is_already_extended() -> None:
+    minute_bars = trend_bars(
+        symbol="AMD",
+        start=Decimal("160"),
+        step=Decimal("0.04"),
+        final_move=Decimal("0.60"),
+        base_volume=Decimal("1000"),
+        final_volume=Decimal("2600"),
+    )
+    five_minute_bars = trend_bars(
+        symbol="AMD",
+        start=Decimal("155"),
+        step=Decimal("0.12"),
+        final_move=Decimal("0.30"),
+        base_volume=Decimal("5000"),
+        final_volume=Decimal("7000"),
+        count=20,
+        timeframe=BarTimeframe.MINUTE_5,
+    )
+    context = IntradayContext(
+        symbol="AMD",
+        as_of=max(minute_bars[-1].timestamp, five_minute_bars[-1].timestamp),
+        minute_bars=minute_bars,
+        five_minute_bars=five_minute_bars,
+    )
+
+    legacy = IntradayEngineV3().analyze(context)
+    result = IntradayEngineV4().analyze(context)
+
+    assert legacy.verdict is AnalysisVerdict.FAVORABLE
+    assert result.engine_version == "4.0.0"
+    assert result.verdict is AnalysisVerdict.WATCH
+    assert _metric(result, "entry_confirmation_rule_version") == "4.0.0"
+    assert _metric(result, "entry_efficiency_gate_passed") is False
+    assert _metric(result, "mature_confirmation_gate_passed") is False
+    assert Decimal(str(_metric(result, "breakout_extension_atr"))) > Decimal("0.50")
+    assert "late_entry_wait_retest" in result.reasons
+
+
+def test_v4_accepts_an_efficient_strong_higher_low_retest() -> None:
+    minute_bars = list(
+        trend_bars(
+            symbol="AMD",
+            start=Decimal("160"),
+            step=Decimal("0"),
+            final_move=Decimal("0.01"),
+            base_volume=Decimal("1000"),
+            final_volume=Decimal("1000"),
+        )
+    )
+    for index, close in enumerate(
+        map(Decimal, ("160.00", "160.06", "160.12", "160.18", "160.244")),
+        start=55,
+    ):
+        open_price = minute_bars[index - 1].close
+        minute_bars[index] = minute_bars[index].model_copy(
+            update={
+                "open": open_price,
+                "high": max(open_price, close) + Decimal("0.02"),
+                "low": min(open_price, close) - Decimal("0.02"),
+                "close": close,
+                "volume": Decimal("2600") if index == 59 else Decimal("1000"),
+            }
+        )
+    five_minute_bars = trend_bars(
+        symbol="AMD",
+        start=Decimal("155"),
+        step=Decimal("0.12"),
+        final_move=Decimal("0.30"),
+        base_volume=Decimal("5000"),
+        final_volume=Decimal("7000"),
+        count=20,
+        timeframe=BarTimeframe.MINUTE_5,
+    )
+    context = IntradayContext(
+        symbol="AMD",
+        as_of=max(minute_bars[-1].timestamp, five_minute_bars[-1].timestamp),
+        minute_bars=tuple(minute_bars),
+        five_minute_bars=five_minute_bars,
+    )
+
+    result = IntradayEngineV4().analyze(context)
+
+    assert result.verdict is AnalysisVerdict.FAVORABLE
+    assert _metric(result, "entry_efficiency_gate_passed") is True
+    assert _metric(result, "mature_confirmation_gate_passed") is True
+    assert _metric(result, "entry_timing") == "efficient_retest"

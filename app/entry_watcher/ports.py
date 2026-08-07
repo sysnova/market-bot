@@ -1,4 +1,4 @@
-"""Persistence port for entry opportunities."""
+"""Persistence port for Entry Watcher detector state."""
 
 from __future__ import annotations
 

@@ -4,10 +4,12 @@ from app.contracts import (
     AlertSeverity,
     AnalysisHorizon,
     BarTimeframe,
+    EntryOpportunityStatus,
     EntryWatchStatus,
     PatreonCapsState,
     analysis_result_subject,
     elliott_wave_assessment_subject,
+    entry_opportunity_subject,
     entry_watch_transition_subject,
     local_alert_subject,
     market_bar_subject,
@@ -30,6 +32,9 @@ def test_stable_analysis_subjects_are_partitioned_by_kind_and_symbol() -> None:
     assert service_health_subject("swing-v2") == "marketbot.v1.service.health.swing-v2"
     assert entry_watch_transition_subject(EntryWatchStatus.IN_ZONE, "BRK.B") == (
         "marketbot.v1.entry-watch.transition.IN_ZONE.BRK_B"
+    )
+    assert entry_opportunity_subject(EntryOpportunityStatus.CONFIRMING, "BRK.B") == (
+        "marketbot.v1.entry-opportunity.transition.CONFIRMING.BRK_B"
     )
     assert patreon_caps_assessment_subject("BRK.B") == (
         "marketbot.v1.patreon-caps.assessment.BRK_B"

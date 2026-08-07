@@ -169,6 +169,49 @@ Table market_bot.entry_watch_transitions {
   }
 }
 
+Table market_bot.entry_opportunities {
+  id uuid [pk]
+  symbol text [not null]
+  status text [not null, note: "ARMED | IN_ZONE | CONFIRMING | OPEN | CLOSED"]
+  current_maturity text [not null, note: "ARMED | IN_ZONE | L1 | L2 | L3 | L4"]
+  peak_maturity text [not null, note: "ARMED | IN_ZONE | L1 | L2 | L3 | L4"]
+  progress_percent numeric(5,2) [not null]
+  original_watch_id uuid
+  armed_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  expires_at timestamptz [not null]
+  closed_at timestamptz
+  close_reason text
+  zone_low numeric(28,8) [not null]
+  zone_high numeric(28,8) [not null]
+  invalidation numeric(28,8) [not null]
+  original_price numeric(28,8) [not null]
+  current_price numeric(28,8) [not null]
+  revision integer [not null]
+  payload jsonb [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    symbol [unique, name: "entry_opportunities_one_active_per_symbol_idx", note: "Partial: status <> 'CLOSED'"]
+    (status, expires_at) [name: "entry_opportunities_status_expires_idx"]
+  }
+}
+
+Table market_bot.entry_opportunity_events {
+  id uuid [pk]
+  opportunity_id uuid [not null]
+  symbol text [not null]
+  occurred_at timestamptz [not null]
+  reasons jsonb [not null]
+  payload jsonb [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (opportunity_id, occurred_at) [name: "entry_opportunity_events_opportunity_occurred_idx"]
+    (symbol, occurred_at) [name: "entry_opportunity_events_symbol_occurred_idx"]
+  }
+}
+
 Table market_bot.long_portfolio_alerts {
   id uuid [pk]
   deduplication_key text [not null, unique]
@@ -285,4 +328,6 @@ Ref: market_bot.run_strategies.strategy_version_id > market_bot.strategy_version
 Ref: market_bot.processed_events.run_id > market_bot.runs.id [delete: restrict]
 Ref: market_bot.control_events.run_id > market_bot.runs.id [delete: restrict]
 Ref: market_bot.entry_watch_transitions.watch_id > market_bot.entry_watches.id [delete: restrict]
+Ref: market_bot.entry_opportunities.original_watch_id > market_bot.entry_watches.id [delete: restrict]
+Ref: market_bot.entry_opportunity_events.opportunity_id > market_bot.entry_opportunities.id [delete: restrict]
 Ref: market_bot.patreon_caps_transitions.watch_id > market_bot.patreon_caps_watches.id [delete: restrict]

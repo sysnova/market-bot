@@ -56,6 +56,7 @@ class EntryWatcherPolicy:
     continuation_max_atr: Decimal = Decimal("0.75")
     continuation_fallback_percent: Decimal = Decimal("2")
     continuation_min_reward_risk: Decimal = Decimal("2")
+    trigger_rearm_cooldown: timedelta = timedelta(minutes=30)
 
     def __post_init__(self) -> None:
         if self.ttl <= timedelta(0):
@@ -68,6 +69,8 @@ class EntryWatcherPolicy:
             raise ValueError("entry watch freshness must be positive")
         if self.continuation_grace <= timedelta(0):
             raise ValueError("entry continuation grace must be positive")
+        if self.trigger_rearm_cooldown <= timedelta(0):
+            raise ValueError("trigger rearm cooldown must be positive")
         if any(
             value <= Decimal("0")
             for value in (
@@ -100,9 +103,7 @@ class EntryWatcher:
         self._id_factory = id_factory
         self._latest: dict[str, dict[AnalysisHorizon, AnalysisResult]] = {}
 
-    async def ingest(
-        self, result: AnalysisResult, *, now: datetime
-    ) -> EntryWatchTransition | None:
+    async def ingest(self, result: AnalysisResult, *, now: datetime) -> EntryWatchTransition | None:
         self._validate_time(result, now)
         latest = self._latest.setdefault(result.symbol, {})
         existing_result = latest.get(result.horizon)
@@ -170,10 +171,7 @@ class EntryWatcher:
                 current_price=current_price,
                 analyses=latest,
             )
-            if (
-                reward_risk is not None
-                and reward_risk >= self._policy.continuation_min_reward_risk
-            ):
+            if reward_risk is not None and reward_risk >= self._policy.continuation_min_reward_risk:
                 extension_percent, extension_atr = continuation
                 return await self._change(
                     active,
@@ -241,9 +239,7 @@ class EntryWatcher:
             and _decimal(metrics.get("invalidation")) == watch.invalidation
         )
 
-    async def _arm(
-        self, result: AnalysisResult, *, now: datetime
-    ) -> EntryWatchTransition | None:
+    async def _arm(self, result: AnalysisResult, *, now: datetime) -> EntryWatchTransition | None:
         metrics = _metrics(result)
         classification = metrics.get("classification")
         zone_low = _decimal(metrics.get("buy_zone_low"))
@@ -298,9 +294,7 @@ class EntryWatcher:
             invalidation=invalidation,
             original_price=price,
             current_price=price,
-            correction_target_percent=correction.quantize(
-                FOUR_PLACES, rounding=ROUND_HALF_UP
-            ),
+            correction_target_percent=correction.quantize(FOUR_PLACES, rounding=ROUND_HALF_UP),
             source_analysis_id=result.analysis_id,
             source_context_hash=result.context_hash,
             anchor_snapshot=anchor_snapshot,
@@ -390,9 +384,7 @@ class EntryWatcher:
             source_analysis_ids=tuple(analyses[horizon].analysis_id for horizon in ordered),
         )
 
-    def _confirmed(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime
-    ) -> bool:
+    def _confirmed(self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime) -> bool:
         required = {
             AnalysisHorizon.LONG_TERM,
             AnalysisHorizon.SWING,
@@ -401,8 +393,7 @@ class EntryWatcher:
         if not required.issubset(analyses):
             return False
         if any(
-            now - analyses[horizon].as_of > self._policy.max_ages[horizon]
-            for horizon in required
+            now - analyses[horizon].as_of > self._policy.max_ages[horizon] for horizon in required
         ):
             return False
         long_term = analyses[AnalysisHorizon.LONG_TERM]
@@ -410,8 +401,7 @@ class EntryWatcher:
         intraday = analyses[AnalysisHorizon.INTRADAY]
         return (
             long_term.direction is PatternDirection.BULLISH
-            and long_term.verdict
-            not in {AnalysisVerdict.AVOID, AnalysisVerdict.INSUFFICIENT_DATA}
+            and long_term.verdict not in {AnalysisVerdict.AVOID, AnalysisVerdict.INSUFFICIENT_DATA}
             and swing.direction is PatternDirection.BULLISH
             and swing.verdict is AnalysisVerdict.FAVORABLE
             and _metrics(swing).get("classification") in _SWING_CONFIRMATIONS
@@ -440,9 +430,9 @@ class EntryWatcher:
         ):
             return None
         extension = current_price - watch.zone_high
-        extension_percent = (
-            extension / watch.zone_high * Decimal("100")
-        ).quantize(FOUR_PLACES, rounding=ROUND_HALF_UP)
+        extension_percent = (extension / watch.zone_high * Decimal("100")).quantize(
+            FOUR_PLACES, rounding=ROUND_HALF_UP
+        )
         if extension_percent > self._policy.continuation_max_percent:
             return None
         atr14 = self._latest_decimal_metric(
@@ -454,9 +444,7 @@ class EntryWatcher:
             if extension_percent > self._policy.continuation_fallback_percent:
                 return None
             return extension_percent, "unavailable"
-        extension_atr = (extension / atr14).quantize(
-            FOUR_PLACES, rounding=ROUND_HALF_UP
-        )
+        extension_atr = (extension / atr14).quantize(FOUR_PLACES, rounding=ROUND_HALF_UP)
         if extension_atr > self._policy.continuation_max_atr:
             return None
         return extension_percent, extension_atr
@@ -545,8 +533,7 @@ class EntryWatcher:
         watch: EntryWatch, *, result: AnalysisResult, current_price: Decimal
     ) -> str | None:
         if result.horizon is AnalysisHorizon.LONG_TERM and (
-            result.verdict is AnalysisVerdict.AVOID
-            or result.direction is PatternDirection.BEARISH
+            result.verdict is AnalysisVerdict.AVOID or result.direction is PatternDirection.BEARISH
         ):
             return "long_structure_invalidated"
         if current_price <= watch.invalidation:

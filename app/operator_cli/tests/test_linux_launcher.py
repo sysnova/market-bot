@@ -14,7 +14,9 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     assert "LONG PORTFOLIO 2026" in script
     assert '"$STATUS_ROOT/long-portfolio-v1.ready.json"' in script
     assert '"$STATUS_ROOT/long-portfolio-monitor.ready.json"' in script
-    assert "start_background entry-watcher-v3" in script
+    assert "start_background entry-watcher-v4" in script
+    assert "start_background entry-opportunity-v1" in script
+    assert "run marketbot entry-opportunity serve" in script
     assert "remain-on-exit on" in script
     assert 'tmux kill-session -t "$SESSION"' in script
     assert "tmux kill-pane -a" not in script

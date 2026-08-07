@@ -1,6 +1,7 @@
 """Typed process configuration and safe diagnostic rendering."""
 
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import AnyUrl, Field, HttpUrl, SecretStr, model_validator
@@ -30,7 +31,8 @@ class AppSettings(BaseSettings):
     database_url: SecretStr = SecretStr("postgresql://marketbot:marketbot@localhost:5432/marketbot")
     entry_watcher_enabled: bool = True
     entry_watch_ttl_days: int = Field(default=56, ge=7, le=365)
-    entry_confirmation_rule_version: Literal["2.0.0", "3.0.0"] = "3.0.0"
+    definition_path: Path = Path("configs/marketbot/4.0.0.yaml")
+    entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0"] | None = None
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     alpaca_api_key_id: SecretStr | None = None
     alpaca_api_secret_key: SecretStr | None = None

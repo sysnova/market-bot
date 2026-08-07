@@ -33,6 +33,69 @@
 - Treat files under `supabase/migrations/` as versioned PostgreSQL schema artifacts; their presence does not authorize or imply a Supabase lookup.
 - For persisted analytical events, inspect the local `MARKETBOT` JetStream and filter `marketbot.v1.analysis.result.>`.
 
+## Engine assembly
+
+- `configs/marketbot/<version>.yaml` is the sole operational definition of engine implementation,
+  strategy artifact/version, and mode. The default path comes from `MARKETBOT_DEFINITION_PATH`.
+- Construct operational engines only through `app.integration.engine_assembly.MarketBotAssembly`.
+  Do not add a direct engine constructor or a version-selection map to a composition, worker,
+  analyzer, or CLI command.
+- Add new implementations to the central catalog, retain prior implementations for rollback, and
+  add a new immutable MarketBot definition for a reviewed assembly change.
+- Keep implementation version, strategy version, and operational mode distinct in diagnostics.
+  Run `uv run marketbot assembly` to inspect the effective selection.
+- `MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION` is deprecated compatibility for atomic rollback of
+  Swing/Intraday/Entry Watcher only; do not use it as a second general configuration mechanism.
+
+## Codex ticker-report workflow
+
+- When the user asks Codex for a MarketBot report or analysis of a ticker, run the
+  repository analyzer from the repository root. The canonical invocation is
+  `uv run market-bot -analyzer TICKER`.
+- `TICKER` always comes from the user's request. Never substitute a fixed ticker,
+  reuse a ticker from an earlier report, or hardcode a symbol. The analyzer normalizes
+  and validates the received value.
+- For an explicit per-engine timeout or to disable NATS during diagnostics, use the
+  equivalent form `uv run marketbot analyzer TICKER --timeout-seconds SECONDS
+  [--no-nats]`. Normal reports should keep NATS enabled so downstream engines can
+  consume the current Core results.
+- Do not invoke Peter Lynch or the SEC/dilution scan before or after the analyzer.
+  They are deliberately excluded from this report mode because their external-provider
+  paths are slow. Mention this exclusion in the report when it matters.
+- Wait for the analyzer to finish and interpret the final structured report; do not
+  treat initialization logs as the result. A failure in one engine is partial
+  degradation, not failure of the whole report.
+- Interpret engine statuses as follows:
+  - `COMPLETED`: analyze the returned result and include its material evidence.
+  - `SKIPPED`: the engine was intentionally inapplicable. State the gate/reason; do
+    not present it as bearish evidence. Holdings-only engines normally skip tickers
+    that are not positive local holdings, and Portfolio Flow requires a live
+    quote/trade window.
+  - `FAILED`: identify the unavailable engine and error type without inventing a
+    verdict from it.
+  - `TIMED_OUT`: identify the timeout and continue interpreting completed engines.
+- In the Core result, interpret every returned Long, Swing, and Intraday
+  `AnalysisResult`: verdict, direction, score, confidence, reasons, risk flags,
+  reference price, support/resistance, entry or buy zones, invalidation, targets,
+  VWAP/AVWAP gates, regime, and confirmation quality when present. Also report the
+  Entry Watcher/Alert availability declared by Core.
+- Interpret Market Rotation as global context, not as a ticker-specific vote.
+  Patreon Caps, Elliott Wave, Support Confirmation, Long Portfolio, and Signal Fusion
+  retain their operational `SHADOW`, holdings-only, or allocation gates. Do not blur
+  a counterfactual calculation with an operational buy confirmation.
+- State the report's data time and whether the market was regular, premarket, or
+  closed when that can be established from the output. Intraday evidence without a
+  completed confirmation timeframe must be described as provisional.
+- End with one unambiguous maturity conclusion: no buy maturity, or the actual
+  L1/L2/L3/L4 alert emitted by MarketBot. Do not promote `WATCH`, proximity to support,
+  high relative volume, or a bullish direction field into a confirmed buy when its
+  confirmation gates failed.
+- Include actionable levels only when the engines returned them, and preserve the
+  distinction between entry, invalidation, resistance, and target. Never fabricate
+  missing levels or infer a vote from an unavailable engine.
+- This workflow is analysis-only. It must not submit orders, enable execution, or
+  change engine rules while producing a report.
+
 ## Change coordination
 
 - Respect folder ownership during parallel work and do not revert unrelated edits.

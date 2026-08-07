@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.common.settings import AppSettings
 from app.contracts import (
     SERVICE_HEALTH_EVENT,
     AnalysisHorizon,
@@ -20,10 +21,11 @@ from app.integration.distributed_composition import (
     engine_live_subjects,
     market_stream_subscription_options,
 )
+from app.integration.engine_assembly import MarketBotAssembly
 from app.integration.intraday_worker import IntradayWorker
 from app.integration.long_term_worker import LongTermWorker
 from app.integration.swing_worker import SwingWorker
-from app.intraday_engine import IntradayEngineV3
+from app.intraday_engine import IntradayEngineV3, IntradayEngineV4
 from app.market_history_engine.service import _batches, _weekly_bar_is_complete
 from app.swing_engine import SwingEngineV3
 
@@ -34,6 +36,19 @@ class RecordingPublisher:
 
     async def publish(self, subject: str, envelope: EventEnvelope) -> None:
         self.events.append((subject, envelope))
+
+
+DEFINITION = Path(__file__).resolve().parents[3] / "configs/marketbot/4.0.0.yaml"
+
+
+def _assembly(rule_version: str | None = None) -> MarketBotAssembly:
+    return MarketBotAssembly.from_settings(
+        AppSettings(
+            definition_path=DEFINITION,
+            entry_confirmation_rule_version=rule_version,
+            _env_file=None,
+        )
+    )
 
 
 @pytest.mark.unit
@@ -67,9 +82,7 @@ def test_each_engine_has_an_independent_live_subscription_set() -> None:
         "marketbot.v1.market.bar.1Min.>",
         "marketbot.v1.market.bar.1Day.>",
     )
-    assert engine_live_subjects(AnalysisHorizon.INTRADAY) == (
-        "marketbot.v1.market.bar.1Min.>",
-    )
+    assert engine_live_subjects(AnalysisHorizon.INTRADAY) == ("marketbot.v1.market.bar.1Min.>",)
 
 
 @pytest.mark.unit
@@ -103,12 +116,8 @@ def test_distributed_helpers_normalize_batches_and_readiness(tmp_path: Path) -> 
 def test_weekly_completion_uses_new_york_market_week() -> None:
     bar_timestamp = datetime(2026, 7, 20, 4, tzinfo=UTC)
 
-    assert not _weekly_bar_is_complete(
-        bar_timestamp, datetime(2026, 7, 24, 20, tzinfo=UTC)
-    )
-    assert _weekly_bar_is_complete(
-        bar_timestamp, datetime(2026, 7, 25, 4, tzinfo=UTC)
-    )
+    assert not _weekly_bar_is_complete(bar_timestamp, datetime(2026, 7, 24, 20, tzinfo=UTC))
+    assert _weekly_bar_is_complete(bar_timestamp, datetime(2026, 7, 25, 4, tzinfo=UTC))
 
 
 @pytest.mark.unit
@@ -129,18 +138,37 @@ async def test_health_is_published_as_a_stable_contract() -> None:
 def test_worker_factory_selects_only_distributed_analytical_engines() -> None:
     publisher = RecordingPublisher()
 
-    assert isinstance(_build_worker(AnalysisHorizon.LONG_TERM, publisher), LongTermWorker)
-    assert isinstance(_build_worker(AnalysisHorizon.SWING, publisher), SwingWorker)
-    assert isinstance(_build_worker(AnalysisHorizon.INTRADAY, publisher), IntradayWorker)
+    assembly = _assembly()
+    assert isinstance(
+        _build_worker(AnalysisHorizon.LONG_TERM, publisher, assembly=assembly), LongTermWorker
+    )
+    assert isinstance(
+        _build_worker(AnalysisHorizon.SWING, publisher, assembly=assembly), SwingWorker
+    )
+    assert isinstance(
+        _build_worker(AnalysisHorizon.INTRADAY, publisher, assembly=assembly), IntradayWorker
+    )
     with pytest.raises(ValueError, match="unsupported"):
-        _build_worker(AnalysisHorizon.DILUTION, publisher)
+        _build_worker(AnalysisHorizon.DILUTION, publisher, assembly=assembly)
 
 
 @pytest.mark.unit
 def test_worker_factory_selects_exact_v3_rule_artifact() -> None:
     publisher = RecordingPublisher()
-    swing = _build_worker(AnalysisHorizon.SWING, publisher, rule_version="3.0.0")
-    intraday = _build_worker(AnalysisHorizon.INTRADAY, publisher, rule_version="3.0.0")
+    assembly = _assembly("3.0.0")
+    swing = _build_worker(AnalysisHorizon.SWING, publisher, assembly=assembly)
+    intraday = _build_worker(AnalysisHorizon.INTRADAY, publisher, assembly=assembly)
 
     assert isinstance(swing._analyzer, SwingEngineV3)
     assert isinstance(intraday._analyzer, IntradayEngineV3)
+
+
+@pytest.mark.unit
+def test_worker_factory_selects_v4_intraday_and_preserves_v3_swing() -> None:
+    publisher = RecordingPublisher()
+    assembly = _assembly("4.0.0")
+    swing = _build_worker(AnalysisHorizon.SWING, publisher, assembly=assembly)
+    intraday = _build_worker(AnalysisHorizon.INTRADAY, publisher, assembly=assembly)
+
+    assert isinstance(swing._analyzer, SwingEngineV3)
+    assert isinstance(intraday._analyzer, IntradayEngineV4)

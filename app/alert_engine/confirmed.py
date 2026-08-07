@@ -35,11 +35,7 @@ def buy_maturity(alert: LocalAlert) -> BuyMaturity | None:
             return BuyMaturity.TACTICAL_RECOVERY
         return None
     if alert.kind is AlertKind.HIGH_CONVICTION_BUY:
-        return (
-            BuyMaturity.HIGH_CONVICTION
-            if _CONVICTION_HORIZONS.issubset(horizons)
-            else None
-        )
+        return BuyMaturity.HIGH_CONVICTION if _CONVICTION_HORIZONS.issubset(horizons) else None
     if alert.kind in {AlertKind.LONG_PORTFOLIO_BUY, AlertKind.PATREON_CAPS_BUY}:
         return BuyMaturity.FULLY_MATURED
     if (
@@ -75,4 +71,15 @@ def is_confirmed_buy(alert: LocalAlert) -> bool:
 def is_portfolio_monitor_alert(alert: LocalAlert) -> bool:
     """Return whether the focused monitor should render this alert."""
 
-    return is_buy_alert(alert) or alert.kind is AlertKind.PORTFOLIO_PROTECT
+    return is_buy_alert(alert) or alert.kind in {
+        AlertKind.PORTFOLIO_PROTECT,
+        AlertKind.PORTFOLIO_FLOW_BUY,
+        AlertKind.ENTRY_OPPORTUNITY_PROGRESS,
+        AlertKind.ENTRY_OPPORTUNITY_CLOSED,
+    }
+
+
+def is_audible_alert(alert: LocalAlert) -> bool:
+    """Ring for buy maturities and explicit paper-trade closures."""
+
+    return is_buy_alert(alert) or alert.kind is AlertKind.ENTRY_OPPORTUNITY_CLOSED

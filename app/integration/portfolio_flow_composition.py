@@ -13,9 +13,9 @@ from app.common.settings import AppSettings
 from app.contracts import LOCAL_ALERT_EVENT, EventEnvelope, local_alert_subject
 from app.event_bus import NatsJetStreamEventBus
 from app.event_bus.codec import decode_envelope
-from app.portfolio_flow_engine import PortfolioFlowEngine
 
 from .distributed_composition import _write_ready  # pyright: ignore[reportPrivateUsage]
+from .engine_assembly import EngineSlot, MarketBotAssembly
 
 
 class _CoreMessage(Protocol):
@@ -24,13 +24,14 @@ class _CoreMessage(Protocol):
 
 async def run_portfolio_flow_process(*, ready_path: Path | None = None) -> None:
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     url = settings.nats_url.get_secret_value()
     core = NatsClient()
     await core.connect(url)
     durable = await NatsJetStreamEventBus.connect(
         servers=[url], prefix="marketbot", stream="MARKETBOT"
     )
-    engine = PortfolioFlowEngine()
+    engine = assembly.build_portfolio_flow()
     clock = SystemClock()
 
     async def handle(message: _CoreMessage) -> None:
@@ -55,7 +56,17 @@ async def run_portfolio_flow_process(*, ready_path: Path | None = None) -> None:
     ]
     try:
         if ready_path is not None:
-            _write_ready(ready_path, {"service": "portfolio-flow-engine", "ephemeral": True})
+            spec = assembly.spec(EngineSlot.PORTFOLIO_FLOW)
+            _write_ready(
+                ready_path,
+                {
+                    "service": "portfolio-flow-engine",
+                    "ephemeral": True,
+                    "marketbot_definition_version": assembly.definition.version,
+                    "engine_implementation": spec.implementation,
+                    "engine_strategy_version": spec.strategy.version,
+                },
+            )
         await asyncio.Event().wait()
     finally:
         for subscription in subscriptions:

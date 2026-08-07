@@ -83,7 +83,8 @@ $StatusRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "status"
 $LogRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "logs"
 $ReadyFiles = [ordered]@{
     "alerts-v2" = Join-Path -Path $StatusRoot -ChildPath "alert-v2.ready.json"
-    "entry-watcher-v3" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher-v3.ready.json"
+    "entry-watcher-v4" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher-v4.ready.json"
+    "entry-opportunity-v1" = Join-Path -Path $StatusRoot -ChildPath "entry-opportunity-v1.ready.json"
     "market-history-v1" = Join-Path -Path $StatusRoot -ChildPath "market-history-v1.ready.json"
     "long-term-v2" = Join-Path -Path $StatusRoot -ChildPath "long-term-v2.ready.json"
     "swing-v2" = Join-Path -Path $StatusRoot -ChildPath "swing-v2.ready.json"
@@ -140,9 +141,19 @@ $EntryWatchArguments = @(
     "entry-watch",
     "serve",
     "--ready-path",
-    $ReadyFiles["entry-watcher-v3"]
+    $ReadyFiles["entry-watcher-v4"]
 )
-$ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher-v3" -Arguments $EntryWatchArguments))
+$ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher-v4" -Arguments $EntryWatchArguments))
+
+$EntryOpportunityArguments = @(
+    "run",
+    "marketbot",
+    "entry-opportunity",
+    "serve",
+    "--ready-path",
+    $ReadyFiles["entry-opportunity-v1"]
+)
+$ProcessSpecs.Add((New-ProcessSpec -Name "entry-opportunity-v1" -Arguments $EntryOpportunityArguments))
 
 $MarketHistoryArguments = @(
     "run", "marketbot", "market", "history",
@@ -476,22 +487,23 @@ try {
     Write-Host "Starting independent MarketBot processes..." -ForegroundColor Cyan
     Write-Host "Project: $ProjectRoot"
     Write-Host "Runtime: $ResolvedRuntimeRoot"
-    for ($Index = 0; $Index -lt 2; $Index++) {
+    for ($Index = 0; $Index -lt 3; $Index++) {
         $Child = Start-MarketBotProcess -Spec $ProcessSpecs[$Index]
         $Children.Add($Child)
         Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
     }
     Wait-MarketBotReadiness -Paths @(
         $ReadyFiles["alerts-v2"],
-        $ReadyFiles["entry-watcher-v3"]
+        $ReadyFiles["entry-watcher-v4"],
+        $ReadyFiles["entry-opportunity-v1"]
     )
 
-    $HistoryChild = Start-MarketBotProcess -Spec $ProcessSpecs[2]
+    $HistoryChild = Start-MarketBotProcess -Spec $ProcessSpecs[3]
     $Children.Add($HistoryChild)
     Write-Host "Started market-history-v1 (PID $($HistoryChild.process.Id))"
     Wait-MarketBotReadiness -Paths @($ReadyFiles["market-history-v1"])
 
-    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[10]
+    $ConfirmedChild = Start-MarketBotProcess -Spec $ProcessSpecs[11]
     $Children.Add($ConfirmedChild)
     Write-Host "Started confirmed-buy monitor (PID $($ConfirmedChild.process.Id))"
     Wait-MarketBotReadiness -Paths @($ReadyFiles["confirmed-buy-monitor"])
@@ -500,7 +512,7 @@ try {
         -AnalysisProcess $AlertChild.process `
         -ConfirmedBuyProcess $ConfirmedChild.process
 
-    for ($Index = 3; $Index -lt 10; $Index++) {
+    for ($Index = 4; $Index -lt 11; $Index++) {
         $Child = Start-MarketBotProcess -Spec $ProcessSpecs[$Index]
         $Children.Add($Child)
         Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
@@ -515,7 +527,7 @@ try {
         $ReadyFiles["patreon-caps-v1"]
     )
 
-    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[11]
+    $StreamChild = Start-MarketBotProcess -Spec $ProcessSpecs[12]
     $Children.Add($StreamChild)
     $TmuxLauncher = Join-Path $PSScriptRoot "start-long-portfolio-tmux.ps1"
     $TmuxArguments = @(

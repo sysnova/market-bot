@@ -3,8 +3,8 @@
 MarketBot is a Python 3.14 event-driven market analysis monorepo. Engines are isolated under
 `app/<engine>/`; they communicate through stable contracts rather than direct imports.
 
-The current MVP is deliberately analysis-only. Long v2, Swing v3, Intraday v3, Entry Watcher v3,
-Alert v2, Market History, and the Alpaca WebSocket ingress run as independent operating-system processes. NATS JetStream distributes
+The current MVP is deliberately analysis-only. Long v2, Swing v3, Intraday v4, Entry Watcher v4,
+Entry Opportunity v1, Alert v2, Market History, and the Alpaca WebSocket ingress run as independent operating-system processes. NATS JetStream distributes
 live market bars and analytical results between them. An independent daily bot checks recent SEC
 EDGAR filings. There is no order adapter and configuration enforces
 `MARKETBOT_ALPACA_EXECUTION_ENABLED=false`.
@@ -73,11 +73,38 @@ Validate one complete backfill/evaluation and exit:
 uv run marketbot live --once
 ```
 
+Analyze one ticker through the coordinated one-shot mode:
+
+```powershell
+uv run market-bot -analyzer TICKER
+```
+
+The equivalent subcommand form is `uv run marketbot analyzer TICKER`. The ticker is
+passed unchanged (after uppercase normalization and validation) to every applicable engine.
+Long, Swing, Intraday, Entry Watcher, Alert v2, Market Rotation, LONG Portfolio,
+PatreonCaps, Elliott Wave, Support Confirmation, Portfolio Flow, and Signal Fusion are
+represented in one bounded report. Holdings-only and live-window engines are marked
+`SKIPPED` when their gate does not apply. Peter Lynch and the SEC dilution scan are
+intentionally excluded from this mode because they use slower external-provider paths.
+Each remaining engine has an independent timeout, so one unavailable service cannot block
+the complete report.
+
+All operational entry points use the same versioned engine assembly. Inspect the effective
+implementation, strategy artifact, and mode of every engine with:
+
+```powershell
+uv run marketbot assembly
+```
+
+The default definition is `configs/marketbot/4.0.0.yaml`; select another immutable assembly with
+`MARKETBOT_DEFINITION_PATH`.
+
 Individual distributed processes can also be operated directly:
 
 ```powershell
 uv run marketbot alerts serve
 uv run marketbot entry-watch serve
+uv run marketbot entry-opportunity serve
 uv run marketbot engine long
 uv run marketbot engine swing
 uv run marketbot engine intraday
@@ -104,17 +131,40 @@ durably to one ledger per New York market date, for example
 `.runtime/alerts/marketbot-alerts-2026-07-26.ndjson`. Only live market updates, engine results,
 service health, and final alerts cross NATS. Historical REST bootstrap bars never do.
 
+Portfolio Flow v2 observes the live quote/trade stream in rolling three-minute windows. Alongside
+the existing red `PROTECT` alert for concentrated selling at the bid, it emits a cyan
+`AGGRESSIVE ENTRY WATCH` with a short two-tone alarm when at least 70% of qualifying volume trades
+at the ask and price rises at least 0.30%. This is deliberately an early flow alert, not an L1-L4
+confirmation by itself.
+
 The Entry Watcher remembers Long opportunities that are `EXTENDED`, `WATCH_PULLBACK`, `SETUP`, or
 already in `BUY_ZONE`. It freezes the original zone and invalidation for 56 days by default,
 persists every lifecycle transition in PostgreSQL, and waits for fresh Long, Swing, and Intraday
 confirmation before emitting an `ENTRY TRIGGERED` action alert. SEC dilution analysis is included
 as an independent warning but never penalizes, gates, or invalidates an entry. Apply
-`supabase/migrations/20260726180000_entry_watches.sql` after the foundation migrations. If the
+`supabase/migrations/20260726180000_entry_watches.sql` and
+`supabase/migrations/20260807010000_entry_opportunity_lifecycle.sql` after the foundation
+migrations. If the
 database or migration is unavailable, the distributed launcher stops before opening the market
 stream so it cannot silently lose persistent opportunity tracking. The legacy `live` diagnostic
 continues without it and logs that persistent entry watching is disabled.
 
-Entry Watcher v3 also preserves a recent zone touch through a moderate opening gap or breakaway.
+Entry Opportunity v1 is a separate assembled engine and process. It consolidates repeated watcher
+IDs into one active ticker record. It
+tracks L1-L4 checkpoints plus independent Intraday, Swing, and Long paper legs; records MFE, MAE,
+session-close returns and realized gain/loss; and emits progress or closure events to the focused
+buy monitor. Use `uv run marketbot entry-opportunity report` for open progress bars and audited success
+rates.
+
+Entry Watcher v4 preserves the v3 recent-zone-touch path through a moderate opening gap or
+breakaway, but confirmation now requires an efficient Intraday v4 retest: strong evidence, a
+five-minute higher low, and a second fresh reading at least three minutes later. First impulses
+more than 0.50 ATR above their trigger or 2 ATR above EMA20 stay `WATCH`; they cannot produce L3/L4
+until price and structure reset. A 30-minute post-trigger cooldown also suppresses immediate L4
+duplicates for a newly calculated Long zone.
+
+Entry Watcher v3 remains available for exact historical replay. In v3, a recent zone touch is
+preserved through a moderate opening gap or breakaway.
 For 72 hours it may confirm outside the frozen zone when extension stays within 4% and 0.75 ATR,
 Intraday v3 confirms, anchored VWAP remains healthy, and live reward/risk is at least 2. This path
 emits an early breakaway watch before `ENTRY TRIGGERED`; moves beyond the chase cap are labelled

@@ -54,11 +54,12 @@ from .distributed_composition import (
     connect_nats,
     write_ready,
 )
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .patreon_caps_store import PostgresPatreonCapsStore
-from .postgres_universe import PostgresUniverseClient
+from .postgres_universe import PostgresUniverseClient, fallback_universe
 
 PATREON_HISTORY_REQUESTS = (
     HistoryRequest(
@@ -342,11 +343,16 @@ class PatreonCapsRuntime:
 
 async def run_patreon_caps_process(
     *,
-    config_path: Path = Path("configs/rules/patreon_caps/1.1.0.yaml"),
+    config_path: Path | None = None,
     ready_path: Path | None = None,
-) -> None:
+    once: bool = False,
+    symbols: tuple[str, ...] | None = None,
+) -> dict[str, object] | None:
     settings = AppSettings()
-    policy = load_patreon_caps_policy(config_path)
+    assembly = MarketBotAssembly.from_settings(settings)
+    policy = load_patreon_caps_policy(
+        config_path or assembly.strategy_artifact(EngineSlot.PATREON_CAPS)
+    )
     database = create_database_engine(
         settings.database_url.get_secret_value(),
         require_ssl=settings.environment is Environment.PRODUCTION,
@@ -358,10 +364,14 @@ async def run_patreon_caps_process(
         raise RuntimeError(
             "PatreonCaps schema is unavailable; apply 20260801120000_patreon_caps.sql"
         )
-    universe = await portfolio_data.get_universe()
+    universe = (
+        fallback_universe(symbols, source="manual-symbols")
+        if symbols
+        else await portfolio_data.get_universe()
+    )
     allocations = await portfolio_data.get_portfolio_allocations()
     allocation_map = {item.symbol: item.weight_percent for item in allocations}
-    symbols = tuple(dict.fromkeys((*universe.symbols, *policy.macro_symbols)))
+    runtime_symbols = tuple(dict.fromkeys((*universe.symbols, *policy.macro_symbols)))
     bus: NatsJetStreamEventBus | None = None
     subscriptions: list[Subscription] = []
     try:
@@ -371,7 +381,7 @@ async def run_patreon_caps_process(
             settings,
             database,
             engine_id="patreon-caps-v1",
-            symbols=symbols,
+            symbols=runtime_symbols,
             requirements=PATREON_HISTORY_REQUESTS,
             as_of=clock.now(),
         )
@@ -379,7 +389,7 @@ async def run_patreon_caps_process(
             item for item in await store.load_active() if item.rule_version == policy.rule_version
         )
         last_evaluated_at = await store.latest_transition_times(rule_version=policy.rule_version)
-        engine = PatreonCapsEngine(policy, restored_watches=restored)
+        engine = assembly.build_patreon_caps(policy, restored_watches=restored)
         runtime = PatreonCapsRuntime(
             engine=engine,
             publisher=bus,
@@ -391,7 +401,7 @@ async def run_patreon_caps_process(
             require_hourly=policy.lesson_enabled,
             last_evaluated_at=last_evaluated_at,
         )
-        await runtime.bootstrap(bars, symbols=symbols)
+        await runtime.bootstrap(bars, symbols=runtime_symbols)
         subscriptions.extend(await _subscribe_live_analyses(bus, runtime))
         await _hydrate_latest_analyses(bus, runtime, universe.symbols)
         for index, subject in enumerate(
@@ -414,18 +424,22 @@ async def run_patreon_caps_process(
                 )
             )
         await runtime.complete_hydration()
+        summary: dict[str, object] = {
+            "service": "patreon-caps-v1",
+            "marketbot_definition_version": assembly.definition.version,
+            "engine_implementation": assembly.spec(EngineSlot.PATREON_CAPS).implementation,
+            "engine_strategy_version": assembly.spec(EngineSlot.PATREON_CAPS).strategy.version,
+            "rule_version": policy.rule_version,
+            "mode": "SHADOW",
+            "symbols": len(universe.symbols),
+            "universe_symbols": list(universe.symbols),
+            "macro_symbols": list(policy.macro_symbols),
+            "persistence": "postgresql",
+        }
         if ready_path is not None:
-            write_ready(
-                ready_path,
-                {
-                    "service": "patreon-caps-v1",
-                    "rule_version": policy.rule_version,
-                    "mode": "SHADOW",
-                    "symbols": len(universe.symbols),
-                    "macro_symbols": list(policy.macro_symbols),
-                    "persistence": "postgresql",
-                },
-            )
+            write_ready(ready_path, summary)
+        if once:
+            return summary
         await asyncio.Event().wait()
     finally:
         for subscription in subscriptions:
@@ -433,6 +447,7 @@ async def run_patreon_caps_process(
         if bus is not None:
             await bus.close()
         await database.dispose()
+    return None
 
 
 async def _hydrate_latest_analyses(

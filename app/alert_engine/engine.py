@@ -11,6 +11,9 @@ from app.contracts import (
     AnalysisHorizon,
     AnalysisResult,
     AnalysisVerdict,
+    EntryCloseReason,
+    EntryOpportunityEvent,
+    EntryOpportunityStatus,
     EntryWatchStatus,
     EntryWatchTransition,
     LocalAlert,
@@ -126,6 +129,76 @@ class AlertEngine:
                 f"{transition.transition_id}:{status.lower()}"
             ),
             expires_at=now + self._policy.alert_ttl,
+        )
+
+    def ingest_entry_opportunity(
+        self, event: EntryOpportunityEvent, *, now: datetime
+    ) -> LocalAlert:
+        """Render durable lifecycle progress and closures for the focused monitor."""
+
+        _require_utc(now)
+        if event.occurred_at > now:
+            raise ValueError("entry opportunity event cannot be in the future")
+        opportunity = event.opportunity
+        closed = opportunity.status is EntryOpportunityStatus.CLOSED
+        if closed:
+            severity = (
+                AlertSeverity.CRITICAL
+                if opportunity.close_reason is EntryCloseReason.ORIGINAL_THESIS_INVALIDATED
+                else AlertSeverity.ACTION
+            )
+            kind = AlertKind.ENTRY_OPPORTUNITY_CLOSED
+            reason = opportunity.close_reason.value.replace("_", " ")  # type: ignore[union-attr]
+            title = f"{opportunity.symbol} ENTRY CLOSED - {reason}"
+            message = (
+                f"paper opportunity closed at {opportunity.current_price}; "
+                f"peak maturity {opportunity.peak_maturity.value}"
+            )
+        else:
+            severity = {
+                EntryOpportunityStatus.ARMED: AlertSeverity.INFO,
+                EntryOpportunityStatus.IN_ZONE: AlertSeverity.WATCH,
+                EntryOpportunityStatus.CONFIRMING: AlertSeverity.ACTION,
+                EntryOpportunityStatus.OPEN: AlertSeverity.CRITICAL,
+            }[opportunity.status]
+            kind = AlertKind.ENTRY_OPPORTUNITY_PROGRESS
+            title = (
+                f"{opportunity.symbol} ENTRY {opportunity.current_maturity.value} "
+                f"{_progress_bar(opportunity.progress_percent)}"
+            )
+            message = (
+                f"maturity {opportunity.current_maturity.value}; "
+                f"progress {opportunity.progress_percent}%; price {opportunity.current_price}"
+            )
+        horizons = tuple(dict.fromkeys(item.horizon for item in opportunity.legs))
+        if not horizons:
+            horizons = (AnalysisHorizon.LONG_TERM,)
+        return LocalAlert(
+            symbol=opportunity.symbol,
+            created_at=now,
+            kind=kind,
+            severity=severity,
+            title=title,
+            message=message,
+            horizons=horizons,
+            component_analysis_ids=opportunity.source_analysis_ids,
+            component_analyses=opportunity.latest_analyses,
+            metrics=(
+                NamedValue(name="current_price", value=opportunity.current_price),
+                NamedValue(name="buy_zone_low", value=opportunity.zone_low),
+                NamedValue(name="buy_zone_high", value=opportunity.zone_high),
+                NamedValue(name="invalidation", value=opportunity.invalidation),
+                NamedValue(name="progress_percent", value=opportunity.progress_percent),
+                NamedValue(name="maturity", value=opportunity.current_maturity.value),
+                NamedValue(
+                    name="open_horizon_count",
+                    value=sum(item.status.value == "OPEN" for item in opportunity.legs),
+                ),
+            ),
+            score=opportunity.progress_percent,
+            reasons=event.reasons,
+            deduplication_key=f"entry-opportunity:v1:{event.event_id}",
+            expires_at=None if closed else now + self._policy.alert_ttl,
         )
 
     def _aggregate(self, symbol: str, now: datetime) -> LocalAlert | None:
@@ -334,6 +407,11 @@ class AlertEngine:
 def _require_utc(value: datetime) -> None:
     if value.tzinfo is None or value.utcoffset() != timedelta(0):
         raise ValueError("now must be timezone-aware UTC")
+
+
+def _progress_bar(percent: Decimal) -> str:
+    filled = min(10, max(0, int(percent / Decimal("10"))))
+    return f"[{'#' * filled}{'-' * (10 - filled)}]"
 
 
 def _score(value: Decimal) -> Decimal:

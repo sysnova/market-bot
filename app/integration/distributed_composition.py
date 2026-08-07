@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -14,7 +15,7 @@ from typing import Protocol
 import httpx
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.alert_engine import AlertDispatcher, AlertEngineV2, ConsoleAlertSink, NdjsonAlertSink
+from app.alert_engine import AlertDispatcher, ConsoleAlertSink, NdjsonAlertSink
 from app.alpaca_market_data import AlpacaEventNormalizer, AlpacaMarketDataEngine
 from app.alpaca_market_data.ports import EventPublisher
 from app.alpaca_market_data.rest import AlpacaRestClient
@@ -25,15 +26,19 @@ from app.common.logging import configure_logging, get_logger
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
+    ENTRY_OPPORTUNITY_EVENT,
     ENTRY_WATCH_TRANSITION_EVENT,
+    LOCAL_ALERT_EVENT,
     MARKET_ROTATION_EVENT,
     MARKET_ROTATION_SUBJECT,
     SERVICE_HEALTH_EVENT,
     AnalysisHorizon,
     AnalysisResult,
     BarTimeframe,
+    EntryOpportunityEvent,
     EntryWatchTransition,
     EventEnvelope,
+    LocalAlert,
     MarketBar,
     MarketHistoryRequirement,
     MarketRotationReport,
@@ -42,17 +47,18 @@ from app.contracts import (
     ServiceStatus,
     Subscription,
     SubscriptionOptions,
+    entry_opportunity_subject,
     entry_watch_transition_subject,
     service_health_subject,
 )
-from app.entry_watcher import EntryWatcherPolicy, EntryWatcherV2, EntryWatcherV3
+from app.entry_watcher import EntryWatcherPolicy
 from app.event_bus import NatsJetStreamEventBus
-from app.intraday_engine import IntradayEngineV2, IntradayEngineV3
 from app.patreon_caps_engine import load_patreon_caps_policy
 from app.persistence import create_database_engine, create_session_factory
-from app.swing_engine import SwingEngineV2, SwingEngineV3
 
 from .alert_publisher import AlertEventPublisher
+from .engine_assembly import EngineSlot, MarketBotAssembly
+from .entry_opportunity_store import PostgresEntryOpportunityStore
 from .entry_watch_store import PostgresEntryWatchStore
 from .intraday_worker import IntradayWorker
 from .long_term_worker import LongTermWorker
@@ -153,6 +159,7 @@ async def run_engine_process(
     }:
         raise ValueError("distributed worker requires Long, Swing, or Intraday horizon")
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     configure_logging(level=settings.log_level, json_output=settings.log_json)
     logger = get_logger(f"{horizon.value.lower()}-worker")
     clock = SystemClock()
@@ -176,11 +183,7 @@ async def run_engine_process(
             requirements=engine_history_requests(horizon),
             as_of=as_of,
         )
-        worker = _build_worker(
-            horizon,
-            bus,
-            rule_version=settings.entry_confirmation_rule_version,
-        )
+        worker = _build_worker(horizon, bus, assembly=assembly)
         result_count = await worker.bootstrap(bars, symbols=universe.symbols)
         current_symbols = set(universe.symbols)
         refresh_lock = asyncio.Lock()
@@ -255,7 +258,9 @@ async def run_engine_process(
             "initial_results": result_count,
             "universe_source": universe.source,
             "live_subjects": list(engine_live_subjects(horizon)),
-            "entry_confirmation_rule_version": settings.entry_confirmation_rule_version,
+            "marketbot_definition_version": assembly.definition.version,
+            "engine_implementation": assembly.spec(_slot_for_horizon(horizon)).implementation,
+            "engine_strategy_version": assembly.spec(_slot_for_horizon(horizon)).strategy.version,
         }
         await _publish_health(bus, _service_name(horizon), summary, clock.now())
         if ready_path is not None:
@@ -282,6 +287,7 @@ async def run_market_stream_process(
     """Publish Alpaca WebSocket updates to NATS; this process runs no analysis engine."""
 
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     configure_logging(level=settings.log_level, json_output=settings.log_json)
     logger = get_logger("alpaca-live-stream")
     clock = SystemClock()
@@ -291,7 +297,7 @@ async def run_market_stream_process(
     rotation_subscription: Subscription | None = None
     rotation_refresh = asyncio.Event()
     macro_symbols = load_patreon_caps_policy(
-        Path("configs/rules/patreon_caps/1.1.0.yaml")
+        assembly.strategy_artifact(EngineSlot.PATREON_CAPS)
     ).macro_symbols
     try:
         bus = await _connect_nats(settings)
@@ -396,10 +402,11 @@ async def run_alert_process(
     """Consume every engine result and publish named human alerts for viewers."""
 
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     configure_logging(level=settings.log_level, json_output=settings.log_json)
     clock = SystemClock()
     bus = await _connect_nats(settings)
-    engine = AlertEngineV2()
+    engine = assembly.build_alert()
     dispatcher = AlertDispatcher(
         sinks=(
             ConsoleAlertSink(stream=sys.stdout, bell=bell),
@@ -431,6 +438,17 @@ async def run_alert_process(
         alert = engine.ingest_entry_watch(transition, now=clock.now())
         await dispatcher.dispatch(alert)
 
+    async def handle_entry_opportunity(envelope: EventEnvelope) -> None:
+        if envelope.event_type != ENTRY_OPPORTUNITY_EVENT:
+            return
+        event = (
+            envelope.payload
+            if isinstance(envelope.payload, EntryOpportunityEvent)
+            else EntryOpportunityEvent.model_validate(envelope.payload, strict=False)
+        )
+        alert = engine.ingest_entry_opportunity(event, now=clock.now())
+        await dispatcher.dispatch(alert)
+
     subscriptions = (
         await bus.subscribe(
             "marketbot.v1.analysis.result.>",
@@ -450,11 +468,24 @@ async def run_alert_process(
                 ack_wait_seconds=60,
             ),
         ),
+        await bus.subscribe(
+            "marketbot.v1.entry-opportunity.transition.>",
+            handle_entry_opportunity,
+            options=SubscriptionOptions(
+                durable_name="marketbot-alert-v2-entry-opportunity",
+                replay_all=False,
+                ack_wait_seconds=60,
+            ),
+        ),
     )
     try:
         details = {
+            "marketbot_definition_version": assembly.definition.version,
+            "engine_implementation": assembly.spec(EngineSlot.ALERT).implementation,
+            "engine_strategy_version": assembly.spec(EngineSlot.ALERT).strategy.version,
             "analysis_subject": "marketbot.v1.analysis.result.>",
             "entry_watch_subject": "marketbot.v1.entry-watch.transition.>",
+            "entry_opportunity_subject": "marketbot.v1.entry-opportunity.transition.>",
         }
         await _publish_health(
             bus,
@@ -472,9 +503,10 @@ async def run_alert_process(
 
 
 async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
-    """Persist entry theses and publish transitions as an independent service."""
+    """Detect and persist entry theses, then publish only watcher transitions."""
 
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     configure_logging(level=settings.log_level, json_output=settings.log_json)
     if not settings.entry_watcher_enabled:
         raise RuntimeError("entry watcher is disabled by configuration")
@@ -484,24 +516,21 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
         require_ssl=settings.environment is Environment.PRODUCTION,
     )
     bus: NatsJetStreamEventBus | None = None
-    subscription: Subscription | None = None
+    subscriptions: list[Subscription] = []
     try:
-        store = PostgresEntryWatchStore(create_session_factory(database))
+        session_factory = create_session_factory(database)
+        store = PostgresEntryWatchStore(session_factory)
         if not await store.is_ready():
             raise RuntimeError(
                 "entry watcher schema is unavailable; apply 20260726180000_entry_watches.sql"
             )
-        watcher_type = (
-            EntryWatcherV3
-            if settings.entry_confirmation_rule_version == "3.0.0"
-            else EntryWatcherV2
-        )
-        watcher = watcher_type(
+        watcher = assembly.build_entry_watcher(
             store=store,
             policy=EntryWatcherPolicy(ttl=timedelta(days=settings.entry_watch_ttl_days)),
         )
         bus = await _connect_nats(settings)
-        watcher_version = settings.entry_confirmation_rule_version
+        watcher_spec = assembly.spec(EngineSlot.ENTRY_WATCHER)
+        watcher_version = watcher_spec.implementation
         watcher_service = f"entry-watcher-v{watcher_version.split('.', 1)[0]}"
 
         async def handle_analysis(envelope: EventEnvelope) -> None:
@@ -525,18 +554,22 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
                     ),
                 )
 
-        subscription = await bus.subscribe(
-            "marketbot.v1.analysis.result.>",
-            handle_analysis,
-            options=SubscriptionOptions(
-                durable_name=watcher_service,
-                replay_all=False,
-                ack_wait_seconds=60,
-            ),
+        subscriptions.append(
+            await bus.subscribe(
+                "marketbot.v1.analysis.result.>",
+                handle_analysis,
+                options=SubscriptionOptions(
+                    durable_name=f"{watcher_service}-analysis",
+                    replay_all=False,
+                    ack_wait_seconds=60,
+                ),
+            )
         )
         details = {
             "service": watcher_service,
             "engine_version": watcher_version,
+            "engine_strategy_version": watcher_spec.strategy.version,
+            "marketbot_definition_version": assembly.definition.version,
             "input_subject": "marketbot.v1.analysis.result.>",
             "output_subject": "marketbot.v1.entry-watch.transition.>",
             "persistence": "postgresql",
@@ -546,7 +579,158 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
             _write_ready(ready_path, details)
         await asyncio.Event().wait()
     finally:
-        if subscription is not None:
+        for subscription in subscriptions:
+            await subscription.unsubscribe()
+        if bus is not None:
+            await bus.close()
+        await database.dispose()
+
+
+async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> None:
+    """Track and audit paper opportunities as an independent NATS service."""
+
+    settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
+    configure_logging(level=settings.log_level, json_output=settings.log_json)
+    clock = SystemClock()
+    database: AsyncEngine = create_database_engine(
+        settings.database_url.get_secret_value(),
+        require_ssl=settings.environment is Environment.PRODUCTION,
+    )
+    bus: NatsJetStreamEventBus | None = None
+    subscriptions: list[Subscription] = []
+    reconcile_task: asyncio.Task[None] | None = None
+    try:
+        store = PostgresEntryOpportunityStore(create_session_factory(database))
+        if not await store.is_ready():
+            raise RuntimeError(
+                "entry opportunity schema is unavailable; apply "
+                "20260807010000_entry_opportunity_lifecycle.sql"
+            )
+        engine = assembly.build_entry_opportunity(store=store)
+        spec = assembly.spec(EngineSlot.ENTRY_OPPORTUNITY)
+        service = f"entry-opportunity-v{spec.implementation.split('.', 1)[0]}"
+        bus = await _connect_nats(settings)
+
+        async def publish(event: EntryOpportunityEvent) -> None:
+            await bus.publish(
+                entry_opportunity_subject(event.opportunity.status, event.opportunity.symbol),
+                EventEnvelope(
+                    event_type=ENTRY_OPPORTUNITY_EVENT,
+                    occurred_at=event.occurred_at,
+                    source=service,
+                    subject=event.opportunity.symbol,
+                    payload=event,
+                    causation_id=event.event_id,
+                ),
+            )
+
+        async def handle_analysis(envelope: EventEnvelope) -> None:
+            if envelope.event_type != ANALYSIS_RESULT_EVENT:
+                return
+            result = (
+                envelope.payload
+                if isinstance(envelope.payload, AnalysisResult)
+                else AnalysisResult.model_validate(envelope.payload, strict=False)
+            )
+            for event in await engine.ingest_analysis(result, now=clock.now()):
+                await publish(event)
+
+        async def handle_transition(envelope: EventEnvelope) -> None:
+            if envelope.event_type != ENTRY_WATCH_TRANSITION_EVENT:
+                return
+            transition = (
+                envelope.payload
+                if isinstance(envelope.payload, EntryWatchTransition)
+                else EntryWatchTransition.model_validate(envelope.payload, strict=False)
+            )
+            for event in await engine.ingest_transition(transition):
+                await publish(event)
+
+        async def handle_bar(envelope: EventEnvelope) -> None:
+            if envelope.event_type not in {"market.bar.received", "market.bar.updated"}:
+                return
+            bar = (
+                envelope.payload
+                if isinstance(envelope.payload, MarketBar)
+                else MarketBar.model_validate(envelope.payload, strict=False)
+            )
+            if not bar.is_final or bar.timeframe is not BarTimeframe.MINUTE_1:
+                return
+            for event in await engine.ingest_bar(bar):
+                await publish(event)
+
+        async def handle_alert(envelope: EventEnvelope) -> None:
+            if envelope.event_type != LOCAL_ALERT_EVENT:
+                return
+            alert = (
+                envelope.payload
+                if isinstance(envelope.payload, LocalAlert)
+                else LocalAlert.model_validate(envelope.payload, strict=False)
+            )
+            for event in await engine.ingest_alert(alert):
+                await publish(event)
+
+        handlers = (
+            ("marketbot.v1.analysis.result.>", handle_analysis, "analysis"),
+            ("marketbot.v1.entry-watch.transition.>", handle_transition, "entry-watch"),
+            ("marketbot.v1.market.bar.1Min.>", handle_bar, "bars"),
+            ("marketbot.v1.alert.local.>", handle_alert, "alerts"),
+        )
+        for subject, handler, suffix in handlers:
+            subscriptions.append(
+                await bus.subscribe(
+                    subject,
+                    handler,
+                    options=SubscriptionOptions(
+                        durable_name=f"{service}-{suffix}",
+                        replay_all=False,
+                        ack_wait_seconds=60,
+                    ),
+                )
+            )
+
+        async def reconcile_opportunities() -> None:
+            universe_client = PostgresUniverseClient(database)
+            while True:
+                await asyncio.sleep(60)
+                try:
+                    universe = await universe_client.get_universe()
+                    for event in await engine.reconcile(
+                        now=clock.now(), active_symbols=universe.symbols
+                    ):
+                        await publish(event)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    await get_logger(service).aexception(
+                        "entry_opportunity_reconcile_failed",
+                        error_type=type(error).__name__,
+                    )
+
+        reconcile_task = asyncio.create_task(reconcile_opportunities())
+        details = {
+            "service": service,
+            "engine_version": spec.implementation,
+            "engine_strategy_version": spec.strategy.version,
+            "marketbot_definition_version": assembly.definition.version,
+            "analysis_subject": "marketbot.v1.analysis.result.>",
+            "entry_watch_subject": "marketbot.v1.entry-watch.transition.>",
+            "maturity_subject": "marketbot.v1.alert.local.>",
+            "market_bar_subject": "marketbot.v1.market.bar.1Min.>",
+            "output_subject": "marketbot.v1.entry-opportunity.transition.>",
+            "persistence": "postgresql",
+        }
+        await _publish_health(bus, service, details, clock.now())
+        if ready_path is not None:
+            _write_ready(ready_path, details)
+        await asyncio.Event().wait()
+    finally:
+        if reconcile_task is not None:
+            reconcile_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reconcile_task
+        for subscription in subscriptions:
             await subscription.unsubscribe()
         if bus is not None:
             await bus.close()
@@ -645,17 +829,23 @@ def _build_worker(
     horizon: AnalysisHorizon,
     publisher: EventPublisher,
     *,
-    rule_version: str = "2.0.0",
+    assembly: MarketBotAssembly,
 ) -> HorizonWorker:
     if horizon is AnalysisHorizon.LONG_TERM:
-        return LongTermWorker(publisher=publisher)
+        return LongTermWorker(publisher=publisher, analyzer=assembly.build_long_term())
     if horizon is AnalysisHorizon.SWING:
-        analyzer = SwingEngineV3() if rule_version == "3.0.0" else SwingEngineV2()
-        return SwingWorker(publisher=publisher, analyzer=analyzer)
+        return SwingWorker(publisher=publisher, analyzer=assembly.build_swing())
     if horizon is AnalysisHorizon.INTRADAY:
-        analyzer = IntradayEngineV3() if rule_version == "3.0.0" else IntradayEngineV2()
-        return IntradayWorker(publisher=publisher, analyzer=analyzer)
+        return IntradayWorker(publisher=publisher, analyzer=assembly.build_intraday())
     raise ValueError("unsupported distributed horizon")
+
+
+def _slot_for_horizon(horizon: AnalysisHorizon) -> EngineSlot:
+    return {
+        AnalysisHorizon.LONG_TERM: EngineSlot.LONG_TERM,
+        AnalysisHorizon.SWING: EngineSlot.SWING,
+        AnalysisHorizon.INTRADAY: EngineSlot.INTRADAY,
+    }[horizon]
 
 
 async def _publish_health(

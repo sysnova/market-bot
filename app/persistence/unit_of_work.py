@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .repositories import (
     CheckpointRepository,
+    EntryOpportunityRepository,
     EntryWatchRepository,
     HealthRepository,
     InboxRepository,
@@ -29,6 +30,7 @@ class PersistenceUnitOfWork:
         self.checkpoints: CheckpointRepository
         self.health: HealthRepository
         self.entry_watches: EntryWatchRepository
+        self.entry_opportunities: EntryOpportunityRepository
         self.long_portfolio_alerts: LongPortfolioAlertRepository
         self.long_portfolio_states: LongPortfolioStateRepository
         self.patreon_caps: PatreonCapsRepository
@@ -41,6 +43,7 @@ class PersistenceUnitOfWork:
         self.checkpoints = CheckpointRepository(session)
         self.health = HealthRepository(session)
         self.entry_watches = EntryWatchRepository(session)
+        self.entry_opportunities = EntryOpportunityRepository(session)
         self.long_portfolio_alerts = LongPortfolioAlertRepository(session)
         self.long_portfolio_states = LongPortfolioStateRepository(session)
         self.patreon_caps = PatreonCapsRepository(session)

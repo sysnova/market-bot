@@ -16,7 +16,6 @@ from app.contracts import (
     MarketBar,
     analysis_result_subject,
 )
-from app.swing_engine import SwingEngineV2
 from app.swing_engine.models import SwingContext
 
 from .bar_aggregator import MinuteBarAggregator
@@ -43,10 +42,10 @@ class SwingWorker:
         self,
         *,
         publisher: EventPublisher,
-        analyzer: SwingAnalyzer | None = None,
+        analyzer: SwingAnalyzer,
     ) -> None:
         self._publisher = publisher
-        self._analyzer = analyzer or SwingEngineV2()
+        self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=SWING_INTRADAY_BARS)
         self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
 

@@ -11,14 +11,18 @@ from app.alert_engine import AlertDispatcher, AlertEngine
 from app.common.clock import Clock
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
+    ENTRY_OPPORTUNITY_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
     AnalysisResult,
     BarTimeframe,
+    EntryOpportunityEvent,
     EntryWatchTransition,
     EventEnvelope,
+    LocalAlert,
     MarketBar,
     analysis_result_subject,
+    entry_opportunity_subject,
     market_bar_subject,
 )
 from app.intraday_engine import IntradayContext
@@ -65,6 +69,20 @@ class EntryWatchAnalyzer(Protocol):
     ) -> EntryWatchTransition | None: ...
 
 
+class EntryOpportunityAnalyzer(Protocol):
+    async def ingest_analysis(
+        self, result: AnalysisResult, *, now: datetime
+    ) -> tuple[EntryOpportunityEvent, ...]: ...
+
+    async def ingest_transition(
+        self, transition: EntryWatchTransition
+    ) -> tuple[EntryOpportunityEvent, ...]: ...
+
+    async def ingest_alert(self, alert: LocalAlert) -> tuple[EntryOpportunityEvent, ...]: ...
+
+    async def ingest_bar(self, bar: MarketBar) -> tuple[EntryOpportunityEvent, ...]: ...
+
+
 class AnalysisRuntime:
     """Keep backfill quiet, then evaluate each horizon on its natural cadence."""
 
@@ -81,6 +99,7 @@ class AnalysisRuntime:
         clock: Clock,
         aggregator: MinuteBarAggregator | None = None,
         entry_watcher: EntryWatchAnalyzer | None = None,
+        entry_opportunity: EntryOpportunityAnalyzer | None = None,
     ) -> None:
         self._store = store
         self._publisher = publisher
@@ -94,6 +113,7 @@ class AnalysisRuntime:
             targets=(BarTimeframe.MINUTE_5, BarTimeframe.MINUTE_15)
         )
         self._entry_watcher = entry_watcher
+        self._entry_opportunity = entry_opportunity
         self._live = False
 
     def enable_live(self) -> None:
@@ -114,6 +134,10 @@ class AnalysisRuntime:
         self._store.add(bar)
         if not self._live or not bar.is_final:
             return
+        if self._entry_opportunity is not None:
+            await self._dispatch_opportunity_events(
+                await self._entry_opportunity.ingest_bar(bar)
+            )
         if bar.timeframe is BarTimeframe.MINUTE_1:
             for aggregated in self._aggregator.add(bar):
                 await self._publish_aggregated(aggregated, envelope.event_id)
@@ -146,15 +170,52 @@ class AnalysisRuntime:
             envelope,
         )
         now = self._clock.now()
+        if self._entry_opportunity is not None:
+            await self._dispatch_opportunity_events(
+                await self._entry_opportunity.ingest_analysis(result, now=now)
+            )
         alert = self._alert_engine.ingest(result, now=now)
         if self._entry_watcher is not None:
             transition = await self._entry_watcher.ingest(result, now=now)
             if transition is not None:
+                if self._entry_opportunity is not None:
+                    await self._dispatch_opportunity_events(
+                        await self._entry_opportunity.ingest_transition(transition)
+                    )
                 await self._alert_dispatcher.dispatch(
                     self._alert_engine.ingest_entry_watch(transition, now=now)
                 )
         if alert is not None:
+            if self._entry_opportunity is not None:
+                await self._dispatch_opportunity_events(
+                    await self._entry_opportunity.ingest_alert(alert)
+                )
             await self._alert_dispatcher.dispatch(alert)
+
+    async def _dispatch_opportunity_events(
+        self, events: tuple[EntryOpportunityEvent, ...]
+    ) -> None:
+        for event in events:
+            await self._publisher.publish(
+                entry_opportunity_subject(
+                    event.opportunity.status,
+                    event.opportunity.symbol,
+                ),
+                EventEnvelope(
+                    event_type=ENTRY_OPPORTUNITY_EVENT,
+                    occurred_at=event.occurred_at,
+                    source="entry-opportunity",
+                    subject=event.opportunity.symbol,
+                    payload=event,
+                    causation_id=event.event_id,
+                ),
+            )
+            await self._alert_dispatcher.dispatch(
+                self._alert_engine.ingest_entry_opportunity(
+                    event,
+                    now=self._clock.now(),
+                )
+            )
 
     async def _evaluate_long_term(
         self,

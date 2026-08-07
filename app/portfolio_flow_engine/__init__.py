@@ -1,5 +1,15 @@
-"""Portfolio-only order-flow protection engine."""
+"""Versioned portfolio order-flow engines."""
 
-from .engine import PortfolioFlowEngine, PortfolioFlowPolicy
+from .config import load_portfolio_flow_policy
+from .engine import PortfolioFlowEngineV1, PortfolioFlowPolicy
+from .v2 import PortfolioFlowEngineV2
 
-__all__ = ["PortfolioFlowEngine", "PortfolioFlowPolicy"]
+PortfolioFlowEngine = PortfolioFlowEngineV2
+
+__all__ = [
+    "PortfolioFlowEngine",
+    "PortfolioFlowEngineV1",
+    "PortfolioFlowEngineV2",
+    "PortfolioFlowPolicy",
+    "load_portfolio_flow_policy",
+]

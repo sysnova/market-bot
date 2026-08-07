@@ -121,7 +121,10 @@ class AlertKind(ContractEnum):
     BEARISH_CONSENSUS = "BEARISH_CONSENSUS"
     SEC_WARNING = "SEC_WARNING"
     ENTRY_WATCH = "ENTRY_WATCH"
+    ENTRY_OPPORTUNITY_PROGRESS = "ENTRY_OPPORTUNITY_PROGRESS"
+    ENTRY_OPPORTUNITY_CLOSED = "ENTRY_OPPORTUNITY_CLOSED"
     PORTFOLIO_PROTECT = "PORTFOLIO_PROTECT"
+    PORTFOLIO_FLOW_BUY = "PORTFOLIO_FLOW_BUY"
     LONG_PORTFOLIO_BUY = "LONG_PORTFOLIO_BUY"
     PATREON_CAPS_WATCH = "PATREON_CAPS_WATCH"
     PATREON_CAPS_BUY = "PATREON_CAPS_BUY"
@@ -134,6 +137,52 @@ class EntryWatchStatus(ContractEnum):
     TRIGGERED = "TRIGGERED"
     INVALIDATED = "INVALIDATED"
     EXPIRED = "EXPIRED"
+
+
+class EntryOpportunityStatus(ContractEnum):
+    """Aggregate lifecycle of one durable ticker opportunity."""
+
+    ARMED = "ARMED"
+    IN_ZONE = "IN_ZONE"
+    CONFIRMING = "CONFIRMING"
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class EntryMaturityLevel(ContractEnum):
+    """Highest evidence checkpoint reached without replacing the original thesis."""
+
+    ARMED = "ARMED"
+    IN_ZONE = "IN_ZONE"
+    L1 = "L1"
+    L2 = "L2"
+    L3 = "L3"
+    L4 = "L4"
+
+
+class EntryLegStatus(ContractEnum):
+    """Paper-trade state of one independently managed horizon."""
+
+    WATCHING = "WATCHING"
+    OPEN = "OPEN"
+    TARGET_HIT = "TARGET_HIT"
+    INVALIDATED = "INVALIDATED"
+    SESSION_CLOSED = "SESSION_CLOSED"
+    THESIS_BROKEN = "THESIS_BROKEN"
+    EXPIRED = "EXPIRED"
+    TIME_EXIT = "TIME_EXIT"
+
+
+class EntryCheckpointStatus(ContractEnum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class EntryCloseReason(ContractEnum):
+    ORIGINAL_THESIS_INVALIDATED = "ORIGINAL_THESIS_INVALIDATED"
+    EXPIRED = "EXPIRED"
+    UNIVERSE_REMOVED = "UNIVERSE_REMOVED"
+    ALL_HORIZONS_CLOSED = "ALL_HORIZONS_CLOSED"
 
 
 class PatreonCapsState(ContractEnum):

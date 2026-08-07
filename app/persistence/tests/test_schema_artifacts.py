@@ -13,6 +13,8 @@ DBML = ROOT / "resources" / "diagrams" / "market_bot.dbml"
 TABLES = {
     "consumer_checkpoints",
     "control_events",
+    "entry_opportunities",
+    "entry_opportunity_events",
     "entry_watch_transitions",
     "entry_watches",
     "long_portfolio_alerts",
@@ -85,6 +87,7 @@ def test_runtime_role_has_no_delete_and_immutable_tables_have_guard_triggers() -
     assert not re.search(r"grant[^;]*\bdelete\b", sql)
     for table in {
         "control_events",
+        "entry_opportunity_events",
         "entry_watch_transitions",
         "long_portfolio_alerts",
         "patreon_caps_transitions",

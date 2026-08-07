@@ -6,6 +6,10 @@
 - `EntryWatcherV2`: versión activa `2.0.0`. Requiere un setup Swing favorable reconocido y
   un trigger Intraday alcista nominal (`bullish_breakout`, `bullish_vwap_reclaim` o
   `bullish_entry_confirmation`).
+- `EntryWatcherV3`: conserva la continuación breakaway versionada en `3.0.0`.
+- `EntryWatcherV4`: versión activa `4.0.0`. Requiere Intraday v4 eficiente, `strong`, higher low
+  de cinco minutos y una segunda confirmación fresca al menos tres minutos después. Tras disparar,
+  no rearma otra zona Long del mismo símbolo durante 30 minutos, evitando L4 duplicadas.
 
 The Entry Watcher preserves a Long entry thesis across later market evaluations. It freezes
 the original buy zone, invalidation, expected correction, source analysis, and expiry instead
@@ -21,6 +25,10 @@ En V2 una perforación intradiaria aislada no invalida la tesis congelada. La in
 precio debe confirmarse en el análisis Long, o Long debe emitir dirección bajista/`AVOID`.
 
 The engine is analysis-only. It emits transitions for human alerts and has no order port.
+
+Entry Watcher stops at detection and publishes its durable transitions. Paper-trade progression,
+L1-L4 checkpoints, horizon legs, and gain/loss auditing belong to the independent
+`EntryOpportunityEngine`; see `app/entry_opportunity_engine/README.md`.
 
 ## Breakaway continuation after a zone touch
 
@@ -39,3 +47,7 @@ The final state is still `TRIGGERED`; its reasons distinguish
 watch returns to `ARMED` with `continuation_chase_cap_exceeded` and waits for a retest. Human alerts
 render these stages as `ENTRY IN_ZONE EARLY WATCH`, `ENTRY BREAKAWAY WATCH`, and
 `ENTRY EXTENDED WAIT`.
+
+En V4 esa continuación tampoco puede confirmar sobre un impulso extendido: primero debe volver a
+la ventana eficiente de Intraday y formar el retest/higher low. La primera lectura madura prepara
+la confirmación; la segunda lectura fresca puede disparar `ENTRY TRIGGERED`.

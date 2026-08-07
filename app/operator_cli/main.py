@@ -12,6 +12,7 @@ import typer
 
 from app import __version__
 from app.common.clock import SystemClock
+from app.common.settings import AppSettings
 from app.contracts import EventEnvelope, MarketSession
 from app.event_bus import InMemoryEventBus
 from app.integration.foundation import prepare_foundation_engine
@@ -27,6 +28,7 @@ app = typer.Typer(
     name="marketbot",
     help="Operate a MarketBot deployment.",
     no_args_is_help=True,
+    invoke_without_command=True,
     pretty_exceptions_enable=False,
 )
 
@@ -54,8 +56,38 @@ def root(
             "--version", callback=_version_callback, is_eager=True, help="Show the version."
         ),
     ] = False,
+    analyzer: Annotated[
+        str | None,
+        typer.Option(
+            "-analyzer",
+            help="Analyze one ticker through every engine except Peter Lynch and SEC.",
+        ),
+    ] = None,
 ) -> None:
     """Operate a MarketBot deployment."""
+
+    if analyzer is not None:
+        typer.echo(json.dumps(_run_market_analyzer(analyzer), indent=2, sort_keys=True))
+        raise typer.Exit
+
+
+def _run_market_analyzer(
+    symbol: str,
+    *,
+    timeout_seconds: float = 30.0,
+    runtime_root: Path = Path(".runtime"),
+    mirror_to_nats: bool = True,
+) -> dict[str, object]:
+    from app.integration.symbol_analysis_composition import run_market_analyzer
+
+    return _run_async(
+        run_market_analyzer(
+            symbol=symbol,
+            timeout_seconds=timeout_seconds,
+            runtime_root=runtime_root,
+            mirror_to_nats=mirror_to_nats,
+        )
+    )
 
 
 def _placeholder(name: str, help_text: str) -> typer.Typer:
@@ -70,6 +102,69 @@ def _placeholder(name: str, help_text: str) -> typer.Typer:
 
 for group_name, group_help in _GROUPS:
     app.add_typer(_placeholder(group_name, group_help), name=group_name)
+
+
+@app.command("analyzer")
+def analyzer_symbol(
+    symbol: Annotated[str, typer.Argument(help="Single market symbol to analyze.")],
+    timeout_seconds: Annotated[
+        float,
+        typer.Option(min=1, max=300, help="Maximum seconds allowed per engine."),
+    ] = 30.0,
+    runtime_root: Annotated[
+        Path,
+        typer.Option(help="Directory for local append-only analytical artifacts."),
+    ] = Path(".runtime"),
+    nats: Annotated[
+        bool,
+        typer.Option("--nats/--no-nats", help="Publish current results for downstream engines."),
+    ] = True,
+) -> None:
+    """Analyze one symbol through every engine except Peter Lynch and SEC."""
+
+    summary = _run_market_analyzer(
+        symbol,
+        timeout_seconds=timeout_seconds,
+        runtime_root=runtime_root,
+        mirror_to_nats=nats,
+    )
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@app.command("assembly")
+def show_assembly() -> None:
+    """Show the exact implementation, strategy, and mode selected for every engine."""
+
+    from app.integration.engine_assembly import MarketBotAssembly
+
+    assembly = MarketBotAssembly.from_settings(AppSettings())
+    typer.echo(
+        json.dumps(
+            {
+                "definition_id": assembly.definition.definition_id,
+                "version": assembly.definition.version,
+                "source": str(assembly.definition.source),
+                "engines": {
+                    slot.value: {
+                        "implementation": spec.implementation,
+                        "strategy": {
+                            "kind": spec.strategy.kind.value,
+                            "version": spec.strategy.version,
+                            "artifact": (
+                                str(spec.strategy.artifact)
+                                if spec.strategy.artifact is not None
+                                else None
+                            ),
+                        },
+                        "mode": spec.mode.value,
+                    }
+                    for slot, spec in assembly.definition.engines.items()
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 @app.command("live")
@@ -241,42 +336,62 @@ def portfolio_flow_process(
 @engine.command("long-portfolio")
 def long_portfolio_process(
     config_path: Annotated[
-        Path, typer.Option(help="Exact-version LONG portfolio YAML artifact.")
-    ] = Path("configs/rules/long_portfolio/1.0.0.yaml"),
+        Path | None,
+        typer.Option(help="Optional strategy override; defaults to the MarketBot assembly."),
+    ] = None,
     runtime_root: Annotated[
         Path, typer.Option(help="Directory for the deduplicated LONG alert ledger.")
     ] = Path(".runtime"),
     ready_path: Annotated[
         Path, typer.Option(help="Readiness file written after subscribing to NATS.")
     ] = Path(".runtime/status/long-portfolio-v1.ready.json"),
+    once: Annotated[bool, typer.Option(help="Replay the requested symbol once and exit.")] = False,
+    symbol: Annotated[
+        str | None,
+        typer.Option(help="Optional single PORT_YTD symbol for one-shot analysis."),
+    ] = None,
 ) -> None:
     """Monitor solid, allocation-aware entries for the year-end LONG portfolio."""
 
     from app.integration.long_portfolio_composition import run_long_portfolio_process
 
-    _run_async(
+    summary = _run_async(
         run_long_portfolio_process(
             config_path=config_path,
             runtime_root=runtime_root,
             ready_path=ready_path,
+            once=once,
+            symbol=symbol,
         )
     )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
 @engine.command("patreon-caps")
 def patreon_caps_process(
     config_path: Annotated[
-        Path, typer.Option(help="Exact-version PatreonCaps YAML artifact.")
-    ] = Path("configs/rules/patreon_caps/1.1.0.yaml"),
+        Path | None,
+        typer.Option(help="Optional strategy override; defaults to the MarketBot assembly."),
+    ] = None,
     ready_path: Annotated[
         Path, typer.Option(help="Readiness file written after NATS and PostgreSQL are ready.")
     ] = Path(".runtime/status/patreon-caps-v1.ready.json"),
+    once: Annotated[bool, typer.Option(help="Hydrate, evaluate once, and exit.")] = False,
 ) -> None:
     """Run the independent PatreonCaps v1 SHADOW process."""
 
     from app.integration.patreon_caps_composition import run_patreon_caps_process
 
-    _run_async(run_patreon_caps_process(config_path=config_path, ready_path=ready_path))
+    summary = _run_async(
+        run_patreon_caps_process(
+            config_path=config_path,
+            ready_path=ready_path,
+            once=once,
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
 @engine.command("elliott-wave")
@@ -598,7 +713,7 @@ def signal_fusion_monitor(
 
 entry_watch = typer.Typer(
     name="entry-watch",
-    help="Run the independent persistent entry-opportunity process.",
+    help="Run the independent Entry Watcher detector process.",
 )
 app.add_typer(entry_watch, name="entry-watch")
 
@@ -608,13 +723,72 @@ def entry_watcher_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
-    ] = Path(".runtime/status/entry-watcher-v3.ready.json"),
+    ] = Path(".runtime/status/entry-watcher-v4.ready.json"),
 ) -> None:
-    """Run the configured Entry Watcher PostgreSQL/NATS process (V3 by default)."""
+    """Run the configured Entry Watcher PostgreSQL/NATS detector process."""
 
     from app.integration.distributed_composition import run_entry_watcher_process
 
     _run_async(run_entry_watcher_process(ready_path=ready_path))
+
+
+@entry_watch.command("report")
+def entry_watcher_report(
+    history: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            max=10000,
+            help="Recent opportunities included in L1-L4 and horizon statistics.",
+        ),
+    ] = 5000,
+) -> None:
+    """Show open paper trades, maturity progress and audited success rates."""
+
+    from app.integration.entry_opportunity_report import load_entry_opportunity_report
+
+    report = _run_async(load_entry_opportunity_report(history=history))
+    typer.echo(json.dumps(report, indent=2, sort_keys=True))
+
+
+entry_opportunity = typer.Typer(
+    name="entry-opportunity",
+    help="Run and inspect the independent paper-opportunity lifecycle engine.",
+)
+app.add_typer(entry_opportunity, name="entry-opportunity")
+
+
+@entry_opportunity.command("serve")
+def entry_opportunity_process(
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
+    ] = Path(".runtime/status/entry-opportunity-v1.ready.json"),
+) -> None:
+    """Run the configured Entry Opportunity PostgreSQL/NATS process."""
+
+    from app.integration.distributed_composition import run_entry_opportunity_process
+
+    _run_async(run_entry_opportunity_process(ready_path=ready_path))
+
+
+@entry_opportunity.command("report")
+def entry_opportunity_report(
+    history: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            max=10000,
+            help="Recent opportunities included in L1-L4 and horizon statistics.",
+        ),
+    ] = 5000,
+) -> None:
+    """Show open paper trades, maturity progress and audited success rates."""
+
+    from app.integration.entry_opportunity_report import load_entry_opportunity_report
+
+    report = _run_async(load_entry_opportunity_report(history=history))
+    typer.echo(json.dumps(report, indent=2, sort_keys=True))
 
 
 sec = typer.Typer(name="sec", help="Run the independent bounded SEC filing bot.")

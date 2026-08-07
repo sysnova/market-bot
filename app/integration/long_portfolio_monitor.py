@@ -35,6 +35,7 @@ from app.long_portfolio_engine import (
 from app.persistence import create_database_engine, create_session_factory
 
 from .distributed_composition import _write_ready  # pyright: ignore[reportPrivateUsage]
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .long_portfolio_store import PostgresLongPortfolioAlertStore
 from .postgres_universe import PostgresUniverseClient
 
@@ -61,13 +62,14 @@ async def run_long_portfolio_monitor(
     bell: bool = True,
     history: int = 25,
     progress_interval: timedelta = timedelta(hours=1),
-    config_path: Path = Path("configs/rules/long_portfolio/1.0.0.yaml"),
+    config_path: Path | None = None,
 ) -> None:
     """Render PostgreSQL history first and then new LONG portfolio NATS alerts."""
 
     if progress_interval <= timedelta():
         raise ValueError("progress_interval must be positive")
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     clock = SystemClock()
     database = create_database_engine(
         settings.database_url.get_secret_value(),
@@ -79,8 +81,11 @@ async def run_long_portfolio_monitor(
         raise RuntimeError("market_bot.long_portfolio_alerts is not available")
     portfolio_data = PostgresUniverseClient(database)
     allocations = await portfolio_data.get_portfolio_allocations()
-    policy = load_long_portfolio_policy(config_path, allocations=allocations)
-    validator = LongPortfolioEngine(policy)
+    policy = load_long_portfolio_policy(
+        config_path or assembly.strategy_artifact(EngineSlot.LONG_PORTFOLIO),
+        allocations=allocations,
+    )
+    validator = assembly.build_long_portfolio(policy)
     bus = await NatsJetStreamEventBus.connect(
         servers=[settings.nats_url.get_secret_value()], prefix="marketbot", stream="MARKETBOT"
     )
@@ -114,6 +119,13 @@ async def run_long_portfolio_monitor(
                 ready_path,
                 {
                     "service": "long-portfolio-monitor",
+                    "marketbot_definition_version": assembly.definition.version,
+                    "engine_implementation": assembly.spec(
+                        EngineSlot.LONG_PORTFOLIO
+                    ).implementation,
+                    "engine_strategy_version": assembly.spec(
+                        EngineSlot.LONG_PORTFOLIO
+                    ).strategy.version,
                     "history": history,
                     "persistence": "postgresql",
                     "progress_interval_minutes": int(progress_interval.total_seconds() // 60),

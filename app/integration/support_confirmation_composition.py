@@ -27,13 +27,14 @@ from app.contracts import (
 )
 from app.event_bus import NatsJetStreamEventBus
 from app.persistence import create_database_engine
-from app.support_confirmation_engine import SupportConfirmationEngine, SupportContext
+from app.support_confirmation_engine import SupportContext
 
 from .distributed_composition import (
     HistoryRequest,
     connect_nats,
     write_ready,
 )
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
@@ -230,9 +231,10 @@ def _stamp_assessment(
 
 
 async def run_support_confirmation_process(
-    *, ready_path: Path | None = None, once: bool = False
+    *, ready_path: Path | None = None, once: bool = False, symbol: str | None = None
 ) -> dict[str, object] | None:
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     database = create_database_engine(
         settings.database_url.get_secret_value(),
         require_ssl=settings.environment is Environment.PRODUCTION,
@@ -242,8 +244,21 @@ async def run_support_confirmation_process(
     subscriptions: list[Subscription] = []
     try:
         holdings = await load_support_holdings(provider)
+        requested = symbol.strip().upper() if symbol is not None else None
+        if requested is not None and requested not in holdings.symbols:
+            return {
+                "service": "support-confirmation-v0",
+                "mode": "SHADOW",
+                "requested_symbol": requested,
+                "eligible": False,
+                "reason": "positive_holding_required",
+                "assessments_published": 0,
+            }
+        selected_symbols = (requested,) if requested is not None else holdings.symbols
         bus = await connect_nats(settings)
-        runtime = SupportConfirmationRuntime(engine=SupportConfirmationEngine(), publisher=bus)
+        runtime = SupportConfirmationRuntime(
+            engine=assembly.build_support_confirmation(), publisher=bus
+        )
         restore_subscription = await bus.subscribe(
             "marketbot.v1.support-confirmation.assessment.>",
             runtime.restore_assessment,
@@ -258,18 +273,22 @@ async def run_support_confirmation_process(
             settings,
             database,
             engine_id="support-confirmation-v0",
-            symbols=holdings.symbols,
+            symbols=selected_symbols,
             requirements=SUPPORT_HISTORY_REQUESTS,
             as_of=SystemClock().now(),
         )
-        published = await runtime.bootstrap(bars, symbols=holdings.symbols)
+        published = await runtime.bootstrap(bars, symbols=selected_symbols)
         summary: dict[str, object] = {
             "service": "support-confirmation-v0",
-            "engine_version": SupportConfirmationEngine.engine_version,
+            "engine_version": assembly.spec(EngineSlot.SUPPORT_CONFIRMATION).implementation,
+            "engine_strategy_version": assembly.spec(
+                EngineSlot.SUPPORT_CONFIRMATION
+            ).strategy.version,
+            "marketbot_definition_version": assembly.definition.version,
             "mode": "SHADOW",
             "universe": "positive-holdings-only",
             "universe_source": holdings.source,
-            "symbols": list(holdings.symbols),
+            "symbols": list(selected_symbols),
             "assessments_published": published,
             "persistence": "nats-jetstream-15d",
             "feeds_patreon_caps": False,

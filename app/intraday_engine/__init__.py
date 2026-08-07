@@ -4,6 +4,7 @@ from .engine import IntradayEngine
 from .models import IntradayContext, IntradaySetup
 from .v2 import IntradayEngineV1, IntradayEngineV2
 from .v3 import IntradayEngineV3
+from .v4 import IntradayEngineV4
 
 __all__ = [
     "IntradayContext",
@@ -11,5 +12,6 @@ __all__ = [
     "IntradayEngineV1",
     "IntradayEngineV2",
     "IntradayEngineV3",
+    "IntradayEngineV4",
     "IntradaySetup",
 ]

@@ -9,6 +9,7 @@ import pytest
 from app.dilution_sec_engine import SecTickerNotFoundError, SecTransportError
 from app.integration.peter_lynch_composition import PeterLynchRunService
 from app.integration.peter_lynch_sec_adapter import SecPeterLynchFacts
+from app.peter_lynch_engine import PeterLynchEngine
 
 
 def facts(symbol: str) -> SecPeterLynchFacts:
@@ -61,6 +62,7 @@ async def test_manual_run_evaluates_once_and_saves_only_non_transient_results() 
         prices=prices,
         ticker_resolver=resolver,
         sec=sec,
+        calculator=PeterLynchEngine(),
         batch_size=100,
         progress=progress.append,
     ).run(now=datetime(2026, 8, 2, 12, tzinfo=UTC))
@@ -98,6 +100,7 @@ async def test_alpaca_transport_failure_preserves_every_existing_tag() -> None:
         prices=prices,
         ticker_resolver=AsyncMock(),
         sec=AsyncMock(),
+        calculator=PeterLynchEngine(),
         batch_size=100,
     ).run(now=datetime(2026, 8, 2, 12, tzinfo=UTC))
 
@@ -129,6 +132,7 @@ async def test_stale_trade_uses_fresh_daily_bar_and_invalid_price_fails_closed()
         prices=prices,
         ticker_resolver=resolver,
         sec=sec,
+        calculator=PeterLynchEngine(),
         batch_size=100,
     ).run(now=datetime(2026, 8, 2, 12, tzinfo=UTC))
 

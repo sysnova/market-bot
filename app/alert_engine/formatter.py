@@ -28,6 +28,9 @@ _BUY_LABELS = {
     BuyMaturity.FULLY_MATURED: "FULLY MATURED",
 }
 _PROTECT_BANNER_STYLE = "\x1b[1;97;41m"
+_FLOW_BUY_BANNER_STYLE = "\x1b[1;30;46m"
+_OPPORTUNITY_PROGRESS_STYLE = "\x1b[1;30;46m"
+_OPPORTUNITY_CLOSED_STYLE = "\x1b[1;97;41m"
 _RESET_STYLE = "\x1b[0m"
 
 
@@ -38,22 +41,36 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
     lines: list[str] = []
     if alert.kind is AlertKind.PORTFOLIO_PROTECT:
         banner = f"PROTECT {alert.symbol}"
+        lines.append(f"{_PROTECT_BANNER_STYLE} {banner} {_RESET_STYLE}" if color else banner)
+    if alert.kind is AlertKind.PORTFOLIO_FLOW_BUY:
+        price = _metrics(alert).get("current_price")
+        banner = f"{alert.symbol} | BUY FLOW {_money(price)} | AGGRESSIVE ENTRY WATCH"
+        lines.append(f"{_FLOW_BUY_BANNER_STYLE} {banner} {_RESET_STYLE}" if color else banner)
+    if alert.kind is AlertKind.ENTRY_OPPORTUNITY_PROGRESS:
+        values = _metrics(alert)
+        progress = _number(values.get("progress_percent"))
+        maturity = values.get("maturity", "-")
+        banner = f"{alert.symbol} | ENTRY PROGRESS {progress}% | {maturity}"
         lines.append(
-            f"{_PROTECT_BANNER_STYLE} {banner} {_RESET_STYLE}" if color else banner
+            f"{_OPPORTUNITY_PROGRESS_STYLE} {banner} {_RESET_STYLE}" if color else banner
+        )
+    if alert.kind is AlertKind.ENTRY_OPPORTUNITY_CLOSED:
+        banner = f"{alert.symbol} | PAPER TRADE CLOSED | REVIEW GAIN/LOSS"
+        lines.append(
+            f"{_OPPORTUNITY_CLOSED_STYLE} {banner} {_RESET_STYLE}" if color else banner
         )
     banner_result = _buy_banner(alert, analyses)
     if banner_result is not None:
         maturity, buy_banner = banner_result
         lines.append(
-            f"{_BUY_BANNER_STYLES[maturity]} {buy_banner} {_RESET_STYLE}"
-            if color
-            else buy_banner
+            f"{_BUY_BANNER_STYLES[maturity]} {buy_banner} {_RESET_STYLE}" if color else buy_banner
         )
-    lines.extend([
-        f"[{alert.severity.value}] {alert.symbol} score={_number(alert.score)} "
-        f"{alert.title}",
-        f"  Decision: {alert.message}",
-    ])
+    lines.extend(
+        [
+            f"[{alert.severity.value}] {alert.symbol} score={_number(alert.score)} {alert.title}",
+            f"  Decision: {alert.message}",
+        ]
+    )
     level_line = _level_line(alert, analyses)
     if level_line is not None:
         lines.append(f"  {level_line}")
@@ -106,10 +123,7 @@ def _level_line(
     analysis_metrics = [_metrics(item) for item in analyses.values()]
     price = _first(
         alert_metrics.get("current_price"),
-        *(
-            values.get("reference_price")
-            for values in reversed(analysis_metrics)
-        ),
+        *(values.get("reference_price") for values in reversed(analysis_metrics)),
     )
     zone_low = _first(
         alert_metrics.get("buy_zone_low"),

@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from app.common.canonical import canonical_json
 from app.contracts import LocalAlert
 
-from .confirmed import is_buy_alert
+from .confirmed import is_audible_alert
 from .formatter import format_local_alert
 
 _NEW_YORK = ZoneInfo("America/New_York")
@@ -35,7 +35,7 @@ class ConsoleAlertSink:
         self._color = _supports_color(stream) if color is None else color
 
     def emit(self, alert: LocalAlert) -> None:
-        bell = "\a" if self._bell and is_buy_alert(alert) else ""
+        bell = "\a" if self._bell and is_audible_alert(alert) else ""
         self._stream.write(f"{format_local_alert(alert, color=self._color)}{bell}\n")
         self._stream.flush()
 

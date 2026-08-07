@@ -24,6 +24,21 @@ class IntradayEngineV3(IntradayEngineV2):
 
     engine_version = "3.0.0"
 
+    def __init__(
+        self,
+        *,
+        minimum_momentum_percent: Decimal = MIN_MOMENTUM_PERCENT,
+        minimum_risk_percent: Decimal = MIN_RISK_PERCENT,
+        minimum_atr_risk_multiple: Decimal = MIN_ATR_RISK_MULTIPLE,
+        reward_risk_ratio: Decimal = REWARD_RISK_RATIO,
+        strategy_version: str = "3.0.0",
+    ) -> None:
+        self._minimum_momentum_percent = minimum_momentum_percent
+        self._minimum_risk_percent = minimum_risk_percent
+        self._minimum_atr_risk_multiple = minimum_atr_risk_multiple
+        self._reward_risk_ratio = reward_risk_ratio
+        self._strategy_version = strategy_version
+
     def analyze(
         self,
         context: IntradayContext,
@@ -34,7 +49,12 @@ class IntradayEngineV3(IntradayEngineV2):
         metrics = _metric_map(result)
         setup = str(metrics.get("setup", "no_trigger"))
         if setup not in _BULLISH_SETUPS or len(context.minute_bars) < 30:
-            return _tag(result, gate_passed=False, persistence=False)
+            return _tag(
+                result,
+                gate_passed=False,
+                persistence=False,
+                strategy_version=self._strategy_version,
+            )
 
         price = _required_decimal(metrics, "reference_price")
         atr14 = _required_decimal(metrics, "atr14")
@@ -46,20 +66,20 @@ class IntradayEngineV3(IntradayEngineV2):
         )
         higher_low = metrics.get("five_minute_higher_low") is True
         gate_passed = (
-            momentum >= MIN_MOMENTUM_PERCENT
+            momentum >= self._minimum_momentum_percent
             and (persistence or higher_low)
             and str(metrics.get("confirmation_quality", "weak")) in {"standard", "strong"}
         )
 
         minimum_risk = max(
-            price * MIN_RISK_PERCENT / HUNDRED,
-            atr14 * MIN_ATR_RISK_MULTIPLE,
+            price * self._minimum_risk_percent / HUNDRED,
+            atr14 * self._minimum_atr_risk_multiple,
         )
         existing_invalidation = _required_decimal(metrics, "invalidation_level")
         existing_risk = price - existing_invalidation
         tactical_risk = max(existing_risk, minimum_risk)
         invalidation = price - tactical_risk
-        objective = price + tactical_risk * REWARD_RISK_RATIO
+        objective = price + tactical_risk * self._reward_risk_ratio
         risk_percent = tactical_risk / price * HUNDRED
 
         score = result.score if gate_passed else min(result.score, Decimal("64"))
@@ -78,12 +98,15 @@ class IntradayEngineV3(IntradayEngineV2):
                     NamedValue(name="invalidation_level", value=_rounded(invalidation)),
                     NamedValue(name="objective_level", value=_rounded(objective)),
                     NamedValue(name="risk_percent", value=_rounded(risk_percent)),
-                    NamedValue(name="reward_risk_ratio", value=REWARD_RISK_RATIO),
+                    NamedValue(name="reward_risk_ratio", value=self._reward_risk_ratio),
                     NamedValue(name="risk_ok", value=risk_percent <= Decimal("1.5")),
                     NamedValue(name="confirmation_persistence", value=persistence),
                     NamedValue(name="confirmation_gate_passed", value=gate_passed),
                     NamedValue(name="minimum_tactical_risk", value=_rounded(minimum_risk)),
-                    NamedValue(name="entry_confirmation_rule_version", value=self.engine_version),
+                    NamedValue(
+                        name="entry_confirmation_rule_version",
+                        value=self._strategy_version,
+                    ),
                 ),
             }
         )
@@ -102,14 +125,20 @@ def _bullish_persistence(context: IntradayContext, setup: str, session_vwap: Dec
     return all(bar.close > breakout_level for bar in latest_two)
 
 
-def _tag(result: AnalysisResult, *, gate_passed: bool, persistence: bool) -> AnalysisResult:
+def _tag(
+    result: AnalysisResult,
+    *,
+    gate_passed: bool,
+    persistence: bool,
+    strategy_version: str,
+) -> AnalysisResult:
     return result.model_copy(
         update={
             "metrics": _upsert_metrics(
                 result,
                 NamedValue(name="confirmation_persistence", value=persistence),
                 NamedValue(name="confirmation_gate_passed", value=gate_passed),
-                NamedValue(name="entry_confirmation_rule_version", value="3.0.0"),
+                NamedValue(name="entry_confirmation_rule_version", value=strategy_version),
             )
         }
     )

@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 marketbot = "app.operator_cli.main:app"
+market-bot = "app.operator_cli.main:app"
 
 [project.entry-points."marketbot.rulepacks.v1"]
 synthetic_core = "app.rulepacks.synthetic_core:get_providers"

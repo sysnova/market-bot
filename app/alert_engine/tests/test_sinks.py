@@ -78,9 +78,7 @@ def test_console_sink_renders_actionable_component_context() -> None:
             NamedValue(name="buy_zone_high", value=Decimal("105")),
             NamedValue(name="invalidation", value=Decimal("92")),
             NamedValue(name="weekly_sma200", value=Decimal("80")),
-            NamedValue(
-                name="weekly_price_vs_sma200_percent", value=Decimal("28.75")
-            ),
+            NamedValue(name="weekly_price_vs_sma200_percent", value=Decimal("28.75")),
         ),
         context_hash="sha256:" + "a" * 64,
     )
@@ -136,9 +134,7 @@ def test_console_sink_highlights_solid_buy_at_confirmed_market_price() -> None:
     ConsoleAlertSink(stream=stream, color=True, bell=True).emit(buyable)
 
     first_line = stream.getvalue().splitlines()[0]
-    assert first_line == (
-        "\x1b[1;97;42m HIMS | BUY L3 $41.2 | HIGH CONVICTION \x1b[0m"
-    )
+    assert first_line == ("\x1b[1;97;42m HIMS | BUY L3 $41.2 | HIGH CONVICTION \x1b[0m")
     assert stream.getvalue().endswith("\a\n")
 
 
@@ -151,6 +147,26 @@ def test_console_sink_does_not_highlight_long_buy_zone_as_solid() -> None:
 
     assert "SOLID BUY" not in stream.getvalue()
     assert "\x1b[" not in stream.getvalue()
+    assert "\a" not in stream.getvalue()
+
+
+@pytest.mark.unit
+def test_console_sink_highlights_aggressive_buy_pressure_without_an_l_level() -> None:
+    flow = _alert().model_copy(
+        update={
+            "kind": AlertKind.PORTFOLIO_FLOW_BUY,
+            "title": "AGGRESSIVE ENTRY WATCH TEST",
+            "metrics": (NamedValue(name="current_price", value=Decimal("100.6")),),
+        }
+    )
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True, bell=True).emit(flow)
+
+    assert stream.getvalue().splitlines()[0] == (
+        "\x1b[1;30;46m TEST | BUY FLOW $100.6 | AGGRESSIVE ENTRY WATCH \x1b[0m"
+    )
+    assert "BUY L" not in stream.getvalue()
     assert "\a" not in stream.getvalue()
 
 
@@ -210,9 +226,7 @@ def test_console_sink_does_not_highlight_non_buy_alert(alert: LocalAlert) -> Non
 
 
 @pytest.mark.unit
-def test_ndjson_sink_is_append_only_and_idempotent(
-    tmp_path: Path, alert: LocalAlert
-) -> None:
+def test_ndjson_sink_is_append_only_and_idempotent(tmp_path: Path, alert: LocalAlert) -> None:
     base_path = tmp_path / "alerts.ndjson"
     daily_path = tmp_path / "alerts-2026-07-26.ndjson"
     sink = NdjsonAlertSink(base_path)
@@ -232,9 +246,7 @@ def test_ndjson_sink_is_append_only_and_idempotent(
 
 
 @pytest.mark.unit
-def test_ndjson_sink_rotates_by_new_york_market_date(
-    tmp_path: Path, alert: LocalAlert
-) -> None:
+def test_ndjson_sink_rotates_by_new_york_market_date(tmp_path: Path, alert: LocalAlert) -> None:
     sink = NdjsonAlertSink(tmp_path / "marketbot-alerts.ndjson")
     late_sunday_utc = alert.model_copy(
         update={

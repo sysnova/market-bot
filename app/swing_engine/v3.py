@@ -16,6 +16,15 @@ class SwingEngineV3(SwingEngineV2):
 
     engine_version = "3.0.0"
 
+    def __init__(
+        self,
+        *,
+        anchored_vwap_gate: bool = True,
+        strategy_version: str = "3.0.0",
+    ) -> None:
+        self._anchored_vwap_gate = anchored_vwap_gate
+        self._strategy_version = strategy_version
+
     def analyze(
         self,
         context: SwingContext,
@@ -27,7 +36,8 @@ class SwingEngineV3(SwingEngineV2):
         pivot = metrics.get("price_vs_pivot_low_avwap_percent")
         breakout = metrics.get("price_vs_breakout_avwap_percent")
         both_overhead = (
-            isinstance(pivot, Decimal)
+            self._anchored_vwap_gate
+            and isinstance(pivot, Decimal)
             and isinstance(breakout, Decimal)
             and pivot < 0
             and breakout < 0
@@ -35,7 +45,11 @@ class SwingEngineV3(SwingEngineV2):
         classification = str(metrics.get("classification", "setup"))
         gate_passed = not both_overhead
         if not both_overhead or classification not in {"pullback", "breakout"}:
-            return _tag(result, gate_passed=gate_passed)
+            return _tag(
+                result,
+                gate_passed=gate_passed,
+                strategy_version=self._strategy_version,
+            )
         return result.model_copy(
             update={
                 "verdict": AnalysisVerdict.WATCH,
@@ -46,19 +60,27 @@ class SwingEngineV3(SwingEngineV2):
                     result,
                     NamedValue(name="classification", value="setup"),
                     NamedValue(name="anchored_vwap_gate_passed", value=False),
-                    NamedValue(name="entry_confirmation_rule_version", value=self.engine_version),
+                    NamedValue(
+                        name="entry_confirmation_rule_version",
+                        value=self._strategy_version,
+                    ),
                 ),
             }
         )
 
 
-def _tag(result: AnalysisResult, *, gate_passed: bool) -> AnalysisResult:
+def _tag(
+    result: AnalysisResult,
+    *,
+    gate_passed: bool,
+    strategy_version: str,
+) -> AnalysisResult:
     return result.model_copy(
         update={
             "metrics": _upsert(
                 result,
                 NamedValue(name="anchored_vwap_gate_passed", value=gate_passed),
-                NamedValue(name="entry_confirmation_rule_version", value="3.0.0"),
+                NamedValue(name="entry_confirmation_rule_version", value=strategy_version),
             )
         }
     )

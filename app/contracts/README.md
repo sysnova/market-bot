@@ -35,6 +35,8 @@ Importar desde `app.contracts`, no desde módulos internos.
   `LocalAlert.component_analyses` es opcional y conserva los resultados completos que explican
   una alerta; `LocalAlert.metrics` agrega contexto propio de la notificacion, como la zona original
   de un Entry Watch, sin expresar una orden.
+  `AlertKind.PORTFOLIO_FLOW_BUY` identifica presión compradora agresiva observada al ask; es una
+  alerta temprana y no equivale por sí sola a una madurez L1-L4.
 - PatreonCaps: `PatreonCapsAssessment` publica cada evaluacion relevante y
   `PatreonCapsTransition` registra un cambio durable de estado. Ambos exponen la version exacta de
   reglas, scores y aportes, niveles, alineacion de engines, snapshot macro, lectura Lesson y

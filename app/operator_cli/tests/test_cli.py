@@ -37,11 +37,14 @@ def test_root_help_lists_operator_groups() -> None:
         "supervisor",
         "infra",
         "live",
+        "analyzer",
+        "assembly",
         "sec",
         "engine",
         "market",
         "alerts",
         "entry-watch",
+        "entry-opportunity",
         "monitor",
     ):
         assert group in result.stdout
@@ -56,6 +59,7 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("market", "history"),
         ("alerts", "serve"),
         ("entry-watch", "serve"),
+        ("entry-opportunity", "serve"),
         ("engine", "patreon-caps"),
         ("alerts", "patreon-caps"),
         ("monitor", "patreon-caps"),
@@ -73,6 +77,61 @@ def test_live_help_exposes_analysis_only_operation() -> None:
     assert result.exit_code == 0
     assert "analysis-only" in output.lower()
     assert "--once" in output
+
+
+def test_analyzer_passes_the_received_ticker_and_prints_json() -> None:
+    summary = {
+        "symbol": "TEST",
+        "execution_enabled": False,
+        "excluded_engines": {
+            "peter-lynch": "excluded_by_design_slow_provider",
+            "dilution-sec": "excluded_by_design_slow_provider",
+        },
+        "engines": [],
+    }
+
+    async def fake_run(**kwargs: object) -> dict[str, object]:
+        assert kwargs == {
+            "symbol": "TEST",
+            "timeout_seconds": 12.0,
+            "runtime_root": Path(".runtime"),
+            "mirror_to_nats": False,
+        }
+        return summary
+
+    with patch(
+        "app.integration.symbol_analysis_composition.run_market_analyzer",
+        new=fake_run,
+    ):
+        result = runner.invoke(
+            app,
+            ["analyzer", "TEST", "--timeout-seconds", "12", "--no-nats"],
+        )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == summary
+
+
+def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
+    result = runner.invoke(app, ["assembly"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["version"] == "4.0.0"
+    assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
+    assert payload["engines"]["portfolio-flow"]["strategy"]["version"] == "2.0.0"
+    assert payload["engines"]["peter-lynch"]["mode"] == "on-demand"
+
+
+def test_single_dash_analyzer_alias_passes_the_received_ticker() -> None:
+    summary = {"symbol": "NVDA", "engines": []}
+
+    with patch("app.operator_cli.main._run_market_analyzer", return_value=summary) as run:
+        result = runner.invoke(app, ["-analyzer", "NVDA"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == summary
+    run.assert_called_once_with("NVDA")
 
 
 def test_sec_daily_help_exposes_bounded_filing_scan() -> None:

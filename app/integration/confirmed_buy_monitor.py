@@ -9,10 +9,20 @@ from pathlib import Path
 from app.alert_engine.confirmed import buy_maturity, is_portfolio_monitor_alert
 from app.alert_engine.sinks import ConsoleAlertSink
 from app.common.settings import AppSettings
-from app.contracts import LOCAL_ALERT_EVENT, EventEnvelope, LocalAlert, SubscriptionOptions
+from app.contracts import (
+    LOCAL_ALERT_EVENT,
+    AlertKind,
+    EventEnvelope,
+    LocalAlert,
+    SubscriptionOptions,
+)
 from app.event_bus import NatsJetStreamEventBus
 
-from .alert_sounds import play_buy_maturity_sound
+from .alert_sounds import (
+    play_aggressive_flow_sound,
+    play_buy_maturity_sound,
+    play_entry_close_sound,
+)
 from .distributed_composition import write_ready
 
 
@@ -40,6 +50,10 @@ async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: boo
             maturity = buy_maturity(alert)
             if bell and maturity is not None:
                 play_buy_maturity_sound(maturity, fallback=sys.stdout)
+            elif bell and alert.kind is AlertKind.PORTFOLIO_FLOW_BUY:
+                play_aggressive_flow_sound(fallback=sys.stdout)
+            elif bell and alert.kind is AlertKind.ENTRY_OPPORTUNITY_CLOSED:
+                play_entry_close_sound(fallback=sys.stdout)
 
     subscription = await bus.subscribe(
         "marketbot.v1.alert.local.>",
@@ -56,7 +70,10 @@ async def run_confirmed_buy_monitor(*, ready_path: Path | None = None, bell: boo
                     "replay": False,
                 },
             )
-        print("COMPRAS L1-L4 + PROTECCION DE PORTFOLIO - esperando NATS...", flush=True)
+        print(
+            "COMPRAS L1-L4 + PROGRESO ENTRY WATCHER + CIERRES + PROTECCION - esperando NATS...",
+            flush=True,
+        )
         await asyncio.Event().wait()
     finally:
         await subscription.unsubscribe()

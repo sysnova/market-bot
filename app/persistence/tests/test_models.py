@@ -9,6 +9,7 @@ from sqlalchemy import UniqueConstraint
 
 from app.persistence.models import (
     Base,
+    EntryOpportunityRecord,
     EntryWatchRecord,
     RuleVersion,
     Run,
@@ -20,6 +21,8 @@ from app.persistence.models import (
 EXPECTED_TABLES = {
     "consumer_checkpoints",
     "control_events",
+    "entry_opportunities",
+    "entry_opportunity_events",
     "entry_watch_transitions",
     "entry_watches",
     "long_portfolio_alerts",
@@ -90,6 +93,19 @@ def test_entry_watch_has_one_active_thesis_per_symbol() -> None:
     assert str(matching[0].dialect_options["postgresql"]["where"]) == (
         "status IN ('ARMED', 'IN_ZONE')"
     )
+
+
+@pytest.mark.unit
+def test_entry_opportunity_has_one_non_closed_lifecycle_per_symbol() -> None:
+    matching = [
+        index
+        for index in EntryOpportunityRecord.__table__.indexes
+        if index.name == "entry_opportunities_one_active_per_symbol_idx"
+    ]
+
+    assert len(matching) == 1
+    assert matching[0].unique is True
+    assert str(matching[0].dialect_options["postgresql"]["where"]) == "status <> 'CLOSED'"
 
 
 @pytest.mark.unit

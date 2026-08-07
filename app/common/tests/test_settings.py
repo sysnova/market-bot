@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -18,6 +19,8 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.database_url.get_secret_value().endswith("@db/marketbot")
     assert settings.entry_watcher_enabled is True
     assert settings.entry_watch_ttl_days == 56
+    assert settings.definition_path == Path("configs/marketbot/4.0.0.yaml")
+    assert settings.entry_confirmation_rule_version is None
 
 
 def test_settings_reject_unknown_constructor_keys() -> None:

@@ -16,8 +16,7 @@ def test_patreon_confirmation_uses_the_three_tone_windows_chime(
     monkeypatch.setattr(
         alert_sounds.subprocess,
         "Popen",
-        lambda command, **options: launched.append((command, options))
-        or SimpleNamespace(),
+        lambda command, **options: launched.append((command, options)) or SimpleNamespace(),
     )
 
     assert alert_sounds.play_patreon_confirmation_sound(fallback=StringIO()) is True
@@ -48,8 +47,7 @@ def test_solid_buy_uses_a_distinct_native_alarm(
     monkeypatch.setattr(
         alert_sounds.subprocess,
         "Popen",
-        lambda command, **options: launched.append((command, options))
-        or SimpleNamespace(),
+        lambda command, **options: launched.append((command, options)) or SimpleNamespace(),
     )
 
     assert alert_sounds.play_solid_buy_sound(fallback=StringIO()) is True
@@ -57,6 +55,24 @@ def test_solid_buy_uses_a_distinct_native_alarm(
     assert "Beep(1200, 220)" in script
     assert "Beep(1600, 500)" in script
     assert script != alert_sounds._PATREON_CONFIRMATION_SCRIPT
+
+
+def test_aggressive_flow_uses_a_short_two_tone_alarm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launched: list[list[str]] = []
+    monkeypatch.setattr(alert_sounds.shutil, "which", lambda _: "powershell.exe")
+    monkeypatch.setattr(
+        alert_sounds.subprocess,
+        "Popen",
+        lambda command, **_: launched.append(command) or SimpleNamespace(),
+    )
+
+    assert alert_sounds.play_aggressive_flow_sound(fallback=StringIO()) is True
+    script = launched[0][-1]
+    assert "Beep(1350, 120)" in script
+    assert "Beep(1650, 220)" in script
+    assert script.count("[console]::Beep") == 2
 
 
 @pytest.mark.parametrize(

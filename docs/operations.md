@@ -23,23 +23,37 @@ uv run marketbot --help
 uv run marketbot --version
 ```
 
-## Versioned entry-confirmation rules
+## Versioned MarketBot assembly
 
-Entry confirmation is selected by an exact, rollback-safe artifact coordinate:
+Every process and the analyzer load the same exact-version definition. Inspect the effective
+selection before starting services:
 
 ```powershell
-$env:MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION = "3.0.0"
+uv run marketbot assembly
+```
+
+The default is `configs/marketbot/4.0.0.yaml`. Each engine entry separates:
+
+- `implementation`: concrete Python behavior;
+- `strategy`: embedded rules or an exact-version YAML artifact;
+- `mode`: active, shadow, scheduled, or on-demand.
+
+To deploy another complete, reviewed assembly, create a new immutable definition and select it:
+
+```powershell
+$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/4.0.0.yaml"
 .\scripts\windows\start-market-bot.ps1
 ```
 
-The manifests live under `configs/rules/entry_confirmation/`. Version `3.0.0` adds an
-anchored-VWAP Swing gate, two-close or five-minute persistence, magnitude-aware momentum, and a
-minimum tactical stop based on price and ATR. Every Swing and Intraday result records both its
-`engine_version` and `entry_confirmation_rule_version`, so alert outcomes can be grouped by the
-exact rules that produced them.
+Strategy manifests live under `configs/rules/`. Entry confirmation `4.0.0` retains the v3
+anchored-VWAP Swing gate and adds an Intraday anti-chase gate: at most 0.50 ATR above the trigger,
+at most 2 ATR above EMA20, a strong five-minute higher low, and a second fresh Entry Watcher
+confirmation after at least three minutes. Readiness summaries expose
+`marketbot_definition_version`, `engine_implementation`, and `engine_strategy_version`; analytical
+results retain their engine and entry-confirmation versions for outcome grouping.
 
-Rollback does not require a code revert. Stop MarketBot and restart it with the previous exact
-coordinate:
+The former confirmation setting remains as a deprecated atomic rollback switch. It changes the
+compatible Swing/Intraday/Entry Watcher bundle in one place; no composition has its own version map:
 
 ```powershell
 $env:MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION = "2.0.0"
@@ -47,7 +61,8 @@ $env:MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION = "2.0.0"
 ```
 
 Do not change an existing manifest in place. Add a new semantic version for every behavioral
-change, and retain old engine classes and manifests for reproducibility.
+change, retain old engine classes and manifests for reproducibility, and reference them from a new
+MarketBot definition. Portfolio Flow V1/V2 rollback follows this same mechanism.
 
 ### Buy maturity presentation and measurement
 
@@ -59,13 +74,19 @@ buys into one label:
 | L1 Tactical recovery | Long + Intraday | Yellow | One tone |
 | L2 Swing confirmed | Swing + Intraday | Blue | Two ascending tones |
 | L3 High conviction | Long + Swing + Intraday | Green | Three ascending tones |
-| L4 Fully matured | Entry Watcher, strict Portfolio, PatreonCaps, or Fusion confirmation | Magenta | Three emphatic tones |
+| L4 Fully matured | Entry Watcher v4 second confirmation, strict Portfolio, PatreonCaps, or Fusion confirmation | Magenta | Three emphatic tones |
 
 Long + Intraday is intentional: it preserves a tactical recovery when the Long backdrop remains
 bullish but Swing has not recovered its daily/anchored-VWAP structure. Swing consumes daily and
 15-minute/hourly bars, not weekly bars. A genuinely broken weekly thesis makes Long `AVOID` and
 therefore cannot enter L1. A Long buy zone, Swing setup, armed watcher, or other incomplete analysis
 remains silent and receives no maturity banner.
+
+L4 describes accumulated evidence, not permission to chase price. Intraday v4 blocks L3 and the
+Entry Watcher path to L4 while the quote is outside its efficient entry window. The first mature
+retest is only a candidate; Entry Watcher requires a different analysis at least three minutes
+later. A triggered symbol cannot be immediately rearmed from a recalculated Long zone for 30
+minutes, so one thesis does not produce duplicate Entry Watcher alarms.
 
 The displayed price is the current or most recent tactical reference price, never the midpoint of a
 stale buy zone. `app.alert_engine.evaluate_solid_buy_outcomes()` measures persisted buy alerts
@@ -168,6 +189,10 @@ results, service health, and final alerts use NATS. Useful standalone process co
 ```powershell
 uv run marketbot alerts serve
 uv run marketbot entry-watch serve
+uv run marketbot entry-opportunity serve
+
+# Open paper trades, maturity bars, L1-L4 win rate, and horizon gain/loss
+uv run marketbot entry-opportunity report
 uv run marketbot engine long
 uv run marketbot engine swing
 uv run marketbot engine intraday

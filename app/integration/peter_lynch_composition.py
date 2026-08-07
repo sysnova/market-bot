@@ -22,6 +22,7 @@ from app.persistence import create_database_engine
 from app.peter_lynch_engine import PeterLynchEngine, PeterLynchEvaluation, PeterLynchSnapshot
 
 from .distributed_composition import build_rest
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .peter_lynch_sec_adapter import PeterLynchSecAdapter, SecPeterLynchFacts
 from .peter_lynch_store import PostgresPeterLynchStore
 
@@ -62,8 +63,8 @@ class PeterLynchRunService:
     prices: SnapshotPriceProvider
     ticker_resolver: TickerResolver
     sec: SecFactsProvider
+    calculator: PeterLynchEngine
     batch_size: int = 20
-    calculator: PeterLynchEngine = field(default_factory=PeterLynchEngine)
     progress: ProgressReporter = field(default=_ignore_progress, repr=False)
 
     async def run(self, *, now: datetime) -> dict[str, object]:
@@ -187,6 +188,7 @@ async def run_peter_lynch_once(
     report = progress or _ignore_progress
     report("Inicializando configuración y conexiones.")
     settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
     if not settings.alpaca_configured:
         raise ValueError("Alpaca market-data credentials are not configured")
     if not settings.sec_configured or settings.sec_user_agent is None:
@@ -205,14 +207,22 @@ async def run_peter_lynch_once(
         progress=report,
     )
     try:
-        return await PeterLynchRunService(
+        result = await PeterLynchRunService(
             store=PostgresPeterLynchStore(database),
             prices=rest,
             ticker_resolver=resolver,
             sec=sec,
             batch_size=settings.alpaca_rest_batch_size,
+            calculator=assembly.build_peter_lynch(),
             progress=report,
         ).run(now=SystemClock().now())
+        spec = assembly.spec(EngineSlot.PETER_LYNCH)
+        return {
+            **result,
+            "marketbot_definition_version": assembly.definition.version,
+            "engine_implementation": spec.implementation,
+            "engine_strategy_version": spec.strategy.version,
+        }
     finally:
         await rest.close()
         await client.aclose()
