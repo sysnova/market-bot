@@ -21,7 +21,7 @@ def assessment() -> PatreonCapsAssessment:
         symbol="NVO",
         occurred_at=NOW,
         rule_version="1.0.0",
-        mode=StrategyMode.SHADOW,
+        mode=StrategyMode.PRIMARY,
         state=PatreonCapsState.SUPPORT_TEST,
         current_price=Decimal("48.50"),
         zone_low=Decimal("47.80"),

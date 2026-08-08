@@ -21,7 +21,7 @@ from app.integration.engine_assembly import (
     MarketBotAssembly,
     load_marketbot_definition,
 )
-from app.intraday_engine import IntradayEngineV4
+from app.intraday_engine import IntradayEngineV3, IntradayEngineV4
 from app.long_term_engine import LongTermEngineV2
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.swing_engine import SwingEngineV3
@@ -132,13 +132,26 @@ def test_portfolio_flow_v1_remains_a_real_rollback_implementation() -> None:
     assert isinstance(assembly.build_portfolio_flow(), PortfolioFlowEngineV1)
 
 
-def test_definition_rejects_an_incompatible_confirmation_generation() -> None:
+def test_definition_does_not_pin_consumers_to_producer_implementation_versions() -> None:
     definition = load_marketbot_definition(DEFINITION)
     engines = dict(definition.engines)
-    engines[EngineSlot.INTRADAY] = replace(engines[EngineSlot.INTRADAY], implementation="3.0.0")
+    engines[EngineSlot.INTRADAY] = replace(
+        engines[EngineSlot.INTRADAY],
+        implementation="3.0.0",
+        strategy=replace(
+            engines[EngineSlot.INTRADAY].strategy,
+            version="3.0.0",
+            artifact=ROOT / "configs/rules/entry_confirmation/3.0.0.yaml",
+        ),
+    )
 
-    with pytest.raises(ValueError, match="incompatible entry confirmation"):
-        MarketBotAssembly(replace(definition, engines=engines))
+    assembly = MarketBotAssembly(replace(definition, engines=engines))
+
+    assert isinstance(assembly.build_intraday(), IntradayEngineV3)
+    assert isinstance(
+        assembly.build_entry_watcher(store=InMemoryEntryWatchStore()),
+        EntryWatcherV5,
+    )
 
 
 def test_unknown_implementation_fails_before_any_process_starts() -> None:

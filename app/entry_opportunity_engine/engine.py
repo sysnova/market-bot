@@ -79,18 +79,39 @@ class EntryOpportunityEngine:
             return ()
         active = await self._store.load_active(transition.symbol)
         if active is None:
-            if transition.status not in {EntryWatchStatus.ARMED, EntryWatchStatus.IN_ZONE}:
+            if transition.status not in {
+                EntryWatchStatus.ARMED,
+                EntryWatchStatus.IN_ZONE,
+                EntryWatchStatus.TRIGGERED,
+            }:
                 return ()
-            level = (
-                EntryMaturityLevel.IN_ZONE
-                if transition.status is EntryWatchStatus.IN_ZONE
-                else EntryMaturityLevel.ARMED
-            )
+            level = {
+                EntryWatchStatus.ARMED: EntryMaturityLevel.ARMED,
+                EntryWatchStatus.IN_ZONE: EntryMaturityLevel.IN_ZONE,
+                EntryWatchStatus.TRIGGERED: EntryMaturityLevel.L4,
+            }[transition.status]
             opportunity = self._new_opportunity(transition, level=level)
+            recovered = transition.status is EntryWatchStatus.TRIGGERED
+            if recovered:
+                opportunity = self._advance(
+                    opportunity,
+                    level=EntryMaturityLevel.L4,
+                    price=transition.current_price,
+                    now=transition.occurred_at,
+                    horizons=transition.horizons,
+                    source_analysis_ids=transition.source_analysis_ids,
+                )
             event = self._event(
                 opportunity,
                 occurred_at=transition.occurred_at,
-                reasons=("opportunity_created", *transition.reasons),
+                reasons=(
+                    (
+                        "opportunity_recovered_from_triggered"
+                        if recovered
+                        else "opportunity_created"
+                    ),
+                    *transition.reasons,
+                ),
                 event_id=transition.transition_id,
             )
             await self._store.save(opportunity, event)

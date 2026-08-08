@@ -108,7 +108,7 @@ Estos niveles suman confluencia; nunca deben confirmar por sí solos.
 
 ### 4. Impulse/Correction Hypothesis
 
-Implementar primero en shadow mode mediante pivots ATR/ZigZag:
+Implementar primero como versión CANDIDATE mediante pivots ATR/ZigZag:
 
 - impulso candidato: cinco tramos, máximos y mínimos crecientes;
 - corrección candidata: tres tramos A-B-C;
@@ -194,7 +194,7 @@ invalidation estructural y distinguir entre alerta técnica, reducción de tama�
 | AVWAP de pivot/breakout | Existe en Swing | Integrarlo al clúster LONG |
 | Confirmación persistente | Existe en V3 | Estados V/base/retest multisesión |
 | Fibonacci | No existe | Añadir sólo sobre impulso confirmado |
-| Elliott Wave | No existe | Shadow hypothesis, nunca gate inicial |
+| Elliott Wave | No existe | Hipótesis CANDIDATE, nunca gate inicial |
 | Fundamentals | Existe en Stock Analyzer | Contrato hacia Market Bot y alineación direccional |
 | VIX/DXY/US10Y/TLT | No existe en Market Bot | Overlay de régimen versionado |
 | Tamaño por holdings/target | Parcialmente implementado | Riesgo por invalidación y cinco tranches |
@@ -204,7 +204,7 @@ invalidation estructural y distinguir entre alerta técnica, reducción de tama�
 
 ### Fase 1 — mayor impacto y menor subjetividad
 
-1. `support_confluence@1.0.0` en shadow mode.
+1. `support_confluence@1.0.0` en modo CANDIDATE.
 2. `support_confirmation@1.0.0` con confirmación V y base.
 3. `position_builder@2.0.0` con riesgo por invalidación y cinco tranches.
 4. Replays sobre las alertas históricas existentes.
@@ -217,7 +217,7 @@ invalidation estructural y distinguir entre alerta técnica, reducción de tama�
 
 ### Fase 3 — Elliott Wave medible
 
-1. `wave_hypothesis@0.1.0` sólo shadow/research.
+1. `wave_hypothesis@0.1.0` sólo CANDIDATE/RESEARCH.
 2. Persistir hipótesis alternativas y violaciones.
 3. Promover a señal auxiliar únicamente si mejora resultados fuera de muestra.
 

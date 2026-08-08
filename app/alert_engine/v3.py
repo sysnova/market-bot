@@ -138,8 +138,7 @@ class AlertEngineV3(AlertEngineV2):
     def _qualifies(self, result: AnalysisResult) -> bool:
         metrics = _metrics(result)
         return (
-            result.engine_version == "4.0.0"
-            and result.direction is PatternDirection.BULLISH
+            result.direction is PatternDirection.BULLISH
             and result.verdict in {AnalysisVerdict.FAVORABLE, AnalysisVerdict.WATCH}
             and metrics.get("setup") in _CONTINUATION_SETUPS
             and (
@@ -156,8 +155,7 @@ class AlertEngineV3(AlertEngineV2):
 def _valid_swing(result: AnalysisResult) -> bool:
     metrics = _metrics(result)
     return (
-        result.engine_version == "3.0.0"
-        and metrics.get("anchored_vwap_gate_passed") is True
+        metrics.get("anchored_vwap_gate_passed") is True
         and metrics.get("classification") in {"breakout", "pullback", "extended"}
     )
 

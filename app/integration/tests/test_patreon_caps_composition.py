@@ -77,7 +77,7 @@ def _assessment(state: PatreonCapsState) -> PatreonCapsAssessment:
         symbol="NVO",
         occurred_at=NOW,
         rule_version="1.0.0",
-        mode=StrategyMode.SHADOW,
+        mode=StrategyMode.PRIMARY,
         state=state,
         current_price=Decimal("48.5"),
         zone_low=Decimal("47"),
@@ -290,12 +290,11 @@ async def test_live_analysis_subscriptions_use_one_subject_per_horizon_without_r
     )
 
 
-def test_patreon_buy_is_an_explicit_shadow_local_alert() -> None:
+def test_patreon_buy_is_an_explicit_analytical_local_alert() -> None:
     alert = _local_alert(_transition(PatreonCapsState.CONFIRMED_V))
 
     assert alert.kind is AlertKind.PATREON_CAPS_BUY
     assert alert.severity is AlertSeverity.ACTION
-    assert "shadow" not in alert.kind.value.lower()
     assert any(item.name == "patreon_caps_rule_version" for item in alert.metrics)
 
 

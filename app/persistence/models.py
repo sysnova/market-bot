@@ -140,7 +140,7 @@ class RunStrategy(Base):
     __tablename__ = "run_strategies"
     __table_args__ = (
         UniqueConstraint("run_id", "strategy_version_id", name="run_strategies_assignment_key"),
-        CheckConstraint("mode in ('PRIMARY', 'SHADOW', 'RESEARCH', 'DISABLED')", name="mode"),
+        CheckConstraint("mode in ('PRIMARY', 'CANDIDATE', 'RESEARCH', 'DISABLED')", name="mode"),
         Index(
             "run_strategies_one_primary_per_scope_idx",
             "run_id",

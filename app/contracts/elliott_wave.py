@@ -1,4 +1,4 @@
-"""Stable shadow-analysis message produced by the Elliott Wave engine."""
+"""Stable analytical message produced by the Elliott Wave engine."""
 
 from __future__ import annotations
 

@@ -85,7 +85,7 @@ async def run_support_confirmation_monitor(
                 {
                     "service": "support-confirmation-monitor",
                     "universe": "positive-holdings-only",
-                    "mode": "SHADOW",
+                    "mode": "ACTIVE",
                 },
             )
         print(

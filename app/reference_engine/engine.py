@@ -1,4 +1,4 @@
-"""Reference event consumer coordinating prepared PRIMARY and SHADOW strategies."""
+"""Reference event consumer coordinating prepared PRIMARY and CANDIDATE strategies."""
 
 from __future__ import annotations
 
@@ -34,10 +34,10 @@ class ReferenceEngine:
         unsupported = tuple(
             item.spec.mode
             for item in strategies
-            if item.spec.mode not in {StrategyMode.PRIMARY, StrategyMode.SHADOW}
+            if item.spec.mode not in {StrategyMode.PRIMARY, StrategyMode.CANDIDATE}
         )
         if unsupported:
-            raise ValueError("reference engine only supports PRIMARY and SHADOW strategies")
+            raise ValueError("reference engine only supports PRIMARY and CANDIDATE strategies")
         validate_primary_uniqueness(item.spec for item in strategies)
         snapshot_hashes = {item.registry_snapshot_hash for item in strategies}
         if len(snapshot_hashes) != 1:

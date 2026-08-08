@@ -10,7 +10,7 @@ from app.event_bus import InMemoryEventBus
 from app.integration.foundation import prepare_foundation_engine
 
 
-async def test_primary_and_shadow_share_context_and_audit_idempotently(
+async def test_primary_and_candidate_share_context_and_audit_idempotently(
     tmp_path: Path,
 ) -> None:
     clock = FrozenClock(datetime(2026, 7, 25, 14, 30, tzinfo=UTC))
@@ -37,19 +37,19 @@ async def test_primary_and_shadow_share_context_and_audit_idempotently(
         evaluations = audit.evaluations
         assert len(evaluations) == 2
         primary = next(item for item in evaluations if item.mode is StrategyMode.PRIMARY)
-        shadow = next(item for item in evaluations if item.mode is StrategyMode.SHADOW)
+        candidate = next(item for item in evaluations if item.mode is StrategyMode.CANDIDATE)
 
-        assert primary.context_hash == shadow.context_hash
-        assert primary.registry_snapshot_hash == shadow.registry_snapshot_hash
-        assert primary.compiled_plan_hash != shadow.compiled_plan_hash
+        assert primary.context_hash == candidate.context_hash
+        assert primary.registry_snapshot_hash == candidate.registry_snapshot_hash
+        assert primary.compiled_plan_hash != candidate.compiled_plan_hash
         assert primary.trace.steps[-1].result is not None
-        assert shadow.trace.steps[-1].result is not None
+        assert candidate.trace.steps[-1].result is not None
         assert primary.trace.steps[-1].result.rule_version == "1.0.0"
-        assert shadow.trace.steps[-1].result.rule_version == "2.0.0"
+        assert candidate.trace.steps[-1].result.rule_version == "2.0.0"
         assert primary.audit_confirmed is True
         assert primary.eligible is True
-        assert shadow.audit_confirmed is False
-        assert shadow.eligible is False
+        assert candidate.audit_confirmed is False
+        assert candidate.eligible is False
 
         cached = await engine.process(event)
         await bus.publish("synthetic.input", event)

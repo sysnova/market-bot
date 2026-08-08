@@ -310,7 +310,7 @@ def _patreon() -> PatreonCapsAssessment:
         symbol="TGT",
         occurred_at=datetime(2026, 8, 2, 20, tzinfo=UTC),
         rule_version="1.1.0",
-        mode=StrategyMode.SHADOW,
+        mode=StrategyMode.PRIMARY,
         state=PatreonCapsState.WATCH_ZONE,
         current_price=Decimal("105"),
         zone_low=Decimal("99"),

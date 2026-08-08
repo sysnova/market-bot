@@ -383,7 +383,7 @@
         "symbol": "string",
         "occurred_at": "datetime UTC",
         "rule_version": "semver",
-        "mode": "PRIMARY|SHADOW|RESEARCH|DISABLED",
+        "mode": "PRIMARY|CANDIDATE|RESEARCH|DISABLED",
         "state": "WATCH_ZONE|SUPPORT_TEST|CONFIRMED_V|CONFIRMED_BASE|IMPULSE_RETEST|INVALIDATED|EXPIRED",
         "current_price": "decimal",
         "zone_low": "decimal",

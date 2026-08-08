@@ -106,7 +106,6 @@ class EntryWatcherV4(EntryWatcherV2):
         return (
             long_term.direction is PatternDirection.BULLISH
             and long_term.verdict not in {AnalysisVerdict.AVOID, AnalysisVerdict.INSUFFICIENT_DATA}
-            and swing.engine_version == "3.0.0"
             and swing.direction is PatternDirection.BULLISH
             and swing.verdict in {AnalysisVerdict.FAVORABLE, AnalysisVerdict.CAUTION}
             and swing_metrics.get("classification") in {"breakout", "pullback", "extended"}
@@ -118,8 +117,7 @@ class EntryWatcherV4(EntryWatcherV2):
         intraday = analyses[AnalysisHorizon.INTRADAY]
         intraday_metrics = _metrics(intraday)
         return (
-            swing.engine_version == "3.0.0"
-            and _metrics(swing).get("anchored_vwap_gate_passed") is True
+            _metrics(swing).get("anchored_vwap_gate_passed") is True
             and self._intraday_mature(intraday)
             and intraday.analysis_id in self._reconfirmed_ids
             and intraday_metrics.get("confirmation_gate_passed") is True
@@ -128,8 +126,7 @@ class EntryWatcherV4(EntryWatcherV2):
     def _intraday_mature(self, result: AnalysisResult) -> bool:
         metrics = _metrics(result)
         return (
-            result.engine_version == "4.0.0"
-            and result.direction is PatternDirection.BULLISH
+            result.direction is PatternDirection.BULLISH
             and result.verdict is AnalysisVerdict.FAVORABLE
             and metrics.get("confirmation_gate_passed") is True
             and metrics.get("mature_confirmation_gate_passed") is True

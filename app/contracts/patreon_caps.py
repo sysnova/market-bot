@@ -1,4 +1,4 @@
-"""Stable shadow-analysis messages produced by PatreonCaps."""
+"""Stable analytical messages produced by PatreonCaps."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Local PostgreSQL/Alpaca/NATS composition for Elliott Wave shadow analysis."""
+"""Local PostgreSQL/Alpaca/NATS composition for Elliott Wave analysis."""
 
 from __future__ import annotations
 
@@ -166,7 +166,7 @@ async def run_elliott_wave_process(
         if requested is not None and requested not in holdings.symbols:
             return {
                 "service": "elliott-wave-v0",
-                "mode": "SHADOW",
+                "mode": "ACTIVE",
                 "requested_symbol": requested,
                 "eligible": False,
                 "reason": "positive_holding_required",
@@ -189,7 +189,7 @@ async def run_elliott_wave_process(
             "engine_version": assembly.spec(EngineSlot.ELLIOTT_WAVE).implementation,
             "engine_strategy_version": assembly.spec(EngineSlot.ELLIOTT_WAVE).strategy.version,
             "marketbot_definition_version": assembly.definition.version,
-            "mode": "SHADOW",
+            "mode": "ACTIVE",
             "universe": "positive-holdings-only",
             "universe_source": holdings.source,
             "symbols": list(selected_symbols),

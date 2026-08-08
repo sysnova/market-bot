@@ -248,7 +248,7 @@ async def run_support_confirmation_process(
         if requested is not None and requested not in holdings.symbols:
             return {
                 "service": "support-confirmation-v0",
-                "mode": "SHADOW",
+                "mode": "ACTIVE",
                 "requested_symbol": requested,
                 "eligible": False,
                 "reason": "positive_holding_required",
@@ -285,7 +285,7 @@ async def run_support_confirmation_process(
                 EngineSlot.SUPPORT_CONFIRMATION
             ).strategy.version,
             "marketbot_definition_version": assembly.definition.version,
-            "mode": "SHADOW",
+            "mode": "ACTIVE",
             "universe": "positive-holdings-only",
             "universe_source": holdings.source,
             "symbols": list(selected_symbols),

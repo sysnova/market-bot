@@ -1,4 +1,4 @@
-"""NATS/PostgreSQL composition for the PatreonCaps shadow engine."""
+"""NATS/PostgreSQL composition for the PatreonCaps analysis engine."""
 
 from __future__ import annotations
 
@@ -334,7 +334,7 @@ class PatreonCapsRuntime:
             EventEnvelope(
                 event_type=LOCAL_ALERT_EVENT,
                 occurred_at=alert.created_at,
-                source="patreon-caps-v1-shadow",
+                source="patreon-caps-v1",
                 subject=alert.symbol,
                 payload=alert,
             ),
@@ -430,7 +430,7 @@ async def run_patreon_caps_process(
             "engine_implementation": assembly.spec(EngineSlot.PATREON_CAPS).implementation,
             "engine_strategy_version": assembly.spec(EngineSlot.PATREON_CAPS).strategy.version,
             "rule_version": policy.rule_version,
-            "mode": "SHADOW",
+            "mode": "ACTIVE",
             "symbols": len(universe.symbols),
             "universe_symbols": list(universe.symbols),
             "macro_symbols": list(policy.macro_symbols),
@@ -524,7 +524,7 @@ def _local_alert(transition: PatreonCapsTransition) -> LocalAlert:
         severity=severity,
         title=f"PATREON CAPS {transition.state.value} {transition.symbol}",
         message=(
-            f"PatreonCaps shadow score {transition.patreon_score}; "
+            f"PatreonCaps analytical score {transition.patreon_score}; "
             f"lesson {transition.lesson_score} "
             f"({'OK' if transition.lesson_gate_passed else 'BLOCK'}); "
             f"zona {transition.zone_low}-{transition.zone_high}; "

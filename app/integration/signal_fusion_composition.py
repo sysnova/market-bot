@@ -188,7 +188,7 @@ class SignalFusionRuntime:
                 EventEnvelope(
                     event_type=FUSION_BUY_CONFIRMED_EVENT,
                     occurred_at=assessment.occurred_at,
-                    source="signal-fusion-v0-shadow",
+                    source="signal-fusion-v0",
                     subject=assessment.symbol,
                     payload=assessment,
                 ),
@@ -199,7 +199,7 @@ class SignalFusionRuntime:
                 EventEnvelope(
                     event_type=FUSION_RECOVERY_CONFIRMED_EVENT,
                     occurred_at=assessment.occurred_at,
-                    source="signal-fusion-v0-shadow",
+                    source="signal-fusion-v0",
                     subject=assessment.symbol,
                     payload=assessment,
                 ),
@@ -267,7 +267,7 @@ async def run_signal_fusion_process(
         if requested is not None and requested not in holdings.symbols:
             return {
                 "service": "signal-fusion-v0",
-                "mode": "SHADOW",
+                "mode": "ACTIVE",
                 "requested_symbol": requested,
                 "eligible": False,
                 "reason": "positive_holding_required",
@@ -311,7 +311,7 @@ async def run_signal_fusion_process(
             "engine_version": assembly.spec(EngineSlot.SIGNAL_FUSION).implementation,
             "engine_strategy_version": assembly.spec(EngineSlot.SIGNAL_FUSION).strategy.version,
             "marketbot_definition_version": assembly.definition.version,
-            "mode": "SHADOW",
+            "mode": "ACTIVE",
             "universe": "positive-holdings-only",
             "universe_source": holdings.source,
             "symbols": list(selected_symbols),

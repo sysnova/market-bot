@@ -37,7 +37,7 @@ configs/marketbot/6.0.0.yaml
         MarketBotAssembly
           | validates every slot
           | rejects unknown versions
-          | rejects incompatible confirmation bundles
+          | validates each selected implementation independently
           | resolves immutable strategy artifacts
           |
           +--> local live runtime / analyzer
@@ -49,13 +49,14 @@ configs/marketbot/6.0.0.yaml
 ```
 
 An engine implementation is code; a strategy is the rule set used by that code; a mode describes
-how it participates operationally (`active`, `shadow`, `scheduled`, or `on-demand`). These are
+how it participates operationally (`active`, `scheduled`, or `on-demand`). These are
 separate coordinates and are reported separately in readiness/one-shot summaries. No worker has a
 fallback constructor: a composition must receive its engine from `MarketBotAssembly`.
 
 The catalog may contain old implementations for rollback, but the definition chooses exactly one
-per slot. The Swing/Intraday/Entry Watcher compatibility matrix is validated before a process
-opens infrastructure. Portfolio Flow therefore has real V1 and V2 implementations and matching
+per slot. Consumers depend on stable event capabilities, never on a producer's concrete
+implementation version. `engine_version` remains provenance for audit and metrics, not a routing
+or compatibility gate. Portfolio Flow therefore has real V1 and V2 implementations and matching
 policy artifacts; selecting V1 restores sell-only behavior without modifying V2.
 
 ## Distributed analysis-only MVP flow
@@ -117,6 +118,9 @@ The integration layer asks the shared assembly for one concrete engine inside it
 process, but no process imports or invokes another engine. Every output crosses the shared `MarketBar`, `AnalysisResult`,
 `LocalAlert`, `ServiceHealth`, or `EventEnvelope` boundary.
 There is no Trading API, order intent, position sizing, or account state in this composition.
+Every `BUY_CONFIRMED`, PatreonCaps buy, and L1-L4 alert is analytical. Entry Opportunity records,
+tracks, and closes paper trades in PostgreSQL to measure effectiveness and gain/loss. A future
+broker executor must be a separate opt-in consumer of stable confirmed-signal contracts.
 
 ## Runtime durability
 
@@ -125,11 +129,11 @@ There is no Trading API, order intent, position sizing, or account state in this
   required engine receives its own copy of each live bar.
 - NATS JetStream retains live market updates, engine results, service health, and final alerts.
 - Support Confirmation persists holdings-only assessments and state transitions in JetStream. It
-  remains a SHADOW producer and has no dependency edge into PatreonCaps, ElliottWave, or Alert v2.
+  is an analytical producer and has no dependency edge into PatreonCaps, ElliottWave, or Alert v2.
 - Signal Fusion consumes the stable NATS outputs from Support Confirmation, Elliott Wave, Long,
   Swing, Intraday, dilution SEC, and PatreonCaps. It does not import or invoke those engines.
   PatreonCaps is derived context and is never counted as another independent Long/Swing vote.
-  Fusion publishes its own assessment, transition, and SHADOW buy-confirmed subjects.
+  Fusion publishes its own assessment, transition, and analytical buy-confirmed subjects.
 - Portfolio Flow v2 consumes ephemeral quotes and trades. It emits red `PROTECT` alerts for
   concentrated selling and cyan `AGGRESSIVE ENTRY WATCH` alerts for concentrated buying at the
   ask. Buy pressure remains an early observation and does not acquire an L1-L4 maturity by itself.
@@ -158,5 +162,5 @@ correlation context; local development may opt into human-readable output.
 
 `marketbot assembly` prints the effective definition, including resolved artifacts. The selected
 definition can be changed with `MARKETBOT_DEFINITION_PATH`; the old
-`MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION` setting remains only as a deprecated, atomic rollback
-override for the compatible Swing/Intraday/Entry Watcher bundle.
+`MARKETBOT_ENTRY_CONFIRMATION_RULE_VERSION` setting remains only as a deprecated atomic rollback
+override. New definitions should select each engine and strategy version independently.

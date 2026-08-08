@@ -46,7 +46,9 @@ def analysis(
         )
     return AnalysisResult(
         engine_id=horizon.value.lower(),
-        engine_version=("4.0.0" if horizon is AnalysisHorizon.INTRADAY else "3.0.0"),
+        # Consumers must depend on the AnalysisResult evidence contract, not on
+        # the concrete producer implementation selected by the assembly.
+        engine_version=("10.2.0" if horizon is AnalysisHorizon.INTRADAY else "9.1.0"),
         symbol="TMDX",
         horizon=horizon,
         as_of=as_of,

@@ -1,4 +1,4 @@
-# Support Confirmation shadow engine
+# Support Confirmation analysis engine
 
 Separates a locally valid support reaction from evidence of a new bullish trend. Version `0.2.0`
 classifies V recoveries, base construction/breakout and liquidity sweep/reclaim patterns on key

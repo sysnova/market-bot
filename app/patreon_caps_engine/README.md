@@ -1,6 +1,6 @@
 # PatreonCaps v1
 
-PatreonCaps is an analysis-only `SHADOW` engine based on the support-confirmation,
+PatreonCaps is an analysis-only engine based on the support-confirmation,
 multi-timeframe, macro-context, and staged-position concepts summarized from the user's
 Patreon Learning Centre collection. Exact ATR distances, scores, and thresholds are
 engineering defaults in versioned YAML artifacts; they are intended for replay and calibration
@@ -8,7 +8,7 @@ rather than being represented as literal lesson rules.
 
 It consumes final market bars plus versioned Long, Swing, and Intraday `AnalysisResult`
 events. It never submits an order and cannot gate the existing alert engines while the
-rule remains in shadow mode.
+rule remains analytical and does not route orders to a broker.
 
 `replay_outcomes()` mide cada transicion BUY contra barras diarias posteriores, nunca contra la
 barra que genero la senal. Produce retornos a 5, 20 y 60 ruedas, MFE, MAE, invalidacion y horas

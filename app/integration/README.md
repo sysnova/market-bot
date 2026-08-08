@@ -5,7 +5,7 @@ engines to prove the whole milestone, while individual engines remain coupled on
 through contracts and ports.
 
 `prepare_foundation_engine` discovers the trusted synthetic rule pack, freezes one
-PAPER registry snapshot, compiles PRIMARY and SHADOW strategies, executes them on
+PAPER registry snapshot, compiles PRIMARY and CANDIDATE strategies, executes them on
 the same context, and durably audits traces and decisions as idempotent NDJSON.
 
 `distributed_composition.py` is the active process boundary for the analytical MVP. It creates one
@@ -25,7 +25,7 @@ The active distributed analytical generation is selected explicitly in
 legacy single-process composition remain available for diagnostics; changing an active generation
 must never silently rewrite an old class.
 
-`patreon_caps_composition.py` agrega la generacion SHADOW PatreonCaps v1 sin consumir alertas
+`patreon_caps_composition.py` agrega el analisis PatreonCaps v1 sin consumir alertas
 humanas deduplicadas. Hace bootstrap REST de 260 ruedas diarias, 220 semanales, 220 barras de 1H
 y 160 barras de 15 minutos; luego une barras finalizadas de NATS con los `AnalysisResult` completos de Long,
 Swing V3 e Intraday V3. El universo y los targets `PORT_YTD` se leen exclusivamente del PostgreSQL
@@ -34,3 +34,7 @@ local. Cada transicion se confirma primero en PostgreSQL y recien despues se pub
 Los monitores dedicados viven en `patreon_caps_monitor.py`: la vista de analisis consume
 assessments vivos y la vista de alertas precarga las ultimas 50 transiciones persistidas antes de
 continuar por NATS.
+
+`entry_opportunity_monitor.py` materializa una vista terminal de todas las oportunidades activas y
+del historial reciente. PostgreSQL provee el snapshot durable; los eventos NATS fuerzan el refresco
+inmediato y un polling acotado incorpora marcas de mercado que no generan eventos materiales.

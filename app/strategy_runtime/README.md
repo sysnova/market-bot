@@ -23,7 +23,7 @@ then kills it if necessary, and always joins it. An optional RSS ceiling is moni
 instead of escaping into the engine.
 
 Dependency policies and fail/error/NOT_APPLICABLE policies are applied before the exact Decimal
-weighted sum. `SHADOW` and `RESEARCH` execute but are never action-eligible. `DISABLED` produces
+weighted sum. `CANDIDATE` and `RESEARCH` execute but are never action-eligible. `DISABLED` produces
 a no-decision trace without starting a rule. An accepted `PRIMARY` result becomes eligible only
 after `AuditSink.confirm(trace)` returns true. Execution and trace UUIDs are deterministically
 derived from the compiled plan and evaluation context for idempotent retries.

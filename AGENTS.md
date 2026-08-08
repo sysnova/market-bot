@@ -81,7 +81,7 @@
   Entry Watcher/Alert availability declared by Core.
 - Interpret Market Rotation as global context, not as a ticker-specific vote.
   Patreon Caps, Elliott Wave, Support Confirmation, Long Portfolio, and Signal Fusion
-  retain their operational `SHADOW`, holdings-only, or allocation gates. Do not blur
+  retain their analytical, holdings-only, or allocation gates. Do not blur
   a counterfactual calculation with an operational buy confirmation.
 - State the report's data time and whether the market was regular, premarket, or
   closed when that can be established from the output. Intraday evidence without a

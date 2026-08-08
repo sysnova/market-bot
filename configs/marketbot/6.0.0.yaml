@@ -57,22 +57,22 @@ engines:
       artifact: ../rules/long_portfolio/1.0.0.yaml
   patreon-caps:
     implementation: 1.0.0
-    mode: shadow
+    mode: active
     strategy:
       kind: artifact
       version: 1.1.0
       artifact: ../rules/patreon_caps/1.1.0.yaml
   elliott-wave:
     implementation: 0.1.0
-    mode: shadow
+    mode: active
     strategy: {kind: embedded, version: 0.1.0}
   support-confirmation:
     implementation: 0.2.0
-    mode: shadow
+    mode: active
     strategy: {kind: embedded, version: 0.2.0}
   signal-fusion:
     implementation: 0.3.0
-    mode: shadow
+    mode: active
     strategy: {kind: embedded, version: 0.3.0}
   dilution-sec:
     implementation: 1.0.0

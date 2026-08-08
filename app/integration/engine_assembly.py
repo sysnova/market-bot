@@ -75,7 +75,6 @@ class StrategyKind(StrEnum):
 
 class EngineMode(StrEnum):
     ACTIVE = "active"
-    SHADOW = "shadow"
     SCHEDULED = "scheduled"
     ON_DEMAND = "on-demand"
 
@@ -146,14 +145,6 @@ _DEFAULT_CATALOG: dict[EngineSlot, dict[str, EngineFactory]] = {
     EngineSlot.DILUTION_SEC: {"1.0.0": DilutionSecEngine},
     EngineSlot.PETER_LYNCH: {"1.1.0": PeterLynchEngine},
 }
-
-_CONFIRMATION_IMPLEMENTATIONS = {
-    ("2.0.0", "2.0.0", "2.0.0"),
-    ("3.0.0", "3.0.0", "3.0.0"),
-    ("3.0.0", "4.0.0", "4.0.0"),
-    ("3.0.0", "4.0.0", "5.0.0"),
-}
-
 
 def load_marketbot_definition(path: Path) -> MarketBotDefinition:
     source = path.resolve()
@@ -426,13 +417,6 @@ class MarketBotAssembly:
             if spec.implementation not in self._catalog.get(slot, {}):
                 raise ValueError(f"unregistered implementation: {slot.value}@{spec.implementation}")
             _validate_strategy(slot, spec.strategy)
-        combination = (
-            self.spec(EngineSlot.SWING).implementation,
-            self.spec(EngineSlot.INTRADAY).implementation,
-            self.spec(EngineSlot.ENTRY_WATCHER).implementation,
-        )
-        if combination not in _CONFIRMATION_IMPLEMENTATIONS:
-            raise ValueError(f"incompatible entry confirmation implementations: {combination}")
         self._validate_confirmation_behavior()
 
     def _validate_confirmation_behavior(self) -> None:

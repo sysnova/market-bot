@@ -116,7 +116,7 @@ def _prepared(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_one_frozen_context_drives_primary_and_shadow_with_idempotent_output() -> None:
+async def test_one_frozen_context_drives_primary_and_candidate_with_idempotent_output() -> None:
     seen_contexts: list[int] = []
     primary = _prepared(
         _spec("primary-a", StrategyMode.PRIMARY, "1.0.0"),
@@ -124,14 +124,14 @@ async def test_one_frozen_context_drives_primary_and_shadow_with_idempotent_outp
         eligible=True,
         audit_confirmed=True,
     )
-    shadow = _prepared(
-        _spec("shadow-b", StrategyMode.SHADOW, "2.0.0"),
+    candidate = _prepared(
+        _spec("candidate-b", StrategyMode.CANDIDATE, "2.0.0"),
         seen_contexts,
         eligible=False,
         audit_confirmed=False,
     )
     sink = RecordingSink()
-    engine = ReferenceEngine((primary, shadow), sink, FrozenClock(NOW))
+    engine = ReferenceEngine((primary, candidate), sink, FrozenClock(NOW))
     event = _event()
 
     first = await engine.process(event)
@@ -150,15 +150,15 @@ async def test_one_frozen_context_drives_primary_and_shadow_with_idempotent_outp
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_shadow_cannot_become_eligible_even_if_adapter_claims_it_is() -> None:
-    shadow = _prepared(
-        _spec("shadow-b", StrategyMode.SHADOW, "2.0.0"),
+async def test_candidate_cannot_become_eligible_even_if_adapter_claims_it_is() -> None:
+    candidate = _prepared(
+        _spec("candidate-b", StrategyMode.CANDIDATE, "2.0.0"),
         [],
         eligible=True,
         audit_confirmed=True,
     )
     sink = RecordingSink()
-    engine = ReferenceEngine((shadow,), sink, FrozenClock(NOW))
+    engine = ReferenceEngine((candidate,), sink, FrozenClock(NOW))
 
     result = await engine.process(_event())
 
@@ -176,14 +176,14 @@ async def test_unexpected_strategy_failure_is_traced_and_does_not_stop_other_str
         registry_snapshot_hash="sha256:" + "d" * 64,
         evaluate=lambda _context: (_ for _ in ()).throw(RuntimeError("boom")),
     )
-    shadow = _prepared(
-        _spec("shadow-b", StrategyMode.SHADOW, "2.0.0"),
+    candidate = _prepared(
+        _spec("candidate-b", StrategyMode.CANDIDATE, "2.0.0"),
         [],
         eligible=False,
         audit_confirmed=False,
     )
     sink = RecordingSink()
-    engine = ReferenceEngine((primary, shadow), sink, FrozenClock(NOW))
+    engine = ReferenceEngine((primary, candidate), sink, FrozenClock(NOW))
 
     results = await engine.process(_event())
 

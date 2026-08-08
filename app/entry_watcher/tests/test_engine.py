@@ -683,7 +683,7 @@ async def test_v5_abnb_regression_triggers_without_touching_the_frozen_long_zone
             direction=PatternDirection.BULLISH,
             price="149.355",
             as_of=NOW + timedelta(minutes=1),
-            engine_version="3.0.0",
+            engine_version="9.1.0",
             extra_metrics=(
                 NamedValue(name="anchored_vwap_gate_passed", value=True),
                 NamedValue(name="atr14", value=Decimal("6.0614")),
@@ -703,7 +703,7 @@ async def test_v5_abnb_regression_triggers_without_touching_the_frozen_long_zone
             price=price,
             as_of=NOW + timedelta(minutes=minute),
             setup="bullish_breakout",
-            engine_version="4.0.0",
+            engine_version="10.2.0",
             extra_metrics=(
                 NamedValue(name="confirmation_gate_passed", value=True),
                 NamedValue(name="mature_confirmation_gate_passed", value=True),
@@ -755,7 +755,7 @@ async def test_v5_no_zone_touch_does_not_chase_beyond_intraday_extension_cap() -
             direction=PatternDirection.BULLISH,
             price="124",
             as_of=NOW + timedelta(minutes=1),
-            engine_version="3.0.0",
+            engine_version="10.2.0",
             extra_metrics=(
                 NamedValue(name="anchored_vwap_gate_passed", value=True),
                 NamedValue(name="target_2r", value=Decimal("150")),

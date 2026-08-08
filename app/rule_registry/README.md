@@ -18,7 +18,7 @@ major version other than `1` (`1.0.0` remains accepted as an explicit alias).
 | --- | --- |
 | `PRIMARY` / `LIVE` | `APPROVED` |
 | `PRIMARY` / `PAPER` | `PAPER`, `APPROVED` |
-| `SHADOW` | `VALIDATED`, `PAPER`, `APPROVED` |
+| `CANDIDATE` | `VALIDATED`, `PAPER`, `APPROVED` |
 | `RESEARCH` | `DRAFT`, `VALIDATED`, `PAPER`, `APPROVED` |
 
 Using `DRAFT` in research emits a warning. `DEPRECATED` is rejected everywhere

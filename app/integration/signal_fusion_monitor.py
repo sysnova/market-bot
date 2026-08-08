@@ -1,4 +1,4 @@
-"""Terminal views for Signal Fusion evidence and confirmed shadow buys."""
+"""Terminal views for Signal Fusion evidence and confirmed analytical buys."""
 
 from __future__ import annotations
 
@@ -125,7 +125,7 @@ async def run_signal_fusion_monitor(
                 ready_path,
                 {
                     "service": f"signal-fusion-{mode}-monitor",
-                    "mode": "SHADOW",
+                    "mode": "ACTIVE",
                     "universe": "positive-holdings-only",
                 },
             )

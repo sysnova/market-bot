@@ -40,7 +40,7 @@ Both threshold versions live in the same manifest. `RulePackManifest` enforces
 uniqueness by exact `(rule_id, version)` coordinate, so versions coexist without
 ambiguity.
 Every rule is published with lifecycle `PAPER`: the pack may drive PRIMARY and
-SHADOW strategies in a PAPER runtime, but it is intentionally ineligible for
+CANDIDATE strategies in a PAPER runtime, but it is intentionally ineligible for
 LIVE PRIMARY execution until an explicit approval produces new versioned
 metadata.
 Implementation hashes describe stable rule identity/algorithm data. Manifest
@@ -50,7 +50,7 @@ results and inventory against checked-in golden files.
 ## Strategy fixtures
 
 `configs/strategies/synthetic/primary_a.yaml` uses threshold `1.0.0` in `PRIMARY`
-mode. `shadow_b.yaml` uses threshold `2.0.0` in `SHADOW` mode for the same pack,
+mode. `candidate_b.yaml` uses threshold `2.0.0` in `CANDIDATE` mode for the same pack,
 run, engine, family, and input shape. Both files contain data only and are safe-loaded;
 they contain exact versions, explicit dependencies, bindings, policies, and
 decimal scoring weights that sum exactly to one.

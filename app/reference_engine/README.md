@@ -3,7 +3,7 @@
 The reference engine is the smallest runnable consumer that proves two exact strategy
 versions can evaluate the same event without sharing mutable state. It accepts prepared
 strategies through a structural boundary, creates one frozen `EvaluationContext`, evaluates
-the configured `PRIMARY` and `SHADOW`, and emits an idempotent `EngineEvaluation` per version.
+the configured `PRIMARY` and `CANDIDATE`, and emits an idempotent `EngineEvaluation` per version.
 
 The engine does not import a concrete rule pack, registry, audit store, or event transport.
 The root integration layer owns those adapters. `PreparedStrategy` carries the immutable
@@ -11,7 +11,7 @@ definition, plan, and registry hashes plus an evaluation callback. The callback 
 composition root connects `StrategyCompiler`, `StrategyRuntime`, and an `AuditSink`.
 
 Eligibility is guarded twice. Only an accepted `PRIMARY` result with a positive durable audit
-confirmation can be eligible. A `SHADOW` result is always forced to non-eligible, even if a
+confirmation can be eligible. A `CANDIDATE` result is always forced to non-eligible, even if a
 faulty adapter claims otherwise. Event redelivery returns the cached result; decision IDs are
 deterministic from the event, strategy version, and compiled-plan hash. Result sinks must also
 deduplicate by decision ID so retries remain safe when a sink fails mid-batch.

@@ -1,6 +1,6 @@
 rule_id: patreon_caps
 rule_version: 1.1.0
-status: shadow
+status: active
 portfolio_capital_usd: 103000
 
 thresholds:
@@ -45,6 +45,6 @@ macro:
     RISK_OFF: 85
 
 measurement:
-  mode: SHADOW
+  mode: PRIMARY
   compare_against: 1.0.0
   outcomes: [return_5d, return_20d, return_60d, mfe_percent, mae_percent, invalidated]

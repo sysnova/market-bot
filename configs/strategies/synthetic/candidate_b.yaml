@@ -1,9 +1,9 @@
-strategy_id: synthetic-shadow-b
+strategy_id: synthetic-candidate-b
 version: 2.0.0
 family: synthetic
 engine: reference_engine
 run_id: synthetic-demo
-mode: SHADOW
+mode: CANDIDATE
 rule_pack_hash: sha256:7888f555b65eb9be056287ea4a944af77d27299ef3a056c4b0afd90f5127a92d
 pipeline:
   - step_id: read
@@ -54,5 +54,5 @@ scoring:
     - rule_id: synthetic.threshold
       weight: "1"
   require_complete_scoring: true
-description: Synthetic SHADOW candidate using threshold v2.
+description: Synthetic CANDIDATE strategy using threshold v2.
 tags: [synthetic, candidate]

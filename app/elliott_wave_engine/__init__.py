@@ -1,4 +1,4 @@
-"""Public surface of the independent Elliott Wave shadow engine."""
+"""Public surface of the independent Elliott Wave analysis engine."""
 
 from .engine import ElliottWaveEngine
 from .models import WaveContext

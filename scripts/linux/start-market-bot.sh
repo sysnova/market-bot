@@ -64,6 +64,12 @@ run_confirmed() {
   exec uv "${args[@]}"
 }
 
+run_opportunities() {
+  cd "$PROJECT_ROOT"
+  exec uv run marketbot monitor entry-opportunity \
+    --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
+}
+
 run_long_portfolio_monitor() {
   local args=(run marketbot alerts long-portfolio \
     --ready-path "$STATUS_ROOT/long-portfolio-monitor.ready.json")
@@ -281,7 +287,7 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,entry-watcher-v4,entry-watcher-v5,entry-opportunity-v1,market-history-v1,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,entry-watcher-v4,entry-watcher-v5,entry-opportunity-v1,entry-opportunity-monitor,market-history-v1,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
@@ -295,6 +301,7 @@ run_control() {
     "$STATUS_ROOT/entry-watcher-v5.ready.json" \
     "$STATUS_ROOT/entry-opportunity-v1.ready.json"
   wait_ready "$STATUS_ROOT/confirmed-buy-monitor.ready.json"
+  wait_ready "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
 
   local symbol_args=()
   [[ -n "$SYMBOLS" ]] && symbol_args=(--symbols "$SYMBOLS")
@@ -362,10 +369,11 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed long_portfolio patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
+  local control analysis confirmed opportunities long_portfolio patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
+  printf -v opportunities '%q ' "${base[@]}" --role opportunities
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
   printf -v patreon_analysis '%q ' "${base[@]}" --role patreon-analysis
   printf -v patreon_alerts '%q ' "${base[@]}" --role patreon-alerts
@@ -375,6 +383,11 @@ launch_tmux() {
   printf -v signal_fusion_buys '%q ' "${base[@]}" --role signal-fusion-buys
 
   if tmux has-session -t "$SESSION" 2>/dev/null; then
+    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Opportunities'; then
+      tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
+      tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
+      tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
+    fi
     if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'PatreonCaps'; then
       tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
       tmux split-window -v -t "$SESSION":PatreonCaps "$patreon_alerts"
@@ -417,6 +430,9 @@ launch_tmux() {
   tmux split-window -v -t "$SESSION":0 "$long_portfolio"
   tmux select-pane -t "$SESSION":0.3 -T 'LONG PORTFOLIO 2026'
   tmux select-layout -t "$SESSION":0 tiled
+  tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
+  tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
+  tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
   tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
   tmux set-window-option -t "$SESSION":PatreonCaps remain-on-exit on
   tmux split-window -v -t "$SESSION":PatreonCaps "$patreon_alerts"
@@ -443,6 +459,7 @@ case "$ROLE" in
   control) run_control ;;
   analysis) run_analysis ;;
   confirmed) run_confirmed ;;
+  opportunities) run_opportunities ;;
   long-portfolio) run_long_portfolio_monitor ;;
   patreon-analysis) run_patreon_caps_analysis ;;
   patreon-alerts) run_patreon_caps_alerts ;;

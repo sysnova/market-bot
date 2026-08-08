@@ -120,7 +120,7 @@ def prepare_foundation_engine(
         load_strategy_yaml(path.read_bytes())
         for path in (
             _CONFIG_ROOT / "primary_a.yaml",
-            _CONFIG_ROOT / "shadow_b.yaml",
+            _CONFIG_ROOT / "candidate_b.yaml",
         )
     )
     run_ids = {spec.run_id for spec in specs}

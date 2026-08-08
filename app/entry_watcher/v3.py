@@ -1,4 +1,4 @@
-"""Version-pinned Entry Watcher v3 confirmation policy."""
+"""Capability-based Entry Watcher v3 confirmation policy."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from .v2 import EntryWatcherV2
 
 
 class EntryWatcherV3(EntryWatcherV2):
-    """Require v3 Swing/Intraday gates before triggering a persisted thesis."""
+    """Require published Swing/Intraday gates without pinning producer versions."""
 
     engine_version = "3.0.0"
 
@@ -27,9 +27,7 @@ class EntryWatcherV3(EntryWatcherV2):
         swing = analyses[AnalysisHorizon.SWING]
         intraday = analyses[AnalysisHorizon.INTRADAY]
         return (
-            swing.engine_version == "3.0.0"
-            and intraday.engine_version == "3.0.0"
-            and _metrics(swing).get("anchored_vwap_gate_passed") is True
+            _metrics(swing).get("anchored_vwap_gate_passed") is True
             and _metrics(intraday).get("confirmation_gate_passed") is True
         )
 
@@ -60,13 +58,11 @@ class EntryWatcherV3(EntryWatcherV2):
             long_term.direction is PatternDirection.BULLISH
             and long_term.verdict
             not in {AnalysisVerdict.AVOID, AnalysisVerdict.INSUFFICIENT_DATA}
-            and swing.engine_version == "3.0.0"
             and swing.direction is PatternDirection.BULLISH
             and swing.verdict in {AnalysisVerdict.FAVORABLE, AnalysisVerdict.CAUTION}
             and swing_metrics.get("classification")
             in {"breakout", "pullback", "extended"}
             and swing_metrics.get("anchored_vwap_gate_passed") is True
-            and intraday.engine_version == "3.0.0"
             and intraday.direction is PatternDirection.BULLISH
             and intraday.verdict is AnalysisVerdict.FAVORABLE
             and intraday_metrics.get("setup")
@@ -86,9 +82,7 @@ class EntryWatcherV3(EntryWatcherV2):
         swing = analyses[AnalysisHorizon.SWING]
         intraday = analyses[AnalysisHorizon.INTRADAY]
         return (
-            swing.engine_version == "3.0.0"
-            and intraday.engine_version == "3.0.0"
-            and _metrics(swing).get("anchored_vwap_gate_passed") is True
+            _metrics(swing).get("anchored_vwap_gate_passed") is True
             and _metrics(intraday).get("confirmation_gate_passed") is True
         )
 

@@ -22,6 +22,17 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     assert "tmux kill-pane -a" not in script
 
 
+def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "run marketbot monitor entry-opportunity" in script
+    assert "--role opportunities" in script
+    assert "entry-opportunity-monitor.ready.json" in script
+    assert "-n Opportunities" in script
+    assert "ENTRY OPPORTUNITIES" in script
+    assert "list-windows" in script
+
+
 def test_linux_launcher_starts_market_history_before_analytical_engines() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 

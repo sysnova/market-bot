@@ -1,4 +1,4 @@
-"""PatreonCaps technical and macro shadow engine."""
+"""PatreonCaps technical and macro analysis engine."""
 
 from .config import default_policy, load_patreon_caps_policy
 from .engine import PatreonCapsEngine

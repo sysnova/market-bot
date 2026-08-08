@@ -381,7 +381,7 @@ def patreon_caps_process(
     ] = Path(".runtime/status/patreon-caps-v1.ready.json"),
     once: Annotated[bool, typer.Option(help="Hydrate, evaluate once, and exit.")] = False,
 ) -> None:
-    """Run the independent PatreonCaps v1 SHADOW process."""
+    """Run the independent PatreonCaps v1 analytical process."""
 
     from app.integration.patreon_caps_composition import run_patreon_caps_process
 
@@ -403,7 +403,7 @@ def elliott_wave_process(
         Path, typer.Option(help="Readiness file written after NATS and holdings are ready.")
     ] = Path(".runtime/status/elliott-wave-v0.ready.json"),
 ) -> None:
-    """Run Elliott Wave shadow analysis only for positive local holdings."""
+    """Run Elliott Wave analysis only for positive local holdings."""
 
     from app.integration.elliott_wave_composition import run_elliott_wave_process
 
@@ -437,7 +437,7 @@ def signal_fusion_process(
         Path, typer.Option(help="Readiness file written after source replay is complete.")
     ] = Path(".runtime/status/signal-fusion-v0.ready.json"),
 ) -> None:
-    """Run holdings-only cross-engine fusion in SHADOW mode."""
+    """Run holdings-only cross-engine analytical fusion."""
 
     from app.integration.signal_fusion_composition import run_signal_fusion_process
 
@@ -854,7 +854,7 @@ def signal_fusion_monitor(
         Path, typer.Option(help="Readiness file written after replay is complete.")
     ] = Path(".runtime/status/signal-fusion-analysis.ready.json"),
 ) -> None:
-    """Show Signal Fusion evidence or current SHADOW buy confirmations."""
+    """Show Signal Fusion evidence or current analytical buy confirmations."""
 
     from app.integration.signal_fusion_monitor import run_signal_fusion_monitor
 
@@ -863,6 +863,37 @@ def signal_fusion_monitor(
             mode=mode,
             ready_path=ready_path,
             bell=bell,
+        )
+    )
+
+
+@monitor.command("entry-opportunity")
+def entry_opportunity_monitor(
+    history: Annotated[
+        int,
+        typer.Option(min=1, max=1000, help="Recent opportunities displayed in the panel."),
+    ] = 100,
+    refresh_seconds: Annotated[
+        int,
+        typer.Option(
+            min=5,
+            max=3600,
+            help="PostgreSQL fallback refresh interval in seconds.",
+        ),
+    ] = 30,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after PostgreSQL and NATS are ready.")
+    ] = Path(".runtime/status/entry-opportunity-monitor.ready.json"),
+) -> None:
+    """Run the event-driven Entry Opportunity tracking panel process."""
+
+    from app.integration.entry_opportunity_monitor import run_entry_opportunity_monitor
+
+    _run_async(
+        run_entry_opportunity_monitor(
+            ready_path=ready_path,
+            history=history,
+            refresh_interval=timedelta(seconds=refresh_seconds),
         )
     )
 
@@ -1058,7 +1089,7 @@ def supervisor_demo(
         typer.Option(help="Directory for append-only audit output."),
     ] = Path("runtime"),
 ) -> None:
-    """Execute PRIMARY v1 and SHADOW v2 once in the local in-process supervisor."""
+    """Execute PRIMARY v1 and CANDIDATE v2 once in the local in-process supervisor."""
 
     summary = _run_async(_run_demo(price=price, runtime_root=runtime_root))
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))

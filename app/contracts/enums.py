@@ -20,7 +20,7 @@ class MarketSession(ContractEnum):
 
 class StrategyMode(ContractEnum):
     PRIMARY = "PRIMARY"
-    SHADOW = "SHADOW"
+    CANDIDATE = "CANDIDATE"
     RESEARCH = "RESEARCH"
     DISABLED = "DISABLED"
 

@@ -1,4 +1,4 @@
-"""Stateful, deterministic PatreonCaps shadow engine."""
+"""Stateful, deterministic PatreonCaps analysis engine."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ _SOURCE_DEFINITION: dict[str, tuple[str, Decimal, Decimal]] = {
 
 
 class PatreonCapsEngine:
-    """Freeze support theses and emit independently measurable shadow transitions."""
+    """Freeze support theses and emit independently measurable analytical transitions."""
 
     engine_id = "patreon-caps"
 
@@ -761,7 +761,7 @@ def _assessment(
         symbol=context.symbol,
         occurred_at=context.as_of,
         rule_version=watch.rule_version,
-        mode=StrategyMode.SHADOW,
+        mode=StrategyMode.PRIMARY,
         state=watch.state,
         current_price=_current_price(context),
         zone_low=watch.zone_low,

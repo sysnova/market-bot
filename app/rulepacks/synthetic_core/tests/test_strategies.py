@@ -20,30 +20,30 @@ def _load_strategy(path: Path) -> StrategySpec:
 
 
 @pytest.mark.unit
-def test_primary_a_and_shadow_b_are_safe_complete_strategy_specs() -> None:
+def test_primary_a_and_candidate_b_are_safe_complete_strategy_specs() -> None:
     primary = _load_strategy(CONFIG_ROOT / "primary_a.yaml")
-    shadow = _load_strategy(CONFIG_ROOT / "shadow_b.yaml")
+    candidate = _load_strategy(CONFIG_ROOT / "candidate_b.yaml")
     manifest = get_provider().manifest
 
     assert primary.mode is StrategyMode.PRIMARY
-    assert shadow.mode is StrategyMode.SHADOW
-    assert primary.family == shadow.family == "synthetic"
-    assert primary.engine == shadow.engine == "reference_engine"
-    assert primary.run_id == shadow.run_id == "synthetic-demo"
-    assert primary.rule_pack_hash == shadow.rule_pack_hash == manifest.manifest_hash
+    assert candidate.mode is StrategyMode.CANDIDATE
+    assert primary.family == candidate.family == "synthetic"
+    assert primary.engine == candidate.engine == "reference_engine"
+    assert primary.run_id == candidate.run_id == "synthetic-demo"
+    assert primary.rule_pack_hash == candidate.rule_pack_hash == manifest.manifest_hash
     assert tuple(step.rule_version for step in primary.pipeline) == (
         "1.0.0",
         "1.0.0",
         "1.0.0",
     )
-    assert tuple(step.rule_version for step in shadow.pipeline) == (
+    assert tuple(step.rule_version for step in candidate.pipeline) == (
         "1.0.0",
         "1.0.0",
         "2.0.0",
     )
     assert sum((weight.weight for weight in primary.scoring.weights), Decimal()) == Decimal("1")
-    assert sum((weight.weight for weight in shadow.scoring.weights), Decimal()) == Decimal("1")
-    validate_primary_uniqueness((primary, shadow))
+    assert sum((weight.weight for weight in candidate.scoring.weights), Decimal()) == Decimal("1")
+    validate_primary_uniqueness((primary, candidate))
 
 
 @pytest.mark.unit

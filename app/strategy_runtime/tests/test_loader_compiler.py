@@ -281,7 +281,7 @@ def test_compile_preserves_exact_declared_dynamic_output_binding() -> None:
     snapshot = registry.snapshot(
         "run-chain",
         ("synthetic.read_number@1.0.0", "synthetic.multiply@1.0.0"),
-        StrategyMode.SHADOW,
+        StrategyMode.CANDIDATE,
         RuntimeEnvironment.LIVE,
     )
     spec = StrategySpec(
@@ -290,7 +290,7 @@ def test_compile_preserves_exact_declared_dynamic_output_binding() -> None:
         family="synthetic",
         engine="reference_engine",
         run_id="run-chain",
-        mode=StrategyMode.SHADOW,
+        mode=StrategyMode.CANDIDATE,
         rule_pack_hash=provider.manifest.manifest_hash,
         pipeline=(
             PipelineStep(

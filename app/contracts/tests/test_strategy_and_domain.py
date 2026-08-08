@@ -78,7 +78,7 @@ def spec(
 
 
 def test_primary_uniqueness_is_scoped_by_family_engine_and_run() -> None:
-    validate_primary_uniqueness((spec(), spec(StrategyMode.SHADOW)))
+    validate_primary_uniqueness((spec(), spec(StrategyMode.CANDIDATE)))
     with pytest.raises(ValueError, match="PRIMARY"):
         validate_primary_uniqueness((spec(), spec()))
 

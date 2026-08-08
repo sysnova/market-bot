@@ -36,7 +36,7 @@ The default is `configs/marketbot/6.0.0.yaml`. Each engine entry separates:
 
 - `implementation`: concrete Python behavior;
 - `strategy`: embedded rules or an exact-version YAML artifact;
-- `mode`: active, shadow, scheduled, or on-demand.
+- `mode`: active, scheduled, or on-demand.
 
 To deploy another complete, reviewed assembly, create a new immutable definition and select it:
 
@@ -194,6 +194,9 @@ uv run marketbot entry-opportunity serve
 
 # Open paper trades, maturity bars, L1-L4 win rate, and horizon gain/loss
 uv run marketbot entry-opportunity report
+
+# Live event-driven Entry Opportunity dashboard
+uv run marketbot monitor entry-opportunity
 uv run marketbot engine long
 uv run marketbot engine swing
 uv run marketbot engine intraday
@@ -441,7 +444,7 @@ uv run marketbot nats cleanup-consumers --apply
 
 The cleanup preserves connected consumers, stable named consumers, and every stream message.
 
-## PatreonCaps v1 SHADOW
+## PatreonCaps v1 — análisis
 
 PatreonCaps usa por defecto el artefacto inmutable
 `configs/rules/patreon_caps/1.1.0.yaml`. Consume barras Alpaca y resultados completos de Long,
@@ -483,7 +486,28 @@ unicamente para `PATREON_CAPS_BUY`. En WSL, las confirmaciones `CONFIRMED_V`, `C
 `IMPULSE_RETEST` reproducen un chime nativo de Windows de tres tonos ascendentes (650, 850 y
 1100 Hz), incluso con TMUX detached. Si PowerShell no esta disponible, usa el bell del terminal.
 
-## Elliott Wave v0 SHADOW — solo tenencias
+## Entry Opportunities — seguimiento paper
+
+El launcher de Ubuntu/WSL crea la ventana independiente `Opportunities`. La vista carga desde
+PostgreSQL todas las oportunidades activas y el historial reciente; luego se redibuja inmediatamente
+con cada evento de `marketbot.v1.entry-opportunity.transition.>`. Como las barras de un minuto pueden
+actualizar precios sin producir un evento material, tambien relee PostgreSQL cada 30 segundos.
+
+```bash
+tmux select-window -t marketbot:Opportunities
+uv run marketbot monitor entry-opportunity --history 100 --refresh-seconds 30
+```
+
+Cada oportunidad muestra estado, madurez actual y maxima, progreso, revision, precio original y
+actual, zona, invalidacion, expiracion, motivo de cierre y ultimo evento observado. Debajo separa:
+
+- checkpoints L1-L4 con entrada, salida, P/L abierto o G/L cerrado, MFE/MAE y retornos 15/30/60;
+- legs Intraday/Swing/Long con entrada, target, invalidacion, estado y resultado independiente;
+- ultimos analisis por horizonte y cantidad de analisis fuente.
+
+Es un panel de seguimiento y auditoria paper. No envia ordenes al broker.
+
+## Elliott Wave v0 — solo tenencias
 
 El engine `elliott-wave@0.1.0` corre en paralelo y no altera Long, Swing, Intraday, AlertEngine ni
 PatreonCaps. Su universo se obtiene exclusivamente de `stock.customer_holding` en PostgreSQL local,
@@ -498,10 +522,10 @@ hipotesis, score, confianza, zona, trigger, invalidacion y objetivos:
 tmux select-window -t marketbot:ElliottWave
 ```
 
-Es una lectura SHADOW: identifica candidatos de fin de onda 2/4 e impulso 3/5 activo, pero no emite
+Es una lectura analítica: identifica candidatos de fin de onda 2/4 e impulso 3/5 activo, pero no emite
 ordenes ni alertas de compra.
 
-## Support Confirmation v0 SHADOW — solo tenencias
+## Support Confirmation v0 — solo tenencias
 
 `support-confirmation@0.1.0` busca soporte relevante de temporalidad mayor y clasifica tres
 reacciones: recuperacion en V, construccion/ruptura de base y barrido de liquidez con reclaim. El
@@ -539,7 +563,7 @@ Para ejecutar una foto puntual sin dejar el proceso activo:
 uv run marketbot engine support-confirmation --once
 ```
 
-## Signal Fusion v0 SHADOW — confirmacion multi-engine
+## Signal Fusion v0 — confirmacion multi-engine
 
 `signal-fusion@0.2.0` consume exclusivamente los contratos persistidos en NATS para las tenencias
 positivas. No vuelve a calcular indicadores ni llama Alpaca. El avance del soporte se muestra como
@@ -558,8 +582,8 @@ marketbot.v1.signal-fusion.buy-confirmed.<SYMBOL>
 
 `BUY_CONFIRMED` exige que todos los gates pasen, una invalidacion por debajo de la entrada, un
 objetivo por encima y `R/R >= 2`. La ausencia de un assessment SEC se muestra como `UNAVAILABLE` y
-no suma puntos; un resultado SEC `CAUTION` o `AVOID` aplica veto. Todo permanece en SHADOW y no
-envia ordenes al broker.
+no suma puntos; un resultado SEC `CAUTION` o `AVOID` aplica veto. `BUY_CONFIRMED` es una señal
+analítica: se persiste y evalúa como paper trade, pero no envía órdenes al broker.
 
 `Z:Y R:Y S:N` no significa que falte soporte: indica que la zona sigue valida y fue defendida, pero
 todavia no aparecieron el higher high, higher low y reversal score necesarios para confirmar una

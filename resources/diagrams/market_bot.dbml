@@ -48,7 +48,7 @@ Table market_bot.run_strategies {
   strategy_version_id uuid [not null]
   engine_id text [not null]
   strategy_family text [not null]
-  mode text [not null, note: "PRIMARY | SHADOW | RESEARCH | DISABLED"]
+  mode text [not null, note: "PRIMARY | CANDIDATE | RESEARCH | DISABLED"]
   created_at timestamptz [not null, default: `now()`]
 
   indexes {

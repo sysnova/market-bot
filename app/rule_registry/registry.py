@@ -131,7 +131,7 @@ class Registry:
                 else environment is RuntimeEnvironment.PAPER
                 and status in {RuleLifecycleStatus.PAPER, RuleLifecycleStatus.APPROVED}
             )
-        elif mode is StrategyMode.SHADOW:
+        elif mode is StrategyMode.CANDIDATE:
             allowed = status in {
                 RuleLifecycleStatus.VALIDATED,
                 RuleLifecycleStatus.PAPER,

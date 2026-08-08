@@ -85,6 +85,7 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("engine", "patreon-caps"),
         ("alerts", "patreon-caps"),
         ("monitor", "patreon-caps"),
+        ("monitor", "entry-opportunity"),
     ):
         result = runner.invoke(app, [*command, "--help"])
 
@@ -272,7 +273,7 @@ def test_supervisor_demo_renders_machine_readable_summary(
 
     assert result.exit_code == 0
     summary = json.loads(result.stdout)
-    assert [evaluation["mode"] for evaluation in summary] == ["PRIMARY", "SHADOW"]
+    assert [evaluation["mode"] for evaluation in summary] == ["PRIMARY", "CANDIDATE"]
     assert summary[0]["eligible"] is True
     assert summary[1]["eligible"] is False
     for evaluation in summary:

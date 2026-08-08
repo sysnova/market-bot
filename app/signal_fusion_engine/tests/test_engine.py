@@ -130,7 +130,7 @@ def _patreon() -> PatreonCapsAssessment:
         symbol="TGT",
         occurred_at=NOW,
         rule_version="1.1.0",
-        mode=StrategyMode.SHADOW,
+        mode=StrategyMode.PRIMARY,
         state=PatreonCapsState.CONFIRMED_BASE,
         current_price=Decimal("105"),
         zone_low=Decimal("99"),
@@ -164,7 +164,7 @@ def _context(**updates: object) -> SignalFusionContext:
     return SignalFusionContext(**values)  # type: ignore[arg-type]
 
 
-def test_independent_gates_confirm_a_shadow_buy() -> None:
+def test_independent_gates_confirm_an_analytical_buy() -> None:
     result = SignalFusionEngine().evaluate(_context())
 
     assert result.state is FusionState.BUY_CONFIRMED

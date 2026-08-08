@@ -55,7 +55,7 @@ def synthetic_plan() -> object:
             "synthetic.multiply@1.0.0",
             "synthetic.threshold@1.0.0",
         ),
-        StrategyMode.SHADOW,
+        StrategyMode.CANDIDATE,
         RuntimeEnvironment.LIVE,
     )
     spec = StrategySpec(
@@ -64,7 +64,7 @@ def synthetic_plan() -> object:
         family="synthetic",
         engine="reference_engine",
         run_id="run-chain",
-        mode=StrategyMode.SHADOW,
+        mode=StrategyMode.CANDIDATE,
         rule_pack_hash=provider.manifest.manifest_hash,
         pipeline=(
             PipelineStep(step_id="read", rule_id="synthetic.read_number", rule_version="1.0.0"),
@@ -131,23 +131,23 @@ def test_primary_is_eligible_only_after_audit_confirmation() -> None:
     assert tuple(step.step_id for step in confirmed.trace.steps) == ("first", "second")
 
 
-def test_shadow_executes_but_is_never_action_eligible_and_disabled_does_not_execute() -> None:
+def test_candidate_executes_but_is_never_action_eligible_and_disabled_does_not_execute() -> None:
     spec, snapshot, providers, _ = build()
     compiler = __import__("app.strategy_runtime", fromlist=["StrategyCompiler"]).StrategyCompiler(
         clock=lambda: NOW
     )
-    shadow_plan = compiler.compile(
-        spec.model_copy(update={"mode": StrategyMode.SHADOW}), snapshot, providers
+    candidate_plan = compiler.compile(
+        spec.model_copy(update={"mode": StrategyMode.CANDIDATE}), snapshot, providers
     )
     disabled_plan = compiler.compile(
         spec.model_copy(update={"mode": StrategyMode.DISABLED}), snapshot, providers
     )
     runtime = StrategyRuntime(SubprocessRuleRunner(timeout_seconds=1), FrozenClock(NOW))
 
-    shadow = runtime.execute(shadow_plan, evaluation_context(), Audit(True))
+    candidate = runtime.execute(candidate_plan, evaluation_context(), Audit(True))
     disabled = runtime.execute(disabled_plan, evaluation_context(), Audit(True))
 
-    assert shadow.trace.steps and not shadow.eligible
+    assert candidate.trace.steps and not candidate.eligible
     assert disabled.trace.outcome is DecisionOutcome.NO_DECISION
     assert not disabled.trace.steps and not disabled.eligible
 

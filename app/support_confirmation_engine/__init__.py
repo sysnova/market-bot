@@ -1,4 +1,4 @@
-"""Public surface of the independent Support Confirmation shadow engine."""
+"""Public surface of the independent Support Confirmation analysis engine."""
 
 from .engine import SupportConfirmationEngine
 from .models import SupportContext, SupportZoneHint

@@ -214,8 +214,8 @@ uv run marketbot connector subscribe --engine swing
 The operations guide covers key exchange, router forwarding, Docker replacement, replay by date,
 and durable consumers.
 
-See [architecture](docs/architecture.md), [development](docs/development.md), and
-[operations](docs/operations.md) for repository-wide guidance.
+See [architecture](docs/architecture.md), [engine interconnection map](docs/engine-interconnection-map.md),
+[development](docs/development.md), and [operations](docs/operations.md) for repository-wide guidance.
 
 On Ubuntu Desktop, install `tmux` and start the four-pane process monitor with:
 
@@ -229,13 +229,13 @@ and follows new allocation-aware LONG entries. The control pane also owns the
 `long-portfolio-v1` engine, so `Ctrl+C` stops it together with the rest of MarketBot.
 
 The same launcher also creates sibling `PatreonCaps`, `ElliottWave`, and
-`SupportConfirmation` windows. Support Confirmation is a holdings-only SHADOW view and keeps its
+`SupportConfirmation` windows. Support Confirmation is a holdings-only analytical view and keeps its
 reaction and structural-reversal scores separate. A new structural confirmation rings a
 `REENTRY ARMED` prealert without replaying historical transitions.
 
 `SignalFusion` is a fifth sibling window. Its upper pane shows support zone (`Z`), reaction (`R`),
 structural confirmation (`S`), and every remaining cross-engine gate. Its lower pane shows only
-current SHADOW `BUY_CONFIRMED` decisions; no broker execution is enabled.
+current analytical `BUY_CONFIRMED` decisions; no broker execution is enabled.
 
 The top pane controls lifecycle, the middle pane displays analyses, and the bottom pane displays
 confirmed purchases. Pressing `Ctrl+C` in the control pane stops all MarketBot processes.

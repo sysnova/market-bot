@@ -1,4 +1,4 @@
-# Elliott Wave shadow engine
+# Elliott Wave analysis engine
 
 Runs independently from Long, Swing, Intraday and PatreonCaps. Its universe is only active local
 PostgreSQL holdings with positive quantity. It publishes observational `WaveAssessment` events to

@@ -230,6 +230,50 @@ async def test_same_ticker_advances_one_opportunity_and_preserves_original_thesi
 
 
 @pytest.mark.unit
+async def test_orphan_triggered_recovers_open_l4_opportunity_idempotently() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    transition = watch_transition(
+        EntryWatchStatus.TRIGGERED,
+        watch_id="0195f3a5-9000-7000-8000-000000000023",
+        price="103",
+        previous=EntryWatchStatus.IN_ZONE,
+        horizons=(
+            AnalysisHorizon.LONG_TERM,
+            AnalysisHorizon.SWING,
+            AnalysisHorizon.INTRADAY,
+        ),
+        reasons=("price_efficient_entry_confirmed",),
+    )
+
+    events = await manager.ingest_transition(transition)
+
+    assert len(events) == 1
+    assert events[0].reasons == (
+        "opportunity_recovered_from_triggered",
+        "price_efficient_entry_confirmed",
+    )
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.opportunity_id == OPPORTUNITY_ID
+    assert active.original_watch_id == transition.watch_id
+    assert active.status is EntryOpportunityStatus.OPEN
+    assert active.current_maturity is EntryMaturityLevel.L4
+    assert active.peak_maturity is EntryMaturityLevel.L4
+    assert active.progress_percent == Decimal("100")
+    assert active.zone_low == transition.zone_low
+    assert active.zone_high == transition.zone_high
+    assert active.invalidation == transition.invalidation
+    assert active.source_analysis_ids == transition.source_analysis_ids
+    assert {item.horizon for item in active.legs} == set(transition.horizons)
+    assert all(item.status is EntryLegStatus.OPEN for item in active.legs)
+
+    assert await manager.ingest_transition(transition) == ()
+    assert len(store.opportunities) == 1
+    assert len(store.events) == 1
+
+
+@pytest.mark.unit
 async def test_buy_alerts_advance_l1_l2_l3_on_the_same_opportunity() -> None:
     store = InMemoryEntryOpportunityStore()
     manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
