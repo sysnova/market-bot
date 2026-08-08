@@ -1,5 +1,5 @@
 [Interface]
-# Generate this key on the client machine and never commit it.
+# Generated locally by configure-wireguard-client.ps1. Never share or commit it.
 PrivateKey = CLIENT_PRIVATE_KEY
 Address = 10.77.77.2/24
 

@@ -15,6 +15,9 @@ VISIBLE_HOST_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-visible-m
 WIREGUARD_HOST_SCRIPT_PATH = (
     PROJECT_ROOT / "scripts" / "windows" / "configure-wireguard-host.ps1"
 )
+WIREGUARD_CLIENT_SCRIPT_PATH = (
+    PROJECT_ROOT / "scripts" / "windows" / "configure-wireguard-client.ps1"
+)
 WIREGUARD_FIREWALL_SCRIPT_PATH = (
     PROJECT_ROOT / "scripts" / "windows" / "configure-wireguard-firewall.ps1"
 )
@@ -106,6 +109,68 @@ def test_wireguard_host_tunnel_is_manually_activated() -> None:
     assert "/installtunnelservice" not in script
     assert "Start-Service" not in script
     assert 'activation = "manual"' in script
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_wireguard_client_dry_run_describes_key_exchange_without_mutating() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(WIREGUARD_CLIENT_SCRIPT_PATH),
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["stage"] == "generate-key"
+    assert plan["client_address"] == "10.77.77.2/24"
+    assert plan["host_allowed_ip"] == "10.77.77.1/32"
+    assert plan["activation"] == "manual"
+    assert plan["installs_tunnel_service"] is False
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_wireguard_client_dry_run_describes_completed_config() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(WIREGUARD_CLIENT_SCRIPT_PATH),
+            "-HostPublicKey",
+            "A" * 43 + "=",
+            "-Endpoint",
+            "vpn.example.com:51820",
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["stage"] == "complete-config"
+    assert plan["endpoint"] == "vpn.example.com:51820"
+    assert plan["persistent_keepalive"] == 25
+
+
+def test_wireguard_client_never_installs_or_starts_a_tunnel_service() -> None:
+    script = WIREGUARD_CLIENT_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "/installtunnelservice" not in script
+    assert "Start-Service" not in script
+    assert 'private_key_shared = $false' in script
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")

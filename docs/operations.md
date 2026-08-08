@@ -330,8 +330,15 @@ Docker/NATS. Therefore a port probe cannot prove the forwarding path until WireG
 Remove this exact rule, if needed, with
 `.\scripts\windows\configure-wireguard-firewall.ps1 -Remove -Apply`.
 
-1. On the first client, create an empty WireGuard tunnel and send only its public key to the host.
-   Keep the client private key on that machine. The VPN uses `10.77.77.0/24`: the host is
+1. On the first client, generate its key and send only the returned `client_public_key` to the
+   host administrator:
+
+   ```powershell
+   .\scripts\windows\configure-wireguard-client.ps1
+   ```
+
+   The script stores the private key under `%LOCALAPPDATA%\MarketBot\WireGuard`, never prints it,
+   and reuses it on later runs. The VPN uses `10.77.77.0/24`: the host is
    `10.77.77.1`, the first client is `10.77.77.2`, and future clients receive consecutive unique
    addresses. Every machine must have its own key pair and `[Peer]` block.
 2. From elevated PowerShell, preview and prepare the host configuration:
@@ -346,13 +353,21 @@ Remove this exact rule, if needed, with
    The command returns the host public key and writes a protected configuration file, but it does
    **not** register or start an automatic tunnel service. Open WireGuard, choose **Import tunnel(s)
    from file**, import the returned `config_path`, and use **Activate**/**Deactivate** manually.
-   Complete
-   `configs/wireguard/marketbot-client.conf.example` with the client private key, host public key,
-   and public IP or DDNS. The client address is `10.77.77.2/24`, while its split-tunnel route is
-   limited to `10.77.77.1/32`; it cannot use WireGuard to reach the LAN or other clients.
-3. Reserve the host LAN address and forward only router UDP `51820` to
+3. Return the host public key, public IP or DDNS endpoint, and assigned client address. On the
+   client, complete the configuration without exchanging its private key:
+
+   ```powershell
+   .\scripts\windows\configure-wireguard-client.ps1 `
+     -HostPublicKey "HOST_PUBLIC_KEY" `
+     -Endpoint "YOUR_PUBLIC_IP_OR_DDNS:51820" `
+     -ClientAddress "10.77.77.2/24"
+   ```
+
+   Import the returned `config_path` in WireGuard and activate it manually. The split-tunnel route
+   is limited to `10.77.77.1/32`; the client cannot use WireGuard to reach the LAN or other peers.
+4. Reserve the host LAN address and forward only router UDP `51820` to
    `192.168.1.4:51820`. Never forward TCP `4222` or `8222`.
-4. Activate `marketbot` manually. Once `Get-NetIPAddress -IPAddress 10.77.77.1` succeeds, preview
+5. Activate `marketbot` manually. Once `Get-NetIPAddress -IPAddress 10.77.77.1` succeeds, preview
    and apply the Docker
    replacement:
 

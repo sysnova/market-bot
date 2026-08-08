@@ -30,28 +30,29 @@ winget install --id WireGuard.WireGuard --exact --silent --accept-package-agreem
 
 Luego abrir **WireGuard** desde el menú Inicio.
 
-## 2. Generar las claves de la notebook
+## 2. Generar la clave del cliente y enviarla al administrador
 
-En WireGuard:
+Copiar `configure-wireguard-client.ps1` a la notebook y ejecutarlo en PowerShell. En la primera
+etapa no se necesita ningún dato secreto del host:
 
-1. Elegir **Add Tunnel**.
-2. Elegir **Add empty tunnel**.
-3. Asignar un nombre descriptivo, por ejemplo `marketbot-client`.
-
-WireGuard genera automáticamente una clave privada y muestra su clave pública correspondiente.
-
-- La clave privada debe permanecer exclusivamente en la notebook.
-- Copiar y enviar al administrador únicamente la clave pública.
-
-Mientras se espera la configuración del host, se puede guardar:
-
-```ini
-[Interface]
-PrivateKey = CLAVE_PRIVADA_GENERADA_POR_WIREGUARD
-Address = 10.77.77.2/24
+```powershell
+.\configure-wireguard-client.ps1
 ```
 
-No copiar la clave privada en chats, tickets, repositorios ni documentación compartida.
+El script crea el par de claves localmente y devuelve JSON similar a:
+
+```json
+{
+  "status": "client-key-ready",
+  "client_public_key": "CLAVE_PUBLICA_DE_LA_NOTEBOOK",
+  "client_address_requested": "10.77.77.2/24",
+  "private_key_shared": false
+}
+```
+
+Enviar al administrador solamente `client_public_key`. La clave privada queda protegida en
+`%LOCALAPPDATA%\MarketBot\WireGuard` y nunca aparece en la salida del script. Ejecutar nuevamente
+esta etapa reutiliza la misma clave, por lo que no invalida una clave pública ya registrada.
 
 ## 3. Configuración que realiza el administrador
 
@@ -70,12 +71,25 @@ Para clientes posteriores se utilizarán direcciones diferentes, como `10.77.77.
 El administrador devolverá:
 
 - `CLAVE_PUBLICA_DEL_HOST`
-- `IP_PUBLICA_O_DDNS_DEL_HOST`
+- `IP_PUBLICA_O_DDNS_DEL_HOST:51820`
 - La dirección WireGuard asignada al cliente
 
 ## 4. Completar el túnel de la notebook
 
-Editar el túnel `marketbot-client` y dejarlo con esta estructura:
+Cuando el administrador devuelva los tres datos, ejecutar el mismo script indicando la clave
+pública del host, el endpoint y la IP asignada:
+
+```powershell
+.\configure-wireguard-client.ps1 -HostPublicKey "CLAVE_PUBLICA_DEL_HOST" -Endpoint "IP_PUBLICA_O_DDNS:51820" -ClientAddress "10.77.77.2/24"
+```
+
+El script reutiliza la clave privada creada en el paso 2 y genera:
+
+```text
+%LOCALAPPDATA%\MarketBot\WireGuard\marketbot-client.conf
+```
+
+Ese archivo queda con esta estructura:
 
 ```ini
 [Interface]
@@ -88,6 +102,9 @@ AllowedIPs = 10.77.77.1/32
 Endpoint = IP_PUBLICA_O_DDNS_DEL_HOST:51820
 PersistentKeepalive = 25
 ```
+
+Abrir WireGuard, elegir **Import tunnel(s) from file**, seleccionar `marketbot-client.conf` y
+activarlo manualmente. El script no instala ni inicia un servicio de túnel.
 
 La ruta `AllowedIPs = 10.77.77.1/32` crea un split tunnel: solamente el tráfico dirigido al host
 MarketBot utiliza la VPN. La navegación normal de la notebook no pasa por el host y el cliente no
