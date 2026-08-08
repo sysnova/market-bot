@@ -4,7 +4,7 @@ param(
     [string]$TaskName = "MarketBotSECDaily",
     [ValidatePattern("^([01]\d|2[0-3]):[0-5]\d$")]
     [string]$At = "20:00",
-    [ValidateRange(1, 30)]
+    [ValidateRange(1, 90)]
     [int]$LookbackDays = 2,
     [switch]$NoNats,
     [switch]$Force

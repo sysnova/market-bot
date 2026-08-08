@@ -3,13 +3,17 @@
 ## Versiones
 
 - `EntryWatcherV1` / `EntryWatcher`: confirmación multi-horizonte `1.0.0` original.
-- `EntryWatcherV2`: versión activa `2.0.0`. Requiere un setup Swing favorable reconocido y
+- `EntryWatcherV2`: versión histórica `2.0.0`. Requiere un setup Swing favorable reconocido y
   un trigger Intraday alcista nominal (`bullish_breakout`, `bullish_vwap_reclaim` o
   `bullish_entry_confirmation`).
 - `EntryWatcherV3`: conserva la continuación breakaway versionada en `3.0.0`.
-- `EntryWatcherV4`: versión activa `4.0.0`. Requiere Intraday v4 eficiente, `strong`, higher low
+- `EntryWatcherV4`: versión de replay `4.0.0`. Requiere Intraday v4 eficiente, `strong`, higher low
   de cinco minutos y una segunda confirmación fresca al menos tres minutos después. Tras disparar,
   no rearma otra zona Long del mismo símbolo durante 30 minutos, evitando L4 duplicadas.
+
+`EntryWatcherV5` (`5.0.0`) is the active no-retest continuation policy. It preserves every V4
+anti-chase gate and may confirm L4 without a prior Long-zone touch after two fresh, strong,
+price-efficient Intraday readings report a five-minute higher low and live reward/risk is at least 2.
 
 The Entry Watcher preserves a Long entry thesis across later market evaluations. It freezes
 the original buy zone, invalidation, expected correction, source analysis, and expiry instead
@@ -46,7 +50,15 @@ The final state is still `TRIGGERED`; its reasons distinguish
 `breakaway_continuation_confirmed` from ordinary in-zone confirmation. Beyond the chase cap the
 watch returns to `ARMED` with `continuation_chase_cap_exceeded` and waits for a retest. Human alerts
 render these stages as `ENTRY IN_ZONE EARLY WATCH`, `ENTRY BREAKAWAY WATCH`, and
-`ENTRY EXTENDED WAIT`.
+  `ENTRY EXTENDED WAIT`.
+
+## No-retest higher-low continuation
+
+V5 measures a no-touch continuation from the current Intraday trigger instead of the frozen Long
+zone. The first mature higher-low reading arms the candidate; a distinct mature reading after the
+configured delay may produce `ENTRY TRIGGERED` with
+`no_retest_higher_low_continuation_confirmed`. The Intraday efficiency cap, extension cap, fresh
+Long/Swing evidence, anchored-VWAP gate, and live reward/risk gate remain mandatory.
 
 En V4 esa continuación tampoco puede confirmar sobre un impulso extendido: primero debe volver a
 la ventana eficiente de Intraday y formar el retest/higher low. La primera lectura madura prepara

@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import os
 import selectors
+import sys
 from collections.abc import Coroutine
 from datetime import timedelta
 from pathlib import Path
@@ -450,6 +452,160 @@ app.add_typer(market, name="market")
 nats_admin = typer.Typer(name="nats", help="Inspect and maintain local NATS JetStream.")
 app.add_typer(nats_admin, name="nats")
 
+connector = typer.Typer(
+    name="connector", help="Consume MarketBot JetStream from a trusted external peer."
+)
+app.add_typer(connector, name="connector")
+
+
+@connector.command("list-engines")
+def list_connector_engines() -> None:
+    """List stable engine names and their server-side NATS filters."""
+
+    from marketbot_connector import ENGINE_ROUTES
+
+    typer.echo(
+        json.dumps(
+            {
+                name: [route.subject for route in routes]
+                for name, routes in sorted(ENGINE_ROUTES.items())
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@connector.command("subscribe")
+def subscribe_external_connector(
+    engine: Annotated[
+        list[str] | None,
+        typer.Option("--engine", help="Engine name; repeat to combine engines."),
+    ] = None,
+    subject: Annotated[
+        list[str] | None,
+        typer.Option("--subject", help="NATS subject filter; repeat to combine filters."),
+    ] = None,
+    all_messages: Annotated[
+        bool,
+        typer.Option("--all", help="Consume marketbot.v1.> and marketbot.dlq."),
+    ] = False,
+    start_at: Annotated[
+        str | None,
+        typer.Option(help="RFC 3339 persisted-message start time; offset is required."),
+    ] = None,
+    durable: Annotated[
+        str | None,
+        typer.Option(help="Stable durable consumer name; omitted means ephemeral."),
+    ] = None,
+    url: Annotated[
+        str,
+        typer.Option(help="NATS URL reachable through WireGuard."),
+    ] = os.getenv("MARKETBOT_CONNECTOR_URL", "nats://10.77.77.1:4222"),
+    stream: Annotated[
+        str,
+        typer.Option(help="Existing JetStream stream name."),
+    ] = os.getenv("MARKETBOT_CONNECTOR_STREAM", "MARKETBOT"),
+    batch_size: Annotated[
+        int,
+        typer.Option(min=1, max=1_000, help="Maximum messages fetched per pull."),
+    ] = 100,
+    max_ack_pending: Annotated[
+        int,
+        typer.Option(min=1, help="Maximum unacknowledged messages."),
+    ] = 1_000,
+) -> None:
+    """Write selected JetStream deliveries as one JSON object per line."""
+
+    from marketbot_connector import (
+        ConnectorConfig,
+        ConnectorMessage,
+        MarketBotSubscriber,
+        parse_start_at,
+        resolve_filters,
+    )
+
+    try:
+        filters = resolve_filters(
+            engines=tuple(engine or ()),
+            subjects=tuple(subject or ()),
+            all_messages=all_messages,
+        )
+        config = ConnectorConfig(
+            filters=filters,
+            url=url,
+            stream=stream,
+            start_at=parse_start_at(start_at) if start_at is not None else None,
+            durable_name=durable,
+            batch_size=batch_size,
+            max_ack_pending=max_ack_pending,
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+
+    async def run() -> None:
+        subscriber = await MarketBotSubscriber.connect(config)
+        try:
+            if subscriber.retention_warning is not None:
+                typer.echo(
+                    json.dumps({"warning": subscriber.retention_warning}),
+                    err=True,
+                )
+
+            async def write_message(message: ConnectorMessage) -> None:
+                sys.stdout.write(json.dumps(message.to_jsonable(), sort_keys=True) + "\n")
+                sys.stdout.flush()
+
+            await subscriber.run(write_message)
+        finally:
+            await subscriber.close()
+
+    try:
+        _run_async(run())
+    except KeyboardInterrupt:
+        typer.echo("Connector stopped.", err=True)
+
+
+@connector.command("reset")
+def reset_external_connector(
+    durable: Annotated[str, typer.Argument(help="Durable consumer name to delete.")],
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", help="Confirm deletion of this consumer position."),
+    ] = False,
+    url: Annotated[
+        str,
+        typer.Option(help="NATS URL reachable through WireGuard."),
+    ] = os.getenv("MARKETBOT_CONNECTOR_URL", "nats://10.77.77.1:4222"),
+    stream: Annotated[
+        str,
+        typer.Option(help="Existing JetStream stream name."),
+    ] = os.getenv("MARKETBOT_CONNECTOR_STREAM", "MARKETBOT"),
+) -> None:
+    """Delete one durable position without deleting any stream message."""
+
+    if not yes:
+        raise typer.BadParameter("--yes is required to delete a durable position")
+    from marketbot_connector import (
+        ConnectorConfig,
+        reset_durable_consumer,
+        resolve_filters,
+    )
+
+    try:
+        ConnectorConfig(
+            filters=resolve_filters(all_messages=True),
+            url=url,
+            stream=stream,
+            durable_name=durable,
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    deleted = _run_async(
+        reset_durable_consumer(url=url, stream=stream, durable_name=durable)
+    )
+    typer.echo(json.dumps({"durable": durable, "deleted": deleted}, sort_keys=True))
+
 
 @nats_admin.command("cleanup-consumers")
 def cleanup_nats_consumers(
@@ -723,7 +879,7 @@ def entry_watcher_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
-    ] = Path(".runtime/status/entry-watcher-v4.ready.json"),
+    ] = Path(".runtime/status/entry-watcher-v5.ready.json"),
 ) -> None:
     """Run the configured Entry Watcher PostgreSQL/NATS detector process."""
 
@@ -801,7 +957,7 @@ def sec_daily(
         int | None,
         typer.Option(
             min=1,
-            max=30,
+            max=90,
             help="Inclusive recent filing-date window; no historical form backfill.",
         ),
     ] = None,
@@ -835,6 +991,53 @@ def sec_daily(
             bell=bell,
             lookback_days=lookback_days,
             symbols=tuple(symbols.split(",")) if symbols else None,
+            scan_mode="daily",
+        )
+    )
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@sec.command("snapshot")
+def sec_snapshot(
+    lookback_days: Annotated[
+        int | None,
+        typer.Option(
+            min=1,
+            max=90,
+            help="Inclusive filing-date window; capped to recent SEC metadata.",
+        ),
+    ] = None,
+    runtime_root: Annotated[
+        Path,
+        typer.Option(help="Directory for local append-only alerts."),
+    ] = Path(".runtime"),
+    bell: Annotated[
+        bool,
+        typer.Option(help="Ring the terminal bell for each SEC warning."),
+    ] = False,
+    nats: Annotated[
+        bool,
+        typer.Option("--nats/--no-nats", help="Mirror SEC results to local NATS."),
+    ] = True,
+    symbols: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated temporary universe; overrides local PostgreSQL for this scan."
+        ),
+    ] = None,
+) -> None:
+    """Evaluate CompanyFacts for every symbol plus matching recent filings."""
+
+    from app.integration.sec_daily_composition import run_sec_daily_analysis
+
+    summary = _run_async(
+        run_sec_daily_analysis(
+            runtime_root=runtime_root,
+            mirror_to_nats=nats,
+            bell=bell,
+            lookback_days=lookback_days,
+            symbols=tuple(symbols.split(",")) if symbols else None,
+            scan_mode="snapshot",
         )
     )
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))

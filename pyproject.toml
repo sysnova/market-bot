@@ -11,6 +11,7 @@ requires-python = ">=3.14,<3.15"
 license = { text = "Proprietary" }
 authors = [{ name = "MarketBot contributors" }]
 dependencies = [
+  "marketbot-connector>=0.1.0",
   "nats-py>=2.11,<3",
   "pydantic>=2.12,<3",
   "pydantic-settings>=2.11,<3",
@@ -23,6 +24,9 @@ dependencies = [
   "httpx>=0.28,<1",
   "websockets>=16,<17",
 ]
+
+[tool.uv.sources]
+marketbot-connector = { path = "packages/marketbot-connector", editable = true }
 
 [project.scripts]
 marketbot = "app.operator_cli.main:app"

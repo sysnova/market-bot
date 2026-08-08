@@ -16,9 +16,9 @@ _HORIZON_LABELS = {
     AnalysisHorizon.DILUTION: "SEC",
 }
 _BUY_BANNER_STYLES = {
-    BuyMaturity.TACTICAL_RECOVERY: "\x1b[1;30;43m",
+    BuyMaturity.TACTICAL_RECOVERY: "\x1b[1;30;103m",
     BuyMaturity.SWING_CONFIRMED: "\x1b[1;97;44m",
-    BuyMaturity.HIGH_CONVICTION: "\x1b[1;97;42m",
+    BuyMaturity.HIGH_CONVICTION: "\x1b[1;30;102m",
     BuyMaturity.FULLY_MATURED: "\x1b[1;97;45m",
 }
 _BUY_LABELS = {
@@ -28,8 +28,16 @@ _BUY_LABELS = {
     BuyMaturity.FULLY_MATURED: "FULLY MATURED",
 }
 _PROTECT_BANNER_STYLE = "\x1b[1;97;41m"
-_FLOW_BUY_BANNER_STYLE = "\x1b[1;30;46m"
-_OPPORTUNITY_PROGRESS_STYLE = "\x1b[1;30;46m"
+_FLOW_BUY_BANNER_STYLE = "\x1b[1;30;103m"
+_OPPORTUNITY_PROGRESS_STYLES = {
+    "ARMED": "\x1b[1;97;44m",
+    "IN_ZONE": "\x1b[1;30;103m",
+    "L1": "\x1b[1;30;103m",
+    "L2": "\x1b[1;97;44m",
+    "L3": "\x1b[1;30;102m",
+    "L4": "\x1b[1;97;45m",
+}
+_DEFAULT_OPPORTUNITY_PROGRESS_STYLE = "\x1b[1;97;44m"
 _OPPORTUNITY_CLOSED_STYLE = "\x1b[1;97;41m"
 _RESET_STYLE = "\x1b[0m"
 
@@ -51,8 +59,9 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
         progress = _number(values.get("progress_percent"))
         maturity = values.get("maturity", "-")
         banner = f"{alert.symbol} | ENTRY PROGRESS {progress}% | {maturity}"
+        style = _entry_progress_style(maturity)
         lines.append(
-            f"{_OPPORTUNITY_PROGRESS_STYLE} {banner} {_RESET_STYLE}" if color else banner
+            f"{style} {banner} {_RESET_STYLE}" if color else banner
         )
     if alert.kind is AlertKind.ENTRY_OPPORTUNITY_CLOSED:
         banner = f"{alert.symbol} | PAPER TRADE CLOSED | REVIEW GAIN/LOSS"
@@ -113,6 +122,13 @@ def _buy_banner(
     level = maturity.value.split("_", maxsplit=1)[0]
     banner = f"{alert.symbol} | BUY {level} {_money(confirmed_price)} | {_BUY_LABELS[maturity]}"
     return maturity, banner
+
+
+def _entry_progress_style(maturity: object) -> str:
+    value = getattr(maturity, "value", maturity)
+    return _OPPORTUNITY_PROGRESS_STYLES.get(
+        str(value).upper(), _DEFAULT_OPPORTUNITY_PROGRESS_STYLE
+    )
 
 
 def _level_line(

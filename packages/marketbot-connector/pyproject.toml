@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "marketbot-connector"
+version = "0.1.0"
+description = "Standalone trusted JetStream connector for MarketBot"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "MarketBot contributors" }]
+dependencies = [
+  "nats-py>=2.11,<3",
+  "pydantic>=2.12,<3",
+  "typer>=0.20,<1",
+]
+
+[project.scripts]
+marketbot-connector = "marketbot_connector.cli:app"
+
+[dependency-groups]
+dev = [
+  "pytest>=9,<10",
+  "pytest-asyncio>=1.2,<2",
+  "ruff>=0.14,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/marketbot_connector"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["marketbot_connector"]

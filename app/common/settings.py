@@ -31,8 +31,8 @@ class AppSettings(BaseSettings):
     database_url: SecretStr = SecretStr("postgresql://marketbot:marketbot@localhost:5432/marketbot")
     entry_watcher_enabled: bool = True
     entry_watch_ttl_days: int = Field(default=56, ge=7, le=365)
-    definition_path: Path = Path("configs/marketbot/4.0.0.yaml")
-    entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0"] | None = None
+    definition_path: Path = Path("configs/marketbot/6.0.0.yaml")
+    entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0", "5.0.0"] | None = None
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     alpaca_api_key_id: SecretStr | None = None
     alpaca_api_secret_key: SecretStr | None = None
@@ -49,7 +49,11 @@ class AppSettings(BaseSettings):
     sec_enabled: bool = False
     sec_user_agent: str | None = None
     sec_refresh_hours: int = Field(default=6, ge=1, le=168)
-    sec_filing_lookback_days: int = Field(default=2, ge=1, le=30)
+    sec_filing_lookback_days: int = Field(default=2, ge=1, le=90)
+    sec_document_max_filings: int = Field(default=3, ge=0, le=10)
+    sec_document_max_bytes: int = Field(default=350_000, ge=10_000, le=5_000_000)
+    sec_document_max_snippets: int = Field(default=5, ge=1, le=20)
+    sec_document_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
 
     @model_validator(mode="after")
     def validate_external_data(self) -> AppSettings:

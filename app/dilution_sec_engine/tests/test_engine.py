@@ -12,8 +12,11 @@ from app.contracts import AnalysisHorizon, AnalysisVerdict, PatternDirection
 from app.dilution_sec_engine import (
     CompanyFactsSnapshot,
     DilutionEvaluationInput,
+    DilutionOfferingStatus,
     DilutionSecEngine,
     DilutionSignal,
+    FilingDocumentEvidence,
+    FilingDocumentSnippet,
     RiskSeverity,
     SecFiling,
 )
@@ -187,3 +190,42 @@ def test_evaluate_emits_the_shared_dilution_analysis_contract() -> None:
     assert result.analysis_id.version == 7
     evidence = next(metric.value for metric in result.metrics if metric.name == "evidence")
     assert len(evidence) == 4
+
+
+def test_evaluate_exposes_primary_document_evidence() -> None:
+    document = FilingDocumentEvidence(
+        source_url="https://www.sec.gov/Archives/edgar/data/1/2/primary.htm",
+        offering_status=DilutionOfferingStatus.PRICED,
+        signals=(DilutionSignal.PUBLIC_OFFERING,),
+        amounts=("US$15,635,404.00",),
+        share_quantities=("1,028,645 common shares",),
+        snippets=(
+            FilingDocumentSnippet(
+                signal=DilutionSignal.PUBLIC_OFFERING,
+                text="We are offering common shares at an offering price of US$15.20.",
+            ),
+        ),
+    )
+    request = DilutionEvaluationInput(
+        symbol="DOC",
+        as_of=date(2026, 7, 26),
+        filings=(
+            SecFiling(
+                accession_number="0000000000-26-000001",
+                form="424B5",
+                filed_at=date(2026, 7, 20),
+                signals=document.signals,
+                document_evidence=document,
+            ),
+        ),
+    )
+
+    result = DilutionSecEngine().evaluate(request)
+    evidence = next(
+        metric.value for metric in result.metrics if metric.name == "document_evidence"
+    )
+
+    assert evidence[0]["evidence"]["offering_status"] == "priced"
+    assert evidence[0]["evidence"]["share_quantities"] == [
+        "1,028,645 common shares"
+    ]

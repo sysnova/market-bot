@@ -11,6 +11,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+node_modules/
 
 # Tests and tooling
 .coverage
@@ -29,6 +30,8 @@ htmlcov/
 data/
 *.log
 .nats/
+.wireguard/
+configs/wireguard/*.conf
 .postgres/
 .runtime/
 runtime/

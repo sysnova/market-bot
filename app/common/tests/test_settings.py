@@ -19,7 +19,7 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.database_url.get_secret_value().endswith("@db/marketbot")
     assert settings.entry_watcher_enabled is True
     assert settings.entry_watch_ttl_days == 56
-    assert settings.definition_path == Path("configs/marketbot/4.0.0.yaml")
+    assert settings.definition_path == Path("configs/marketbot/6.0.0.yaml")
     assert settings.entry_confirmation_rule_version is None
 
 
@@ -105,3 +105,18 @@ def test_sec_settings_require_an_identifiable_user_agent_when_enabled() -> None:
     assert settings.sec_configured is True
     assert settings.sec_refresh_hours == 6
     assert settings.sec_filing_lookback_days == 2
+    assert settings.sec_document_max_filings == 3
+    assert settings.sec_document_max_bytes == 350_000
+    assert settings.sec_document_max_snippets == 5
+
+
+def test_sec_filing_lookback_accepts_ninety_days() -> None:
+    settings = AppSettings(
+        _env_file=None,
+        sec_filing_lookback_days=90,
+    )
+
+    assert settings.sec_filing_lookback_days == 90
+
+    with pytest.raises(ValidationError):
+        AppSettings(_env_file=None, sec_filing_lookback_days=91)

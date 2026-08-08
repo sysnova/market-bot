@@ -134,7 +134,7 @@ def test_console_sink_highlights_solid_buy_at_confirmed_market_price() -> None:
     ConsoleAlertSink(stream=stream, color=True, bell=True).emit(buyable)
 
     first_line = stream.getvalue().splitlines()[0]
-    assert first_line == ("\x1b[1;97;42m HIMS | BUY L3 $41.2 | HIGH CONVICTION \x1b[0m")
+    assert first_line == ("\x1b[1;30;102m HIMS | BUY L3 $41.2 | HIGH CONVICTION \x1b[0m")
     assert stream.getvalue().endswith("\a\n")
 
 
@@ -164,7 +164,7 @@ def test_console_sink_highlights_aggressive_buy_pressure_without_an_l_level() ->
     ConsoleAlertSink(stream=stream, color=True, bell=True).emit(flow)
 
     assert stream.getvalue().splitlines()[0] == (
-        "\x1b[1;30;46m TEST | BUY FLOW $100.6 | AGGRESSIVE ENTRY WATCH \x1b[0m"
+        "\x1b[1;30;103m TEST | BUY FLOW $100.6 | AGGRESSIVE ENTRY WATCH \x1b[0m"
     )
     assert "BUY L" not in stream.getvalue()
     assert "\a" not in stream.getvalue()
@@ -176,7 +176,7 @@ def test_console_sink_highlights_aggressive_buy_pressure_without_an_l_level() ->
     (
         (
             (AnalysisHorizon.LONG_TERM, AnalysisHorizon.INTRADAY),
-            "\x1b[1;30;43m TEST | BUY L1 $103 | TACTICAL RECOVERY \x1b[0m",
+            "\x1b[1;30;103m TEST | BUY L1 $103 | TACTICAL RECOVERY \x1b[0m",
         ),
         (
             (AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
@@ -214,6 +214,37 @@ def test_console_sink_distinguishes_entry_maturity_by_horizons(
 
     assert stream.getvalue().splitlines()[0] == expected
     assert stream.getvalue().endswith("\a\n")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("maturity", "expected_style"),
+    (
+        ("ARMED", "\x1b[1;97;44m"),
+        ("IN_ZONE", "\x1b[1;30;103m"),
+        ("L1", "\x1b[1;30;103m"),
+        ("L2", "\x1b[1;97;44m"),
+        ("L3", "\x1b[1;30;102m"),
+        ("L4", "\x1b[1;97;45m"),
+    ),
+)
+def test_console_sink_uses_high_contrast_entry_progress_palette(
+    maturity: str, expected_style: str
+) -> None:
+    progress = _alert().model_copy(
+        update={
+            "kind": AlertKind.ENTRY_OPPORTUNITY_PROGRESS,
+            "metrics": (
+                NamedValue(name="progress_percent", value=Decimal("60")),
+                NamedValue(name="maturity", value=maturity),
+            ),
+        }
+    )
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True).emit(progress)
+
+    assert stream.getvalue().splitlines()[0].startswith(expected_style)
 
 
 @pytest.mark.unit

@@ -189,6 +189,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "marketbot-connector" },
     { name = "nats-py" },
     { name = "psutil" },
     { name = "psycopg", extra = ["binary", "pool"] },
@@ -213,6 +214,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "marketbot-connector", editable = "packages/marketbot-connector" },
     { name = "nats-py", specifier = ">=2.11,<3" },
     { name = "psutil", specifier = ">=7,<8" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2,<4" },
@@ -231,6 +233,30 @@ dev = [
     { name = "pytest", specifier = ">=9,<10" },
     { name = "pytest-asyncio", specifier = ">=1.2,<2" },
     { name = "pytest-cov", specifier = ">=7,<8" },
+    { name = "ruff", specifier = ">=0.14,<1" },
+]
+
+[[package]]
+name = "marketbot-connector"
+version = "0.1.0"
+source = { editable = "packages/marketbot-connector" }
+dependencies = [
+    { name = "nats-py" },
+    { name = "pydantic" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "nats-py", specifier = ">=2.11,<3" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "typer", specifier = ">=0.20,<1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9,<10" },
+    { name = "pytest-asyncio", specifier = ">=1.2,<2" },
     { name = "ruff", specifier = ">=0.14,<1" },
 ]
 

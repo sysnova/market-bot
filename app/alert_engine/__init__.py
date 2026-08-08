@@ -8,11 +8,13 @@ from .policy import AlertPolicy, HorizonPolicy
 from .ports import AlertPublisher, AlertSink
 from .sinks import AlertSinkReceipt, ConsoleAlertSink, NdjsonAlertSink
 from .v2 import AlertEngineV2
+from .v3 import AlertEngineV3
 
 __all__ = [
     "AlertDispatcher",
     "AlertEngine",
     "AlertEngineV2",
+    "AlertEngineV3",
     "AlertPolicy",
     "AlertPublisher",
     "AlertSink",

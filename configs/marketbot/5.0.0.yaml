@@ -1,0 +1,81 @@
+definition_id: marketbot
+version: 5.0.0
+engines:
+  long-term:
+    implementation: 2.0.0
+    mode: active
+    strategy: {kind: embedded, version: 2.0.0}
+  swing:
+    implementation: 3.0.0
+    mode: active
+    strategy:
+      kind: artifact
+      version: 5.0.0
+      artifact: ../rules/entry_confirmation/5.0.0.yaml
+  intraday:
+    implementation: 4.0.0
+    mode: active
+    strategy:
+      kind: artifact
+      version: 5.0.0
+      artifact: ../rules/entry_confirmation/5.0.0.yaml
+  entry-watcher:
+    implementation: 5.0.0
+    mode: active
+    strategy:
+      kind: artifact
+      version: 5.0.0
+      artifact: ../rules/entry_confirmation/5.0.0.yaml
+  entry-opportunity:
+    implementation: 1.0.0
+    mode: active
+    strategy: {kind: embedded, version: 1.0.0}
+  alert:
+    implementation: 2.0.0
+    mode: active
+    strategy: {kind: embedded, version: 2.0.0}
+  market-rotation:
+    implementation: 1.0.0
+    mode: active
+    strategy: {kind: embedded, version: 1.0.0}
+  portfolio-flow:
+    implementation: 2.0.0
+    mode: active
+    strategy:
+      kind: artifact
+      version: 2.0.0
+      artifact: ../rules/portfolio_flow/2.0.0.yaml
+  long-portfolio:
+    implementation: 1.0.0
+    mode: active
+    strategy:
+      kind: artifact
+      version: 1.0.0
+      artifact: ../rules/long_portfolio/1.0.0.yaml
+  patreon-caps:
+    implementation: 1.0.0
+    mode: shadow
+    strategy:
+      kind: artifact
+      version: 1.1.0
+      artifact: ../rules/patreon_caps/1.1.0.yaml
+  elliott-wave:
+    implementation: 0.1.0
+    mode: shadow
+    strategy: {kind: embedded, version: 0.1.0}
+  support-confirmation:
+    implementation: 0.2.0
+    mode: shadow
+    strategy: {kind: embedded, version: 0.2.0}
+  signal-fusion:
+    implementation: 0.3.0
+    mode: shadow
+    strategy: {kind: embedded, version: 0.3.0}
+  dilution-sec:
+    implementation: 1.0.0
+    mode: scheduled
+    strategy: {kind: embedded, version: 1.0.0}
+  peter-lynch:
+    implementation: 1.1.0
+    mode: on-demand
+    strategy: {kind: embedded, version: 1.1.0}

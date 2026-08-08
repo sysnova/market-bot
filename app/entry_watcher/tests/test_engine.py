@@ -18,6 +18,7 @@ from app.entry_watcher import (
     EntryWatcherV2,
     EntryWatcherV3,
     EntryWatcherV4,
+    EntryWatcherV5,
     InMemoryEntryWatchStore,
 )
 
@@ -657,6 +658,143 @@ async def test_v4_requires_a_fresh_second_mature_intraday_confirmation() -> None
     assert second is not None
     assert second.status is EntryWatchStatus.TRIGGERED
     assert "fresh_mature_intraday_reconfirmed" in second.reasons
+
+
+@pytest.mark.unit
+async def test_v5_abnb_regression_triggers_without_touching_the_frozen_long_zone() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV5(store=store)
+    abnb_long = analysis(
+        AnalysisHorizon.LONG_TERM,
+        classification="extended",
+        verdict=AnalysisVerdict.CAUTION,
+        direction=PatternDirection.BULLISH,
+        price="149.355",
+        zone_low="127.23",
+        zone_high="143.922",
+        invalidation="123.4131",
+    ).model_copy(update={"symbol": "ABNB"})
+    await watcher.ingest(abnb_long, now=NOW)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="149.355",
+            as_of=NOW + timedelta(minutes=1),
+            engine_version="3.0.0",
+            extra_metrics=(
+                NamedValue(name="anchored_vwap_gate_passed", value=True),
+                NamedValue(name="atr14", value=Decimal("6.0614")),
+                NamedValue(name="target_2r", value=Decimal("165")),
+                NamedValue(name="invalidation", value=Decimal("145")),
+            ),
+        ).model_copy(update={"symbol": "ABNB"}),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    def intraday_confirmation(*, analysis_id: UUID, price: str, minute: int) -> AnalysisResult:
+        return analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="bullish_breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price=price,
+            as_of=NOW + timedelta(minutes=minute),
+            setup="bullish_breakout",
+            engine_version="4.0.0",
+            extra_metrics=(
+                NamedValue(name="confirmation_gate_passed", value=True),
+                NamedValue(name="mature_confirmation_gate_passed", value=True),
+                NamedValue(name="entry_efficiency_gate_passed", value=True),
+                NamedValue(name="confirmation_quality", value="strong"),
+                NamedValue(name="five_minute_higher_low", value=True),
+                NamedValue(name="entry_trigger_level", value=Decimal("149")),
+                NamedValue(name="atr14", value=Decimal("1")),
+                NamedValue(name="invalidation_level", value=Decimal("145")),
+            ),
+        ).model_copy(update={"analysis_id": analysis_id, "symbol": "ABNB"})
+
+    first = await watcher.ingest(
+        intraday_confirmation(
+            analysis_id=UUID("0195f3a5-9000-7000-8000-000000000091"),
+            price="149.10",
+            minute=2,
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+    second = await watcher.ingest(
+        intraday_confirmation(
+            analysis_id=UUID("0195f3a5-9000-7000-8000-000000000092"),
+            price="149.20",
+            minute=7,
+        ),
+        now=NOW + timedelta(minutes=7),
+    )
+
+    assert first is None
+    assert second is not None and second.status is EntryWatchStatus.TRIGGERED
+    assert "no_retest_higher_low_continuation_confirmed" in second.reasons
+    assert "consistent_five_minute_higher_low" in second.reasons
+    assert any(reason.startswith("continuation_reward_risk:") for reason in second.reasons)
+    latest = await store.load_latest("ABNB")
+    assert latest is not None and "zone_touched_at" not in latest.anchor_snapshot
+
+
+@pytest.mark.unit
+async def test_v5_no_zone_touch_does_not_chase_beyond_intraday_extension_cap() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV5(store=store)
+    await watcher.ingest(long_watch(price="124"), now=NOW)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="124",
+            as_of=NOW + timedelta(minutes=1),
+            engine_version="3.0.0",
+            extra_metrics=(
+                NamedValue(name="anchored_vwap_gate_passed", value=True),
+                NamedValue(name="target_2r", value=Decimal("150")),
+                NamedValue(name="invalidation", value=Decimal("116")),
+            ),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    for minute, analysis_id in (
+        (2, UUID("0195f3a5-9000-7000-8000-000000000093")),
+        (7, UUID("0195f3a5-9000-7000-8000-000000000094")),
+    ):
+        transition = await watcher.ingest(
+            analysis(
+                AnalysisHorizon.INTRADAY,
+                classification="bullish_breakout",
+                verdict=AnalysisVerdict.FAVORABLE,
+                direction=PatternDirection.BULLISH,
+                price="124",
+                as_of=NOW + timedelta(minutes=minute),
+                setup="bullish_breakout",
+                engine_version="4.0.0",
+                extra_metrics=(
+                    NamedValue(name="confirmation_gate_passed", value=True),
+                    NamedValue(name="mature_confirmation_gate_passed", value=True),
+                    NamedValue(name="entry_efficiency_gate_passed", value=True),
+                    NamedValue(name="confirmation_quality", value="strong"),
+                    NamedValue(name="five_minute_higher_low", value=True),
+                    NamedValue(name="entry_trigger_level", value=Decimal("120")),
+                    NamedValue(name="atr14", value=Decimal("4")),
+                    NamedValue(name="invalidation_level", value=Decimal("118")),
+                ),
+            ).model_copy(update={"analysis_id": analysis_id}),
+            now=NOW + timedelta(minutes=minute),
+        )
+
+    assert transition is None
+    active = await store.load_active("AAPL")
+    assert active is not None and active.status is EntryWatchStatus.ARMED
 
 
 @pytest.mark.unit

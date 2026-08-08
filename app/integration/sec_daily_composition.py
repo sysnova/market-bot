@@ -6,7 +6,7 @@ import sys
 from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -23,6 +23,8 @@ from app.contracts import (
     analysis_result_subject,
 )
 from app.dilution_sec_engine import (
+    ParsedFilingSignalProvider,
+    SecDocumentSignalParser,
     SecEdgarAdapter,
     SecEdgarConfig,
     SecTickerResolver,
@@ -37,6 +39,7 @@ from .postgres_universe import (
     PostgresUniverseClient,
     fallback_universe,
 )
+from .sec_document_loader import SecArchiveDocumentLoader
 from .sec_refresher import SecAnalysisRefresher
 
 _DILUTION_FORMS = (
@@ -49,6 +52,7 @@ _DILUTION_FORMS = (
     "S-3",
     "S-3/A",
 )
+_CONTEXT_FORMS = ("8-K", "6-K", "10-Q", "10-K", "20-F")
 _SEC_TIME_ZONE = ZoneInfo("America/New_York")
 
 
@@ -60,13 +64,22 @@ class _SecAlertConsumer:
         alert_engine: AlertEngine,
         dispatcher: AlertDispatcher,
         clock: SystemClock,
+        collect_analyses: bool = False,
     ) -> None:
         self._publisher = publisher
         self._alert_engine = alert_engine
         self._dispatcher = dispatcher
         self._clock = clock
+        self._collect_analyses = collect_analyses
+        self._analyses: list[AnalysisResult] = []
+
+    @property
+    def analyses(self) -> tuple[AnalysisResult, ...]:
+        return tuple(self._analyses)
 
     async def ingest_analysis(self, result: AnalysisResult) -> None:
+        if self._collect_analyses:
+            self._analyses.append(result)
         await self._publisher.publish(
             analysis_result_subject(result.horizon, result.symbol),
             EventEnvelope(
@@ -89,8 +102,13 @@ async def run_sec_daily_analysis(
     bell: bool,
     lookback_days: int | None = None,
     symbols: tuple[str, ...] | None = None,
+    scan_mode: Literal["daily", "snapshot"] = "daily",
 ) -> dict[str, Any]:
-    """Scan only recent dilution-related filings and exit."""
+    """Run a bounded SEC discovery scan or a full CompanyFacts snapshot and exit."""
+
+    if scan_mode not in {"daily", "snapshot"}:
+        raise ValueError("SEC scan mode must be daily or snapshot")
+    snapshot_mode = scan_mode == "snapshot"
 
     settings = AppSettings()
     assembly = MarketBotAssembly.from_settings(settings)
@@ -104,8 +122,9 @@ async def run_sec_daily_analysis(
     if settings.sec_user_agent is None:
         raise ValueError("Daily SEC bot requires MARKETBOT_SEC_USER_AGENT")
     resolved_lookback = lookback_days or settings.sec_filing_lookback_days
-    if not 1 <= resolved_lookback <= 30:
-        raise ValueError("SEC filing lookback must be between 1 and 30 days")
+    if not 1 <= resolved_lookback <= 90:
+        raise ValueError("SEC filing lookback must be between 1 and 90 days")
+    included_forms = _DILUTION_FORMS + _CONTEXT_FORMS if snapshot_mode else _DILUTION_FORMS
 
     clock = SystemClock()
     as_of = clock.now().astimezone(_SEC_TIME_ZONE)
@@ -150,6 +169,7 @@ async def run_sec_daily_analysis(
         alert_engine=assembly.build_alert(),
         dispatcher=dispatcher,
         clock=clock,
+        collect_analyses=snapshot_mode,
     )
 
     universe_database = None
@@ -168,17 +188,36 @@ async def run_sec_daily_analysis(
     sec_config = SecEdgarConfig(
         user_agent=settings.sec_user_agent,
         max_recent_filings=50,
-        max_signal_documents=0,
+        max_signal_documents=settings.sec_document_max_filings,
         filing_lookback_days=resolved_lookback,
-        included_forms=_DILUTION_FORMS,
-        companyfacts_only_with_filings=True,
+        included_forms=included_forms,
+        companyfacts_only_with_filings=not snapshot_mode,
     )
+    evidence_provider = None
+    if settings.sec_document_max_filings > 0:
+        evidence_provider = ParsedFilingSignalProvider(
+            loader=SecArchiveDocumentLoader(
+                client=http_client,
+                user_agent=settings.sec_user_agent,
+                cache_root=runtime_root / "sec-documents",
+                max_bytes=settings.sec_document_max_bytes,
+                timeout_seconds=settings.sec_document_timeout_seconds,
+            ),
+            parser=SecDocumentSignalParser(
+                max_characters=settings.sec_document_max_bytes,
+                max_snippets=settings.sec_document_max_snippets,
+            ),
+        )
     refresher = SecAnalysisRefresher(
         resolver=SecTickerResolver(sec_config, client=http_client),
-        loader=SecEdgarAdapter(sec_config, client=http_client),
+        loader=SecEdgarAdapter(
+            sec_config,
+            client=http_client,
+            evidence_provider=evidence_provider,
+        ),
         engine=assembly.build_dilution_sec(),
         runtime=consumer,
-        skip_without_filings=True,
+        skip_without_filings=not snapshot_mode,
         on_error=lambda symbol, error: _log_sec_error(logger, symbol, error),
     )
     try:
@@ -188,7 +227,9 @@ async def run_sec_daily_analysis(
             **asdict(summary),
             "date_from": (as_of.date() - timedelta(days=resolved_lookback - 1)).isoformat(),
             "date_to": as_of.date().isoformat(),
-            "forms": list(_DILUTION_FORMS),
+            "forms": list(included_forms),
+            "document_max_filings": settings.sec_document_max_filings,
+            "scan_mode": scan_mode,
             "nats_mirroring": nats_bus is not None,
             "execution_enabled": False,
             "universe_source": universe.source,
@@ -197,7 +238,11 @@ async def run_sec_daily_analysis(
             "engine_implementation": assembly.spec(EngineSlot.DILUTION_SEC).implementation,
             "engine_strategy_version": assembly.spec(EngineSlot.DILUTION_SEC).strategy.version,
         }
-        await logger.ainfo("sec_daily_complete", **result)
+        if snapshot_mode:
+            result["analyses"] = [
+                analysis.model_dump(mode="json") for analysis in consumer.analyses
+            ]
+        await logger.ainfo(f"sec_{scan_mode}_complete", **result)
         return result
     finally:
         await http_client.aclose()

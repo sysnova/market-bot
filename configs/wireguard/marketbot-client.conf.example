@@ -1,0 +1,10 @@
+[Interface]
+# Generate this key on the client machine and never commit it.
+PrivateKey = CLIENT_PRIVATE_KEY
+Address = 10.77.77.2/24
+
+[Peer]
+PublicKey = HOST_PUBLIC_KEY
+AllowedIPs = 10.77.77.1/32
+Endpoint = YOUR_PUBLIC_IP_OR_DDNS:51820
+PersistentKeepalive = 25

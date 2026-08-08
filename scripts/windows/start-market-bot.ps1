@@ -83,7 +83,7 @@ $StatusRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "status"
 $LogRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "logs"
 $ReadyFiles = [ordered]@{
     "alerts-v2" = Join-Path -Path $StatusRoot -ChildPath "alert-v2.ready.json"
-    "entry-watcher-v4" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher-v4.ready.json"
+    "entry-watcher-v5" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher-v5.ready.json"
     "entry-opportunity-v1" = Join-Path -Path $StatusRoot -ChildPath "entry-opportunity-v1.ready.json"
     "market-history-v1" = Join-Path -Path $StatusRoot -ChildPath "market-history-v1.ready.json"
     "long-term-v2" = Join-Path -Path $StatusRoot -ChildPath "long-term-v2.ready.json"
@@ -141,9 +141,9 @@ $EntryWatchArguments = @(
     "entry-watch",
     "serve",
     "--ready-path",
-    $ReadyFiles["entry-watcher-v4"]
+    $ReadyFiles["entry-watcher-v5"]
 )
-$ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher-v4" -Arguments $EntryWatchArguments))
+$ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher-v5" -Arguments $EntryWatchArguments))
 
 $EntryOpportunityArguments = @(
     "run",
@@ -494,7 +494,7 @@ try {
     }
     Wait-MarketBotReadiness -Paths @(
         $ReadyFiles["alerts-v2"],
-        $ReadyFiles["entry-watcher-v4"],
+        $ReadyFiles["entry-watcher-v5"],
         $ReadyFiles["entry-opportunity-v1"]
     )
 

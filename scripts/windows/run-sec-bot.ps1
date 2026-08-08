@@ -1,7 +1,7 @@
 # Runs the independent recent-filings SEC bot once.
 [CmdletBinding()]
 param(
-    [ValidateRange(1, 30)]
+    [ValidateRange(1, 90)]
     [int]$LookbackDays = 2,
     [string]$Symbols,
     [switch]$NoNats,

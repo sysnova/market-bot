@@ -67,7 +67,7 @@ on an operational cadence appropriate for filings.
 The repository composition runs this adapter through `marketbot sec daily`, independently from the
 realtime market process. Its default two-day inclusive filing window keeps only configured
 dilution-related forms. CompanyFacts is requested only for symbols with a matching recent filing,
-and primary documents are not backfilled by the daily composition.
+and up to three matching primary documents are read through a bounded cached loader.
 
 SEC requires an identifiable `User-Agent`. Pass an application name plus a monitored contact email from runtime configuration; never hard-code a personal address in Git:
 
@@ -86,7 +86,12 @@ An injected `httpx.AsyncClient` is never closed by the adapter. A client created
 
 ### Document evidence
 
-Submission descriptions never create dilution signals. To enrich primary filings, inject a `FilingSignalProvider`. `ParsedFilingSignalProvider` composes a caller-owned `FilingDocumentLoader` with `SecDocumentSignalParser`, which strips script/style blocks and markup, never executes content, rejects oversized documents, and matches only explicit phrases. Document enrichment is capped by `max_signal_documents` per snapshot. The loader remains an external I/O port so archive access, caching, byte limits, and request policy can be implemented and tested independently.
+Submission descriptions never create dilution signals. `ParsedFilingSignalProvider` composes the
+bounded cached SEC Archive loader with `SecDocumentSignalParser`, which strips script/style blocks
+and markup, never executes content, and matches explicit phrases with basic false-positive guards.
+The structured evidence includes transaction stage, source URL, snippets, amounts, share
+quantities, and whether the byte-limited document was truncated. Document enrichment is capped by
+`max_signal_documents` per snapshot.
 
 CompanyFacts mapping is conservative:
 

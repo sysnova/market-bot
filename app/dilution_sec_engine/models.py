@@ -34,6 +34,42 @@ class DilutionSignal(StrEnum):
     REVERSE_SPLIT = "reverse_split"
 
 
+class DilutionOfferingStatus(StrEnum):
+    """Strongest transaction stage explicitly supported by document text."""
+
+    UNKNOWN = "unknown"
+    CAPACITY = "capacity"
+    ANNOUNCED = "announced"
+    PRICED = "priced"
+    COMPLETED = "completed"
+
+
+class FilingDocumentSnippet(StrictFrozenModel):
+    """Short filing excerpt proving one normalized signal."""
+
+    signal: DilutionSignal
+    text: NonEmptyText
+
+
+class FilingDocumentEvidence(StrictFrozenModel):
+    """Bounded, auditable evidence extracted from one primary SEC document."""
+
+    source_url: NonEmptyText
+    offering_status: DilutionOfferingStatus = DilutionOfferingStatus.UNKNOWN
+    signals: tuple[DilutionSignal, ...] = ()
+    amounts: tuple[NonEmptyText, ...] = ()
+    share_quantities: tuple[NonEmptyText, ...] = ()
+    snippets: tuple[FilingDocumentSnippet, ...] = ()
+    truncated: bool = False
+
+    @field_validator("signals", mode="after")
+    @classmethod
+    def normalize_document_signals(
+        cls, value: tuple[DilutionSignal, ...]
+    ) -> tuple[DilutionSignal, ...]:
+        return tuple(sorted(set(value), key=lambda item: item.value))
+
+
 class RiskSeverity(StrEnum):
     """Operator-facing severity derived exclusively from the numeric score."""
 
@@ -57,6 +93,8 @@ class SecFiling(StrictFrozenModel):
     filed_at: date
     primary_document_description: str = ""
     signals: tuple[DilutionSignal, ...] = ()
+    document_evidence: FilingDocumentEvidence | None = None
+    document_error: str | None = None
 
     @field_validator("form", mode="before")
     @classmethod

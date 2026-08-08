@@ -1,0 +1,12 @@
+[Interface]
+# Generated and stored outside Git by configure-wireguard-host.ps1.
+PrivateKey = HOST_PRIVATE_KEY
+Address = 10.77.77.1/24
+ListenPort = 51820
+
+[Peer]
+PublicKey = CLIENT_PUBLIC_KEY
+AllowedIPs = 10.77.77.2/32
+
+# Add one [Peer] block per additional machine. Each peer must have its own
+# public key and a unique address (10.77.77.3/32, 10.77.77.4/32, etc.).

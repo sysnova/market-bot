@@ -178,12 +178,12 @@ class EntryWatcher:
                     EntryWatchStatus.TRIGGERED,
                     now=now,
                     price=current_price,
-                    reasons=(
-                        "breakaway_continuation_confirmed",
-                        f"continuation_extension_percent:{extension_percent}",
-                        f"continuation_extension_atr:{extension_atr}",
-                        f"continuation_reward_risk:{reward_risk}",
-                        self._dilution_warning(latest),
+                    reasons=self._continuation_reasons(
+                        active,
+                        extension_percent=extension_percent,
+                        extension_atr=extension_atr,
+                        reward_risk=reward_risk,
+                        analyses=latest,
                     ),
                     analyses=latest,
                 )
@@ -480,6 +480,23 @@ class EntryWatcher:
         return ((target - current_price) / (current_price - invalidation)).quantize(
             TWO_PLACES,
             rounding=ROUND_HALF_UP,
+        )
+
+    def _continuation_reasons(
+        self,
+        watch: EntryWatch,
+        *,
+        extension_percent: Decimal,
+        extension_atr: Decimal | str,
+        reward_risk: Decimal,
+        analyses: dict[AnalysisHorizon, AnalysisResult],
+    ) -> tuple[str, ...]:
+        return (
+            "breakaway_continuation_confirmed",
+            f"continuation_extension_percent:{extension_percent}",
+            f"continuation_extension_atr:{extension_atr}",
+            f"continuation_reward_risk:{reward_risk}",
+            self._dilution_warning(analyses),
         )
 
     def _recent_zone_touch(self, watch: EntryWatch, *, now: datetime) -> bool:

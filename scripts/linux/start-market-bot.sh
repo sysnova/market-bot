@@ -281,18 +281,18 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,entry-watcher-v4,entry-opportunity-v1,market-history-v1,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,entry-watcher-v4,entry-watcher-v5,entry-opportunity-v1,market-history-v1,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
   echo "Runtime: $RUNTIME_ROOT"
 
-  start_background entry-watcher-v4 run marketbot entry-watch serve \
-    --ready-path "$STATUS_ROOT/entry-watcher-v4.ready.json"
+  start_background entry-watcher-v5 run marketbot entry-watch serve \
+    --ready-path "$STATUS_ROOT/entry-watcher-v5.ready.json"
   start_background entry-opportunity-v1 run marketbot entry-opportunity serve \
     --ready-path "$STATUS_ROOT/entry-opportunity-v1.ready.json"
   wait_ready "$STATUS_ROOT/alert-v2.ready.json" \
-    "$STATUS_ROOT/entry-watcher-v4.ready.json" \
+    "$STATUS_ROOT/entry-watcher-v5.ready.json" \
     "$STATUS_ROOT/entry-opportunity-v1.ready.json"
   wait_ready "$STATUS_ROOT/confirmed-buy-monitor.ready.json"
 

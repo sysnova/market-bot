@@ -32,7 +32,7 @@ selection before starting services:
 uv run marketbot assembly
 ```
 
-The default is `configs/marketbot/4.0.0.yaml`. Each engine entry separates:
+The default is `configs/marketbot/6.0.0.yaml`. Each engine entry separates:
 
 - `implementation`: concrete Python behavior;
 - `strategy`: embedded rules or an exact-version YAML artifact;
@@ -41,14 +41,15 @@ The default is `configs/marketbot/4.0.0.yaml`. Each engine entry separates:
 To deploy another complete, reviewed assembly, create a new immutable definition and select it:
 
 ```powershell
-$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/4.0.0.yaml"
+$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/6.0.0.yaml"
 .\scripts\windows\start-market-bot.ps1
 ```
 
-Strategy manifests live under `configs/rules/`. Entry confirmation `4.0.0` retains the v3
+Strategy manifests live under `configs/rules/`. Entry confirmation `5.0.0` retains the v3
 anchored-VWAP Swing gate and adds an Intraday anti-chase gate: at most 0.50 ATR above the trigger,
 at most 2 ATR above EMA20, a strong five-minute higher low, and a second fresh Entry Watcher
-confirmation after at least three minutes. Readiness summaries expose
+confirmation after at least three minutes. Entry Watcher v5 may also emit L4 without a prior
+Long-zone touch when the higher low persists and live reward/risk remains at least 2. Readiness summaries expose
 `marketbot_definition_version`, `engine_implementation`, and `engine_strategy_version`; analytical
 results retain their engine and entry-confirmation versions for outcome grouping.
 
@@ -222,7 +223,26 @@ SEC is deliberately absent from realtime startup. Run one bounded scan manually 
 The default two-day inclusive filing-date window covers today and yesterday. The bot requests the
 SEC submissions index for each symbol, keeps only dilution-related forms in that window, and skips
 CompanyFacts when there is no matching recent filing. It neither downloads every historical form
-nor executes orders. Alerts are printed and appended to the normal daily NDJSON ledger.
+nor executes orders. The window can be expanded up to 90 days with `-LookbackDays 90` in PowerShell
+or `--lookback-days 90` in the cross-platform CLI. Alerts are printed and appended to the normal
+daily NDJSON ledger.
+
+For each matching company, document enrichment prioritizes and streams at most three primary SEC
+documents, stops at 350,000 bytes, extracts auditable snippets/amounts/share quantities, and caches
+the bounded text by accession under `.runtime/sec-documents`. Set
+`MARKETBOT_SEC_DOCUMENT_MAX_FILINGS=0` to disable document reads.
+
+For an on-demand evaluation even when no matching form exists in that window, use snapshot mode.
+It downloads CompanyFacts for every selected symbol and publishes an analysis using those facts
+plus any matching bounded filing metadata:
+
+```bash
+uv run marketbot sec snapshot --lookback-days 90 --symbols "ADUR,PM,NBIS" --no-nats
+```
+
+Snapshot mode still examines at most the 50 most recent submission records per company, does not
+open historical submission indexes, and only reads the three prioritized primary documents. It
+also considers recent 8-K, 6-K, 10-Q, 10-K, and 20-F documents for explicit textual signals.
 
 Install the scan for the current Windows user at 20:00 local time each day (after the regular U.S.
 market session):
@@ -278,6 +298,113 @@ Validate MarketBot against the native broker with:
 $env:NATS_URL = "nats://127.0.0.1:4222"
 uv run pytest app/event_bus/tests/test_nats_integration.py -m integration --no-cov
 ```
+
+## External JetStream connector over WireGuard
+
+The external connector is a trusted pull consumer. It never changes the `MARKETBOT` stream and
+does not require an engine to change its existing `nats://127.0.0.1:4222` or
+`nats://localhost:4222` endpoint. NATS continues listening on `0.0.0.0:4222` **inside** Docker;
+only Docker's host publications become restricted to loopback and the WireGuard interface.
+
+Build the independently distributable client without packaging the MarketBot engines:
+
+```powershell
+uv build packages/marketbot-connector --wheel --out-dir dist/connector --clear
+```
+
+The resulting `marketbot_connector-*.whl` installs the `marketbot_connector` Python API and the
+`marketbot-connector` CLI. Its only runtime dependencies are `nats-py`, `pydantic`, and `typer`.
+
+Use this sequence on the Windows host:
+
+To test only the Windows Firewall preparation before a WireGuard client exists, preview and then
+create the standalone UDP rule from elevated PowerShell:
+
+```powershell
+.\scripts\windows\configure-wireguard-firewall.ps1
+.\scripts\windows\configure-wireguard-firewall.ps1 -Apply
+```
+
+This only permits inbound UDP `51820`; it does not install WireGuard, start a listener, or touch
+Docker/NATS. Therefore a port probe cannot prove the forwarding path until WireGuard is listening.
+Remove this exact rule, if needed, with
+`.\scripts\windows\configure-wireguard-firewall.ps1 -Remove -Apply`.
+
+1. On the first client, create an empty WireGuard tunnel and send only its public key to the host.
+   Keep the client private key on that machine. The VPN uses `10.77.77.0/24`: the host is
+   `10.77.77.1`, the first client is `10.77.77.2`, and future clients receive consecutive unique
+   addresses. Every machine must have its own key pair and `[Peer]` block.
+2. From elevated PowerShell, preview and prepare the host configuration:
+
+   ```powershell
+   .\scripts\windows\configure-wireguard-host.ps1 `
+     -ClientPublicKey "CLIENT_PUBLIC_KEY" -DryRun
+   .\scripts\windows\configure-wireguard-host.ps1 `
+     -ClientPublicKey "CLIENT_PUBLIC_KEY" -InstallIfMissing
+   ```
+
+   The command returns the host public key and writes a protected configuration file, but it does
+   **not** register or start an automatic tunnel service. Open WireGuard, choose **Import tunnel(s)
+   from file**, import the returned `config_path`, and use **Activate**/**Deactivate** manually.
+   Complete
+   `configs/wireguard/marketbot-client.conf.example` with the client private key, host public key,
+   and public IP or DDNS. The client address is `10.77.77.2/24`, while its split-tunnel route is
+   limited to `10.77.77.1/32`; it cannot use WireGuard to reach the LAN or other clients.
+3. Reserve the host LAN address and forward only router UDP `51820` to
+   `192.168.1.4:51820`. Never forward TCP `4222` or `8222`.
+4. Activate `marketbot` manually. Once `Get-NetIPAddress -IPAddress 10.77.77.1` succeeds, preview
+   and apply the Docker
+   replacement:
+
+   ```powershell
+   .\scripts\windows\recreate-nats-for-wireguard.ps1
+   .\scripts\windows\recreate-nats-for-wireguard.ps1 -Apply
+   ```
+
+   The script verifies `/data`, snapshots JetStream counters, preserves
+   `marketbot_nats-data`, and restores a localhost-only container if WireGuard publication fails.
+   It never removes the volume.
+
+On the peer, connect through the VPN:
+
+```powershell
+$env:MARKETBOT_CONNECTOR_URL = "nats://10.77.77.1:4222"
+uv run marketbot connector list-engines
+uv run marketbot connector subscribe --engine swing --engine long-term
+uv run marketbot connector subscribe --subject "marketbot.v1.alert.local.>"
+uv run marketbot connector subscribe --engine swing `
+  --start-at "2026-08-07T09:30:00-03:00"
+```
+
+Without `--start-at`, the connector receives the last retained message per concrete subject and
+then follows live traffic. A date older than retention starts at the first available message and
+prints a warning. The default is ephemeral; a named durable resumes its acknowledged position:
+
+```powershell
+uv run marketbot connector subscribe --engine swing --durable remote-windows
+uv run marketbot connector reset remote-windows --yes
+```
+
+Use `--all` only when raw market bars and the DLQ are intentionally required. Output is JSON Lines;
+invalid envelopes are represented as base64 evidence. Delivery is at least once, so downstream
+side effects must deduplicate by `event_id`.
+
+Acceptance checks from an external network are:
+
+```powershell
+# Host: latest handshake must be recent after the client activates its tunnel.
+& "$env:ProgramFiles\WireGuard\wg.exe" show
+
+# Client: succeeds only while WireGuard is active.
+Test-NetConnection 10.77.77.1 -Port 4222
+
+# These must not be reachable remotely.
+Test-NetConnection YOUR_PUBLIC_IP_OR_DDNS -Port 4222
+Test-NetConnection 10.77.77.1 -Port 8222
+```
+
+The UDP router path is validated by the WireGuard handshake, not by `Test-NetConnection`, which
+tests TCP. If the public IP changes, update the client endpoint or use DDNS.
 
 Watch all live MarketBot messages with formatted JSON from PowerShell:
 

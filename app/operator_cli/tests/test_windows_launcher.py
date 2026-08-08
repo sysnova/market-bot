@@ -12,6 +12,15 @@ SEC_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-sec-bot.ps1"
 JETSTREAM_MONITOR_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "watch-jetstream.ps1"
 LONG_TMUX_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-long-portfolio-tmux.ps1"
 VISIBLE_HOST_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "run-visible-marketbot.ps1"
+WIREGUARD_HOST_SCRIPT_PATH = (
+    PROJECT_ROOT / "scripts" / "windows" / "configure-wireguard-host.ps1"
+)
+WIREGUARD_FIREWALL_SCRIPT_PATH = (
+    PROJECT_ROOT / "scripts" / "windows" / "configure-wireguard-firewall.ps1"
+)
+NATS_WIREGUARD_SCRIPT_PATH = (
+    PROJECT_ROOT / "scripts" / "windows" / "recreate-nats-for-wireguard.ps1"
+)
 POWERSHELL = shutil.which("powershell")
 
 
@@ -47,6 +56,121 @@ def test_visible_windows_reselect_the_native_environment() -> None:
 
     assert '"environment.ps1"' in script
     assert "Set-MarketBotWindowsEnvironment -ProjectRoot $ProjectRoot" in script
+
+
+def test_nats_wireguard_replacement_preserves_volume_and_requires_apply() -> None:
+    script = NATS_WIREGUARD_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "[switch]$Apply" in script
+    assert "marketbot_nats-data" in script
+    assert "docker rm $ContainerName" in script
+    assert "docker volume rm" not in script
+    assert "127.0.0.1:4222:4222" in script
+    assert '${WireGuardHostIp}:4222:4222' in script
+    assert "127.0.0.1:8222:8222" in script
+    assert "'--restart', 'unless-stopped'" in script
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_wireguard_host_script_has_non_mutating_dry_run() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(WIREGUARD_HOST_SCRIPT_PATH),
+            "-ClientPublicKey",
+            "A" * 43 + "=",
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["host_address"] == "10.77.77.1/24"
+    assert plan["client_allowed_ip"] == "10.77.77.2/32"
+    assert plan["listen_udp"] == 51820
+    assert plan["nats_endpoint"] == "nats://10.77.77.1:4222"
+    assert plan["activation"] == "manual"
+    assert plan["installs_tunnel_service"] is False
+
+
+def test_wireguard_host_tunnel_is_manually_activated() -> None:
+    script = WIREGUARD_HOST_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "/installtunnelservice" not in script
+    assert "Start-Service" not in script
+    assert 'activation = "manual"' in script
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_wireguard_host_can_prepare_keys_without_admin(tmp_path: Path) -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(WIREGUARD_HOST_SCRIPT_PATH),
+            "-ClientPublicKey",
+            "A" * 43 + "=",
+            "-ConfigRoot",
+            str(tmp_path),
+            "-PrepareOnly",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    prepared = json.loads(result.stdout)
+    assert prepared["status"] == "prepared-without-firewall"
+    assert prepared["firewall_configured"] is False
+    assert prepared["host_public_key"]
+    assert (tmp_path / "marketbot.conf").is_file()
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_wireguard_firewall_script_has_non_mutating_dry_run() -> None:
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(WIREGUARD_FIREWALL_SCRIPT_PATH),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["mode"] == "dry-run"
+    assert plan["action"] == "ensure"
+    assert plan["protocol"] == "UDP"
+    assert plan["public_port"] == 51820
+    assert plan["private_port"] == 51820
+
+
+def test_wireguard_firewall_script_only_manages_udp_endpoint() -> None:
+    script = WIREGUARD_FIREWALL_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "New-NetFirewallRule" in script
+    assert "Remove-NetFirewallRule" in script
+    assert "-Protocol UDP" in script
+    assert "4222" not in script
+    assert "docker" not in script.lower()
+    assert "winget" not in script.lower()
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
@@ -159,7 +283,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["environment"].endswith(".venv-windows")
     assert [process["name"] for process in plan["processes"]] == [
         "alerts-v2",
-        "entry-watcher-v4",
+        "entry-watcher-v5",
         "entry-opportunity-v1",
         "market-history-v1",
         "long-term-v2",
@@ -266,7 +390,7 @@ def test_windows_sec_launcher_builds_bounded_daily_command() -> None:
             "-Symbols",
             "HIMS,ZETA",
             "-LookbackDays",
-            "3",
+            "90",
             "-NoNats",
             "-DryRun",
         ],
@@ -280,5 +404,5 @@ def test_windows_sec_launcher_builds_bounded_daily_command() -> None:
     assert command["arguments"][:4] == ["run", "marketbot", "sec", "daily"]
     assert command["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
     assert "--lookback-days" in command["arguments"]
-    assert "3" in command["arguments"]
+    assert "90" in command["arguments"]
     assert "--no-nats" in command["arguments"]

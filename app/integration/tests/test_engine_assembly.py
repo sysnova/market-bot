@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from app.alert_engine import AlertEngineV2
+from app.alert_engine import AlertEngineV3
 from app.common.settings import AppSettings
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_watcher import (
-    EntryWatcherV4,
+    EntryWatcherV5,
     InMemoryEntryWatchStore,
 )
 from app.integration.engine_assembly import (
@@ -27,7 +27,8 @@ from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngine
 from app.swing_engine import SwingEngineV3
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFINITION = ROOT / "configs/marketbot/4.0.0.yaml"
+DEFINITION = ROOT / "configs/marketbot/6.0.0.yaml"
+PREVIOUS_DEFINITION = ROOT / "configs/marketbot/5.0.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 
 
@@ -35,7 +36,7 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
     definition = load_marketbot_definition(DEFINITION)
 
     assert set(definition.engines) == set(EngineSlot)
-    assert definition.version == "4.0.0"
+    assert definition.version == "6.0.0"
     assert all(item.strategy.version for item in definition.engines.values())
     assert definition.engines[EngineSlot.INTRADAY].implementation == "4.0.0"
     assert definition.engines[EngineSlot.PORTFOLIO_FLOW].implementation == "2.0.0"
@@ -51,10 +52,10 @@ def test_one_assembly_builds_the_core_and_alert_implementations() -> None:
     assert isinstance(assembly.build_long_term(), LongTermEngineV2)
     assert isinstance(assembly.build_swing(), SwingEngineV3)
     assert isinstance(assembly.build_intraday(), IntradayEngineV4)
-    assert isinstance(assembly.build_alert(), AlertEngineV2)
+    assert isinstance(assembly.build_alert(), AlertEngineV3)
     assert isinstance(
         assembly.build_entry_watcher(store=InMemoryEntryWatchStore()),
-        EntryWatcherV4,
+        EntryWatcherV5,
     )
     opportunity = assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore())
     assert isinstance(opportunity, EntryOpportunityEngine)
@@ -70,12 +71,18 @@ def test_confirmation_strategy_artifact_is_injected_into_selected_implementation
     intraday = assembly.build_intraday()
     watcher = assembly.build_entry_watcher(store=InMemoryEntryWatchStore())
 
-    assert swing._strategy_version == "4.0.0"
+    assert swing._strategy_version == "5.0.0"
     assert intraday._minimum_momentum_percent == Decimal("0.15")
     assert intraday._maximum_trigger_extension_atr == Decimal("0.50")
     assert intraday._maximum_ema20_extension_atr == Decimal("2.00")
     assert watcher._minimum_reconfirmation_delay == timedelta(minutes=3)
     assert watcher._policy.trigger_rearm_cooldown == timedelta(minutes=30)
+    assert watcher._no_retest_higher_low_enabled is True
+    alert = assembly.build_alert()
+    assert alert._minimum_reconfirmation_delay == timedelta(minutes=3)
+    assert alert._strong_confirmation_required is True
+    assert alert._five_minute_higher_low_required is True
+    assert alert._same_market_session_required is True
 
 
 def test_settings_load_the_definition_as_the_primary_source() -> None:
@@ -83,8 +90,14 @@ def test_settings_load_the_definition_as_the_primary_source() -> None:
 
     assembly = MarketBotAssembly.from_settings(settings)
 
-    assert assembly.definition.version == "4.0.0"
+    assert assembly.definition.version == "6.0.0"
     assert isinstance(assembly.build_intraday(), IntradayEngineV4)
+
+
+def test_previous_definition_preserves_alert_v2_for_replay() -> None:
+    assembly = MarketBotAssembly.from_path(PREVIOUS_DEFINITION)
+
+    assert assembly.build_alert().engine_version == "2.0.0"
 
 
 def test_legacy_confirmation_setting_rolls_back_one_compatible_bundle() -> None:
@@ -141,12 +154,14 @@ def test_operational_compositions_cannot_construct_catalog_engines_directly() ->
     catalog_names = {
         "AlertEngine",
         "AlertEngineV2",
+        "AlertEngineV3",
         "DilutionSecEngine",
         "ElliottWaveEngine",
         "EntryWatcher",
         "EntryWatcherV2",
         "EntryWatcherV3",
         "EntryWatcherV4",
+        "EntryWatcherV5",
         "EntryOpportunityEngine",
         "EntryOpportunityManager",
         "IntradayEngine",

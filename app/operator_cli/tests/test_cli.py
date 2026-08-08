@@ -46,8 +46,30 @@ def test_root_help_lists_operator_groups() -> None:
         "entry-watch",
         "entry-opportunity",
         "monitor",
+        "connector",
     ):
         assert group in result.stdout
+
+
+def test_connector_catalog_and_validation_are_available_without_nats() -> None:
+    catalog = runner.invoke(app, ["connector", "list-engines"])
+    invalid = runner.invoke(app, ["connector", "subscribe"])
+
+    assert catalog.exit_code == 0
+    payload = json.loads(catalog.stdout)
+    assert payload["swing"] == ["marketbot.v1.analysis.result.SWING.>"]
+    assert payload["signal-fusion"]
+    assert invalid.exit_code != 0
+    assert "at least one engine" in _plain(invalid.output)
+
+
+def test_connector_help_exposes_position_and_backpressure_controls() -> None:
+    result = runner.invoke(app, ["connector", "subscribe", "--help"])
+    output = _plain(result.stdout)
+
+    assert result.exit_code == 0
+    for option in ("--engine", "--subject", "--start-at", "--durable", "--batch-size"):
+        assert option in output
 
 
 def test_distributed_process_commands_are_explicit() -> None:
@@ -117,7 +139,8 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "4.0.0"
+    assert payload["version"] == "6.0.0"
+    assert payload["engines"]["entry-watcher"]["implementation"] == "5.0.0"
     assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
     assert payload["engines"]["portfolio-flow"]["strategy"]["version"] == "2.0.0"
     assert payload["engines"]["peter-lynch"]["mode"] == "on-demand"
@@ -141,6 +164,62 @@ def test_sec_daily_help_exposes_bounded_filing_scan() -> None:
     assert result.exit_code == 0
     assert "filing" in output.lower()
     assert "--lookback-days" in output
+
+
+def test_sec_daily_accepts_ninety_day_lookback() -> None:
+    received: dict[str, object] = {}
+
+    async def fake_run_sec_daily_analysis(**kwargs: object) -> dict[str, object]:
+        received.update(kwargs)
+        return {"symbols_scanned": 1}
+
+    with patch(
+        "app.integration.sec_daily_composition.run_sec_daily_analysis",
+        new=fake_run_sec_daily_analysis,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "sec",
+                "daily",
+                "--lookback-days",
+                "90",
+                "--symbols",
+                "ADUR",
+                "--no-nats",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert received["lookback_days"] == 90
+
+
+def test_sec_snapshot_requests_analysis_without_recent_filings() -> None:
+    received: dict[str, object] = {}
+
+    async def fake_run_sec_daily_analysis(**kwargs: object) -> dict[str, object]:
+        received.update(kwargs)
+        return {"symbols_scanned": 1, "analyses_published": 1}
+
+    with patch(
+        "app.integration.sec_daily_composition.run_sec_daily_analysis",
+        new=fake_run_sec_daily_analysis,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "sec",
+                "snapshot",
+                "--lookback-days",
+                "90",
+                "--symbols",
+                "ADUR",
+                "--no-nats",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert received["scan_mode"] == "snapshot"
 
 
 def test_peter_lynch_command_runs_once_and_prints_json() -> None:

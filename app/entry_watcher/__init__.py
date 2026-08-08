@@ -7,6 +7,7 @@ from .ports import EntryWatchStore
 from .v2 import EntryWatcherV1, EntryWatcherV2
 from .v3 import EntryWatcherV3
 from .v4 import EntryWatcherV4
+from .v5 import EntryWatcherV5
 
 __all__ = [
     "EntryWatch",
@@ -17,5 +18,6 @@ __all__ = [
     "EntryWatcherV2",
     "EntryWatcherV3",
     "EntryWatcherV4",
+    "EntryWatcherV5",
     "InMemoryEntryWatchStore",
 ]

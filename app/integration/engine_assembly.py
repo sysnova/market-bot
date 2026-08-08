@@ -13,7 +13,7 @@ from typing import cast
 
 import yaml
 
-from app.alert_engine import AlertEngine, AlertEngineV2
+from app.alert_engine import AlertEngine, AlertEngineV2, AlertEngineV3
 from app.common.settings import AppSettings
 from app.dilution_sec_engine import DilutionSecEngine
 from app.elliott_wave_engine import ElliottWaveEngine
@@ -24,6 +24,7 @@ from app.entry_watcher import (
     EntryWatcherV2,
     EntryWatcherV3,
     EntryWatcherV4,
+    EntryWatcherV5,
 )
 from app.entry_watcher.ports import EntryWatchStore
 from app.intraday_engine import (
@@ -124,9 +125,14 @@ _DEFAULT_CATALOG: dict[EngineSlot, dict[str, EngineFactory]] = {
         "2.0.0": EntryWatcherV2,
         "3.0.0": EntryWatcherV3,
         "4.0.0": EntryWatcherV4,
+        "5.0.0": EntryWatcherV5,
     },
     EngineSlot.ENTRY_OPPORTUNITY: {"1.0.0": EntryOpportunityEngine},
-    EngineSlot.ALERT: {"1.0.0": AlertEngine, "2.0.0": AlertEngineV2},
+    EngineSlot.ALERT: {
+        "1.0.0": AlertEngine,
+        "2.0.0": AlertEngineV2,
+        "3.0.0": AlertEngineV3,
+    },
     EngineSlot.MARKET_ROTATION: {"1.0.0": RotationEngine},
     EngineSlot.PORTFOLIO_FLOW: {
         "1.0.0": PortfolioFlowEngineV1,
@@ -145,6 +151,7 @@ _CONFIRMATION_IMPLEMENTATIONS = {
     ("2.0.0", "2.0.0", "2.0.0"),
     ("3.0.0", "3.0.0", "3.0.0"),
     ("3.0.0", "4.0.0", "4.0.0"),
+    ("3.0.0", "4.0.0", "5.0.0"),
 }
 
 
@@ -275,7 +282,7 @@ class MarketBotAssembly:
     ) -> EntryWatcher:
         spec = self.spec(EngineSlot.ENTRY_WATCHER)
         options: dict[str, object] = {} if policy is None else {"policy": policy}
-        if spec.implementation == "4.0.0":
+        if spec.implementation in {"4.0.0", "5.0.0"}:
             behavior = self._strategy_behavior(EngineSlot.ENTRY_WATCHER)
             resolved_policy = policy or EntryWatcherPolicy()
             resolved_policy = replace(
@@ -296,13 +303,35 @@ class MarketBotAssembly:
                     behavior, "five_minute_higher_low_required"
                 ),
             }
+            if spec.implementation == "5.0.0":
+                options["no_retest_higher_low_enabled"] = _bool_value(
+                    behavior, "no_retest_higher_low_continuation"
+                )
         return cast(
             "EntryWatcher",
             self._create(EngineSlot.ENTRY_WATCHER, store=store, **options),
         )
 
     def build_alert(self) -> AlertEngine:
-        return cast("AlertEngine", self._create(EngineSlot.ALERT))
+        spec = self.spec(EngineSlot.ALERT)
+        options: dict[str, object] = {}
+        if spec.implementation == "3.0.0":
+            behavior = self._strategy_behavior(EngineSlot.ALERT)
+            options = {
+                "minimum_reconfirmation_delay": timedelta(
+                    minutes=_int_value(behavior, "fresh_reconfirmation_delay_minutes")
+                ),
+                "strong_confirmation_required": _bool_value(
+                    behavior, "strong_confirmation_required"
+                ),
+                "five_minute_higher_low_required": _bool_value(
+                    behavior, "five_minute_higher_low_required"
+                ),
+                "same_market_session_required": _bool_value(
+                    behavior, "same_market_session_required"
+                ),
+            }
+        return cast("AlertEngine", self._create(EngineSlot.ALERT, **options))
 
     def build_entry_opportunity(
         self,
@@ -407,6 +436,13 @@ class MarketBotAssembly:
         self._validate_confirmation_behavior()
 
     def _validate_confirmation_behavior(self) -> None:
+        alert = self.spec(EngineSlot.ALERT)
+        if alert.implementation == "3.0.0":
+            behavior = self._strategy_behavior(EngineSlot.ALERT)
+            _int_value(behavior, "fresh_reconfirmation_delay_minutes")
+            _bool_value(behavior, "strong_confirmation_required")
+            _bool_value(behavior, "five_minute_higher_low_required")
+            _bool_value(behavior, "same_market_session_required")
         swing = self.spec(EngineSlot.SWING)
         if swing.implementation == "3.0.0":
             _bool_value(self._strategy_behavior(EngineSlot.SWING), "anchored_vwap_gate")
@@ -433,12 +469,14 @@ class MarketBotAssembly:
             ):
                 _bool_value(behavior, key)
         watcher = self.spec(EngineSlot.ENTRY_WATCHER)
-        if watcher.implementation == "4.0.0":
+        if watcher.implementation in {"4.0.0", "5.0.0"}:
             behavior = self._strategy_behavior(EngineSlot.ENTRY_WATCHER)
             _int_value(behavior, "fresh_reconfirmation_delay_minutes")
             _int_value(behavior, "trigger_rearm_cooldown_minutes")
             _bool_value(behavior, "strong_confirmation_required")
             _bool_value(behavior, "five_minute_higher_low_required")
+            if watcher.implementation == "5.0.0":
+                _bool_value(behavior, "no_retest_higher_low_continuation")
 
 
 def _validate_strategy(slot: EngineSlot, strategy: EngineStrategy) -> None:
@@ -517,6 +555,11 @@ def _with_confirmation_override(
             EngineSlot.SWING: "3.0.0",
             EngineSlot.INTRADAY: "4.0.0",
             EngineSlot.ENTRY_WATCHER: "4.0.0",
+        },
+        "5.0.0": {
+            EngineSlot.SWING: "3.0.0",
+            EngineSlot.INTRADAY: "4.0.0",
+            EngineSlot.ENTRY_WATCHER: "5.0.0",
         },
     }[version]
     artifact = (

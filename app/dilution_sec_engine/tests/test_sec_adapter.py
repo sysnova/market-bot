@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.dilution_sec_engine import DilutionSignal
+from app.dilution_sec_engine import DilutionOfferingStatus, DilutionSignal
 from app.dilution_sec_engine.sec_adapter import (
     FilingDocumentReference,
     SecConfigurationError,
@@ -166,6 +166,34 @@ def test_safe_document_parser_is_bounded_and_ignores_active_html_content() -> No
     assert signals == (DilutionSignal.AT_THE_MARKET, DilutionSignal.WARRANTS)
     with pytest.raises(SecPayloadError, match="character limit"):
         parser.parse("x" * 301)
+
+
+def test_document_parser_returns_auditable_priced_offering_evidence() -> None:
+    reference = FilingDocumentReference(
+        cik="0001863934",
+        accession_number="0001062993-26-003146",
+        form="SUPPL",
+        filed_at=date(2026, 6, 10),
+        primary_document="primary.htm",
+    )
+    parser = SecDocumentSignalParser(max_characters=10_000, max_snippets=4)
+
+    evidence = parser.analyze(
+        reference,
+        """
+        <p>We are offering 1,028,645 common shares at an offering price of
+        US$15.20 per share, for aggregate proceeds of US$15,635,404.00.</p>
+        <p>Description of warrants</p>
+        """,
+        truncated=True,
+    )
+
+    assert evidence.offering_status is DilutionOfferingStatus.PRICED
+    assert evidence.signals == (DilutionSignal.PUBLIC_OFFERING,)
+    assert "US$15,635,404.00" in evidence.amounts
+    assert evidence.share_quantities == ("1,028,645 common shares",)
+    assert evidence.snippets[0].signal is DilutionSignal.PUBLIC_OFFERING
+    assert evidence.truncated is True
 
 
 def test_document_reference_accepts_sec_xsl_subdirectory_without_traversal() -> None:

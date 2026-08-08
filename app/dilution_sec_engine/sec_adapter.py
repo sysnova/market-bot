@@ -20,7 +20,10 @@ from .models import (
     AccessionNumber,
     CompanyFactsSnapshot,
     DilutionEvaluationInput,
+    DilutionOfferingStatus,
     DilutionSignal,
+    FilingDocumentEvidence,
+    FilingDocumentSnippet,
     NonEmptyText,
     SecFiling,
 )
@@ -48,7 +51,7 @@ _DOCUMENT_SIGNAL_PATTERNS: tuple[tuple[DilutionSignal, re.Pattern[str]], ...] = 
         re.compile(r"\bat[-\s]the[-\s]market\s+(?:offering|program|agreement)\b"),
     ),
     (DilutionSignal.SHELF_REGISTRATION, re.compile(r"\bshelf registration\b")),
-    (DilutionSignal.PUBLIC_OFFERING, re.compile(r"\bpublic offering\b")),
+    (DilutionSignal.PUBLIC_OFFERING, re.compile(r"\bpublic offering\b|\bwe are offering\b")),
     (DilutionSignal.REGISTERED_DIRECT, re.compile(r"\bregistered direct\b")),
     (DilutionSignal.PRIVATE_PLACEMENT, re.compile(r"\bprivate placement\b")),
     (
@@ -67,6 +70,35 @@ _DOCUMENT_SIGNAL_PATTERNS: tuple[tuple[DilutionSignal, re.Pattern[str]], ...] = 
     (
         DilutionSignal.REVERSE_SPLIT,
         re.compile(r"\breverse (?:stock )?split\b"),
+    ),
+)
+_AMOUNT_PATTERN = re.compile(
+    r"\b(?:US|C)?\$\s?\d+(?:,\d{3})*(?:\.\d+)?(?:\s?(?:million|billion|thousand|m|bn))?",
+    re.IGNORECASE,
+)
+_SHARES_PATTERN = re.compile(
+    r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\s+(?:(?:common|ordinary)\s+)?(?:shares|stock)\b",
+    re.IGNORECASE,
+)
+_STATUS_PATTERNS: tuple[tuple[DilutionOfferingStatus, re.Pattern[str]], ...] = (
+    (
+        DilutionOfferingStatus.COMPLETED,
+        re.compile(r"\b(?:completed|closed) (?:the )?(?:public )?offering\b|\bissued and sold\b"),
+    ),
+    (
+        DilutionOfferingStatus.PRICED,
+        re.compile(r"\boffering price\b|\bpriced (?:its|the) (?:public )?offering\b"),
+    ),
+    (
+        DilutionOfferingStatus.ANNOUNCED,
+        re.compile(
+            r"\bwe are offering\b|"
+            r"\bannounc(?:e|ed|es|ing) (?:a|the) (?:public )?offering\b"
+        ),
+    ),
+    (
+        DilutionOfferingStatus.CAPACITY,
+        re.compile(r"\bmay offer and sell\b|\bfrom time to time\b|\bshelf registration\b"),
     ),
 )
 Cik = Annotated[str, StringConstraints(pattern=r"^\d{10}$")]
@@ -182,10 +214,35 @@ class FilingSignalProvider(Protocol):
     ) -> tuple[DilutionSignal, ...]: ...
 
 
+class FilingDocumentEvidenceProvider(Protocol):
+    """Port for complete evidence extracted from one primary filing."""
+
+    async def evidence_for(
+        self, reference: FilingDocumentReference
+    ) -> FilingDocumentEvidence: ...
+
+
 class FilingDocumentLoader(Protocol):
     """I/O port that may retrieve one bounded primary SEC document as text."""
 
-    async def load_text(self, reference: FilingDocumentReference) -> str: ...
+    async def load_text(
+        self, reference: FilingDocumentReference
+    ) -> str | LoadedFilingDocument: ...
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedFilingDocument:
+    text: str
+    truncated: bool = False
+
+
+def build_filing_document_url(reference: FilingDocumentReference) -> str:
+    cik = reference.cik.lstrip("0")
+    accession = reference.accession_number.replace("-", "")
+    return (
+        f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/"
+        f"{reference.primary_document}"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,23 +250,65 @@ class SecDocumentSignalParser:
     """Bounded, non-executing extraction of explicit phrases from primary filings."""
 
     max_characters: int = 1_000_000
+    max_snippets: int = 5
 
     def __post_init__(self) -> None:
         if isinstance(self.max_characters, bool) or self.max_characters <= 0:
             raise SecConfigurationError("SEC parser max_characters must be positive")
+        if isinstance(self.max_snippets, bool) or self.max_snippets <= 0:
+            raise SecConfigurationError("SEC parser max_snippets must be positive")
 
     def parse(self, document_text: str) -> tuple[DilutionSignal, ...]:
+        return self._extract(document_text)[0]
+
+    def analyze(
+        self,
+        reference: FilingDocumentReference,
+        document_text: str,
+        *,
+        truncated: bool = False,
+    ) -> FilingDocumentEvidence:
+        signals, plain_text, signal_positions = self._extract(document_text)
+        snippets = tuple(
+            FilingDocumentSnippet(
+                signal=signal,
+                text=_snippet(plain_text, position, 640),
+            )
+            for signal, position in signal_positions[: self.max_snippets]
+        )
+        return FilingDocumentEvidence(
+            source_url=build_filing_document_url(reference),
+            offering_status=_offering_status(plain_text.lower()),
+            signals=signals,
+            amounts=_unique_matches(plain_text, _AMOUNT_PATTERN, limit=8),
+            share_quantities=_unique_matches(plain_text, _SHARES_PATTERN, limit=8),
+            snippets=snippets,
+            truncated=truncated,
+        )
+
+    def _extract(
+        self, document_text: str
+    ) -> tuple[tuple[DilutionSignal, ...], str, tuple[tuple[DilutionSignal, int], ...]]:
         if len(document_text) > self.max_characters:
             raise SecPayloadError("SEC primary document exceeds parser character limit")
         without_active_content = _SCRIPT_OR_STYLE.sub(" ", document_text)
-        plain_text = _WHITESPACE.sub(
-            " ", _HTML_TAG.sub(" ", unescape(without_active_content))
-        ).lower()
-        return tuple(
-            signal
-            for signal, pattern in _DOCUMENT_SIGNAL_PATTERNS
-            if pattern.search(plain_text) is not None
-        )
+        plain_text = _WHITESPACE.sub(" ", _HTML_TAG.sub(" ", unescape(without_active_content)))
+        lowered = plain_text.lower()
+        positions: list[tuple[DilutionSignal, int]] = []
+        for signal, pattern in _DOCUMENT_SIGNAL_PATTERNS:
+            accepted = next(
+                (
+                    match
+                    for match in pattern.finditer(lowered)
+                    if not _false_positive_signal(signal, lowered, match.start())
+                ),
+                None,
+            )
+            if accepted is not None:
+                positions.append((signal, accepted.start()))
+        positions.sort(key=lambda item: item[1])
+        signals = tuple(signal for signal, _position in positions)
+        return signals, plain_text, tuple(positions)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +321,104 @@ class ParsedFilingSignalProvider:
     async def signals_for(
         self, reference: FilingDocumentReference
     ) -> tuple[DilutionSignal, ...]:
-        return self.parser.parse(await self.loader.load_text(reference))
+        return (await self.evidence_for(reference)).signals
+
+    async def evidence_for(
+        self, reference: FilingDocumentReference
+    ) -> FilingDocumentEvidence:
+        loaded = await self.loader.load_text(reference)
+        if isinstance(loaded, LoadedFilingDocument):
+            return self.parser.analyze(
+                reference,
+                loaded.text,
+                truncated=loaded.truncated,
+            )
+        return self.parser.analyze(reference, loaded)
+
+
+def _false_positive_signal(
+    signal: DilutionSignal, text: str, position: int
+) -> bool:
+    context = _snippet(text, position, 900).lower()
+    if signal is DilutionSignal.SHELF_REGISTRATION and (
+        "shall not be incorporated by reference into any registration statement" in context
+        or "not be deemed to be filed" in context
+    ):
+        return True
+    if signal is DilutionSignal.PUBLIC_OFFERING and (
+        "public offering price" in context and "previously offered and sold" in context
+    ):
+        return True
+    if signal is DilutionSignal.WARRANTS:
+        actionable = (
+            "pre-funded warrant",
+            "common warrant",
+            "warrants to purchase",
+            "warrant exercise price",
+            "exercise price of the warrant",
+            "issue warrants",
+            "issued warrants",
+            "offering of warrants",
+            "selling warrants",
+        )
+        return not any(phrase in context for phrase in actionable)
+    return False
+
+
+def _snippet(text: str, position: int, length: int) -> str:
+    half = length // 2
+    return text[max(0, position - half) : min(len(text), position + half)].strip()
+
+
+def _unique_matches(
+    text: str, pattern: re.Pattern[str], *, limit: int
+) -> tuple[str, ...]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for match in pattern.finditer(text):
+        value = _WHITESPACE.sub(" ", match.group(0)).strip()
+        key = value.lower()
+        if key not in seen:
+            seen.add(key)
+            values.append(value)
+        if len(values) >= limit:
+            break
+    return tuple(values)
+
+
+def _offering_status(text: str) -> DilutionOfferingStatus:
+    return next(
+        (status for status, pattern in _STATUS_PATTERNS if pattern.search(text)),
+        DilutionOfferingStatus.UNKNOWN,
+    )
+
+
+def _filing_is_in_scope(
+    *,
+    form: str,
+    filed_at: date,
+    as_of: date,
+    earliest_filing_date: date | None,
+    included_forms: set[str],
+) -> bool:
+    return not (
+        filed_at > as_of
+        or (earliest_filing_date is not None and filed_at < earliest_filing_date)
+        or (included_forms and form.upper() not in included_forms)
+    )
+
+
+def _document_priority(form: str) -> int:
+    normalized = form.upper()
+    if normalized in {"424B3", "424B5", "FWP", "SUPPL"}:
+        return 100
+    if normalized in {"S-1", "S-1/A"}:
+        return 80
+    if normalized in {"S-3", "S-3/A"}:
+        return 70
+    if normalized in {"8-K", "6-K"}:
+        return 50
+    return 30
 
 
 class SecEdgarAdapter:
@@ -234,11 +430,13 @@ class SecEdgarAdapter:
         *,
         client: httpx.AsyncClient | None = None,
         signal_provider: FilingSignalProvider | None = None,
+        evidence_provider: FilingDocumentEvidenceProvider | None = None,
     ) -> None:
         self._config = config
         self._client = client or httpx.AsyncClient()
         self._owns_client = client is None
         self._signal_provider = signal_provider
+        self._evidence_provider = evidence_provider
 
     async def __aenter__(self) -> SecEdgarAdapter:
         return self
@@ -345,7 +543,6 @@ class SecEdgarAdapter:
         if len(sizes) != 1:
             raise SecPayloadError("SEC filings.recent arrays have mismatched lengths")
         mapped: list[SecFiling] = []
-        signal_documents = 0
         available_count = next(iter(sizes), 0)
         earliest_filing_date = (
             as_of - timedelta(days=self._config.filing_lookback_days - 1)
@@ -353,6 +550,30 @@ class SecEdgarAdapter:
             else None
         )
         included_forms = set(self._config.included_forms)
+        document_indices: set[int] = set()
+        if self._evidence_provider is not None or self._signal_provider is not None:
+            eligible_indices = [
+                index
+                for index in range(min(available_count, self._config.max_recent_filings))
+                if _filing_is_in_scope(
+                    form=_text(columns["form"][index], "form"),
+                    filed_at=_date(columns["filingDate"][index], "filingDate"),
+                    as_of=as_of,
+                    earliest_filing_date=earliest_filing_date,
+                    included_forms=included_forms,
+                )
+            ]
+            document_indices = set(
+                sorted(
+                    eligible_indices,
+                    key=lambda index: (
+                        _document_priority(_text(columns["form"][index], "form")),
+                        _date(columns["filingDate"][index], "filingDate"),
+                        _text(columns["accessionNumber"][index], "accessionNumber"),
+                    ),
+                    reverse=True,
+                )[: self._config.max_signal_documents]
+            )
         for index in range(min(available_count, self._config.max_recent_filings)):
             accession = _text(columns["accessionNumber"][index], "accessionNumber")
             form = _text(columns["form"][index], "form")
@@ -378,12 +599,22 @@ class SecEdgarAdapter:
                     primary_document_description=description,
                 )
                 signals: tuple[DilutionSignal, ...] = ()
+                document_evidence: FilingDocumentEvidence | None = None
+                document_error: str | None = None
                 if (
-                    self._signal_provider is not None
-                    and signal_documents < self._config.max_signal_documents
+                    (self._evidence_provider is not None or self._signal_provider is not None)
+                    and index in document_indices
                 ):
-                    signals = await self._signal_provider.signals_for(reference)
-                    signal_documents += 1
+                    if self._evidence_provider is not None:
+                        try:
+                            document_evidence = await self._evidence_provider.evidence_for(
+                                reference
+                            )
+                            signals = document_evidence.signals
+                        except SecAdapterError as error:
+                            document_error = type(error).__name__
+                    elif self._signal_provider is not None:
+                        signals = await self._signal_provider.signals_for(reference)
                 mapped.append(
                     SecFiling(
                         accession_number=accession,
@@ -391,6 +622,8 @@ class SecEdgarAdapter:
                         filed_at=filed_at,
                         primary_document_description=description,
                         signals=signals,
+                        document_evidence=document_evidence,
+                        document_error=document_error,
                     )
                 )
             except ValidationError as error:

@@ -1,0 +1,863 @@
+{
+  "catalog_version": "1.0.0",
+  "template": "marketbot-analysis-capabilities.json",
+  "symbol": "ABNB",
+  "generated_at": "2026-08-07T22:01:39.994394Z",
+  "serialization": {
+    "timestamps": "ISO-8601 UTC",
+    "financial_numbers": "decimal serialized as string",
+    "actual_persisted_values_only": true
+  },
+  "analysis_engines": {
+    "long-term": {
+      "available": true,
+      "output_contract": "AnalysisResult",
+      "persistence": {
+        "system": "JetStream",
+        "stream": "MARKETBOT",
+        "stream_sequence": 12010740,
+        "subject": "marketbot.v1.analysis.result.LONG_TERM.ABNB"
+      },
+      "event_envelope": {
+        "attributes": [],
+        "causation_id": null,
+        "correlation_id": null,
+        "event_id": "019fde3e-78ab-730b-9fd5-802fc21e7f03",
+        "event_type": "analysis.result.produced",
+        "market_session": null,
+        "occurred_at": "2026-08-07T04:00:00Z",
+        "payload": {
+          "analysis_id": "019fde3e-78a9-737c-afe3-1d4a90ee4347",
+          "as_of": "2026-08-07T04:00:00Z",
+          "confidence": "0.5525",
+          "context_hash": "sha256:ae6138f88df27d53856b937a039aed6ab344aa5fcf519800f28c9fddf9a0d370",
+          "direction": "BULLISH",
+          "engine_id": "long-term",
+          "engine_version": "2.0.0",
+          "horizon": "LONG_TERM",
+          "metrics": [
+            {
+              "name": "classification",
+              "value": "extended"
+            },
+            {
+              "name": "reference_price",
+              "value": "178.07"
+            },
+            {
+              "name": "setup_score",
+              "value": "95.00"
+            },
+            {
+              "name": "entry_score",
+              "value": "10.00"
+            },
+            {
+              "name": "risk_flags",
+              "value": [
+                "above_weekly_buy_zone",
+                "extended_from_30w",
+                "extended_from_50w"
+              ]
+            },
+            {
+              "name": "daily_rsi14",
+              "value": "79.6068"
+            },
+            {
+              "name": "weekly_rsi14",
+              "value": "59.0966"
+            },
+            {
+              "name": "daily_rvol20",
+              "value": "4.3670"
+            },
+            {
+              "name": "weekly_rvol10",
+              "value": "1.0923"
+            },
+            {
+              "name": "weekly_sma200",
+              "value": "130.2340"
+            },
+            {
+              "name": "weekly_price_vs_sma200_percent",
+              "value": "36.7308"
+            },
+            {
+              "name": "trend_template_score",
+              "value": "100.00"
+            },
+            {
+              "name": "support",
+              "value": "127.2300"
+            },
+            {
+              "name": "resistance",
+              "value": "150.8800"
+            },
+            {
+              "name": "buy_zone_low",
+              "value": "127.2300"
+            },
+            {
+              "name": "buy_zone_high",
+              "value": "146.1161"
+            },
+            {
+              "name": "invalidation",
+              "value": "123.4131"
+            },
+            {
+              "name": "daily_atr14",
+              "value": "6.0614"
+            },
+            {
+              "name": "daily_atr_percentile",
+              "value": "99.5000"
+            },
+            {
+              "name": "daily_adx14",
+              "value": "29.5872"
+            },
+            {
+              "name": "daily_plus_di14",
+              "value": "58.1546"
+            },
+            {
+              "name": "daily_minus_di14",
+              "value": "16.5095"
+            },
+            {
+              "name": "market_regime",
+              "value": "volatile_uptrend"
+            },
+            {
+              "name": "distance_to_buy_zone_atr",
+              "value": "5.2717"
+            }
+          ],
+          "reasons": [
+            "trend_template_passed",
+            "weekly_above_30w",
+            "weekly_above_50w",
+            "weekly_above_200w",
+            "weekly_30w_rising",
+            "weekly_rsi_constructive",
+            "higher_weekly_lows",
+            "no_recent_weekly_distribution",
+            "above_weekly_buy_zone",
+            "extended_from_30w",
+            "extended_from_50w",
+            "market_regime:volatile_uptrend",
+            "distance_to_buy_zone_atr:5.2717"
+          ],
+          "score": "55.25",
+          "source_event_ids": [
+            "019fda60-ba00-7516-af68-bf4d403e6cdb"
+          ],
+          "symbol": "ABNB",
+          "verdict": "CAUTION"
+        },
+        "schema_version": "1.0.0",
+        "source": "long-term",
+        "subject": "ABNB",
+        "trace_id": null
+      }
+    },
+    "swing": {
+      "available": true,
+      "output_contract": "AnalysisResult",
+      "persistence": {
+        "system": "JetStream",
+        "stream": "MARKETBOT",
+        "stream_sequence": 12010651,
+        "subject": "marketbot.v1.analysis.result.SWING.ABNB"
+      },
+      "event_envelope": {
+        "attributes": [],
+        "causation_id": null,
+        "correlation_id": null,
+        "event_id": "019fde3e-7760-7d80-81f4-fcfe504524d5",
+        "event_type": "analysis.result.produced",
+        "market_session": null,
+        "occurred_at": "2026-08-07T21:00:00Z",
+        "payload": {
+          "analysis_id": "019fde3e-775f-7a8a-a9eb-14b8fbb7d297",
+          "as_of": "2026-08-07T21:00:00Z",
+          "confidence": "1.0000",
+          "context_hash": "sha256:92a60f0bb54708a86a41a8e5c9fa471cfbd6183efc444f045dd2b1310bf21359",
+          "direction": "BULLISH",
+          "engine_id": "swing",
+          "engine_version": "3.0.0",
+          "horizon": "SWING",
+          "metrics": [
+            {
+              "name": "reference_price",
+              "value": "177.3336"
+            },
+            {
+              "name": "risk_flags",
+              "value": []
+            },
+            {
+              "name": "daily_sma20",
+              "value": "149.1065"
+            },
+            {
+              "name": "daily_sma50",
+              "value": "143.5090"
+            },
+            {
+              "name": "daily_rsi14",
+              "value": "79.6068"
+            },
+            {
+              "name": "atr14",
+              "value": "6.0614"
+            },
+            {
+              "name": "daily_rvol20",
+              "value": "4.3670"
+            },
+            {
+              "name": "intraday_rvol20",
+              "value": "0.0026"
+            },
+            {
+              "name": "pivot_low_anchor_at",
+              "value": "2026-08-04T04:00:00Z"
+            },
+            {
+              "name": "pivot_low_avwap",
+              "value": "163.6722"
+            },
+            {
+              "name": "price_vs_pivot_low_avwap_percent",
+              "value": "8.3468"
+            },
+            {
+              "name": "breakout_anchor_at",
+              "value": "2026-08-07T04:00:00Z"
+            },
+            {
+              "name": "breakout_avwap",
+              "value": "174.5321"
+            },
+            {
+              "name": "price_vs_breakout_avwap_percent",
+              "value": "1.6051"
+            },
+            {
+              "name": "support",
+              "value": "143.0000"
+            },
+            {
+              "name": "resistance",
+              "value": "156.5000"
+            },
+            {
+              "name": "invalidation",
+              "value": "171.9141"
+            },
+            {
+              "name": "target_2r",
+              "value": "188.1726"
+            },
+            {
+              "name": "risk_percent",
+              "value": "3.0561"
+            },
+            {
+              "name": "risk_atr",
+              "value": "0.8941"
+            },
+            {
+              "name": "classification",
+              "value": "breakout"
+            },
+            {
+              "name": "daily_atr_percentile",
+              "value": "99.5000"
+            },
+            {
+              "name": "daily_adx14",
+              "value": "29.5872"
+            },
+            {
+              "name": "daily_plus_di14",
+              "value": "58.1546"
+            },
+            {
+              "name": "daily_minus_di14",
+              "value": "16.5095"
+            },
+            {
+              "name": "market_regime",
+              "value": "volatile_uptrend"
+            },
+            {
+              "name": "structure_broken_confirmed",
+              "value": false
+            },
+            {
+              "name": "entry_zone_low",
+              "value": "171.5014"
+            },
+            {
+              "name": "entry_zone_high",
+              "value": "177.5628"
+            },
+            {
+              "name": "price_vs_entry_zone_atr",
+              "value": "0"
+            },
+            {
+              "name": "reward_risk_to_resistance",
+              "value": "0.0000"
+            },
+            {
+              "name": "anchored_vwap_gate_passed",
+              "value": true
+            },
+            {
+              "name": "entry_confirmation_rule_version",
+              "value": "4.0.0"
+            }
+          ],
+          "reasons": [
+            "bullish_daily_trend",
+            "above_20d_resistance",
+            "relative_volume_confirmed",
+            "above_pivot_low_avwap",
+            "above_breakout_avwap",
+            "market_regime:volatile_uptrend",
+            "entry_zone_distance_atr:0"
+          ],
+          "score": "100.00",
+          "source_event_ids": [
+            "019fda60-ba00-7516-af68-bf4d403e6cdb"
+          ],
+          "symbol": "ABNB",
+          "verdict": "FAVORABLE"
+        },
+        "schema_version": "1.0.0",
+        "source": "swing",
+        "subject": "ABNB",
+        "trace_id": null
+      }
+    },
+    "intraday": {
+      "available": true,
+      "output_contract": "AnalysisResult",
+      "persistence": {
+        "system": "JetStream",
+        "stream": "MARKETBOT",
+        "stream_sequence": 12001960,
+        "subject": "marketbot.v1.analysis.result.INTRADAY.ABNB"
+      },
+      "event_envelope": {
+        "attributes": [],
+        "causation_id": null,
+        "correlation_id": null,
+        "event_id": "019fde2e-e782-72ce-a065-1377797339a1",
+        "event_type": "analysis.result.produced",
+        "market_session": null,
+        "occurred_at": "2026-08-07T21:43:00Z",
+        "payload": {
+          "analysis_id": "019fde2d-eea0-7ba2-b539-bfdb89e0a657",
+          "as_of": "2026-08-07T21:43:00Z",
+          "confidence": "0.3500",
+          "context_hash": "sha256:3205f350a8e5698f4b4eaf2aba8a5cc1af839dc7263ffc46863bb0eb58574323",
+          "direction": "NEUTRAL",
+          "engine_id": "intraday",
+          "engine_version": "4.0.0",
+          "horizon": "INTRADAY",
+          "metrics": [
+            {
+              "name": "setup",
+              "value": "no_trigger"
+            },
+            {
+              "name": "reference_price",
+              "value": "177.7"
+            },
+            {
+              "name": "session_vwap",
+              "value": "174.4483"
+            },
+            {
+              "name": "relative_volume",
+              "value": "0.6636"
+            },
+            {
+              "name": "ema9",
+              "value": "177.6439"
+            },
+            {
+              "name": "ema20",
+              "value": "177.6197"
+            },
+            {
+              "name": "momentum_5_percent",
+              "value": "0.1070"
+            },
+            {
+              "name": "atr14",
+              "value": "0.1926"
+            },
+            {
+              "name": "atr_percent",
+              "value": "0.1084"
+            },
+            {
+              "name": "prior_range_high",
+              "value": "177.75"
+            },
+            {
+              "name": "prior_range_low",
+              "value": "177.295"
+            },
+            {
+              "name": "five_minute_bias",
+              "value": "bullish"
+            },
+            {
+              "name": "risk_flags",
+              "value": [
+                "weak_relative_volume",
+                "no_trigger"
+              ]
+            },
+            {
+              "name": "close_location",
+              "value": "0.5000"
+            },
+            {
+              "name": "volume_acceleration",
+              "value": "0.2602"
+            },
+            {
+              "name": "five_minute_higher_low",
+              "value": false
+            },
+            {
+              "name": "intraday_regime",
+              "value": "bullish_trend"
+            },
+            {
+              "name": "confirmation_quality",
+              "value": "weak"
+            },
+            {
+              "name": "confirmation_persistence",
+              "value": false
+            },
+            {
+              "name": "confirmation_gate_passed",
+              "value": false
+            },
+            {
+              "name": "entry_efficiency_gate_passed",
+              "value": false
+            },
+            {
+              "name": "mature_confirmation_gate_passed",
+              "value": false
+            },
+            {
+              "name": "mature_retest_confirmed",
+              "value": false
+            },
+            {
+              "name": "entry_confirmation_rule_version",
+              "value": "4.0.0"
+            }
+          ],
+          "reasons": [
+            "no_confirmed_intraday_trigger",
+            "weak_relative_volume",
+            "no_trigger",
+            "intraday_regime:bullish_trend",
+            "confirmation_quality:weak"
+          ],
+          "score": "35.00",
+          "source_event_ids": [
+            "019fde2d-eea0-7358-9124-16b2d113a982"
+          ],
+          "symbol": "ABNB",
+          "verdict": "WATCH"
+        },
+        "schema_version": "1.0.0",
+        "source": "intraday",
+        "subject": "ABNB",
+        "trace_id": null
+      }
+    },
+    "dilution-sec": {
+      "available": false,
+      "output_contract": "AnalysisResult",
+      "reason": "No persisted ABNB event was found in the current JetStream retention window."
+    },
+    "market-rotation": {
+      "available": false,
+      "output_contract": "MarketRotationReport",
+      "reason": "The latest global rotation run has no symbol evidence row for ABNB."
+    },
+    "elliott-wave": {
+      "available": false,
+      "output_contract": "WaveAssessment",
+      "reason": "No persisted ABNB event was found in the current JetStream retention window."
+    },
+    "support-confirmation": {
+      "available": false,
+      "output_contract": "SupportAssessment",
+      "reason": "No persisted ABNB event was found in the current JetStream retention window."
+    },
+    "patreon-caps": {
+      "available": true,
+      "output_contract": "PatreonCapsAssessment",
+      "persistence": {
+        "system": "JetStream",
+        "stream": "MARKETBOT",
+        "stream_sequence": 11987911,
+        "subject": "marketbot.v1.patreon-caps.assessment.ABNB"
+      },
+      "event_envelope": {
+        "attributes": [],
+        "causation_id": null,
+        "correlation_id": null,
+        "event_id": "019fde16-2eec-75e0-a091-b770c4956ff3",
+        "event_type": "patreon-caps.assessed",
+        "market_session": null,
+        "occurred_at": "2026-08-07T21:00:00Z",
+        "payload": {
+          "alignment_score": "35.00",
+          "assessment_id": "019fde16-2eeb-7da6-bffd-6e1bf1b4edb4",
+          "atr14": "6.0614",
+          "confirmation_score": "50.00",
+          "confluence_score": "100",
+          "current_price": "177.3336",
+          "invalidation": "144.0866",
+          "lesson_gate_passed": true,
+          "lesson_metrics": [
+            {
+              "name": "lesson_daily_sma50",
+              "value": "143.5090"
+            },
+            {
+              "name": "lesson_daily_sma200",
+              "value": "133.3449"
+            },
+            {
+              "name": "lesson_daily_sma50_slope5",
+              "value": "2.3166"
+            },
+            {
+              "name": "lesson_daily_sma200_slope5",
+              "value": "0.7980"
+            },
+            {
+              "name": "lesson_hourly_sma50",
+              "value": "158.0609"
+            },
+            {
+              "name": "lesson_hourly_sma200",
+              "value": "149.7526"
+            },
+            {
+              "name": "lesson_triangle_resistance",
+              "value": "152.4833"
+            },
+            {
+              "name": "lesson_wave_fib_0618",
+              "value": "147.0693"
+            },
+            {
+              "name": "lesson_wave1_high",
+              "value": "156.5000"
+            }
+          ],
+          "lesson_reasons": [
+            "daily_above_sma200",
+            "hourly_above_sma200"
+          ],
+          "lesson_score": "51",
+          "macro_metrics": [
+            {
+              "name": "uup_close",
+              "value": "28.07"
+            },
+            {
+              "name": "uup_sma50",
+              "value": "28.2310"
+            },
+            {
+              "name": "uup_sma200",
+              "value": "27.7301"
+            },
+            {
+              "name": "uup_sma50_slope_5",
+              "value": "0.0390"
+            },
+            {
+              "name": "uup_move_5_atr",
+              "value": "-0.8244023083264633140972794724"
+            },
+            {
+              "name": "uup_atr14",
+              "value": "0.1213"
+            },
+            {
+              "name": "vixy_close",
+              "value": "19.56"
+            },
+            {
+              "name": "vixy_sma50",
+              "value": "21.8626"
+            },
+            {
+              "name": "vixy_sma200",
+              "value": "27.4999"
+            },
+            {
+              "name": "vixy_sma50_slope_5",
+              "value": "-0.5170"
+            },
+            {
+              "name": "vixy_move_5_atr",
+              "value": "-0.9821151659257727695647679107"
+            },
+            {
+              "name": "vixy_atr14",
+              "value": "0.9673"
+            },
+            {
+              "name": "tlt_close",
+              "value": "82.76"
+            },
+            {
+              "name": "tlt_sma50",
+              "value": "84.8012"
+            },
+            {
+              "name": "tlt_sma200",
+              "value": "87.0484"
+            },
+            {
+              "name": "tlt_sma50_slope_5",
+              "value": "-0.1984"
+            },
+            {
+              "name": "tlt_move_5_atr",
+              "value": "0.8814379536812996889042516419"
+            },
+            {
+              "name": "tlt_atr14",
+              "value": "0.5786"
+            },
+            {
+              "name": "ief_close",
+              "value": "93.17"
+            },
+            {
+              "name": "ief_sma50",
+              "value": "93.8178"
+            },
+            {
+              "name": "ief_sma200",
+              "value": "95.4768"
+            },
+            {
+              "name": "ief_sma50_slope_5",
+              "value": "-0.0904"
+            },
+            {
+              "name": "ief_move_5_atr",
+              "value": "0.6571087216248506571087216249"
+            },
+            {
+              "name": "ief_atr14",
+              "value": "0.3348"
+            },
+            {
+              "name": "spy_close",
+              "value": "773.26"
+            },
+            {
+              "name": "spy_sma50",
+              "value": "747.1890"
+            },
+            {
+              "name": "spy_sma200",
+              "value": "702.9705"
+            },
+            {
+              "name": "spy_sma50_slope_5",
+              "value": "2.1990"
+            },
+            {
+              "name": "spy_move_5_atr",
+              "value": "2.872726077956783160108206381"
+            },
+            {
+              "name": "spy_atr14",
+              "value": "9.1307"
+            },
+            {
+              "name": "vixy_atr_percentile",
+              "value": "0.2804878048780487804878048780"
+            }
+          ],
+          "macro_regime": "NEUTRAL",
+          "macro_signals": [
+            "treasury_etfs_below_sma50"
+          ],
+          "macro_threshold": "80",
+          "mode": "SHADOW",
+          "occurred_at": "2026-08-07T21:00:00Z",
+          "patreon_score": "64.70",
+          "reasons": [
+            "multi_horizon_alignment_evaluated",
+            "support_reclaim_score:30",
+            "support_volume_score:0",
+            "support_candle_score:0",
+            "support_structure_score:20",
+            "support_divergence_score:0",
+            "daily_above_sma200",
+            "hourly_above_sma200"
+          ],
+          "rule_version": "1.1.0",
+          "source_analysis_ids": [
+            "019fde16-2bdd-71b6-b5e1-bdafa38a81c0"
+          ],
+          "state": "SUPPORT_TEST",
+          "support_sources": [
+            "pivot_daily",
+            "daily_sma20",
+            "impulse_daily_avwap",
+            "fib_0_500"
+          ],
+          "symbol": "ABNB",
+          "zone_center": "148.1748",
+          "zone_high": "149.2801",
+          "zone_low": "147.1626"
+        },
+        "schema_version": "1.0.0",
+        "source": "patreon-caps-v1",
+        "subject": "ABNB",
+        "trace_id": null
+      }
+    },
+    "signal-fusion": {
+      "available": false,
+      "output_contract": "FusionAssessment",
+      "reason": "No persisted ABNB event was found in the current JetStream retention window."
+    },
+    "portfolio-flow": {
+      "available": false,
+      "output_contract": "LocalAlert containing an embedded AnalysisResult",
+      "reason": "No persisted portfolio-flow component analysis was found for ABNB in the current alert records."
+    },
+    "peter-lynch": {
+      "available": true,
+      "output_contract": "PeterLynchEvaluation",
+      "persistence": {
+        "system": "PostgreSQL",
+        "location": "stock.watchlist_symbol.metadata_json.indicatorDetails.LYNCH"
+      },
+      "payload": {
+        "symbol": "ABNB",
+        "as_of": "2026-08-02",
+        "eligible": false,
+        "category": "UNCLASSIFIED",
+        "metrics": {
+          "trailing_pe": null,
+          "projected_forward_eps": null,
+          "projected_forward_pe": null,
+          "debt_to_equity_percent": "32.41225772655840754321634364",
+          "eps_cagr_percent": null,
+          "peg": null,
+          "market_cap": null,
+          "tangible_book_value": "6848000000",
+          "market_cap_to_tangible_book": null
+        },
+        "criteria": [
+          {
+            "name": "trailing_pe",
+            "value": null,
+            "passed": false,
+            "reason": "required_data_unavailable",
+            "required": true,
+            "threshold": "< 25"
+          },
+          {
+            "name": "projected_forward_pe",
+            "value": null,
+            "passed": false,
+            "reason": "required_data_unavailable",
+            "required": true,
+            "threshold": "< 15"
+          },
+          {
+            "name": "debt_to_equity",
+            "value": "32.41225772655840754321634364",
+            "passed": true,
+            "reason": "passed",
+            "required": true,
+            "threshold": "< 35%"
+          },
+          {
+            "name": "eps_growth",
+            "value": null,
+            "passed": false,
+            "reason": "required_data_unavailable",
+            "required": true,
+            "threshold": "> 15% CAGR 3Y"
+          },
+          {
+            "name": "peg",
+            "value": null,
+            "passed": false,
+            "reason": "required_data_unavailable",
+            "required": true,
+            "threshold": "< 1.2"
+          },
+          {
+            "name": "market_cap",
+            "value": null,
+            "passed": false,
+            "reason": "required_data_unavailable",
+            "required": true,
+            "threshold": "> USD 5B"
+          },
+          {
+            "name": "insider_buying",
+            "value": 0,
+            "passed": false,
+            "reason": "threshold_not_met",
+            "required": false,
+            "threshold": ">= 1 open-market purchase in 365d"
+          }
+        ],
+        "passed_count": 1,
+        "required_count": 6,
+        "failed_criteria": [
+          "trailing_pe",
+          "projected_forward_pe",
+          "eps_growth",
+          "peg",
+          "market_cap",
+          "insider_buying"
+        ],
+        "price_as_of": "2026-07-31",
+        "fundamentals_as_of": "2026-03-31",
+        "latest_insider_purchase_at": null,
+        "engine_version": "1.0.0",
+        "policy_version": "peter-lynch-screen-1.1.0",
+        "forward_pe_method": "price / (ttm_eps * (1 + eps_cagr_3y))",
+        "forward_pe_is_analyst_consensus": false
+      }
+    }
+  }
+}

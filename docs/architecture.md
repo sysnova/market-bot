@@ -25,12 +25,12 @@ configuration, and logging. It must not become a dumping ground for shared busin
 
 ## Engine assembly
 
-MarketBot has one composition source: `configs/marketbot/4.0.0.yaml`. It declares every engine
+MarketBot has one composition source: `configs/marketbot/6.0.0.yaml`. It declares every engine
 slot, the concrete implementation version, the strategy version and artifact, and its operational
 mode. `app/integration/engine_assembly.py` is the only implementation catalog and factory.
 
 ```text
-configs/marketbot/4.0.0.yaml
+configs/marketbot/6.0.0.yaml
   implementation + strategy + mode
                  |
                  v

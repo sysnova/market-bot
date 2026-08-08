@@ -96,7 +96,7 @@ implementation, strategy artifact, and mode of every engine with:
 uv run marketbot assembly
 ```
 
-The default definition is `configs/marketbot/4.0.0.yaml`; select another immutable assembly with
+The default definition is `configs/marketbot/6.0.0.yaml`; select another immutable assembly with
 `MARKETBOT_DEFINITION_PATH`.
 
 Individual distributed processes can also be operated directly:
@@ -201,6 +201,18 @@ NATS 2.12 includes JetStream and PostgreSQL 17 listens on
 database files in the repository-local `data/` directory (ignored by Git). NATS listens on
 `localhost:4222`, exposes monitoring on `localhost:8222`, and persists in the Docker volume
 `marketbot_nats-data`.
+
+An optional trusted Windows peer can consume this JetStream through a split WireGuard tunnel
+without changing either local endpoint. Existing engines keep `127.0.0.1:4222`; after WireGuard is
+active Docker additionally publishes `10.77.77.1:4222` for the peer:
+
+```powershell
+$env:MARKETBOT_CONNECTOR_URL = "nats://10.77.77.1:4222"
+uv run marketbot connector subscribe --engine swing
+```
+
+The operations guide covers key exchange, router forwarding, Docker replacement, replay by date,
+and durable consumers.
 
 See [architecture](docs/architecture.md), [development](docs/development.md), and
 [operations](docs/operations.md) for repository-wide guidance.

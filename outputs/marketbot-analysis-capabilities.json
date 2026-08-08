@@ -1,0 +1,565 @@
+{
+  "catalog_version": "1.0.0",
+  "generated_for_marketbot_definition": "4.0.0",
+  "purpose": "Shareable catalog of analytical information emitted or persisted by MarketBot engines.",
+  "serialization": {
+    "format": "JSON",
+    "timestamps": "ISO-8601 UTC",
+    "financial_numbers": "decimal serialized as string",
+    "identifiers": "UUIDv7 unless otherwise stated",
+    "optional_fields": "null or absent when history or evidence is insufficient"
+  },
+  "persistence": {
+    "jetstream": {
+      "stream": "MARKETBOT",
+      "retention_days": 15,
+      "contains": "Published analytical events and assessments"
+    },
+    "postgresql": {
+      "contains": [
+        "OHLCV market bars",
+        "market rotation detail",
+        "Peter Lynch current evaluation",
+        "entry watcher and entry opportunity lifecycle",
+        "selected portfolio and PatreonCaps state"
+      ],
+      "does_not_contain": "A permanent row for every AnalysisResult produced by Long, Swing or Intraday"
+    },
+    "alert_ndjson": {
+      "contains": "Full component analyses only when they participated in an emitted LocalAlert"
+    }
+  },
+  "event_envelope": {
+    "event_id": "uuidv7",
+    "event_type": "string",
+    "schema_version": "semver",
+    "occurred_at": "datetime UTC",
+    "source": "engine identifier",
+    "trace_id": "uuid|null",
+    "correlation_id": "uuid|null",
+    "causation_id": "uuid|null",
+    "market_session": "PRE_MARKET|REGULAR|AFTER_HOURS|CLOSED|CONTINUOUS|null",
+    "subject": "symbol or global scope",
+    "payload": "engine-specific object",
+    "attributes": [
+      {
+        "name": "string",
+        "value": "any JSON value"
+      }
+    ]
+  },
+  "common_analysis_result": {
+    "event_type": "analysis.result.produced",
+    "subject_pattern": "marketbot.v1.analysis.result.<HORIZON>.<SYMBOL>",
+    "payload": {
+      "analysis_id": "uuidv7",
+      "engine_id": "string",
+      "engine_version": "semver",
+      "symbol": "string",
+      "horizon": "LONG_TERM|SWING|INTRADAY|DILUTION",
+      "as_of": "datetime UTC",
+      "verdict": "FAVORABLE|WATCH|CAUTION|AVOID|INSUFFICIENT_DATA",
+      "direction": "BULLISH|BEARISH|NEUTRAL",
+      "score": "decimal 0..100",
+      "confidence": "decimal 0..1",
+      "reasons": [
+        "string"
+      ],
+      "metrics": [
+        {
+          "name": "string",
+          "value": "any JSON value"
+        }
+      ],
+      "source_event_ids": [
+        "uuidv7"
+      ],
+      "context_hash": "sha256:<64 lowercase hex characters>"
+    }
+  },
+  "analysis_engines": {
+    "long-term": {
+      "output_contract": "AnalysisResult",
+      "implementation_version": "2.0.0",
+      "horizon": "LONG_TERM",
+      "metrics": {
+        "classification": "string",
+        "reference_price": "decimal",
+        "setup_score": "decimal 0..100",
+        "entry_score": "decimal 0..100",
+        "risk_flags": "string[]",
+        "daily_rsi14": "decimal|null",
+        "weekly_rsi14": "decimal|null",
+        "daily_rvol20": "decimal|null",
+        "weekly_rvol10": "decimal|null",
+        "weekly_sma200": "decimal|null",
+        "weekly_price_vs_sma200_percent": "decimal|null",
+        "trend_template_score": "decimal|null",
+        "support": "decimal|null",
+        "resistance": "decimal|null",
+        "buy_zone_low": "decimal|null",
+        "buy_zone_high": "decimal|null",
+        "invalidation": "decimal|null",
+        "daily_atr14": "decimal|null",
+        "daily_atr_percentile": "decimal|null",
+        "daily_adx14": "decimal|null",
+        "daily_plus_di14": "decimal|null",
+        "daily_minus_di14": "decimal|null",
+        "market_regime": "string|null",
+        "distance_to_buy_zone_atr": "decimal|null"
+      },
+      "known_non_numeric_evidence": [
+        "weekly_above_30w",
+        "weekly_above_50w",
+        "weekly_above_200w",
+        "weekly_30w_rising"
+      ],
+      "not_emitted_as_numeric_metrics": [
+        "weekly_sma30",
+        "weekly_sma50",
+        "ema8",
+        "weekly_ema200"
+      ]
+    },
+    "swing": {
+      "output_contract": "AnalysisResult",
+      "implementation_version": "3.0.0",
+      "horizon": "SWING",
+      "metrics": {
+        "classification": "setup|pullback|breakout|extended|other",
+        "reference_price": "decimal",
+        "risk_flags": "string[]",
+        "daily_sma20": "decimal|null",
+        "daily_sma50": "decimal|null",
+        "daily_rsi14": "decimal|null",
+        "atr14": "decimal|null",
+        "daily_rvol20": "decimal|null",
+        "intraday_rvol20": "decimal|null",
+        "pivot_low_anchor_at": "datetime|null",
+        "pivot_low_avwap": "decimal|null",
+        "price_vs_pivot_low_avwap_percent": "decimal|null",
+        "breakout_anchor_at": "datetime|null",
+        "breakout_avwap": "decimal|null",
+        "price_vs_breakout_avwap_percent": "decimal|null",
+        "support": "decimal|null",
+        "resistance": "decimal|null",
+        "invalidation": "decimal|null",
+        "target_2r": "decimal|null",
+        "risk_percent": "decimal|null",
+        "risk_atr": "decimal|null",
+        "daily_atr_percentile": "decimal|null",
+        "daily_adx14": "decimal|null",
+        "daily_plus_di14": "decimal|null",
+        "daily_minus_di14": "decimal|null",
+        "market_regime": "string|null",
+        "structure_broken_confirmed": "boolean|null",
+        "entry_zone_low": "decimal|null",
+        "entry_zone_high": "decimal|null",
+        "price_vs_entry_zone_atr": "decimal|null",
+        "reward_risk_to_resistance": "decimal|null",
+        "anchored_vwap_gate_passed": "boolean",
+        "entry_confirmation_rule_version": "semver"
+      }
+    },
+    "intraday": {
+      "output_contract": "AnalysisResult",
+      "implementation_version": "4.0.0",
+      "horizon": "INTRADAY",
+      "metrics": {
+        "setup": "string",
+        "reference_price": "decimal|null",
+        "session_vwap": "decimal|null",
+        "relative_volume": "decimal|null",
+        "ema9": "decimal|null",
+        "ema20": "decimal|null",
+        "momentum_5_percent": "decimal|null",
+        "atr14": "decimal|null",
+        "atr_percent": "decimal|null",
+        "prior_range_high": "decimal|null",
+        "prior_range_low": "decimal|null",
+        "five_minute_bias": "string|null",
+        "risk_flags": "string[]|null",
+        "close_location": "decimal|null",
+        "volume_acceleration": "decimal|null",
+        "five_minute_higher_low": "boolean|null",
+        "intraday_regime": "string|null",
+        "confirmation_quality": "weak|standard|strong|null",
+        "invalidation_level": "decimal|null",
+        "objective_level": "decimal|null",
+        "risk_percent": "decimal|null",
+        "reward_risk_ratio": "decimal|null",
+        "risk_ok": "boolean|null",
+        "confirmation_persistence": "boolean|null",
+        "minimum_tactical_risk": "decimal|null",
+        "raw_v3_confirmation_gate_passed": "boolean|null",
+        "confirmation_gate_passed": "boolean|null",
+        "entry_efficiency_gate_passed": "boolean",
+        "mature_confirmation_gate_passed": "boolean",
+        "mature_retest_confirmed": "boolean",
+        "entry_trigger_level": "decimal|null",
+        "entry_window_low": "decimal|null",
+        "entry_window_high": "decimal|null",
+        "breakout_extension_atr": "decimal|null",
+        "ema20_extension_atr": "decimal|null",
+        "entry_timing": "string|null",
+        "entry_confirmation_rule_version": "semver"
+      }
+    },
+    "dilution-sec": {
+      "output_contract": "AnalysisResult",
+      "implementation_version": "1.0.0",
+      "horizon": "DILUTION",
+      "metrics": {
+        "dilution_severity": "unknown|low|medium|high|critical",
+        "evidence": [
+          {
+            "code": "string",
+            "source": "filing|company_fact",
+            "points": "integer 1..100",
+            "description": "string",
+            "observed_at": "date",
+            "accession_number": "string|null",
+            "source_accessions": [
+              "string"
+            ]
+          }
+        ],
+        "analyzed_filing_count": "integer",
+        "ignored_stale_filing_count": "integer",
+        "share_growth_percent": "decimal|null",
+        "cash_runway_quarters": "decimal|null"
+      }
+    },
+    "market-rotation": {
+      "output_contract": "MarketRotationReport",
+      "event_type": "market-rotation.analyzed",
+      "subject": "marketbot.v1.rotation.result",
+      "scope": "global market, not one symbol",
+      "published_payload": {
+        "run_id": "uuid string",
+        "generated_at": "datetime UTC",
+        "risk_regime": "string",
+        "sectors": [
+          {
+            "code": "string",
+            "label": "string",
+            "proxy": "string",
+            "score": "decimal 0..100",
+            "state": "INFLOW|ACCUMULATING|NEUTRAL|OUTFLOW|DEFENSIVE_ROTATION",
+            "top_symbols": [
+              "string"
+            ]
+          }
+        ],
+        "watchlist_additions": [
+          "string"
+        ]
+      },
+      "additional_postgresql_detail": {
+        "sector": {
+          "benchmark_symbol": "string",
+          "relative_return_20d_percent": "decimal",
+          "dollar_volume_rvol": "decimal",
+          "breadth_positive_percent": "decimal",
+          "breadth_above_sma20_percent": "decimal"
+        },
+        "symbol_evidence": {
+          "symbol": "string",
+          "price": "decimal",
+          "return_1d_percent": "decimal",
+          "return_5d_percent": "decimal",
+          "return_20d_percent": "decimal",
+          "dollar_volume": "decimal",
+          "average_dollar_volume_20": "decimal",
+          "dollar_volume_rvol": "decimal",
+          "above_sma20": "boolean",
+          "above_sma50": "boolean",
+          "symbol_score": "decimal"
+        }
+      }
+    },
+    "elliott-wave": {
+      "output_contract": "WaveAssessment",
+      "event_type": "elliott-wave.assessed",
+      "subject_pattern": "marketbot.v1.elliott-wave.assessment.<SYMBOL>",
+      "payload": {
+        "assessment_id": "uuidv7",
+        "symbol": "string",
+        "occurred_at": "datetime UTC",
+        "engine_version": "semver",
+        "primary_timeframe": "1Day",
+        "phase": "WAVE_2_ENDING|WAVE_3_ACTIVE|WAVE_4_ENDING|WAVE_5_ACTIVE|ABC_INCOMPLETE|UNRESOLVED",
+        "score": "decimal 0..100",
+        "confidence": "decimal 0..1",
+        "current_price": "decimal",
+        "data_as_of": "datetime|null",
+        "assessed_at": "datetime|null",
+        "wave1_origin": "decimal|null",
+        "wave1_peak": "decimal|null",
+        "wave2_low": "decimal|null",
+        "wave3_peak": "decimal|null",
+        "corrective_low": "decimal|null",
+        "retracement": "decimal 0..1|null",
+        "entry_zone_low": "decimal|null",
+        "entry_zone_high": "decimal|null",
+        "trigger_price": "decimal|null",
+        "invalidation": "decimal|null",
+        "target_low": "decimal|null",
+        "target_high": "decimal|null",
+        "alternative_phase": "WAVE_2_ENDING|WAVE_3_ACTIVE|WAVE_4_ENDING|WAVE_5_ACTIVE|ABC_INCOMPLETE|UNRESOLVED|null",
+        "alternative_score": "decimal 0..100|null",
+        "reasons": [
+          "string"
+        ],
+        "violations": [
+          "string"
+        ],
+        "metrics": {
+          "atr14_daily": "decimal|null"
+        },
+        "context_hash": "sha256"
+      }
+    },
+    "support-confirmation": {
+      "output_contract": "SupportAssessment",
+      "event_type": "support-confirmation.assessed",
+      "subject_pattern": "marketbot.v1.support-confirmation.assessment.<SYMBOL>",
+      "payload": {
+        "assessment_id": "uuidv7",
+        "symbol": "string",
+        "occurred_at": "datetime UTC",
+        "engine_version": "semver",
+        "state": "NO_KEY_SUPPORT|NO_NEARBY_SUPPORT|WATCH_KEY_SUPPORT|FIRST_TOUCH|REACTION_CONFIRMED|BASE_BUILDING|LIQUIDITY_SWEEP|RECLAIMED|STRUCTURE_CONFIRMED|RETEST_CONFIRMED|B_WAVE_RISK|INVALIDATED|EXPIRED",
+        "confirmation_type": "NONE|V_RECOVERY|BASE_BREAKOUT|SWEEP_RECLAIM",
+        "current_price": "decimal",
+        "zone_low": "decimal|null",
+        "zone_center": "decimal|null",
+        "zone_high": "decimal|null",
+        "invalidation": "decimal|null",
+        "support_score": "decimal 0..100",
+        "reaction_score": "decimal 0..100",
+        "reversal_score": "decimal 0..100",
+        "confidence": "decimal 0..1",
+        "data_as_of": "datetime|null",
+        "assessed_at": "datetime|null",
+        "liquidity_sweep": "boolean",
+        "higher_high": "boolean",
+        "higher_low": "boolean",
+        "b_wave_risk": "boolean",
+        "support_sources": [
+          "string"
+        ],
+        "structural_supports": [
+          {
+            "source": "string",
+            "price": "decimal",
+            "distance_percent": "decimal",
+            "distance_atr": "decimal"
+          }
+        ],
+        "impulse_origin": "decimal|null",
+        "impulse_origin_at": "datetime|null",
+        "impulse_peak": "decimal|null",
+        "impulse_advance_percent": "decimal|null",
+        "reasons": [
+          "string"
+        ],
+        "metrics": {
+          "atr14_daily": "decimal|null",
+          "reaction_rvol": "decimal|null",
+          "pre_touch_high": "decimal|null",
+          "base_building": "boolean|null",
+          "base_breakout": "boolean|null"
+        },
+        "context_hash": "sha256"
+      }
+    },
+    "patreon-caps": {
+      "output_contract": "PatreonCapsAssessment",
+      "event_type": "patreon-caps.assessed",
+      "subject_pattern": "marketbot.v1.patreon-caps.assessment.<SYMBOL>",
+      "payload": {
+        "assessment_id": "uuidv7",
+        "symbol": "string",
+        "occurred_at": "datetime UTC",
+        "rule_version": "semver",
+        "mode": "PRIMARY|SHADOW|RESEARCH|DISABLED",
+        "state": "WATCH_ZONE|SUPPORT_TEST|CONFIRMED_V|CONFIRMED_BASE|IMPULSE_RETEST|INVALIDATED|EXPIRED",
+        "current_price": "decimal",
+        "zone_low": "decimal",
+        "zone_center": "decimal",
+        "zone_high": "decimal",
+        "invalidation": "decimal",
+        "atr14": "decimal",
+        "confluence_score": "decimal 0..100",
+        "confirmation_score": "decimal 0..100",
+        "alignment_score": "decimal 0..100",
+        "lesson_score": "decimal 0..100",
+        "lesson_gate_passed": "boolean",
+        "lesson_reasons": [
+          "string"
+        ],
+        "lesson_metrics": {
+          "lesson_daily_sma50": "decimal|null",
+          "lesson_daily_sma200": "decimal|null",
+          "lesson_daily_sma50_slope5": "decimal|null",
+          "lesson_daily_sma200_slope5": "decimal|null",
+          "lesson_hourly_sma50": "decimal|null",
+          "lesson_hourly_sma200": "decimal|null",
+          "lesson_triangle_resistance": "decimal|null",
+          "lesson_wave_fib_0618": "decimal|null",
+          "lesson_wave1_high": "decimal|null"
+        },
+        "patreon_score": "decimal 0..100",
+        "macro_regime": "UNKNOWN|RISK_ON|NEUTRAL|RISK_OFF|SHOCK",
+        "macro_threshold": "decimal 0..100|null",
+        "macro_signals": [
+          "string"
+        ],
+        "macro_metrics": {
+          "<proxy>_close": "decimal",
+          "<proxy>_sma50": "decimal",
+          "<proxy>_sma200": "decimal",
+          "<proxy>_sma50_slope_5": "decimal",
+          "<proxy>_move_5_atr": "decimal",
+          "<proxy>_atr14": "decimal",
+          "vixy_atr_percentile": "decimal"
+        },
+        "macro_proxies": [
+          "UUP",
+          "VIXY",
+          "TLT",
+          "IEF",
+          "SPY"
+        ],
+        "support_sources": [
+          "string"
+        ],
+        "source_analysis_ids": [
+          "uuidv7"
+        ],
+        "reasons": [
+          "string"
+        ]
+      }
+    },
+    "signal-fusion": {
+      "output_contract": "FusionAssessment",
+      "event_type": "signal-fusion.assessed",
+      "subject_pattern": "marketbot.v1.signal-fusion.assessment.<SYMBOL>",
+      "payload": {
+        "assessment_id": "uuidv7",
+        "symbol": "string",
+        "occurred_at": "datetime UTC",
+        "engine_version": "semver",
+        "state": "INCOMPLETE|OBSERVING|ARMED|RECOVERY_CONFIRMED|BUY_CONFIRMED|VETOED|INVALIDATED|EXPIRED",
+        "score": "decimal 0..100",
+        "confidence": "decimal 0..1",
+        "current_price": "decimal",
+        "support_zone_gate": "boolean",
+        "support_reaction_gate": "boolean",
+        "support_gate": "boolean",
+        "trend_gate": "boolean",
+        "timing_gate": "boolean",
+        "execution_gate": "boolean",
+        "dilution_gate": "boolean",
+        "portfolio_gate": "boolean",
+        "reward_risk_gate": "boolean",
+        "recovery_gate": "boolean",
+        "trigger_price": "decimal|null",
+        "entry_price": "decimal|null",
+        "invalidation": "decimal|null",
+        "target_price": "decimal|null",
+        "reward_risk_ratio": "decimal|null",
+        "patreon_context": "string|null",
+        "dilution_context": "string|null",
+        "missing_sources": [
+          "string"
+        ],
+        "source_assessment_ids": [
+          "uuidv7"
+        ],
+        "source_analysis_ids": [
+          "uuidv7"
+        ],
+        "reasons": [
+          "string"
+        ],
+        "context_hash": "sha256"
+      }
+    },
+    "portfolio-flow": {
+      "output_contract": "LocalAlert containing an embedded AnalysisResult",
+      "event_type": "alert.local.produced",
+      "subject_pattern": "marketbot.v1.alert.local.<SEVERITY>.<SYMBOL>",
+      "embedded_analysis": {
+        "engine_id": "portfolio-flow",
+        "engine_version": "2.0.0",
+        "horizon": "INTRADAY",
+        "sell_pressure_metrics": {
+          "current_price": "decimal",
+          "window_volume": "decimal",
+          "sell_volume_percent": "decimal",
+          "price_drop_percent": "decimal",
+          "large_sell_blocks": "integer"
+        },
+        "buy_pressure_metrics": {
+          "current_price": "decimal",
+          "window_volume": "decimal",
+          "buy_volume_percent": "decimal",
+          "price_rise_percent": "decimal",
+          "large_buy_blocks": "integer"
+        }
+      }
+    },
+    "peter-lynch": {
+      "output_contract": "PeterLynchEvaluation",
+      "delivery": "on-demand and current-state PostgreSQL metadata; not a JetStream AnalysisResult",
+      "payload": {
+        "symbol": "string",
+        "as_of": "date",
+        "eligible": "boolean",
+        "category": "TURNAROUND|ASSET_PLAY|CYCLICAL|SLOW_GROWER|STALWART|FAST_GROWER|UNCLASSIFIED",
+        "metrics": {
+          "trailing_pe": "decimal|null",
+          "projected_forward_eps": "decimal|null",
+          "projected_forward_pe": "decimal|null",
+          "debt_to_equity_percent": "decimal|null",
+          "eps_cagr_percent": "decimal|null",
+          "peg": "decimal|null",
+          "market_cap": "decimal|null",
+          "tangible_book_value": "decimal|null",
+          "market_cap_to_tangible_book": "decimal|null"
+        },
+        "criteria": [
+          {
+            "name": "trailing_pe|projected_forward_pe|debt_to_equity|eps_growth|peg|market_cap|insider_buying",
+            "passed": "boolean",
+            "value": "decimal|integer|null",
+            "threshold": "string",
+            "reason": "string",
+            "required": "boolean"
+          }
+        ],
+        "passed_count": "derived integer",
+        "required_count": "derived integer",
+        "failed_criteria": [
+          "criterion name"
+        ],
+        "price_as_of": "date|null",
+        "fundamentals_as_of": "date|null",
+        "latest_insider_purchase_at": "date|null",
+        "engine_version": "semver",
+        "policy_version": "string",
+        "forward_pe_method": "price / (ttm_eps * (1 + eps_cagr_3y))",
+        "forward_pe_is_analyst_consensus": false
+      }
+    }
+  },
+  "derived_outputs_not_classified_as_raw_engine_analysis": {
+    "alert-engine": "LocalAlert aggregation with full component_analyses",
+    "entry-watcher": "EntryWatchTransition lifecycle",
+    "entry-opportunity": "EntryOpportunityEvent with paper legs, checkpoints, MFE, MAE and returns",
+    "long-portfolio": "LocalAlert allocation decision with target, holdings, remaining capital and suggested tranche"
+  }
+}

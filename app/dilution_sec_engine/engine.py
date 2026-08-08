@@ -96,6 +96,22 @@ class DilutionSecEngine:
                     value=assessment.metrics.cash_runway_quarters,
                 )
             )
+        document_evidence = [
+            {
+                "accession_number": filing.accession_number,
+                "form": filing.form,
+                "evidence": (
+                    filing.document_evidence.model_dump(mode="json")
+                    if filing.document_evidence is not None
+                    else None
+                ),
+                "error": filing.document_error,
+            }
+            for filing in request.filings
+            if filing.document_evidence is not None or filing.document_error is not None
+        ]
+        if document_evidence:
+            metrics.append(NamedValue(name="document_evidence", value=document_evidence))
         return AnalysisResult(
             analysis_id=self._analysis_id(request, context_hash),
             engine_id=self.ENGINE_ID,
