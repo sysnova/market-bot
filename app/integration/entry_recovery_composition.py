@@ -23,12 +23,11 @@ from app.entry_recovery_engine import EntryRecoveryEngineV11
 from app.event_bus import NatsJetStreamEventBus
 from app.persistence import create_database_engine, create_session_factory
 
-from .distributed_composition import _publish_health
+from .distributed_composition import connect_nats, publish_health, write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .entry_opportunity_store import PostgresEntryOpportunityStore
 from .entry_setup_publisher import publish_entry_setup_assessment
 from .entry_signal_adapter import publish_entry_signal
-from .foundation import connect_nats, write_ready
 from .universe_policy import universe_health_details
 
 
@@ -146,7 +145,7 @@ async def run_entry_recovery_process(*, ready_path: Path | None = None) -> None:
             ),
             "execution_enabled": False,
         }
-        await _publish_health(bus, service, details, clock.now())
+        await publish_health(bus, service, details, clock.now())
         if ready_path is not None:
             write_ready(ready_path, details)
         await asyncio.Event().wait()

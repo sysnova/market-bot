@@ -18,9 +18,19 @@ from app.entry_watcher import (
     InMemoryEntryWatchStore,
 )
 from app.integration.engine_assembly import (
+    EngineMode,
     EngineSlot,
     MarketBotAssembly,
     load_marketbot_definition,
+)
+from app.integration.marketbot_definition import (
+    EngineMode as DefinitionEngineMode,
+)
+from app.integration.marketbot_definition import (
+    EngineSlot as DefinitionEngineSlot,
+)
+from app.integration.marketbot_definition import (
+    load_marketbot_definition as load_definition_model,
 )
 from app.intraday_engine import IntradayEngineV3, IntradayEngineV4
 from app.long_term_engine import LongTermEngineV2
@@ -45,6 +55,15 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
         definition.engines[EngineSlot.LONG_PORTFOLIO].strategy.artifact
         == ROOT / "configs/rules/long_portfolio/1.0.0.yaml"
     )
+
+
+def test_operational_modes_select_slots_from_the_definition() -> None:
+    definition = load_marketbot_definition(DEFINITION)
+    assembly = MarketBotAssembly(definition)
+
+    assert EngineSlot.ENTRY_RECOVERY in assembly.slots_for_mode(EngineMode.ACTIVE)
+    assert assembly.slots_for_mode(EngineMode.SCHEDULED) == (EngineSlot.DILUTION_SEC,)
+    assert assembly.slots_for_mode(EngineMode.ON_DEMAND) == (EngineSlot.PETER_LYNCH,)
 
 
 def test_one_assembly_builds_the_core_and_alert_implementations() -> None:
@@ -222,3 +241,9 @@ def test_operational_compositions_cannot_construct_catalog_engines_directly() ->
                 violations.append(f"{path.name}:{node.lineno}:{node.func.id}")
 
     assert violations == []
+def test_definition_model_is_a_separate_public_boundary() -> None:
+    definition = load_definition_model(Path("configs/marketbot/7.1.0.yaml"))
+
+    assert DefinitionEngineSlot is EngineSlot
+    assert DefinitionEngineMode is EngineMode
+    assert definition.engines[EngineSlot.ENTRY_RECOVERY].mode is EngineMode.ACTIVE

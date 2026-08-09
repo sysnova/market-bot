@@ -1,9 +1,11 @@
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 PROJECT_ROOT = Path(__file__).parents[3]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "windows" / "start-market-bot.ps1"
@@ -347,88 +349,131 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["mode"] == "distributed"
     assert plan["environment"].endswith(".venv-windows")
     assert [process["name"] for process in plan["processes"]] == [
+        "outbox-relay",
         "alert",
         "entry-watcher",
         "entry-opportunity",
+        "entry-recovery",
         "market-history-v1",
+        "long-portfolio-v1",
         "long-term",
         "swing",
         "intraday",
         "market-rotation-v1",
         "portfolio-flow-v1",
-        "long-portfolio-v1",
         "patreon-caps-v1",
+        "elliott-wave-v0",
+        "support-confirmation-v0",
+        "signal-fusion-v0",
         "confirmed-buy-monitor",
         "alpaca-market-stream",
-        "outbox-relay",
-        "entry-recovery",
     ]
-    assert plan["processes"][2]["arguments"][:4] == [
+    assert "dilution-sec" not in plan["active_engine_slots"]
+    assert "peter-lynch" not in plan["active_engine_slots"]
+    processes = {process["name"]: process for process in plan["processes"]}
+    assert processes["entry-opportunity"]["arguments"][:4] == [
         "run",
         "marketbot",
         "entry-opportunity",
         "serve",
     ]
-    assert plan["processes"][3]["arguments"][:4] == [
+    assert processes["market-history-v1"]["arguments"][:4] == [
         "run",
         "marketbot",
         "market",
         "history",
     ]
-    assert plan["processes"][4]["arguments"][:4] == [
+    assert processes["long-term"]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "long",
     ]
-    assert plan["processes"][-3]["arguments"][:4] == [
+    assert processes["alpaca-market-stream"]["arguments"][:4] == [
         "run",
         "marketbot",
         "market",
         "stream",
     ]
-    assert plan["processes"][-2]["arguments"][:4] == [
+    assert processes["outbox-relay"]["arguments"][:4] == [
         "run",
         "marketbot",
         "outbox",
         "serve",
     ]
-    assert plan["processes"][-1]["arguments"][:4] == [
+    assert processes["entry-recovery"]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "entry-recovery",
     ]
-    assert plan["processes"][7]["arguments"][:4] == [
+    assert processes["market-rotation-v1"]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "rotation",
     ]
-    assert plan["processes"][8]["arguments"][:4] == [
+    assert processes["portfolio-flow-v1"]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "portfolio-flow",
     ]
-    assert plan["processes"][9]["arguments"][:4] == [
+    assert processes["long-portfolio-v1"]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "long-portfolio",
     ]
-    assert plan["processes"][10]["arguments"][:4] == [
+    assert processes["patreon-caps-v1"]["arguments"][:4] == [
         "run",
         "marketbot",
         "engine",
         "patreon-caps",
     ]
-    assert plan["processes"][11]["arguments"][:4] == [
+    assert processes["confirmed-buy-monitor"]["arguments"][:4] == [
         "run",
         "marketbot",
         "alerts",
         "confirmed",
     ]
+    assert plan["startup_batches"][0] == ["outbox-relay"]
+    assert plan["startup_batches"][-1] == ["alpaca-market-stream"]
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+def test_windows_launcher_excludes_engines_not_marked_active(tmp_path: Path) -> None:
+    source = PROJECT_ROOT / "configs" / "marketbot" / "7.1.0.yaml"
+    payload = yaml.safe_load(source.read_text(encoding="utf-8"))
+    for spec in payload["engines"].values():
+        artifact = spec["strategy"].get("artifact")
+        if artifact is not None:
+            spec["strategy"]["artifact"] = str((source.parent / artifact).resolve())
+    payload["engines"]["entry-recovery"]["mode"] = "on-demand"
+    definition = tmp_path / "marketbot.yaml"
+    definition.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    environment = {**os.environ, "MARKETBOT_DEFINITION_PATH": str(definition)}
+
+    result = subprocess.run(  # noqa: S603 - executable is resolved from PATH for this test.
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(SCRIPT_PATH),
+            "-DryRun",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert "entry-recovery" not in plan["active_engine_slots"]
+    assert "entry-recovery" not in [process["name"] for process in plan["processes"]]
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")

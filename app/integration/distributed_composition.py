@@ -1038,6 +1038,17 @@ async def _publish_health(
     )
 
 
+async def publish_health(
+    publisher: EventPublisher,
+    service: str,
+    details: Mapping[str, object],
+    observed_at: datetime,
+) -> None:
+    """Publish a shared readiness payload from an integration composition root."""
+
+    await _publish_health(publisher, service, details, observed_at)
+
+
 def _service_name(horizon: AnalysisHorizon) -> str:
     return {
         AnalysisHorizon.LONG_TERM: "long-term",

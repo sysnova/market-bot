@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-from app.alert_engine.confirmed import BuyMaturity
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     ELLIOTT_WAVE_ASSESSMENT_EVENT,
@@ -146,7 +145,7 @@ def test_fusion_panel_distinguishes_defended_zone_from_structure() -> None:
     assert "Z:Y R:Y S:N" in text
 
 
-def test_fusion_confirmation_has_explicit_fully_matured_banner() -> None:
+def test_fusion_confirmation_has_family_banner_without_core_l4() -> None:
     engine = _Engine()
     engine.state = FusionState.BUY_CONFIRMED
     item = engine.evaluate(
@@ -162,7 +161,7 @@ def test_fusion_confirmation_has_explicit_fully_matured_banner() -> None:
     banner = _format_solid_banner(item, color=True)
 
     assert banner == (
-        "\x1b[1;97;45m TGT | BUY L4 $105 | FUSION BUY CONFIRMED \x1b[0m"
+        "\x1b[1;97;45m TGT | FUSION BUY CONFIRMED $105 \x1b[0m"
     )
 
 
@@ -496,11 +495,11 @@ async def test_buy_monitor_includes_recovery_confirmations(
     _MonitorBus.envelope = _event(FUSION_RECOVERY_CONFIRMED_EVENT, assessment)
     monkeypatch.setattr(signal_fusion_monitor, "NatsJetStreamEventBus", _MonitorBus)
     monkeypatch.setattr(signal_fusion_monitor.asyncio, "Event", _StopEvent)
-    alarm_calls: list[BuyMaturity] = []
+    alarm_calls: list[str] = []
     monkeypatch.setattr(
         signal_fusion_monitor,
-        "play_buy_maturity_sound",
-        lambda maturity, **_: alarm_calls.append(maturity) or True,
+        "play_solid_buy_sound",
+        lambda **_: alarm_calls.append("solid") or True,
     )
     output = StringIO()
 
@@ -508,8 +507,8 @@ async def test_buy_monitor_includes_recovery_confirmations(
         await run_signal_fusion_monitor(mode="buys", stream=output, bell=True)
 
     assert "RECOVERY_CONFIRMED" in output.getvalue()
-    assert "BUY L4 $105 | FUSION RECOVERY CONFIRMED" in output.getvalue()
-    assert alarm_calls == [BuyMaturity.FULLY_MATURED]
+    assert "FUSION RECOVERY CONFIRMED $105" in output.getvalue()
+    assert alarm_calls == ["solid"]
     assert "marketbot.v1.signal-fusion.recovery-confirmed.>" in (
         _MonitorBus.instance.subjects if _MonitorBus.instance is not None else []
     )

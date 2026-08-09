@@ -1,23 +1,21 @@
 """Top-level MarketBot operator CLI."""
 
-import asyncio
 import json
-import os
-import selectors
-import sys
-from collections.abc import Coroutine
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 import typer
 
 from app import __version__
 from app.common.clock import SystemClock
-from app.common.settings import AppSettings
 from app.contracts import EventEnvelope, MarketSession
 from app.event_bus import InMemoryEventBus
 from app.integration.foundation import prepare_foundation_engine
+
+from .async_support import run_async as _run_async
+from .infrastructure_commands import register_infrastructure_commands
+from .runtime_commands import register_runtime_commands
 
 _GROUPS: tuple[tuple[str, str], ...] = (
     ("rules", "Inspect and manage trading rules."),
@@ -33,15 +31,6 @@ app = typer.Typer(
     invoke_without_command=True,
     pretty_exceptions_enable=False,
 )
-
-
-def _run_async[ResultT](coroutine: Coroutine[Any, Any, ResultT]) -> ResultT:
-    """Run CLI coroutines on a loop supported by psycopg on Windows."""
-
-    return asyncio.run(
-        coroutine,
-        loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()),
-    )
 
 
 def _version_callback(value: bool) -> None:
@@ -105,6 +94,9 @@ def _placeholder(name: str, help_text: str) -> typer.Typer:
 for group_name, group_help in _GROUPS:
     app.add_typer(_placeholder(group_name, group_help), name=group_name)
 
+register_runtime_commands(app)
+register_infrastructure_commands(app)
+
 
 @app.command("analyzer")
 def analyzer_symbol(
@@ -131,42 +123,6 @@ def analyzer_symbol(
         mirror_to_nats=nats,
     )
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
-
-
-@app.command("assembly")
-def show_assembly() -> None:
-    """Show the exact implementation, strategy, and mode selected for every engine."""
-
-    from app.integration.engine_assembly import MarketBotAssembly
-
-    assembly = MarketBotAssembly.from_settings(AppSettings())
-    typer.echo(
-        json.dumps(
-            {
-                "definition_id": assembly.definition.definition_id,
-                "version": assembly.definition.version,
-                "source": str(assembly.definition.source),
-                "engines": {
-                    slot.value: {
-                        "implementation": spec.implementation,
-                        "strategy": {
-                            "kind": spec.strategy.kind.value,
-                            "version": spec.strategy.version,
-                            "artifact": (
-                                str(spec.strategy.artifact)
-                                if spec.strategy.artifact is not None
-                                else None
-                            ),
-                        },
-                        "mode": spec.mode.value,
-                    }
-                    for slot, spec in assembly.definition.engines.items()
-                },
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
 
 
 @app.command("live")
@@ -462,208 +418,6 @@ def entry_recovery_process(
 
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
-
-nats_admin = typer.Typer(name="nats", help="Inspect and maintain local NATS JetStream.")
-app.add_typer(nats_admin, name="nats")
-
-connector = typer.Typer(
-    name="connector", help="Consume MarketBot JetStream from a trusted external peer."
-)
-app.add_typer(connector, name="connector")
-
-
-@connector.command("list-engines")
-def list_connector_engines() -> None:
-    """List stable engine names and their server-side NATS filters."""
-
-    from marketbot_connector import ENGINE_ROUTES
-
-    typer.echo(
-        json.dumps(
-            {
-                name: [route.subject for route in routes]
-                for name, routes in sorted(ENGINE_ROUTES.items())
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
-
-
-@connector.command("subscribe")
-def subscribe_external_connector(
-    engine: Annotated[
-        list[str] | None,
-        typer.Option("--engine", help="Engine name; repeat to combine engines."),
-    ] = None,
-    subject: Annotated[
-        list[str] | None,
-        typer.Option("--subject", help="NATS subject filter; repeat to combine filters."),
-    ] = None,
-    all_messages: Annotated[
-        bool,
-        typer.Option("--all", help="Consume marketbot.v1.> and marketbot.dlq."),
-    ] = False,
-    start_at: Annotated[
-        str | None,
-        typer.Option(help="RFC 3339 persisted-message start time; offset is required."),
-    ] = None,
-    durable: Annotated[
-        str | None,
-        typer.Option(help="Stable durable consumer name; omitted means ephemeral."),
-    ] = None,
-    url: Annotated[
-        str,
-        typer.Option(help="NATS URL reachable through WireGuard."),
-    ] = os.getenv("MARKETBOT_CONNECTOR_URL", "nats://10.77.77.1:4222"),
-    stream: Annotated[
-        str,
-        typer.Option(help="Existing JetStream stream name."),
-    ] = os.getenv("MARKETBOT_CONNECTOR_STREAM", "MARKETBOT"),
-    batch_size: Annotated[
-        int,
-        typer.Option(min=1, max=1_000, help="Maximum messages fetched per pull."),
-    ] = 100,
-    max_ack_pending: Annotated[
-        int,
-        typer.Option(min=1, help="Maximum unacknowledged messages."),
-    ] = 1_000,
-) -> None:
-    """Write selected JetStream deliveries as one JSON object per line."""
-
-    from marketbot_connector import (
-        ConnectorConfig,
-        ConnectorMessage,
-        MarketBotSubscriber,
-        parse_start_at,
-        resolve_filters,
-    )
-
-    try:
-        filters = resolve_filters(
-            engines=tuple(engine or ()),
-            subjects=tuple(subject or ()),
-            all_messages=all_messages,
-        )
-        config = ConnectorConfig(
-            filters=filters,
-            url=url,
-            stream=stream,
-            start_at=parse_start_at(start_at) if start_at is not None else None,
-            durable_name=durable,
-            batch_size=batch_size,
-            max_ack_pending=max_ack_pending,
-        )
-    except ValueError as error:
-        raise typer.BadParameter(str(error)) from error
-
-    async def run() -> None:
-        subscriber = await MarketBotSubscriber.connect(config)
-        try:
-            if subscriber.retention_warning is not None:
-                typer.echo(
-                    json.dumps({"warning": subscriber.retention_warning}),
-                    err=True,
-                )
-
-            async def write_message(message: ConnectorMessage) -> None:
-                sys.stdout.write(json.dumps(message.to_jsonable(), sort_keys=True) + "\n")
-                sys.stdout.flush()
-
-            await subscriber.run(write_message)
-        finally:
-            await subscriber.close()
-
-    try:
-        _run_async(run())
-    except KeyboardInterrupt:
-        typer.echo("Connector stopped.", err=True)
-
-
-@connector.command("reset")
-def reset_external_connector(
-    durable: Annotated[str, typer.Argument(help="Durable consumer name to delete.")],
-    yes: Annotated[
-        bool,
-        typer.Option("--yes", help="Confirm deletion of this consumer position."),
-    ] = False,
-    url: Annotated[
-        str,
-        typer.Option(help="NATS URL reachable through WireGuard."),
-    ] = os.getenv("MARKETBOT_CONNECTOR_URL", "nats://10.77.77.1:4222"),
-    stream: Annotated[
-        str,
-        typer.Option(help="Existing JetStream stream name."),
-    ] = os.getenv("MARKETBOT_CONNECTOR_STREAM", "MARKETBOT"),
-) -> None:
-    """Delete one durable position without deleting any stream message."""
-
-    if not yes:
-        raise typer.BadParameter("--yes is required to delete a durable position")
-    from marketbot_connector import (
-        ConnectorConfig,
-        reset_durable_consumer,
-        resolve_filters,
-    )
-
-    try:
-        ConnectorConfig(
-            filters=resolve_filters(all_messages=True),
-            url=url,
-            stream=stream,
-            durable_name=durable,
-        )
-    except ValueError as error:
-        raise typer.BadParameter(str(error)) from error
-    deleted = _run_async(
-        reset_durable_consumer(url=url, stream=stream, durable_name=durable)
-    )
-    typer.echo(json.dumps({"durable": durable, "deleted": deleted}, sort_keys=True))
-
-
-@nats_admin.command("cleanup-consumers")
-def cleanup_nats_consumers(
-    apply: Annotated[
-        bool,
-        typer.Option("--apply/--dry-run", help="Delete candidates; defaults to preview only."),
-    ] = False,
-    minimum_age_minutes: Annotated[
-        int,
-        typer.Option(help="Protect disconnected consumers newer than this many minutes."),
-    ] = 10,
-    stream: Annotated[str, typer.Option(help="JetStream stream to inspect.")] = "MARKETBOT",
-) -> None:
-    """Remove only disconnected legacy consumers whose generated name starts with mb_."""
-
-    if minimum_age_minutes <= 0:
-        raise typer.BadParameter("minimum age must be positive")
-    from app.common.settings import AppSettings
-    from app.event_bus.consumer_maintenance import run_orphan_consumer_cleanup
-
-    settings = AppSettings()
-    summary = _run_async(
-        run_orphan_consumer_cleanup(
-            nats_url=settings.nats_url.get_secret_value(),
-            stream=stream,
-            minimum_age=timedelta(minutes=minimum_age_minutes),
-            apply=apply,
-        )
-    )
-    typer.echo(
-        json.dumps(
-            {
-                "stream": stream,
-                "mode": "apply" if apply else "dry-run",
-                "scanned": summary.scanned,
-                "candidates": len(summary.candidates),
-                "deleted": len(summary.deleted),
-                "candidate_preview": list(summary.candidates[:20]),
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
-
 
 @market.command("stream")
 def market_stream_process(

@@ -129,8 +129,16 @@ def test_portfolio_monitor_accepts_buy_pressure_without_promoting_maturity(
     assert buy_maturity(buy_pressure) is None
 
 
-def test_portfolio_monitor_accepts_long_portfolio_buy(alert: LocalAlert) -> None:
+def test_analytical_family_buy_is_not_promoted_to_core_l4(alert: LocalAlert) -> None:
     long_buy = alert.model_copy(update={"kind": AlertKind.LONG_PORTFOLIO_BUY})
-    assert is_portfolio_monitor_alert(long_buy)
-    assert is_solid_buy(long_buy)
-    assert buy_maturity(long_buy) is BuyMaturity.FULLY_MATURED
+    assert not is_portfolio_monitor_alert(long_buy)
+    assert not is_solid_buy(long_buy)
+    assert buy_maturity(long_buy) is None
+
+
+def test_portfolio_monitor_excludes_opportunity_lifecycle(alert: LocalAlert) -> None:
+    progress = alert.model_copy(update={"kind": AlertKind.ENTRY_OPPORTUNITY_PROGRESS})
+    closed = alert.model_copy(update={"kind": AlertKind.ENTRY_OPPORTUNITY_CLOSED})
+
+    assert not is_portfolio_monitor_alert(progress)
+    assert not is_portfolio_monitor_alert(closed)

@@ -8,18 +8,16 @@ STOP_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "linux" / "stop-market-bot.sh"
 def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert "start_background long-portfolio-v1 run marketbot engine long-portfolio" in script
+    assert "marketbot runtime-plan" in script
+    assert "runtime-slots --mode active" not in script
+    assert "engine_is_active" in script
+    assert "plan_startup_batches" in script
+    assert "plan_process_arguments" in script
+    assert 'start_background "$name" "${process_arguments[@]}"' in script
     assert "run marketbot alerts long-portfolio" in script
     assert "--role long-portfolio" in script
     assert "LONG PORTFOLIO 2026" in script
-    assert '"$STATUS_ROOT/long-portfolio-v1.ready.json"' in script
     assert '"$STATUS_ROOT/long-portfolio-monitor.ready.json"' in script
-    assert "start_background entry-watcher" in script
-    assert "start_background entry-opportunity" in script
-    assert "start_background entry-recovery run marketbot engine entry-recovery" in script
-    assert "start_background alert run marketbot alerts serve" in script
-    assert "start_background outbox-relay run marketbot outbox serve" in script
-    assert "run marketbot entry-opportunity serve" in script
     assert "remain-on-exit on" in script
     assert 'tmux kill-session -t "$SESSION"' in script
     assert "tmux kill-pane -a" not in script
@@ -36,23 +34,21 @@ def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
     assert "list-windows" in script
 
 
-def test_linux_launcher_starts_market_history_before_analytical_engines() -> None:
+def test_linux_launcher_uses_canonical_batches_and_readiness_paths() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
-    history = "start_background market-history-v1 run marketbot market history"
-    long_term = "start_background long-term run marketbot engine long"
-    assert history in script
-    assert 'wait_ready "$STATUS_ROOT/market-history-v1.ready.json"' in script
-    assert script.index(history) < script.index(long_term)
+    assert 'done < <(plan_startup_batches)' in script
+    assert 'plan_ready_paths "${batch_names[@]}"' in script
+    assert 'wait_ready "${batch_ready_paths[@]}"' in script
+    assert "start_background market-history-v1 run marketbot market history" not in script
 
 
-def test_linux_launcher_readies_long_portfolio_before_long_snapshot() -> None:
+def test_linux_launcher_preserves_arguments_without_shell_reparsing() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
-    portfolio = "start_background long-portfolio-v1 run marketbot engine long-portfolio"
-    portfolio_ready = 'wait_ready "$STATUS_ROOT/long-portfolio-v1.ready.json"'
-    long_term = "start_background long-term run marketbot engine long"
-    assert script.index(portfolio) < script.index(portfolio_ready) < script.index(long_term)
+    assert "mapfile -d '' -t process_arguments" in script
+    assert "sys.stdout.buffer.write" in script
+    assert "eval " not in script
 
 
 def test_analytical_tmux_roles_are_read_only_monitors() -> None:
@@ -70,13 +66,12 @@ def test_analytical_tmux_roles_are_read_only_monitors() -> None:
         assert "kill " not in role
 
     new_session = script.split('tmux new-session -d -s "$SESSION"', 1)[0]
-    assert 'rm -f "$STATUS_ROOT/market-history-v1.ready.json"' in new_session
+    assert "write_runtime_plan" in new_session
 
 
 def test_market_stream_is_gated_only_by_headless_engine_readiness() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     control = script.split("run_control()", 1)[1].split("launch_tmux()", 1)[0]
-    before_stream = control.split("start_background alpaca-market-stream", 1)[0]
 
     for monitor in (
         "confirmed-buy-monitor",
@@ -87,13 +82,13 @@ def test_market_stream_is_gated_only_by_headless_engine_readiness() -> None:
         "signal-fusion-analysis",
         "signal-fusion-buys",
     ):
-        assert f'wait_ready "$STATUS_ROOT/{monitor}.ready.json"' not in before_stream
+        assert f'wait_ready "$STATUS_ROOT/{monitor}.ready.json"' not in control
 
 
 def test_linux_launcher_starts_patreon_caps_and_dedicated_tmux_window() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert "start_background patreon-caps-v1 run marketbot engine patreon-caps" in script
+    assert "plan_process_arguments" in script
     assert "run marketbot monitor patreon-caps" in script
     assert "run marketbot alerts patreon-caps" in script
     assert "-n PatreonCaps" in script

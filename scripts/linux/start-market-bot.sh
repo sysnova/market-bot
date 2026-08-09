@@ -47,6 +47,52 @@ fi
 
 STATUS_ROOT="$RUNTIME_ROOT/status"
 LOG_ROOT="$RUNTIME_ROOT/logs"
+PLAN_PATH="$STATUS_ROOT/runtime-process-plan.json"
+
+write_runtime_plan() {
+  local args=(run marketbot runtime-plan --runtime-root "$RUNTIME_ROOT" --no-bell)
+  [[ -n "$SYMBOLS" ]] && args+=(--symbols "$SYMBOLS")
+  mkdir -p "$STATUS_ROOT"
+  (cd "$PROJECT_ROOT" && uv "${args[@]}") >"$PLAN_PATH.tmp"
+  mv -f "$PLAN_PATH.tmp" "$PLAN_PATH"
+}
+
+ensure_runtime_plan() {
+  [[ -s "$PLAN_PATH" ]] || write_runtime_plan
+}
+
+engine_is_active() {
+  local slot="$1"
+  ensure_runtime_plan
+  (cd "$PROJECT_ROOT" && uv run python -c \
+    'import json,sys; plan=json.load(open(sys.argv[1], encoding="utf-8")); raise SystemExit(0 if sys.argv[2] in plan["active_engine_slots"] else 1)' \
+    "$PLAN_PATH" "$slot")
+}
+
+plan_startup_batches() {
+  (cd "$PROJECT_ROOT" && uv run python -c \
+    'import json,sys; plan=json.load(open(sys.argv[1], encoding="utf-8")); print("\n".join("\t".join(batch) for batch in plan["startup_batches"]))' \
+    "$PLAN_PATH")
+}
+
+plan_process_arguments() {
+  local name="$1"
+  (cd "$PROJECT_ROOT" && uv run python -c \
+    'import json,sys; plan=json.load(open(sys.argv[1], encoding="utf-8")); process=next(item for item in plan["processes"] if item["name"] == sys.argv[2]); sys.stdout.buffer.write(b"".join(arg.encode("utf-8") + b"\0" for arg in process["arguments"]))' \
+    "$PLAN_PATH" "$name")
+}
+
+plan_ready_paths() {
+  (cd "$PROJECT_ROOT" && uv run python -c \
+    'import json,sys; plan=json.load(open(sys.argv[1], encoding="utf-8")); names=set(sys.argv[2:]); sys.stdout.buffer.write(b"".join(item["ready_path"].encode("utf-8") + b"\0" for item in plan["processes"] if item["name"] in names and item["ready_path"] is not None))' \
+    "$PLAN_PATH" "$@")
+}
+
+plan_all_ready_paths() {
+  (cd "$PROJECT_ROOT" && uv run python -c \
+    'import json,sys; plan=json.load(open(sys.argv[1], encoding="utf-8")); sys.stdout.buffer.write(b"".join(item["ready_path"].encode("utf-8") + b"\0" for item in plan["processes"] if item["ready_path"] is not None))' \
+    "$PLAN_PATH")
+}
 
 run_analysis() {
   cd "$PROJECT_ROOT"
@@ -185,69 +231,30 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT"/{outbox-relay,alert,alert-v2,entry-watcher,entry-watcher-v2,entry-watcher-v3,entry-watcher-v4,entry-watcher-v5,entry-opportunity,entry-opportunity-v1,entry-recovery,entry-opportunity-monitor,market-history-v1,long-term,long-term-v2,swing,swing-v2,intraday,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  write_runtime_plan
+  local -a all_ready_paths=()
+  mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
+  ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
+  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
   echo "Runtime: $RUNTIME_ROOT"
 
-  start_background outbox-relay run marketbot outbox serve \
-    --ready-path "$STATUS_ROOT/outbox-relay.ready.json"
-  wait_ready "$STATUS_ROOT/outbox-relay.ready.json"
-  start_background alert run marketbot alerts serve \
-    --runtime-root "$RUNTIME_ROOT" --no-bell \
-    --ready-path "$STATUS_ROOT/alert.ready.json"
-  start_background entry-watcher run marketbot entry-watch serve \
-    --ready-path "$STATUS_ROOT/entry-watcher.ready.json"
-  start_background entry-opportunity run marketbot entry-opportunity serve \
-    --ready-path "$STATUS_ROOT/entry-opportunity.ready.json"
-  start_background entry-recovery run marketbot engine entry-recovery \
-    --ready-path "$STATUS_ROOT/entry-recovery.ready.json"
-  wait_ready "$STATUS_ROOT/alert.ready.json" \
-    "$STATUS_ROOT/entry-watcher.ready.json" \
-    "$STATUS_ROOT/entry-opportunity.ready.json" \
-    "$STATUS_ROOT/entry-recovery.ready.json"
+  local batch_line name
+  local -a batch_names=()
+  local -a process_arguments=()
+  local -a batch_ready_paths=()
+  while IFS= read -r batch_line; do
+    IFS=$'\t' read -r -a batch_names <<<"$batch_line"
+    for name in "${batch_names[@]}"; do
+      mapfile -d '' -t process_arguments < <(plan_process_arguments "$name")
+      start_background "$name" "${process_arguments[@]}"
+    done
+    mapfile -d '' -t batch_ready_paths < <(plan_ready_paths "${batch_names[@]}")
+    ((${#batch_ready_paths[@]} == 0)) || wait_ready "${batch_ready_paths[@]}"
+  done < <(plan_startup_batches)
 
-  local symbol_args=()
-  [[ -n "$SYMBOLS" ]] && symbol_args=(--symbols "$SYMBOLS")
-  start_background market-history-v1 run marketbot market history \
-    --ready-path "$STATUS_ROOT/market-history-v1.ready.json"
-  wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
-  start_background long-portfolio-v1 run marketbot engine long-portfolio \
-    --runtime-root "$RUNTIME_ROOT" \
-    --ready-path "$STATUS_ROOT/long-portfolio-v1.ready.json"
-  wait_ready "$STATUS_ROOT/long-portfolio-v1.ready.json"
-  start_background long-term run marketbot engine long \
-    --ready-path "$STATUS_ROOT/long-term.ready.json" "${symbol_args[@]}"
-  start_background swing run marketbot engine swing \
-    --ready-path "$STATUS_ROOT/swing.ready.json" "${symbol_args[@]}"
-  start_background intraday run marketbot engine intraday \
-    --ready-path "$STATUS_ROOT/intraday.ready.json" "${symbol_args[@]}"
-  start_background market-rotation-v1 run marketbot engine rotation \
-    --ready-path "$STATUS_ROOT/market-rotation-v1.ready.json"
-  start_background portfolio-flow-v1 run marketbot engine portfolio-flow \
-    --ready-path "$STATUS_ROOT/portfolio-flow-v1.ready.json"
-  start_background patreon-caps-v1 run marketbot engine patreon-caps \
-    --ready-path "$STATUS_ROOT/patreon-caps-v1.ready.json"
-  start_background elliott-wave-v0 run marketbot engine elliott-wave \
-    --ready-path "$STATUS_ROOT/elliott-wave-v0.ready.json"
-  start_background support-confirmation-v0 run marketbot engine support-confirmation \
-    --ready-path "$STATUS_ROOT/support-confirmation-v0.ready.json"
-  start_background signal-fusion-v0 run marketbot engine signal-fusion \
-    --ready-path "$STATUS_ROOT/signal-fusion-v0.ready.json"
-  wait_ready \
-    "$STATUS_ROOT/long-term.ready.json" \
-    "$STATUS_ROOT/swing.ready.json" \
-    "$STATUS_ROOT/intraday.ready.json" \
-    "$STATUS_ROOT/market-rotation-v1.ready.json"
-  wait_ready "$STATUS_ROOT/portfolio-flow-v1.ready.json"
-  wait_ready \
-    "$STATUS_ROOT/patreon-caps-v1.ready.json" \
-    "$STATUS_ROOT/elliott-wave-v0.ready.json" \
-    "$STATUS_ROOT/support-confirmation-v0.ready.json" \
-    "$STATUS_ROOT/signal-fusion-v0.ready.json"
-
-  start_background alpaca-market-stream run marketbot market stream "${symbol_args[@]}"
   echo "All engines ready. Logs: $LOG_ROOT"
   echo "Press Ctrl+C here to stop every process."
 
@@ -267,6 +274,7 @@ launch_tmux() {
     echo "Run this launcher outside an existing tmux session." >&2
     exit 1
   }
+  write_runtime_plan
   export MARKETBOT_LINUX_RUNTIME="$RUNTIME_ROOT"
   export MARKETBOT_LINUX_SYMBOLS="$SYMBOLS"
   export MARKETBOT_LINUX_NO_BELL="$NO_BELL"
@@ -290,28 +298,33 @@ launch_tmux() {
   printf -v signal_fusion_buys '%q ' "${base[@]}" --role signal-fusion-buys
 
   if tmux has-session -t "$SESSION" 2>/dev/null; then
-    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Opportunities'; then
+    if engine_is_active entry-opportunity && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Opportunities'; then
       tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
       tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
       tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
     fi
-    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'PatreonCaps'; then
+    if engine_is_active patreon-caps && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'PatreonCaps'; then
       tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
       tmux split-window -v -t "$SESSION":PatreonCaps "$patreon_alerts"
       tmux select-pane -t "$SESSION":PatreonCaps.0 -T 'PATREON CAPS — ANÁLISIS'
       tmux select-pane -t "$SESSION":PatreonCaps.1 -T 'PATREON CAPS — ALERTAS'
     fi
-    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'ElliottWave'; then
+    if engine_is_active elliott-wave && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'ElliottWave'; then
       tmux new-window -d -t "$SESSION" -n ElliottWave "$elliott_wave"
       tmux set-window-option -t "$SESSION":ElliottWave remain-on-exit on
       tmux select-pane -t "$SESSION":ElliottWave.0 -T 'ELLIOTT WAVE — TENENCIAS'
     fi
-    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'SupportConfirmation'; then
+    if engine_is_active support-confirmation && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'SupportConfirmation'; then
       tmux new-window -d -t "$SESSION" -n SupportConfirmation "$support_confirmation"
       tmux set-window-option -t "$SESSION":SupportConfirmation remain-on-exit on
       tmux select-pane -t "$SESSION":SupportConfirmation.0 -T 'SUPPORT CONFIRMATION — TENENCIAS'
     fi
-    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'SignalFusion'; then
+    if engine_is_active signal-fusion && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'SignalFusion'; then
       tmux new-window -d -t "$SESSION" -n SignalFusion "$signal_fusion_analysis"
       tmux set-window-option -t "$SESSION":SignalFusion remain-on-exit on
       tmux split-window -v -t "$SESSION":SignalFusion "$signal_fusion_buys"
@@ -330,32 +343,47 @@ launch_tmux() {
   tmux set-option -t "$SESSION" pane-border-format '#{pane_title}'
   tmux set-window-option -t "$SESSION":0 remain-on-exit on
   tmux select-pane -t "$SESSION":0.0 -T 'MARKETBOT CONTROL — Ctrl+C stops all'
-  tmux split-window -v -t "$SESSION":0 "$analysis"
-  tmux select-pane -t "$SESSION":0.1 -T 'ANÁLISIS'
-  tmux split-window -v -t "$SESSION":0 "$confirmed"
-  tmux select-pane -t "$SESSION":0.2 -T 'COMPRAS CONFIRMADAS'
-  tmux split-window -v -t "$SESSION":0 "$long_portfolio"
-  tmux select-pane -t "$SESSION":0.3 -T 'LONG PORTFOLIO 2026'
+  local pane_id
+  if engine_is_active alert; then
+    pane_id="$(tmux split-window -v -P -F '#{pane_id}' -t "$SESSION":0 "$analysis")"
+    tmux select-pane -t "$pane_id" -T 'ANÁLISIS'
+    pane_id="$(tmux split-window -v -P -F '#{pane_id}' -t "$SESSION":0 "$confirmed")"
+    tmux select-pane -t "$pane_id" -T 'COMPRAS CONFIRMADAS'
+  fi
+  if engine_is_active long-portfolio; then
+    pane_id="$(tmux split-window -v -P -F '#{pane_id}' -t "$SESSION":0 "$long_portfolio")"
+    tmux select-pane -t "$pane_id" -T 'LONG PORTFOLIO 2026'
+  fi
   tmux select-layout -t "$SESSION":0 tiled
-  tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
-  tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
-  tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
-  tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
-  tmux set-window-option -t "$SESSION":PatreonCaps remain-on-exit on
-  tmux split-window -v -t "$SESSION":PatreonCaps "$patreon_alerts"
-  tmux select-pane -t "$SESSION":PatreonCaps.0 -T 'PATREON CAPS — ANÁLISIS'
-  tmux select-pane -t "$SESSION":PatreonCaps.1 -T 'PATREON CAPS — ALERTAS'
-  tmux new-window -d -t "$SESSION" -n ElliottWave "$elliott_wave"
-  tmux set-window-option -t "$SESSION":ElliottWave remain-on-exit on
-  tmux select-pane -t "$SESSION":ElliottWave.0 -T 'ELLIOTT WAVE — TENENCIAS'
-  tmux new-window -d -t "$SESSION" -n SupportConfirmation "$support_confirmation"
-  tmux set-window-option -t "$SESSION":SupportConfirmation remain-on-exit on
-  tmux select-pane -t "$SESSION":SupportConfirmation.0 -T 'SUPPORT CONFIRMATION — TENENCIAS'
-  tmux new-window -d -t "$SESSION" -n SignalFusion "$signal_fusion_analysis"
-  tmux set-window-option -t "$SESSION":SignalFusion remain-on-exit on
-  tmux split-window -v -t "$SESSION":SignalFusion "$signal_fusion_buys"
-  tmux select-pane -t "$SESSION":SignalFusion.0 -T 'FUSION — Z/R/S + GATES'
-  tmux select-pane -t "$SESSION":SignalFusion.1 -T 'FUSION — BUY CONFIRMED'
+  if engine_is_active entry-opportunity; then
+    tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
+    tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
+    tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
+  fi
+  if engine_is_active patreon-caps; then
+    tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
+    tmux set-window-option -t "$SESSION":PatreonCaps remain-on-exit on
+    tmux split-window -v -t "$SESSION":PatreonCaps "$patreon_alerts"
+    tmux select-pane -t "$SESSION":PatreonCaps.0 -T 'PATREON CAPS — ANÁLISIS'
+    tmux select-pane -t "$SESSION":PatreonCaps.1 -T 'PATREON CAPS — ALERTAS'
+  fi
+  if engine_is_active elliott-wave; then
+    tmux new-window -d -t "$SESSION" -n ElliottWave "$elliott_wave"
+    tmux set-window-option -t "$SESSION":ElliottWave remain-on-exit on
+    tmux select-pane -t "$SESSION":ElliottWave.0 -T 'ELLIOTT WAVE — TENENCIAS'
+  fi
+  if engine_is_active support-confirmation; then
+    tmux new-window -d -t "$SESSION" -n SupportConfirmation "$support_confirmation"
+    tmux set-window-option -t "$SESSION":SupportConfirmation remain-on-exit on
+    tmux select-pane -t "$SESSION":SupportConfirmation.0 -T 'SUPPORT CONFIRMATION — TENENCIAS'
+  fi
+  if engine_is_active signal-fusion; then
+    tmux new-window -d -t "$SESSION" -n SignalFusion "$signal_fusion_analysis"
+    tmux set-window-option -t "$SESSION":SignalFusion remain-on-exit on
+    tmux split-window -v -t "$SESSION":SignalFusion "$signal_fusion_buys"
+    tmux select-pane -t "$SESSION":SignalFusion.0 -T 'FUSION — Z/R/S + GATES'
+    tmux select-pane -t "$SESSION":SignalFusion.1 -T 'FUSION — BUY CONFIRMED'
+  fi
   tmux select-pane -t "$SESSION":0.0
   ((DETACH)) && return
   exec tmux attach-session -t "$SESSION"

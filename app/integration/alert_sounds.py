@@ -50,7 +50,7 @@ def play_patreon_confirmation_sound(*, fallback: TextIO) -> bool:
 
 
 def play_solid_buy_sound(*, fallback: TextIO) -> bool:
-    """Backward-compatible alias for the fully-matured buy alarm."""
+    """Play the strong alarm shared by final non-core family confirmations."""
 
     return _play_windows_sound(_SOLID_BUY_SCRIPT, fallback=fallback)
 

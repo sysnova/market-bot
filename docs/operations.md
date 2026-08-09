@@ -159,6 +159,17 @@ uv run marketbot live
 all child processes and stops the children it created when the launcher exits. Logs live under
 `.runtime/logs`. The deployment is analysis-only and cannot submit an order.
 
+Both platform launchers consume the same canonical process graph. Inspect the effective commands,
+readiness files, active slots, dependencies, and parallel startup batches without starting anything:
+
+```powershell
+uv run marketbot runtime-plan --runtime-root .runtime --no-bell
+```
+
+The JSON is derived from the selected MarketBot definition. Do not add a headless engine command or
+startup dependency directly to a platform launcher; add it to the runtime plan and keep only
+platform-specific window or process-control behavior in the script.
+
 Useful options:
 
 ```powershell

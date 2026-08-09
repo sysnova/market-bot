@@ -64,6 +64,18 @@ how it participates operationally (`active`, `scheduled`, or `on-demand`). These
 separate coordinates and are reported separately in readiness/one-shot summaries. No worker has a
 fallback constructor: a composition must receive its engine from `MarketBotAssembly`.
 
+`app/integration/runtime_process_plan.py` is the single distributed topology source. It derives the
+active processes from the selected definition and owns process names, command arguments, readiness
+files, dependency edges, and deterministic parallel startup batches. Windows and Linux consume the
+same `marketbot runtime-plan` JSON; their scripts own only platform supervision and window/tmux
+presentation. Operator monitors are explicitly separated from headless readiness, so they cannot
+gate the market stream. `scheduled` engines remain owned by their external scheduler and
+`on-demand` engines remain available through their explicit operator command.
+
+The lightweight YAML model and mode loader live in `marketbot_definition.py`; concrete engine
+catalog and factories remain in `engine_assembly.py`. Operator commands are likewise registered by
+focused runtime and infrastructure modules instead of accumulating every concern in `main.py`.
+
 The catalog may contain old implementations for rollback, but the definition chooses exactly one
 per slot. Consumers depend on stable event capabilities, never on a producer's concrete
 implementation version. `engine_version` remains provenance for audit and metrics, not a routing
@@ -128,6 +140,13 @@ core L4 decision identity, but Alert is its only publisher. Entry Recovery is a 
 versioned evidence engine: it never assigns L1-L4, relaxes, or rewrites the original Watcher
 invalidation. Alert evaluates its recovery assessment and the current Swing+Intraday rule assigns
 L2; changing that quality requires a new Alert rule version.
+
+The `Compras Confirmadas` operator window is a focused projection, not another decision engine. It
+renders only core L1-L4 decisions and final Patreon Caps, Long Portfolio, and Signal Fusion buys
+from `EntrySignal`. It does not render Opportunity lifecycle progress, which remains in the
+Opportunity window. Portfolio Flow shares the screen in a visibly separate manual-management lane:
+cyan aggressive-buy watches and red `PROTECT` alarms remain `LocalAlert` notifications and never
+become confirmed buys or acquire an L1-L4 label.
 
 Entry Opportunity 2.0 materializes paper-only lifecycles. It orders inputs independently by source,
 tracks separate horizon legs, closes the aggregate when all opened horizons terminate, and bounds
