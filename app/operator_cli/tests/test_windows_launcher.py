@@ -347,19 +347,21 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["mode"] == "distributed"
     assert plan["environment"].endswith(".venv-windows")
     assert [process["name"] for process in plan["processes"]] == [
-        "alerts-v2",
-        "entry-watcher-v5",
-        "entry-opportunity-v1",
+        "alert",
+        "entry-watcher",
+        "entry-opportunity",
         "market-history-v1",
-        "long-term-v2",
-        "swing-v2",
-        "intraday-v2",
+        "long-term",
+        "swing",
+        "intraday",
         "market-rotation-v1",
         "portfolio-flow-v1",
         "long-portfolio-v1",
         "patreon-caps-v1",
         "confirmed-buy-monitor",
         "alpaca-market-stream",
+        "outbox-relay",
+        "entry-recovery",
     ]
     assert plan["processes"][2]["arguments"][:4] == [
         "run",
@@ -379,11 +381,23 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "engine",
         "long",
     ]
-    assert plan["processes"][-1]["arguments"][:4] == [
+    assert plan["processes"][-3]["arguments"][:4] == [
         "run",
         "marketbot",
         "market",
         "stream",
+    ]
+    assert plan["processes"][-2]["arguments"][:4] == [
+        "run",
+        "marketbot",
+        "outbox",
+        "serve",
+    ]
+    assert plan["processes"][-1]["arguments"][:4] == [
+        "run",
+        "marketbot",
+        "engine",
+        "entry-recovery",
     ]
     assert plan["processes"][7]["arguments"][:4] == [
         "run",

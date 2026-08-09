@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -15,8 +15,10 @@ from app.persistence import (
     PatreonCapsTransitionRecord,
     PatreonCapsWatchRecord,
 )
+from app.persistence.models import OutboxEvent
 from app.persistence.repositories import (
     CheckpointRepository,
+    EngineDecisionStateRepository,
     EntryWatchRepository,
     EventPayloadConflictError,
     HealthRepository,
@@ -114,7 +116,11 @@ async def test_outbox_claim_uses_skip_locked() -> None:
     session.scalars.return_value = ScalarListResult([])
     repository = OutboxRepository(session)
 
-    claimed = await repository.claim_pending(limit=10, now=NOW)
+    claimed = await repository.claim_pending(
+        limit=10,
+        now=NOW,
+        lease_until=NOW + timedelta(seconds=30),
+    )
 
     assert claimed == []
     statement = session.scalars.await_args.args[0]
@@ -149,7 +155,11 @@ async def test_outbox_rejects_nonpositive_claim_size() -> None:
     repository = OutboxRepository(AsyncMock())
 
     with pytest.raises(ValueError, match="positive"):
-        await repository.claim_pending(limit=0, now=NOW)
+        await repository.claim_pending(
+            limit=0,
+            now=NOW,
+            lease_until=NOW + timedelta(seconds=30),
+        )
 
 
 @pytest.mark.unit
@@ -159,7 +169,11 @@ async def test_outbox_publish_and_failure_updates_are_scoped_to_unpublished() ->
     repository = OutboxRepository(session, clock=lambda: NOW)
 
     await repository.mark_published(ENTITY_ID)
-    await repository.record_failure(ENTITY_ID, error="nats unavailable")
+    await repository.record_failure(
+        ENTITY_ID,
+        error="nats unavailable",
+        available_at=NOW + timedelta(seconds=10),
+    )
 
     assert session.execute.await_count == 2
     published_sql = str(
@@ -170,6 +184,33 @@ async def test_outbox_publish_and_failure_updates_are_scoped_to_unpublished() ->
     )
     assert "published_at IS NULL" in published_sql
     assert "published_at IS NULL" in failure_sql
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_outbox_claim_commits_a_lease_before_external_publish() -> None:
+    session = AsyncMock()
+    event = OutboxEvent(
+        id=ENTITY_ID,
+        aggregate_type="entry-watch",
+        aggregate_id="watch-1",
+        event_type="entry-watch.transitioned",
+        subject="marketbot.v1.entry-watch.transition.ARMED.AAPL",
+        payload={"event_type": "entry-watch.transitioned"},
+        headers={},
+        occurred_at=NOW,
+        available_at=NOW,
+        created_at=NOW,
+    )
+    session.scalars.return_value = ScalarListResult([event])
+    repository = OutboxRepository(session)
+    lease_until = NOW + timedelta(seconds=30)
+
+    claimed = await repository.claim_pending(limit=1, now=NOW, lease_until=lease_until)
+
+    assert claimed == [event]
+    assert event.available_at == lease_until
+    assert event.attempts == 1
 
 
 @pytest.mark.unit
@@ -258,6 +299,7 @@ async def test_entry_watch_transition_uses_optimistic_status_guard() -> None:
         current_price=Decimal("103"),
         updated_at=NOW,
         terminal_at=None,
+        anchor_snapshot={"zone_touched_at": NOW.isoformat()},
         transition=transition,
     )
 
@@ -266,7 +308,55 @@ async def test_entry_watch_transition_uses_optimistic_status_guard() -> None:
     sql = str(statement.compile(dialect=repository.dialect))
     assert "entry_watches.status =" in sql
     assert "RETURNING" in sql
+    assert "anchor_snapshot" in sql
     session.add.assert_called_once_with(transition)
+
+
+@pytest.mark.unit
+async def test_entry_watch_snapshot_update_uses_watch_and_status_guard() -> None:
+    session = AsyncMock()
+    session.execute.return_value = ScalarResult(ENTITY_ID)
+    repository = EntryWatchRepository(session)
+
+    changed = await repository.update_anchor_snapshot(
+        ENTITY_ID,
+        status="ARMED",
+        anchor_snapshot={"decision_state": {"candidate": "analysis-1"}},
+    )
+
+    assert changed is True
+    statement = session.execute.await_args.args[0]
+    sql = str(statement.compile(dialect=repository.dialect))
+    assert "entry_watches.id =" in sql
+    assert "entry_watches.status =" in sql
+    assert "anchor_snapshot" in sql
+
+
+@pytest.mark.unit
+async def test_engine_decision_state_upsert_and_load_are_keyed_by_engine_version() -> None:
+    session = AsyncMock()
+    session.scalar.return_value = None
+    repository = EngineDecisionStateRepository(
+        session,
+        id_factory=lambda: ENTITY_ID,
+        clock=lambda: NOW,
+    )
+
+    await repository.upsert(
+        engine_name="alert",
+        implementation_version="3.0.0",
+        state_schema_version="1.0.0",
+        payload={"continuation_candidates": []},
+    )
+    assert await repository.load("alert", "3.0.0") is None
+
+    upsert_statement = session.execute.await_args.args[0]
+    sql = str(upsert_statement.compile(dialect=repository.dialect))
+    assert "ON CONFLICT (engine_name, implementation_version) DO UPDATE" in sql
+    load_statement = session.scalar.await_args.args[0]
+    load_sql = str(load_statement.compile(dialect=repository.dialect))
+    assert "engine_decision_states.engine_name" in load_sql
+    assert "engine_decision_states.implementation_version" in load_sql
 
 
 @pytest.mark.unit

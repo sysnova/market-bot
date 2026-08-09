@@ -68,3 +68,4 @@ def test_report_lists_open_progress_and_l1_success_rate() -> None:
     assert report["open_trades"][0]["progress_bar"] == "[#########-]"
     assert report["maturity_outcomes"]["L1"]["wins"] == 1
     assert report["maturity_outcomes"]["L1"]["success_rate_percent"] == "100.00"
+    assert report["signal_family_outcomes"]["CORE_ENTRY"]["wins"] == 1

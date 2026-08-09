@@ -8,7 +8,14 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from ._base import Identifier, NonEmptyStr, PositiveDecimal, StrictFrozenModel, new_uuid7
+from ._base import (
+    Identifier,
+    NonEmptyStr,
+    PositiveDecimal,
+    SemVer,
+    StrictFrozenModel,
+    new_uuid7,
+)
 from .enums import (
     AnalysisHorizon,
     EntryCheckpointStatus,
@@ -16,6 +23,7 @@ from .enums import (
     EntryLegStatus,
     EntryMaturityLevel,
     EntryOpportunityStatus,
+    EntrySignalFamily,
 )
 from .market_analysis import AnalysisResult
 
@@ -25,6 +33,8 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
 
     checkpoint_id: UUID = Field(default_factory=new_uuid7)
     level: EntryMaturityLevel
+    signal_family: EntrySignalFamily = EntrySignalFamily.CORE_ENTRY
+    setup_id: NonEmptyStr | None = None
     reached_at: datetime
     entry_price: PositiveDecimal
     current_price: PositiveDecimal
@@ -96,6 +106,48 @@ class EntryHorizonLeg(StrictFrozenModel):
         return self
 
 
+class EntryOpportunitySourceCursor(StrictFrozenModel):
+    """Last causally applied event for one independent opportunity input stream."""
+
+    source: Identifier
+    event_id: UUID
+    occurred_at: datetime
+
+    @model_validator(mode="after")
+    def validate_cursor(self) -> EntryOpportunitySourceCursor:
+        if self.event_id.version != 7:
+            raise ValueError("source cursor event_id must be UUIDv7")
+        return self
+
+
+class EntryOpportunitySignalReference(StrictFrozenModel):
+    """Bounded source-agnostic provenance for one setup tracked by an opportunity."""
+
+    signal_id: UUID
+    family: EntrySignalFamily
+    maturity: EntryMaturityLevel | None = None
+    setup_id: NonEmptyStr
+    created_at: datetime
+    entry_price: PositiveDecimal
+    horizons: tuple[AnalysisHorizon, ...] = Field(min_length=1)
+    policy_id: Identifier
+    policy_version: SemVer
+
+    @model_validator(mode="after")
+    def validate_reference(self) -> EntryOpportunitySignalReference:
+        if self.signal_id.version != 7:
+            raise ValueError("signal reference signal_id must be UUIDv7")
+        if len(self.horizons) != len(set(self.horizons)):
+            raise ValueError("signal reference horizons must be unique")
+        core = self.family in {
+            EntrySignalFamily.CORE_ENTRY,
+            EntrySignalFamily.CORE_RECOVERY,
+        }
+        if core != (self.maturity is not None):
+            raise ValueError("only core signal references use L1-L4 maturity")
+        return self
+
+
 class EntryOpportunity(StrictFrozenModel):
     """Current materialized state of one ticker's original entry thesis."""
 
@@ -118,6 +170,13 @@ class EntryOpportunity(StrictFrozenModel):
     current_price: PositiveDecimal
     revision: int = Field(default=1, ge=1)
     source_analysis_ids: tuple[UUID, ...] = Field(min_length=1)
+    primary_signal_family: EntrySignalFamily = EntrySignalFamily.CORE_ENTRY
+    signal_references: tuple[EntryOpportunitySignalReference, ...] = Field(
+        default=(), max_length=32
+    )
+    source_cursors: tuple[EntryOpportunitySourceCursor, ...] = Field(
+        default=(), max_length=16
+    )
     latest_analyses: tuple[AnalysisResult, ...] = ()
     legs: tuple[EntryHorizonLeg, ...] = ()
     checkpoints: tuple[EntryMaturityCheckpoint, ...] = Field(min_length=1)
@@ -130,13 +189,25 @@ class EntryOpportunity(StrictFrozenModel):
             raise ValueError("original_watch_id must be UUIDv7")
         if any(value.version != 7 for value in self.source_analysis_ids):
             raise ValueError("source_analysis_ids must contain UUIDv7 values")
+        if len({item.source for item in self.source_cursors}) != len(self.source_cursors):
+            raise ValueError("opportunity source cursors must be unique")
+        if len({item.signal_id for item in self.signal_references}) != len(
+            self.signal_references
+        ):
+            raise ValueError("opportunity signal references must have unique signal IDs")
+        setups = {(item.family, item.setup_id) for item in self.signal_references}
+        if len(setups) != len(self.signal_references):
+            raise ValueError("opportunity signal references must have unique setups")
         if self.invalidation >= self.zone_low or self.zone_low > self.zone_high:
             raise ValueError("opportunity levels must satisfy invalidation < low <= high")
         closed = self.status is EntryOpportunityStatus.CLOSED
         if closed != (self.closed_at is not None and self.close_reason is not None):
             raise ValueError("closed opportunity requires closed_at and close_reason")
-        if len({item.level for item in self.checkpoints}) != len(self.checkpoints):
-            raise ValueError("maturity checkpoints must be unique")
+        checkpoint_keys = {
+            (item.level, item.signal_family, item.setup_id) for item in self.checkpoints
+        }
+        if len(checkpoint_keys) != len(self.checkpoints):
+            raise ValueError("maturity checkpoints must be unique by level and setup")
         return self
 
 

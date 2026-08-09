@@ -11,10 +11,12 @@ from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    UNIVERSE_CHANGED_EVENT,
     AnalysisResult,
     BarTimeframe,
     EventEnvelope,
     MarketBar,
+    UniverseChanged,
     analysis_result_subject,
 )
 from app.intraday_engine.models import IntradayContext
@@ -22,6 +24,7 @@ from app.intraday_engine.models import IntradayContext
 from .bar_aggregator import MinuteBarAggregator
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
+from .universe_warmup import UniverseWarmupGate
 
 INTRADAY_MINUTE_BARS = 500
 INTRADAY_FIVE_MINUTE_BARS = 100
@@ -50,6 +53,24 @@ class IntradayWorker:
         self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=INTRADAY_MINUTE_BARS)
         self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_5,))
+        self._universe = UniverseWarmupGate()
+
+    def activate_universe(self, symbols: tuple[str, ...]) -> None:
+        self._universe.activate(symbols)
+
+    async def handle_universe_event(self, envelope: EventEnvelope) -> int:
+        if envelope.event_type != UNIVERSE_CHANGED_EVENT:
+            return 0
+        change = (
+            envelope.payload
+            if isinstance(envelope.payload, UniverseChanged)
+            else UniverseChanged.model_validate(envelope.payload, strict=False)
+        )
+        return await self.handle_universe_changed(change)
+
+    async def handle_universe_changed(self, change: UniverseChanged) -> int:
+        added = self._universe.apply(change)
+        return sum([await self._evaluate(symbol) for symbol in added])
 
     async def bootstrap(
         self,
@@ -82,6 +103,8 @@ class IntradayWorker:
         symbol: str,
         source_event_ids: tuple[UUID, ...] = (),
     ) -> int:
+        if not self._universe.allows(symbol):
+            return 0
         minute = self._store.history(
             symbol,
             BarTimeframe.MINUTE_1,

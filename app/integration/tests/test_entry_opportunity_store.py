@@ -7,12 +7,14 @@ from uuid import UUID
 
 import pytest
 
+import app.integration.entry_opportunity_store as store_module
 from app.contracts import (
     EntryMaturityCheckpoint,
     EntryMaturityLevel,
     EntryOpportunity,
     EntryOpportunityEvent,
     EntryOpportunityStatus,
+    EventEnvelope,
 )
 from app.integration.entry_opportunity_store import (
     PostgresEntryOpportunityStore,
@@ -87,11 +89,55 @@ def test_event_record_uses_event_id_for_idempotency() -> None:
 @pytest.mark.unit
 async def test_readiness_requires_snapshot_and_event_tables() -> None:
     session = AsyncMock()
-    session.scalar.side_effect = ["market_bot.entry_opportunities", None]
+    session.scalar.side_effect = [
+        "market_bot.entry_opportunities",
+        None,
+        "market_bot.outbox_events",
+    ]
     context = AsyncMock()
     context.__aenter__.return_value = session
     factory = MagicMock(return_value=context)
     store = PostgresEntryOpportunityStore(factory)  # type: ignore[arg-type]
 
     assert await store.is_ready() is False
-    assert session.scalar.await_count == 2
+    assert session.scalar.await_count == 3
+
+
+@pytest.mark.unit
+async def test_save_persists_event_and_outbox_envelope_in_one_unit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = MagicMock()
+    repository.save = AsyncMock(return_value=True)
+    outbox = MagicMock()
+    outbox.enqueue = AsyncMock()
+
+    class FakeUnitOfWork:
+        async def __aenter__(self) -> FakeUnitOfWork:
+            self.entry_opportunities = repository
+            self.outbox = outbox
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+    monkeypatch.setattr(store_module, "PersistenceUnitOfWork", lambda _: FakeUnitOfWork())
+    store = PostgresEntryOpportunityStore(MagicMock(), source="entry-opportunity-v1")
+    event = EntryOpportunityEvent(
+        event_id=EVENT_ID,
+        occurred_at=NOW,
+        opportunity=opportunity(),
+        reasons=("opportunity_created",),
+    )
+
+    await store.save(event.opportunity, event)
+
+    repository.save.assert_awaited_once()
+    queued = outbox.enqueue.await_args.kwargs
+    assert queued["aggregate_type"] == "entry-opportunity"
+    assert queued["aggregate_id"] == str(OPPORTUNITY_ID)
+    assert queued["subject"] == "marketbot.v1.entry-opportunity.transition.ARMED.AAPL"
+    envelope = EventEnvelope.model_validate(queued["payload"], strict=False)
+    assert envelope.source == "entry-opportunity-v1"
+    assert envelope.causation_id == EVENT_ID
+    assert envelope.payload["event_id"] == str(EVENT_ID)

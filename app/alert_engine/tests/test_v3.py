@@ -3,7 +3,13 @@ from decimal import Decimal
 
 import pytest
 
-from app.alert_engine import AlertEngineV3, BuyMaturity, buy_maturity
+from app.alert_engine import (
+    AlertEngineV3,
+    AlertEngineV3State,
+    AlertEngineV31,
+    BuyMaturity,
+    buy_maturity,
+)
 from app.contracts import (
     AlertKind,
     AnalysisHorizon,
@@ -146,3 +152,38 @@ def test_v3_does_not_count_weak_or_cross_session_readings() -> None:
 
     next_session = NOW + timedelta(days=1)
     assert engine.ingest(strong_higher_low(next_session), now=next_session) is None
+
+
+@pytest.mark.unit
+def test_v31_restart_restores_latest_swing_and_pending_candidate() -> None:
+    engine = AlertEngineV31()
+    engine.ingest(analysis(AnalysisHorizon.SWING, as_of=NOW), now=NOW)
+    assert engine.ingest(strong_higher_low(NOW), now=NOW) is None
+
+    persisted = engine.snapshot_state().model_dump(mode="json")
+    restarted = AlertEngineV31(restored_state=AlertEngineV3State.model_validate(persisted))
+    confirmed = restarted.ingest(
+        strong_higher_low(NOW + timedelta(minutes=3)),
+        now=NOW + timedelta(minutes=3),
+    )
+
+    assert confirmed is not None
+    assert confirmed.kind is AlertKind.ENTRY_CONFIRMED
+
+
+@pytest.mark.unit
+def test_v31_restart_remembers_already_confirmed_market_session() -> None:
+    engine = AlertEngineV31()
+    engine.ingest(analysis(AnalysisHorizon.SWING, as_of=NOW), now=NOW)
+    engine.ingest(strong_higher_low(NOW), now=NOW)
+    assert engine.ingest(
+        strong_higher_low(NOW + timedelta(minutes=3)),
+        now=NOW + timedelta(minutes=3),
+    ) is not None
+
+    restarted = AlertEngineV31(restored_state=engine.snapshot_state())
+
+    assert restarted.ingest(
+        strong_higher_low(NOW + timedelta(minutes=6)),
+        now=NOW + timedelta(minutes=6),
+    ) is None

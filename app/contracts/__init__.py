@@ -8,6 +8,8 @@ from .analysis_events import (
     ANALYSIS_RESULT_EVENT,
     ELLIOTT_WAVE_ASSESSMENT_EVENT,
     ENTRY_OPPORTUNITY_EVENT,
+    ENTRY_SETUP_ASSESSMENT_EVENT,
+    ENTRY_SIGNAL_EVENT,
     ENTRY_WATCH_TRANSITION_EVENT,
     FUSION_ASSESSMENT_EVENT,
     FUSION_BUY_CONFIRMED_EVENT,
@@ -23,9 +25,12 @@ from .analysis_events import (
     SERVICE_HEALTH_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
     SUPPORT_TRANSITION_EVENT,
+    UNIVERSE_CHANGED_EVENT,
     analysis_result_subject,
     elliott_wave_assessment_subject,
     entry_opportunity_subject,
+    entry_setup_assessment_subject,
+    entry_signal_subject,
     entry_watch_transition_subject,
     fusion_assessment_subject,
     fusion_buy_confirmed_subject,
@@ -38,6 +43,7 @@ from .analysis_events import (
     service_health_subject,
     support_assessment_subject,
     support_transition_subject,
+    universe_changed_subject,
 )
 from .domain import (
     AlertDecision,
@@ -57,7 +63,11 @@ from .entry_opportunity import (
     EntryMaturityCheckpoint,
     EntryOpportunity,
     EntryOpportunityEvent,
+    EntryOpportunitySignalReference,
+    EntryOpportunitySourceCursor,
 )
+from .entry_setup import EntrySetupAssessment
+from .entry_signal import EntrySignal
 from .entry_watch import EntryWatchTransition
 from .enums import (
     AlertKind,
@@ -72,6 +82,7 @@ from .enums import (
     EntryLegStatus,
     EntryMaturityLevel,
     EntryOpportunityStatus,
+    EntrySignalFamily,
     EntryWatchStatus,
     FusionState,
     MacroRegime,
@@ -128,11 +139,14 @@ from .support_confirmation import (
     SupportAssessment,
     SupportTransition,
 )
+from .universe import UniverseChanged
 
 __all__ = [
     "ANALYSIS_RESULT_EVENT",
     "ELLIOTT_WAVE_ASSESSMENT_EVENT",
     "ENTRY_OPPORTUNITY_EVENT",
+    "ENTRY_SETUP_ASSESSMENT_EVENT",
+    "ENTRY_SIGNAL_EVENT",
     "ENTRY_WATCH_TRANSITION_EVENT",
     "FUSION_ASSESSMENT_EVENT",
     "FUSION_BUY_CONFIRMED_EVENT",
@@ -149,6 +163,7 @@ __all__ = [
     "SERVICE_HEALTH_EVENT",
     "SUPPORT_ASSESSMENT_EVENT",
     "SUPPORT_TRANSITION_EVENT",
+    "UNIVERSE_CHANGED_EVENT",
     "AlertDecision",
     "AlertKind",
     "AlertPolicy",
@@ -171,7 +186,12 @@ __all__ = [
     "EntryMaturityLevel",
     "EntryOpportunity",
     "EntryOpportunityEvent",
+    "EntryOpportunitySignalReference",
+    "EntryOpportunitySourceCursor",
     "EntryOpportunityStatus",
+    "EntrySetupAssessment",
+    "EntrySignal",
+    "EntrySignalFamily",
     "EntryWatchStatus",
     "EntryWatchTransition",
     "EvaluationContext",
@@ -233,11 +253,14 @@ __all__ = [
     "SupportTransition",
     "TradePlan",
     "TradeSide",
+    "UniverseChanged",
     "WaveAssessment",
     "WavePhase",
     "analysis_result_subject",
     "elliott_wave_assessment_subject",
     "entry_opportunity_subject",
+    "entry_setup_assessment_subject",
+    "entry_signal_subject",
     "entry_watch_transition_subject",
     "fusion_assessment_subject",
     "fusion_buy_confirmed_subject",
@@ -251,5 +274,6 @@ __all__ = [
     "service_health_subject",
     "support_assessment_subject",
     "support_transition_subject",
+    "universe_changed_subject",
     "validate_primary_uniqueness",
 ]

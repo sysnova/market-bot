@@ -9,6 +9,8 @@ from sqlalchemy import UniqueConstraint
 
 from app.persistence.models import (
     Base,
+    EngineDecisionStateRecord,
+    EntryOpportunityEventRecord,
     EntryOpportunityRecord,
     EntryWatchRecord,
     RuleVersion,
@@ -23,6 +25,7 @@ EXPECTED_TABLES = {
     "control_events",
     "entry_opportunities",
     "entry_opportunity_events",
+    "engine_decision_states",
     "entry_watch_transitions",
     "entry_watches",
     "long_portfolio_alerts",
@@ -106,6 +109,42 @@ def test_entry_opportunity_has_one_non_closed_lifecycle_per_symbol() -> None:
     assert len(matching) == 1
     assert matching[0].unique is True
     assert str(matching[0].dialect_options["postgresql"]["where"]) == "status <> 'CLOSED'"
+
+
+@pytest.mark.unit
+def test_entry_opportunity_legacy_retention_index_is_partial() -> None:
+    matching = [
+        index
+        for index in EntryOpportunityEventRecord.__table__.indexes
+        if index.name == "entry_opportunity_events_legacy_evidence_retention_idx"
+    ]
+
+    assert len(matching) == 1
+    assert [column.name for column in matching[0].columns] == [
+        "opportunity_id",
+        "occurred_at",
+        "id",
+    ]
+    predicate = str(matching[0].dialect_options["postgresql"]["where"])
+    assert "long_term_evidence_updated" in predicate
+    assert "swing_evidence_updated" in predicate
+    assert "intraday_evidence_updated" in predicate
+
+
+@pytest.mark.unit
+def test_engine_decision_state_has_one_checkpoint_per_implementation() -> None:
+    matching = [
+        constraint
+        for constraint in EngineDecisionStateRecord.__table__.constraints
+        if isinstance(constraint, UniqueConstraint)
+        and constraint.name == "engine_decision_states_engine_implementation_key"
+    ]
+
+    assert len(matching) == 1
+    assert [column.name for column in matching[0].columns] == [
+        "engine_name",
+        "implementation_version",
+    ]
 
 
 @pytest.mark.unit

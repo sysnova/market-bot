@@ -2,6 +2,7 @@
 
 from app.contracts import EventEnvelope, LocalAlert
 
+from .entry_signal_adapter import entry_signal_from_alert, publish_entry_signal
 from .event_fanout import EventPublisher
 
 
@@ -20,3 +21,6 @@ class AlertEventPublisher:
                 payload=alert,
             ),
         )
+        signal = entry_signal_from_alert(alert)
+        if signal is not None:
+            await publish_entry_signal(self._publisher, signal, source="alert")

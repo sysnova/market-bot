@@ -45,6 +45,7 @@ def test_root_help_lists_operator_groups() -> None:
         "alerts",
         "entry-watch",
         "entry-opportunity",
+        "outbox",
         "monitor",
         "connector",
     ):
@@ -82,7 +83,9 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("alerts", "serve"),
         ("entry-watch", "serve"),
         ("entry-opportunity", "serve"),
+        ("outbox", "serve"),
         ("engine", "patreon-caps"),
+        ("engine", "entry-recovery"),
         ("alerts", "patreon-caps"),
         ("monitor", "patreon-caps"),
         ("monitor", "entry-opportunity"),
@@ -140,8 +143,8 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "6.0.0"
-    assert payload["engines"]["entry-watcher"]["implementation"] == "5.0.0"
+    assert payload["version"] == "7.1.0"
+    assert payload["engines"]["entry-watcher"]["implementation"] == "5.1.0"
     assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
     assert payload["engines"]["portfolio-flow"]["strategy"]["version"] == "2.0.0"
     assert payload["engines"]["peter-lynch"]["mode"] == "on-demand"
@@ -253,6 +256,31 @@ def test_version_is_available_without_runtime_dependencies() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.strip().startswith("marketbot ")
+
+
+def test_entry_opportunity_history_cleanup_defaults_to_dry_run() -> None:
+    async def fake_maintain(**kwargs: object) -> dict[str, object]:
+        assert kwargs["apply"] is False
+        assert kwargs["retain_per_opportunity"] == 100
+        assert kwargs["batch_size"] == 1000
+        return {
+            "applied": False,
+            "candidate_rows": 2500,
+            "candidate_bytes": 75_000_000,
+            "deleted_rows": 0,
+        }
+
+    with patch(
+        "app.integration.entry_opportunity_history_maintenance.maintain_entry_opportunity_history",
+        new=fake_maintain,
+    ):
+        result = runner.invoke(
+            app,
+            ["entry-opportunity", "prune-history", "--older-than-days", "30"],
+        )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["applied"] is False
 
 
 def test_placeholder_groups_are_honest_about_availability() -> None:

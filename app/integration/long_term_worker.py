@@ -12,16 +12,19 @@ from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    UNIVERSE_CHANGED_EVENT,
     AnalysisResult,
     BarTimeframe,
     EventEnvelope,
     MarketBar,
+    UniverseChanged,
     analysis_result_subject,
 )
 from app.long_term_engine.models import LongTermContext
 
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
+from .universe_warmup import UniverseWarmupGate
 
 LONG_DAILY_BARS = 260
 LONG_WEEKLY_BARS = 220
@@ -48,6 +51,24 @@ class LongTermWorker:
         self._publisher = publisher
         self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=LONG_DAILY_BARS)
+        self._universe = UniverseWarmupGate()
+
+    def activate_universe(self, symbols: tuple[str, ...]) -> None:
+        self._universe.activate(symbols)
+
+    async def handle_universe_event(self, envelope: EventEnvelope) -> int:
+        if envelope.event_type != UNIVERSE_CHANGED_EVENT:
+            return 0
+        change = (
+            envelope.payload
+            if isinstance(envelope.payload, UniverseChanged)
+            else UniverseChanged.model_validate(envelope.payload, strict=False)
+        )
+        return await self.handle_universe_changed(change)
+
+    async def handle_universe_changed(self, change: UniverseChanged) -> int:
+        added = self._universe.apply(change)
+        return sum([await self._evaluate(symbol) for symbol in added])
 
     async def bootstrap(
         self,
@@ -87,6 +108,8 @@ class LongTermWorker:
         live_price: Decimal | None = None,
         live_as_of: datetime | None = None,
     ) -> int:
+        if not self._universe.allows(symbol):
+            return 0
         daily = self._store.history(
             symbol, BarTimeframe.DAY_1, limit=LONG_DAILY_BARS, final_only=True
         )

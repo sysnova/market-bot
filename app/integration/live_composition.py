@@ -36,6 +36,7 @@ from .postgres_universe import (
     PostgresUniverseClient,
     fallback_universe,
 )
+from .universe_events import UniverseEventPublisher
 
 _NEW_YORK = ZoneInfo("America/New_York")
 
@@ -193,6 +194,8 @@ async def run_live_analysis(
         market_data=market_data,
         local_bus=local_bus,
         runtime=runtime,
+        universe_publisher=UniverseEventPublisher(publisher),
+        universe_source=universe.source,
     )
     try:
         summary = await service.initialize(clock.now())

@@ -15,10 +15,15 @@ order and contains no account, position, sizing, or Trading API concept. `AlertD
 sends an alert to local sinks and can publish it through a structural port using
 `LOCAL_ALERT_EVENT` and `local_alert_subject`.
 
-`AlertEngineV3` is the active distributed generation. It preserves every V2 alert and adds an
+`AlertEngineV3` adds an
 L2 Swing-continuation path that does not require a Long thesis: two distinct strong Intraday
 readings in the same New York market date, separated by the configured delay and both reporting
 a five-minute higher low, confirm the still-fresh Swing setup once per symbol/session.
+
+`AlertEngineV32` is the active distributed generation. It preserves the durable V3.1 state and
+also consumes source-agnostic `EntrySetupAssessment` evidence. For `CORE_RECOVERY`, its versioned
+artifact currently assigns L2 to fresh Swing + Intraday evidence; only Alert then materializes the
+confirmed `EntrySignal` consumed by Opportunity. Recovery never assigns its own L1-L4 quality.
 
 `AlertEngineV2` remains available for replay. It emits explicit `AlertKind` values:
 
@@ -28,8 +33,9 @@ a five-minute higher low, confirm the still-fresh Swing setup once per symbol/se
 - `HIGH_CONVICTION_BUY` when Long, Swing, and Intraday are all bullish;
 - `SEC_WARNING` independently, without gating another alert.
 
-The standalone Alert process consumes `marketbot.v1.analysis.result.>` and
-`marketbot.v1.entry-watch.transition.>` through separate durable NATS consumers and publishes
+The standalone Alert process consumes `marketbot.v1.analysis.result.>`,
+`marketbot.v1.entry-watch.transition.>`, and `marketbot.v1.entry-setup.>` through separate durable
+NATS consumers and publishes
 final `LocalAlert` events for viewers. It does not read any engine store or the watcher database.
 
 Included local sinks:

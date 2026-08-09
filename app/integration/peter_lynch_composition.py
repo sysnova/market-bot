@@ -25,6 +25,7 @@ from .distributed_composition import build_rest
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .peter_lynch_sec_adapter import PeterLynchSecAdapter, SecPeterLynchFacts
 from .peter_lynch_store import PostgresPeterLynchStore
+from .universe_policy import universe_health_details
 
 ProgressReporter = Callable[[str], None]
 
@@ -219,6 +220,7 @@ async def run_peter_lynch_once(
         spec = assembly.spec(EngineSlot.PETER_LYNCH)
         return {
             **result,
+            **universe_health_details("peter-lynch"),
             "marketbot_definition_version": assembly.definition.version,
             "engine_implementation": spec.implementation,
             "engine_strategy_version": spec.strategy.version,

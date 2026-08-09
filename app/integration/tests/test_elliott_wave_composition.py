@@ -62,9 +62,11 @@ def test_tmux_launcher_has_a_sibling_elliott_wave_window() -> None:
     assert "-n ElliottWave" in launcher
     assert "--role elliott-wave" in launcher
     assert "ELLIOTT WAVE" in launcher
-    assert launcher.index(
-        'while [[ ! -f "$STATUS_ROOT/elliott-wave-v0.ready.json" ]]'
-    ) < launcher.index("uv run marketbot monitor elliott-wave")
+    role = launcher.split("run_elliott_wave()", 1)[1].split(
+        "run_support_confirmation()", 1
+    )[0]
+    assert "uv run marketbot monitor elliott-wave" in role
+    assert "marketbot engine elliott-wave" not in role
 
 
 def test_panel_format_names_the_wave_and_critical_levels() -> None:

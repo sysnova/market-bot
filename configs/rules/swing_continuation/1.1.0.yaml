@@ -1,0 +1,10 @@
+rule_id: marketbot.swing_continuation
+version: 1.1.0
+status: active
+behavior:
+  fresh_reconfirmation_delay_minutes: 3
+  strong_confirmation_required: true
+  five_minute_higher_low_required: true
+  same_market_session_required: true
+  recovery_required_horizons: [SWING, INTRADAY]
+  recovery_maturity: L2

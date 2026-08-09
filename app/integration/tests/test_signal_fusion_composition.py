@@ -11,6 +11,7 @@ from app.alert_engine.confirmed import BuyMaturity
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     ELLIOTT_WAVE_ASSESSMENT_EVENT,
+    ENTRY_SIGNAL_EVENT,
     FUSION_ASSESSMENT_EVENT,
     FUSION_BUY_CONFIRMED_EVENT,
     FUSION_RECOVERY_CONFIRMED_EVENT,
@@ -273,9 +274,10 @@ async def test_runtime_deduplicates_and_emits_buy_only_on_state_change() -> None
     engine.state = FusionState.BUY_CONFIRMED
     engine.hash = f"sha256:{'3' * 64}"
     await runtime.handle_source(_support_event(support))
-    assert [item.event_type for _, item in publisher.items[-3:]] == [
+    assert [item.event_type for _, item in publisher.items[-4:]] == [
         FUSION_ASSESSMENT_EVENT,
         FUSION_TRANSITION_EVENT,
+        ENTRY_SIGNAL_EVENT,
         FUSION_BUY_CONFIRMED_EVENT,
     ]
     assert engine.contexts[-1].holding_quantity == Decimal("10")
@@ -283,9 +285,10 @@ async def test_runtime_deduplicates_and_emits_buy_only_on_state_change() -> None
     engine.state = FusionState.RECOVERY_CONFIRMED
     engine.hash = f"sha256:{'8' * 64}"
     await runtime.handle_source(_support_event(support))
-    assert [item.event_type for _, item in publisher.items[-3:]] == [
+    assert [item.event_type for _, item in publisher.items[-4:]] == [
         FUSION_ASSESSMENT_EVENT,
         FUSION_TRANSITION_EVENT,
+        ENTRY_SIGNAL_EVENT,
         FUSION_RECOVERY_CONFIRMED_EVENT,
     ]
 

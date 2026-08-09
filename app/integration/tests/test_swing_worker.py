@@ -13,6 +13,7 @@ from app.contracts import (
     EventEnvelope,
     MarketBar,
     PatternDirection,
+    UniverseChanged,
 )
 from app.integration.swing_worker import SwingWorker
 from app.swing_engine.models import SwingContext
@@ -100,3 +101,31 @@ async def test_swing_worker_bootstraps_own_store_and_reacts_to_completed_15m() -
     assert analyzer.contexts[-1].intraday_bars[-1] == live
     assert all(event.event_type == ANALYSIS_RESULT_EVENT for _, event in publisher.events)
     assert all(subject.endswith(".SWING.HIMS") for subject, _ in publisher.events)
+
+
+@pytest.mark.unit
+async def test_swing_worker_publishes_added_symbol_only_after_worker_warmup() -> None:
+    publisher = RecordingPublisher()
+    worker = SwingWorker(publisher=publisher, analyzer=RecordingAnalyzer())
+    worker.activate_universe(())
+    assert await worker.bootstrap(
+        (
+            bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+            bar(BarTimeframe.MINUTE_15, NOW - timedelta(minutes=15)),
+        ),
+        symbols=("HIMS",),
+    ) == 0
+
+    count = await worker.handle_universe_changed(
+        UniverseChanged(
+            occurred_at=NOW,
+            source="postgresql-local",
+            previous_symbols=(),
+            symbols=("HIMS",),
+            added_symbols=("HIMS",),
+            removed_symbols=(),
+        )
+    )
+
+    assert count == 1
+    assert len(publisher.events) == 1

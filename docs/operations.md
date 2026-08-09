@@ -32,7 +32,7 @@ selection before starting services:
 uv run marketbot assembly
 ```
 
-The default is `configs/marketbot/6.0.0.yaml`. Each engine entry separates:
+The default is `configs/marketbot/7.1.0.yaml`. Each engine entry separates:
 
 - `implementation`: concrete Python behavior;
 - `strategy`: embedded rules or an exact-version YAML artifact;
@@ -41,15 +41,16 @@ The default is `configs/marketbot/6.0.0.yaml`. Each engine entry separates:
 To deploy another complete, reviewed assembly, create a new immutable definition and select it:
 
 ```powershell
-$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/6.0.0.yaml"
+$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.1.0.yaml"
 .\scripts\windows\start-market-bot.ps1
 ```
 
 Strategy manifests live under `configs/rules/`. Entry confirmation `5.0.0` retains the v3
 anchored-VWAP Swing gate and adds an Intraday anti-chase gate: at most 0.50 ATR above the trigger,
 at most 2 ATR above EMA20, a strong five-minute higher low, and a second fresh Entry Watcher
-confirmation after at least three minutes. Entry Watcher v5 may also emit L4 without a prior
-Long-zone touch when the higher low persists and live reward/risk remains at least 2. Readiness summaries expose
+confirmation after at least three minutes. Entry Watcher v5 may also reach `TRIGGERED` without a
+prior Long-zone touch when the higher low persists and live reward/risk remains at least 2; Alert
+is the only component that turns that transition into L4. Readiness summaries expose
 `marketbot_definition_version`, `engine_implementation`, and `engine_strategy_version`; analytical
 results retain their engine and entry-confirmation versions for outcome grouping.
 
@@ -75,7 +76,7 @@ buys into one label:
 | L1 Tactical recovery | Long + Intraday | Yellow | One tone |
 | L2 Swing confirmed | Swing + Intraday | Blue | Two ascending tones |
 | L3 High conviction | Long + Swing + Intraday | Green | Three ascending tones |
-| L4 Fully matured | Entry Watcher v4 second confirmation, strict Portfolio, PatreonCaps, or Fusion confirmation | Magenta | Three emphatic tones |
+| L4 Core entry confirmed | Entry Watcher 5.1 `TRIGGERED`, including a separately tracked core recovery | Magenta | Three emphatic tones |
 
 Long + Intraday is intentional: it preserves a tactical recovery when the Long backdrop remains
 bullish but Swing has not recovered its daily/anchored-VWAP structure. Swing consumes daily and
@@ -88,6 +89,11 @@ Entry Watcher path to L4 while the quote is outside its efficient entry window. 
 retest is only a candidate; Entry Watcher requires a different analysis at least three minutes
 later. A triggered symbol cannot be immediately rearmed from a recalculated Long zone for 30
 minutes, so one thesis does not produce duplicate Entry Watcher alarms.
+
+PatreonCaps, Long Portfolio, Signal Fusion, and Portfolio Flow publish independent analytical
+families. They never acquire or impersonate an Alert L1-L4 level. Entry Opportunity tracks each
+family/setup independently so a failed intraday leg, a continuing Swing leg, and a later recovery
+can have separate paper outcomes.
 
 The displayed price is the current or most recent tactical reference price, never the midpoint of a
 stale buy zone. `app.alert_engine.evaluate_solid_buy_outcomes()` measures persisted buy alerts
@@ -107,6 +113,11 @@ The default symbol universe is read directly from the local PostgreSQL `stock` s
 default). Symbols added by analysis become available on the next refresh. There is no static
 fallback list and no Supabase Edge Function is used at runtime. `--symbols` remains an explicit
 one-run operator override.
+
+After a dynamic change, `marketbot.v1.universe.changed.core` carries the desired replacement. Its
+`consumer_warmup_required=true` assertion means each distributed Long/Swing/Intraday worker must
+load its horizon-specific history before applying the snapshot. Health and ready files expose
+`universe_policy` and `warmup_policy` for operator verification.
 
 ### Windows launcher
 
@@ -206,6 +217,37 @@ uv run marketbot market stream
 uv run marketbot monitor patreon-caps
 uv run marketbot alerts patreon-caps
 ```
+
+### Entry Opportunity history retention
+
+`entry_opportunity_events` previously stored a complete Opportunity snapshot for every non-material
+analysis. Maintenance is deliberately restricted to legacy rows whose **only** reason is
+`long_term_evidence_updated`, `swing_evidence_updated`, or `intraday_evidence_updated`; lifecycle,
+leg, maturity, close, and mixed-reason events are never candidates. At least the newest N events of
+every opportunity are also protected.
+Apply `20260809130000_entry_opportunity_event_retention.sql` before using `--apply`; it installs the
+partial retention index and the narrowly scoped security-definer batch function. The runtime role
+still has no direct `DELETE` grant.
+
+Preview rows and approximate stored row bytes without changing PostgreSQL:
+
+```powershell
+uv run marketbot entry-opportunity prune-history --older-than-days 30 --retain-per-opportunity 100
+```
+
+Deletion requires the explicit `--apply` flag and commits one bounded batch at a time:
+
+```powershell
+uv run marketbot entry-opportunity prune-history --older-than-days 30 --retain-per-opportunity 100 --batch-size 1000 --apply
+```
+
+Take and verify a local PostgreSQL backup before applying retention. Deleting rows makes their space
+reusable inside PostgreSQL but does not necessarily reduce the table file immediately. A normal
+`VACUUM (ANALYZE)` may be scheduled afterward to update visibility/statistics. Returning disk space
+to the operating system requires a separately reviewed maintenance operation such as `VACUUM FULL`
+(exclusive table lock and full rewrite) or `pg_repack` (external extension/tool, extra temporary disk
+space, and its own operational prerequisites). MarketBot does not execute any of these operations;
+choose one only after checking free space, backups, locks, and the local maintenance window.
 
 The alert ledger rotates by `America/New_York` market date and defaults to files such as
 `.runtime\alerts\marketbot-alerts-2026-07-26.ndjson`. Each day is append-only, fsynced, and
@@ -548,7 +590,7 @@ sin interrumpir la publicacion NATS. Esta prealerta no equivale a una compra: `B
 reservado para Signal Fusion cuando tambien pasan Long, timing, ejecucion, SEC, cartera y R/R.
 
 JetStream conserva assessments y transiciones durante la retencion general de 15 dias y permite
-restaurar el ultimo estado al reiniciar. No alimenta PatreonCaps, ElliottWave ni Alert v2 en esta
+restaurar el ultimo estado al reiniciar. No alimenta PatreonCaps, ElliottWave ni Alert en esta
 fase de prueba, y no emite ordenes o alertas de compra.
 
 El launcher crea una cuarta ventana hermana, independiente de las otras tres:

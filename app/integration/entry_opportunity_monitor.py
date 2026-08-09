@@ -144,9 +144,18 @@ async def run_entry_opportunity_monitor(
     refresh_task: asyncio.Task[None] | None = None
     try:
         opportunities = await _load_tracked_opportunities(store=store, history=history)
+        latest_events = await store.latest_events(
+            tuple(item.opportunity_id for item in opportunities)
+        )
+        reasons_by_id = {
+            item.opportunity.opportunity_id: item.reasons for item in latest_events
+        }
         async with lock:
             for opportunity in opportunities:
-                dashboard.merge(opportunity)
+                dashboard.merge(
+                    opportunity,
+                    reasons=reasons_by_id.get(opportunity.opportunity_id, ()),
+                )
             render()
         if ready_path is not None:
             write_ready(
@@ -196,9 +205,18 @@ async def _refresh_from_postgres(
         await asyncio.sleep(interval.total_seconds())
         try:
             opportunities = await _load_tracked_opportunities(store=store, history=history)
+            latest_events = await store.latest_events(
+                tuple(item.opportunity_id for item in opportunities)
+            )
+            reasons_by_id = {
+                item.opportunity.opportunity_id: item.reasons for item in latest_events
+            }
             async with lock:
                 for opportunity in opportunities:
-                    dashboard.merge(opportunity)
+                    dashboard.merge(
+                        opportunity,
+                        reasons=reasons_by_id.get(opportunity.opportunity_id, ()),
+                    )
                 render()
         except asyncio.CancelledError:
             raise
@@ -275,6 +293,13 @@ def _format_opportunity(
 ) -> list[str]:
     filled = min(10, max(0, int(opportunity.progress_percent / Decimal("10"))))
     progress = f"[{'#' * filled}{'-' * (10 - filled)}]"
+    core_family = opportunity.primary_signal_family.value.startswith("CORE_")
+    decision = (
+        f"MAT {opportunity.current_maturity.value:<7} "
+        f"PEAK {opportunity.peak_maturity.value:<7}"
+        if core_family
+        else f"FAMILY {opportunity.primary_signal_family.value:<16}"
+    )
     closed = ""
     if opportunity.status is EntryOpportunityStatus.CLOSED:
         assert opportunity.closed_at is not None
@@ -287,8 +312,7 @@ def _format_opportunity(
         "",
         (
             f"{opportunity.symbol:<7} {opportunity.status.value:<10} "
-            f"MAT {opportunity.current_maturity.value:<7} "
-            f"PEAK {opportunity.peak_maturity.value:<7} {progress} "
+            f"{decision} {progress} "
             f"{opportunity.progress_percent}% | REV {opportunity.revision}{closed}"
         ),
         (
@@ -303,18 +327,20 @@ def _format_opportunity(
         ),
         (
             f"  SOURCE ANALYSES {len(opportunity.source_analysis_ids)} | "
+            f"SIGNALS {len(opportunity.signal_references)} | "
             f"ULTIMO EVENTO {','.join(reasons) if reasons else '-'}"
         ),
         "  CHECKPOINTS DE MADURACION",
     ]
     for item in opportunity.checkpoints:
+        setup = f"{item.level.value}/{item.signal_family.value}"
         performance = (
             f"G/L {_percent_text(item.gain_loss_percent)}"
             if item.status is EntryCheckpointStatus.CLOSED
             else f"P/L LIVE {_live_percent(item.entry_price, item.current_price)}"
         )
         lines.append(
-            f"    {item.level.value:<7} {item.status.value:<7} "
+            f"    {setup:<28} {item.status.value:<7} "
             f"ENTRY {item.entry_price} PX {item.current_price} "
             f"EXIT {item.exit_price or '-'} {performance} | "
             f"INV {item.invalidation} TARGET {item.target or '-'} | "
@@ -323,6 +349,7 @@ def _format_opportunity(
             f"60m {_percent_text(item.return_60m)} CLOSE {_percent_text(item.return_close)} | "
             f"REACHED {item.reached_at:%m-%d %H:%M} "
             f"CLOSED {item.closed_at.strftime('%m-%d %H:%M') if item.closed_at else '-'} "
+            f"SETUP {item.setup_id or '-'} "
             f"OUTCOME {item.outcome.value if item.outcome else '-'}"
         )
     lines.append("  LEGS POR HORIZONTE")

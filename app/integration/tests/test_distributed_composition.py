@@ -13,7 +13,9 @@ from app.contracts import (
     ServiceHealth,
 )
 from app.integration.distributed_composition import (
+    _alert_durable_name,
     _build_worker,
+    _horizon_durable_name,
     _publish_health,
     _service_name,
     _write_ready,
@@ -99,17 +101,29 @@ def test_market_stream_subscribes_only_to_events_consumed_by_engines() -> None:
 @pytest.mark.unit
 def test_distributed_helpers_normalize_batches_and_readiness(tmp_path: Path) -> None:
     assert _batches(("hims", " HIMS", "zeta"), 1) == (("HIMS",), ("ZETA",))
-    assert _service_name(AnalysisHorizon.LONG_TERM) == "long-term-v2"
-    assert _service_name(AnalysisHorizon.SWING) == "swing-v2"
-    assert _service_name(AnalysisHorizon.INTRADAY) == "intraday-v2"
+    assert _service_name(AnalysisHorizon.LONG_TERM) == "long-term"
+    assert _service_name(AnalysisHorizon.SWING) == "swing"
+    assert _service_name(AnalysisHorizon.INTRADAY) == "intraday"
 
     ready_path = tmp_path / "status" / "worker.ready.json"
-    _write_ready(ready_path, {"service": "swing-v2", "ready": True})
+    _write_ready(ready_path, {"service": "swing", "ready": True})
 
     assert json.loads(ready_path.read_text(encoding="utf-8")) == {
         "ready": True,
-        "service": "swing-v2",
+        "service": "swing",
     }
+
+
+@pytest.mark.unit
+def test_durable_names_follow_logical_service_and_contract_major() -> None:
+    assert _horizon_durable_name(AnalysisHorizon.LONG_TERM, 1) == (
+        "marketbot-long-term-market-v1-1"
+    )
+    assert _horizon_durable_name(AnalysisHorizon.SWING, 2) == (
+        "marketbot-swing-market-v1-2"
+    )
+    assert _alert_durable_name("analysis") == "marketbot-alert-analysis-v1"
+    assert _alert_durable_name("entry-watch") == "marketbot-alert-entry-watch-v1"
 
 
 @pytest.mark.unit
@@ -125,13 +139,13 @@ async def test_health_is_published_as_a_stable_contract() -> None:
     publisher = RecordingPublisher()
     now = datetime(2026, 7, 28, 14, 30, tzinfo=UTC)
 
-    await _publish_health(publisher, "swing-v2", {"symbols": 2}, now)
+    await _publish_health(publisher, "swing", {"symbols": 2}, now)
 
     subject, envelope = publisher.events[0]
-    assert subject == "marketbot.v1.service.health.swing-v2"
+    assert subject == "marketbot.v1.service.health.swing"
     assert envelope.event_type == SERVICE_HEALTH_EVENT
     assert isinstance(envelope.payload, ServiceHealth)
-    assert envelope.payload.service == "swing-v2"
+    assert envelope.payload.service == "swing"
 
 
 @pytest.mark.unit

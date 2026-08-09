@@ -13,6 +13,7 @@ from app.contracts import (
     EventEnvelope,
     MarketBar,
     PatternDirection,
+    UniverseChanged,
 )
 from app.integration.long_term_worker import LongTermWorker
 from app.long_term_engine.models import LongTermContext
@@ -126,3 +127,31 @@ async def test_long_worker_reprices_completed_history_from_live_minutes() -> Non
     assert analyzer.contexts[-1].price == Decimal("103")
     assert analyzer.contexts[-1].as_of == NOW
     assert analyzer.contexts[-1].daily_bars == (daily,)
+
+
+@pytest.mark.unit
+async def test_long_worker_publishes_added_symbol_only_after_worker_warmup() -> None:
+    publisher = RecordingPublisher()
+    worker = LongTermWorker(publisher=publisher, analyzer=RecordingAnalyzer())
+    worker.activate_universe(())
+    assert await worker.bootstrap(
+        (
+            bar(BarTimeframe.WEEK_1, NOW - timedelta(days=7)),
+            bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+        ),
+        symbols=("HIMS",),
+    ) == 0
+
+    count = await worker.handle_universe_changed(
+        UniverseChanged(
+            occurred_at=NOW,
+            source="postgresql-local",
+            previous_symbols=(),
+            symbols=("HIMS",),
+            added_symbols=("HIMS",),
+            removed_symbols=(),
+        )
+    )
+
+    assert count == 1
+    assert len(publisher.events) == 1

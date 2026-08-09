@@ -82,13 +82,15 @@ if ($Once -or $NoNats) {
 $StatusRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "status"
 $LogRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "logs"
 $ReadyFiles = [ordered]@{
-    "alerts-v2" = Join-Path -Path $StatusRoot -ChildPath "alert-v2.ready.json"
-    "entry-watcher-v5" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher-v5.ready.json"
-    "entry-opportunity-v1" = Join-Path -Path $StatusRoot -ChildPath "entry-opportunity-v1.ready.json"
+    "outbox-relay" = Join-Path -Path $StatusRoot -ChildPath "outbox-relay.ready.json"
+    "alert" = Join-Path -Path $StatusRoot -ChildPath "alert.ready.json"
+    "entry-watcher" = Join-Path -Path $StatusRoot -ChildPath "entry-watcher.ready.json"
+    "entry-opportunity" = Join-Path -Path $StatusRoot -ChildPath "entry-opportunity.ready.json"
+    "entry-recovery" = Join-Path -Path $StatusRoot -ChildPath "entry-recovery.ready.json"
     "market-history-v1" = Join-Path -Path $StatusRoot -ChildPath "market-history-v1.ready.json"
-    "long-term-v2" = Join-Path -Path $StatusRoot -ChildPath "long-term-v2.ready.json"
-    "swing-v2" = Join-Path -Path $StatusRoot -ChildPath "swing-v2.ready.json"
-    "intraday-v2" = Join-Path -Path $StatusRoot -ChildPath "intraday-v2.ready.json"
+    "long-term" = Join-Path -Path $StatusRoot -ChildPath "long-term.ready.json"
+    "swing" = Join-Path -Path $StatusRoot -ChildPath "swing.ready.json"
+    "intraday" = Join-Path -Path $StatusRoot -ChildPath "intraday.ready.json"
     "market-rotation-v1" = Join-Path -Path $StatusRoot -ChildPath "market-rotation-v1.ready.json"
     "portfolio-flow-v1" = Join-Path -Path $StatusRoot -ChildPath "portfolio-flow-v1.ready.json"
     "long-portfolio-v1" = Join-Path -Path $StatusRoot -ChildPath "long-portfolio-v1.ready.json"
@@ -126,14 +128,14 @@ foreach ($Argument in @(
     "--runtime-root",
     $ResolvedRuntimeRoot,
     "--ready-path",
-    $ReadyFiles["alerts-v2"]
+    $ReadyFiles["alert"]
 )) {
     $AlertArguments.Add($Argument)
 }
 if ($NoBell) {
     $AlertArguments.Add("--no-bell")
 }
-$ProcessSpecs.Add((New-ProcessSpec -Name "alerts-v2" -Arguments $AlertArguments.ToArray()))
+$ProcessSpecs.Add((New-ProcessSpec -Name "alert" -Arguments $AlertArguments.ToArray()))
 
 $EntryWatchArguments = @(
     "run",
@@ -141,9 +143,9 @@ $EntryWatchArguments = @(
     "entry-watch",
     "serve",
     "--ready-path",
-    $ReadyFiles["entry-watcher-v5"]
+    $ReadyFiles["entry-watcher"]
 )
-$ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher-v5" -Arguments $EntryWatchArguments))
+$ProcessSpecs.Add((New-ProcessSpec -Name "entry-watcher" -Arguments $EntryWatchArguments))
 
 $EntryOpportunityArguments = @(
     "run",
@@ -151,9 +153,9 @@ $EntryOpportunityArguments = @(
     "entry-opportunity",
     "serve",
     "--ready-path",
-    $ReadyFiles["entry-opportunity-v1"]
+    $ReadyFiles["entry-opportunity"]
 )
-$ProcessSpecs.Add((New-ProcessSpec -Name "entry-opportunity-v1" -Arguments $EntryOpportunityArguments))
+$ProcessSpecs.Add((New-ProcessSpec -Name "entry-opportunity" -Arguments $EntryOpportunityArguments))
 
 $MarketHistoryArguments = @(
     "run", "marketbot", "market", "history",
@@ -162,9 +164,9 @@ $MarketHistoryArguments = @(
 $ProcessSpecs.Add((New-ProcessSpec -Name "market-history-v1" -Arguments $MarketHistoryArguments))
 
 foreach ($Definition in @(
-    [pscustomobject]@{ Name = "long-term-v2"; Command = "long" },
-    [pscustomobject]@{ Name = "swing-v2"; Command = "swing" },
-    [pscustomobject]@{ Name = "intraday-v2"; Command = "intraday" }
+    [pscustomobject]@{ Name = "long-term"; Command = "long" },
+    [pscustomobject]@{ Name = "swing"; Command = "swing" },
+    [pscustomobject]@{ Name = "intraday"; Command = "intraday" }
 )) {
     $Arguments = [System.Collections.Generic.List[string]]::new()
     foreach ($Argument in @(
@@ -225,6 +227,18 @@ foreach ($Argument in @("run", "marketbot", "market", "stream")) {
 Add-SymbolArguments -Arguments $StreamArguments
 $ProcessSpecs.Add((New-ProcessSpec -Name "alpaca-market-stream" -Arguments $StreamArguments.ToArray()))
 
+$OutboxArguments = @(
+    "run", "marketbot", "outbox", "serve",
+    "--ready-path", $ReadyFiles["outbox-relay"]
+)
+$ProcessSpecs.Add((New-ProcessSpec -Name "outbox-relay" -Arguments $OutboxArguments))
+
+$EntryRecoveryArguments = @(
+    "run", "marketbot", "engine", "entry-recovery",
+    "--ready-path", $ReadyFiles["entry-recovery"]
+)
+$ProcessSpecs.Add((New-ProcessSpec -Name "entry-recovery" -Arguments $EntryRecoveryArguments))
+
 if ($DryRun) {
     [pscustomobject]@{
         mode = "distributed"
@@ -251,10 +265,10 @@ function Start-MarketBotProcess {
     $ArgumentLine = ($Spec.arguments | ForEach-Object {
         '"' + ([string]$_).Replace('"', '\"') + '"'
     }) -join " "
-    $Visible = $Spec.name -in @("alerts-v2", "confirmed-buy-monitor")
+    $Visible = $Spec.name -in @("alert", "confirmed-buy-monitor")
     if ($Visible) {
         $WindowsTerminal = Get-Command wt.exe -ErrorAction Stop
-        $Role = if ($Spec.name -eq "alerts-v2") {
+        $Role = if ($Spec.name -eq "alert") {
             "analysis"
         }
         else {
@@ -487,15 +501,23 @@ try {
     Write-Host "Starting independent MarketBot processes..." -ForegroundColor Cyan
     Write-Host "Project: $ProjectRoot"
     Write-Host "Runtime: $ResolvedRuntimeRoot"
+    $OutboxChild = Start-MarketBotProcess -Spec $ProcessSpecs[13]
+    $Children.Add($OutboxChild)
+    Write-Host "Started outbox-relay (PID $($OutboxChild.process.Id))"
+    Wait-MarketBotReadiness -Paths @($ReadyFiles["outbox-relay"])
+    $RecoveryChild = Start-MarketBotProcess -Spec $ProcessSpecs[14]
+    $Children.Add($RecoveryChild)
+    Write-Host "Started entry-recovery (PID $($RecoveryChild.process.Id))"
+    Wait-MarketBotReadiness -Paths @($ReadyFiles["entry-recovery"])
     for ($Index = 0; $Index -lt 3; $Index++) {
         $Child = Start-MarketBotProcess -Spec $ProcessSpecs[$Index]
         $Children.Add($Child)
         Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
     }
     Wait-MarketBotReadiness -Paths @(
-        $ReadyFiles["alerts-v2"],
-        $ReadyFiles["entry-watcher-v5"],
-        $ReadyFiles["entry-opportunity-v1"]
+        $ReadyFiles["alert"],
+        $ReadyFiles["entry-watcher"],
+        $ReadyFiles["entry-opportunity"]
     )
 
     $HistoryChild = Start-MarketBotProcess -Spec $ProcessSpecs[3]
@@ -507,7 +529,7 @@ try {
     $Children.Add($ConfirmedChild)
     Write-Host "Started confirmed-buy monitor (PID $($ConfirmedChild.process.Id))"
     Wait-MarketBotReadiness -Paths @($ReadyFiles["confirmed-buy-monitor"])
-    $AlertChild = $Children | Where-Object { $_.name -eq "alerts-v2" } | Select-Object -First 1
+    $AlertChild = $Children | Where-Object { $_.name -eq "alert" } | Select-Object -First 1
     Set-MarketBotVerticalWindowLayout `
         -AnalysisProcess $AlertChild.process `
         -ConfirmedBuyProcess $ConfirmedChild.process
@@ -518,9 +540,9 @@ try {
         Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
     }
     Wait-MarketBotReadiness -Paths @(
-        $ReadyFiles["long-term-v2"],
-        $ReadyFiles["swing-v2"],
-        $ReadyFiles["intraday-v2"],
+        $ReadyFiles["long-term"],
+        $ReadyFiles["swing"],
+        $ReadyFiles["intraday"],
         $ReadyFiles["market-rotation-v1"],
         $ReadyFiles["portfolio-flow-v1"],
         $ReadyFiles["long-portfolio-v1"],

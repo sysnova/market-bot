@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
+from app.contracts import UniverseChanged
+
 from .postgres_universe import UniverseSnapshot
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +60,10 @@ class UniverseProvider(Protocol):
     async def get_universe(self) -> UniverseSnapshot: ...
 
 
+class UniverseChangePublisher(Protocol):
+    async def publish_universe_changed(self, change: UniverseChanged) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class InitializationSummary:
     symbols: tuple[str, ...]
@@ -74,6 +80,8 @@ class LiveAnalysisService:
         market_data: MarketDataService,
         local_bus: JoinableBus,
         runtime: AnalysisRuntimePort,
+        universe_publisher: UniverseChangePublisher | None = None,
+        universe_source: str = "configured",
     ) -> None:
         normalized = tuple(dict.fromkeys(item.strip().upper() for item in symbols))
         if not normalized or any(not item for item in normalized):
@@ -82,6 +90,8 @@ class LiveAnalysisService:
         self._market_data = market_data
         self._local_bus = local_bus
         self._runtime = runtime
+        self._universe_publisher = universe_publisher
+        self._universe_source = universe_source
 
     @property
     def symbols(self) -> tuple[str, ...]:
@@ -92,23 +102,37 @@ class LiveAnalysisService:
             raise ValueError("initialization time must be timezone-aware")
         total = await self._warm_market_data(self._symbols, as_of)
         await self._runtime.evaluate_all(self._symbols)
+        await self._publish_universe_changed((), self._symbols, as_of)
         self._runtime.enable_live()
         return InitializationSummary(self._symbols, total)
 
-    async def refresh_universe(self, symbols: tuple[str, ...], as_of: datetime) -> bool:
+    async def refresh_universe(
+        self,
+        symbols: tuple[str, ...],
+        as_of: datetime,
+        *,
+        source: str | None = None,
+    ) -> bool:
         """Backfill newly added symbols quietly and replace the live subscription set."""
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise ValueError("universe refresh time must be timezone-aware")
         normalized = _normalize_symbols(symbols)
         if normalized == self._symbols:
             return False
-        added = tuple(symbol for symbol in normalized if symbol not in self._symbols)
+        previous = self._symbols
+        added = tuple(symbol for symbol in normalized if symbol not in previous)
         self._runtime.disable_live()
         try:
             if added:
                 await self._warm_market_data(added, as_of)
             self._symbols = normalized
             await self._runtime.evaluate_all(self._symbols)
+            await self._publish_universe_changed(
+                previous,
+                self._symbols,
+                as_of,
+                source=source,
+            )
         finally:
             self._runtime.enable_live()
         return True
@@ -153,6 +177,27 @@ class LiveAnalysisService:
         total += await self._market_data.publish_snapshots(symbols)
         await self._local_bus.join()
         return total
+
+    async def _publish_universe_changed(
+        self,
+        previous: tuple[str, ...],
+        current: tuple[str, ...],
+        occurred_at: datetime,
+        *,
+        source: str | None = None,
+    ) -> None:
+        if self._universe_publisher is None:
+            return
+        await self._universe_publisher.publish_universe_changed(
+            UniverseChanged(
+                occurred_at=occurred_at,
+                source=source or self._universe_source,
+                previous_symbols=previous,
+                symbols=current,
+                added_symbols=tuple(value for value in current if value not in previous),
+                removed_symbols=tuple(value for value in previous if value not in current),
+            )
+        )
 
     async def stream_forever(
         self,
@@ -223,7 +268,11 @@ class LiveAnalysisService:
             stream_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await stream_task
-            await self.refresh_universe(universe.symbols, datetime.now(UTC))
+            await self.refresh_universe(
+                universe.symbols,
+                datetime.now(UTC),
+                source=universe.source,
+            )
             _LOGGER.info(
                 "Market universe changed to %d symbols from %s",
                 len(self._symbols),

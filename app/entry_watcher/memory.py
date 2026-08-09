@@ -44,3 +44,11 @@ class InMemoryEntryWatchStore:
             raise RuntimeError("entry watch transition is stale")
         self.watches[watch.watch_id] = watch
         self.transitions.append(transition)
+
+    async def update_anchor_snapshot(self, watch: EntryWatch) -> None:
+        existing = self.watches.get(watch.watch_id)
+        if existing is None:
+            raise RuntimeError("entry watch does not exist")
+        if existing.status is not watch.status:
+            raise RuntimeError("entry watch snapshot update is stale")
+        self.watches[watch.watch_id] = watch

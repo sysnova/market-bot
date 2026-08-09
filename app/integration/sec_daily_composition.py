@@ -41,6 +41,7 @@ from .postgres_universe import (
 )
 from .sec_document_loader import SecArchiveDocumentLoader
 from .sec_refresher import SecAnalysisRefresher
+from .universe_policy import universe_health_details
 
 _DILUTION_FORMS = (
     "424B3",
@@ -224,6 +225,7 @@ async def run_sec_daily_analysis(
         summary = await refresher.refresh(universe.symbols, as_of)
         await local_bus.join()
         result: dict[str, Any] = {
+            **universe_health_details("dilution-sec"),
             **asdict(summary),
             "date_from": (as_of.date() - timedelta(days=resolved_lookback - 1)).isoformat(),
             "date_to": as_of.date().isoformat(),

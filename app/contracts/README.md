@@ -1,5 +1,20 @@
 # Contratos v1
 
+`UniverseChanged` es el snapshot aditivo del universo Core. El coordinador lo publica en
+`marketbot.v1.universe.changed.core` desde el refresh central. Los consumidores reciben el reemplazo
+completo y los deltas exactos; `consumer_warmup_required=true` les exige cargar su historia antes de
+activar simbolos nuevos, sin conocer versiones de implementacion del productor.
+
+`EntrySignal` es la decision analitica de entrada independiente del productor. Los consumidores usan
+la familia, la madurez core opcional, los niveles y la procedencia de politica/eventos. Solo
+`CORE_ENTRY` y `CORE_RECOVERY` usan L1-L4; Patreon Caps, Long Portfolio, Signal Fusion y Portfolio
+Flow conservan familias distintas y no se promocionan artificialmente a L4 core.
+
+`EntrySetupAssessment` transporta evidencia de un setup sin decidir compra ni asignar L1-L4.
+Entry Recovery 1.1 publica `CORE_RECOVERY` por este contrato; Alert 3.2 aplica su artefacto de
+calidad y solo entonces publica el `EntrySignal` confirmado. Los consumidores no conocen la
+implementacion ni la version del productor del assessment.
+
 Este paquete es la frontera de datos estable entre detectores, reglas, estrategias,
 alertas y servicios. No contiene ejecución de reglas, registry ni persistencia.
 
@@ -70,6 +85,13 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   trigger Elliott, confirmacion Intraday, SEC, cartera y beneficio/riesgo pasan, aunque Long y la
   estructura de soporte todavia no hayan confirmado. PatreonCaps es contexto derivado, no un voto
   adicional.
+
+- Entry Opportunity: `EntryOpportunity.source_cursors` conserva un cursor causal acotado por
+  stream de entrada. Es aditivo y opcional para que los snapshots v1 anteriores se lean con una
+  tupla vacia; los consumidores no deben usarlo como version del engine productor.
+  `primary_signal_family` y `signal_references` registran setups por familia/politica sin guardar
+  identidad ni version del engine productor. Solo referencias core llevan `maturity`; Patreon
+  Caps, Long Portfolio, Signal Fusion y Portfolio Flow conservan `maturity=None`.
 
 ## Invariantes comprobadas
 

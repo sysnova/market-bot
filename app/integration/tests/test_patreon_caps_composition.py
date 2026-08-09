@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
+    ENTRY_SIGNAL_EVENT,
     LOCAL_ALERT_EVENT,
     MARKET_BAR_EVENT,
     PATREON_CAPS_ASSESSMENT_EVENT,
@@ -347,6 +348,7 @@ async def test_runtime_persists_before_publishing_full_transition() -> None:
         PATREON_CAPS_ASSESSMENT_EVENT,
         PATREON_CAPS_TRANSITION_EVENT,
         LOCAL_ALERT_EVENT,
+        ENTRY_SIGNAL_EVENT,
     ]
     assert len(engine.contexts) == 1
     assert engine.contexts[0][0].held_quantity == Decimal("3")

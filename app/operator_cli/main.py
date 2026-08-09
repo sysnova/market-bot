@@ -6,7 +6,7 @@ import os
 import selectors
 import sys
 from collections.abc import Coroutine
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -247,9 +247,9 @@ def long_engine_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after this process subscribes to NATS."),
-    ] = Path(".runtime/status/long-term-v2.ready.json"),
+    ] = Path(".runtime/status/long-term.ready.json"),
 ) -> None:
-    """Run the independent Long v2 process."""
+    """Run the independently configured Long process."""
 
     _engine_process("LONG_TERM", once=once, symbols=symbols, ready_path=ready_path)
 
@@ -264,9 +264,9 @@ def swing_engine_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after this process subscribes to NATS."),
-    ] = Path(".runtime/status/swing-v2.ready.json"),
+    ] = Path(".runtime/status/swing.ready.json"),
 ) -> None:
-    """Run the independent Swing v2 process."""
+    """Run the independently configured Swing process."""
 
     _engine_process("SWING", once=once, symbols=symbols, ready_path=ready_path)
 
@@ -281,9 +281,9 @@ def intraday_engine_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after this process subscribes to NATS."),
-    ] = Path(".runtime/status/intraday-v2.ready.json"),
+    ] = Path(".runtime/status/intraday.ready.json"),
 ) -> None:
-    """Run the independent Intraday v2 process."""
+    """Run the independently configured Intraday process."""
 
     _engine_process("INTRADAY", once=once, symbols=symbols, ready_path=ready_path)
 
@@ -444,6 +444,20 @@ def signal_fusion_process(
     summary = _run_async(run_signal_fusion_process(ready_path=ready_path, once=once))
     if summary is not None:
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@engine.command("entry-recovery")
+def entry_recovery_process(
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
+    ] = Path(".runtime/status/entry-recovery.ready.json"),
+) -> None:
+    """Run the independent paper-entry recovery process."""
+
+    from app.integration.entry_recovery_composition import run_entry_recovery_process
+
+    _run_async(run_entry_recovery_process(ready_path=ready_path))
 
 
 market = typer.Typer(name="market", help="Run independent market-data processes.")
@@ -700,9 +714,9 @@ def alert_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after all NATS subscriptions exist."),
-    ] = Path(".runtime/status/alert-v2.ready.json"),
+    ] = Path(".runtime/status/alert.ready.json"),
 ) -> None:
-    """Run the Alert v2 NATS consumer process."""
+    """Run the configured Alert NATS consumer process."""
 
     from app.integration.distributed_composition import run_alert_process
 
@@ -910,7 +924,7 @@ def entry_watcher_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
-    ] = Path(".runtime/status/entry-watcher-v5.ready.json"),
+    ] = Path(".runtime/status/entry-watcher.ready.json"),
 ) -> None:
     """Run the configured Entry Watcher PostgreSQL/NATS detector process."""
 
@@ -950,13 +964,34 @@ def entry_opportunity_process(
     ready_path: Annotated[
         Path,
         typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
-    ] = Path(".runtime/status/entry-opportunity-v1.ready.json"),
+    ] = Path(".runtime/status/entry-opportunity.ready.json"),
 ) -> None:
     """Run the configured Entry Opportunity PostgreSQL/NATS process."""
 
     from app.integration.distributed_composition import run_entry_opportunity_process
 
     _run_async(run_entry_opportunity_process(ready_path=ready_path))
+
+
+outbox = typer.Typer(
+    name="outbox",
+    help="Relay committed PostgreSQL outbox events to NATS JetStream.",
+)
+app.add_typer(outbox, name="outbox")
+
+
+@outbox.command("serve")
+def outbox_relay_process(
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
+    ] = Path(".runtime/status/outbox-relay.ready.json"),
+) -> None:
+    """Run the independent transactional outbox relay process."""
+
+    from app.integration.distributed_composition import run_outbox_relay_process
+
+    _run_async(run_outbox_relay_process(ready_path=ready_path))
 
 
 @entry_opportunity.command("report")
@@ -975,6 +1010,53 @@ def entry_opportunity_report(
     from app.integration.entry_opportunity_report import load_entry_opportunity_report
 
     report = _run_async(load_entry_opportunity_report(history=history))
+    typer.echo(json.dumps(report, indent=2, sort_keys=True))
+
+
+@entry_opportunity.command("prune-history")
+def entry_opportunity_prune_history(
+    older_than_days: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            max=3650,
+            help="Only consider legacy evidence events older than this many days.",
+        ),
+    ] = 30,
+    retain_per_opportunity: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            max=10000,
+            help="Always preserve at least this many newest events per opportunity.",
+        ),
+    ] = 100,
+    batch_size: Annotated[
+        int,
+        typer.Option(min=1, max=10000, help="Maximum rows deleted per transaction."),
+    ] = 1000,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply/--dry-run",
+            help="Delete candidates; defaults to a read-only preview.",
+        ),
+    ] = False,
+) -> None:
+    """Preview or prune only legacy non-material Opportunity evidence snapshots."""
+
+    from app.integration.entry_opportunity_history_maintenance import (
+        maintain_entry_opportunity_history,
+    )
+
+    report = _run_async(
+        maintain_entry_opportunity_history(
+            cutoff=datetime.now(UTC) - timedelta(days=older_than_days),
+            retain_per_opportunity=retain_per_opportunity,
+            batch_size=batch_size,
+            apply=apply,
+        )
+    )
     typer.echo(json.dumps(report, indent=2, sort_keys=True))
 
 

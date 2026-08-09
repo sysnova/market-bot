@@ -13,11 +13,28 @@ from typing import cast
 
 import yaml
 
-from app.alert_engine import AlertEngine, AlertEngineV2, AlertEngineV3
+from app.alert_engine import (
+    AlertEngine,
+    AlertEngineV2,
+    AlertEngineV3,
+    AlertEngineV3State,
+    AlertEngineV31,
+    AlertEngineV32,
+)
 from app.common.settings import AppSettings
+from app.contracts import AnalysisHorizon, EntryMaturityLevel
 from app.dilution_sec_engine import DilutionSecEngine
 from app.elliott_wave_engine import ElliottWaveEngine
-from app.entry_opportunity_engine import EntryOpportunityEngine, EntryOpportunityStore
+from app.entry_opportunity_engine import (
+    EntryOpportunityEngine,
+    EntryOpportunityEngineV2,
+    EntryOpportunityStore,
+)
+from app.entry_recovery_engine import (
+    EntryRecoveryEngine,
+    EntryRecoveryEngineV11,
+    EntryRecoveryPolicy,
+)
 from app.entry_watcher import (
     EntryWatcher,
     EntryWatcherPolicy,
@@ -25,6 +42,7 @@ from app.entry_watcher import (
     EntryWatcherV3,
     EntryWatcherV4,
     EntryWatcherV5,
+    EntryWatcherV51,
 )
 from app.entry_watcher.ports import EntryWatchStore
 from app.intraday_engine import (
@@ -56,6 +74,7 @@ class EngineSlot(StrEnum):
     INTRADAY = "intraday"
     ENTRY_WATCHER = "entry-watcher"
     ENTRY_OPPORTUNITY = "entry-opportunity"
+    ENTRY_RECOVERY = "entry-recovery"
     ALERT = "alert"
     MARKET_ROTATION = "market-rotation"
     PORTFOLIO_FLOW = "portfolio-flow"
@@ -125,12 +144,22 @@ _DEFAULT_CATALOG: dict[EngineSlot, dict[str, EngineFactory]] = {
         "3.0.0": EntryWatcherV3,
         "4.0.0": EntryWatcherV4,
         "5.0.0": EntryWatcherV5,
+        "5.1.0": EntryWatcherV51,
     },
-    EngineSlot.ENTRY_OPPORTUNITY: {"1.0.0": EntryOpportunityEngine},
+    EngineSlot.ENTRY_OPPORTUNITY: {
+        "1.0.0": EntryOpportunityEngine,
+        "2.0.0": EntryOpportunityEngineV2,
+    },
+    EngineSlot.ENTRY_RECOVERY: {
+        "1.0.0": EntryRecoveryEngine,
+        "1.1.0": EntryRecoveryEngineV11,
+    },
     EngineSlot.ALERT: {
         "1.0.0": AlertEngine,
         "2.0.0": AlertEngineV2,
         "3.0.0": AlertEngineV3,
+        "3.1.0": AlertEngineV31,
+        "3.2.0": AlertEngineV32,
     },
     EngineSlot.MARKET_ROTATION: {"1.0.0": RotationEngine},
     EngineSlot.PORTFOLIO_FLOW: {
@@ -273,7 +302,7 @@ class MarketBotAssembly:
     ) -> EntryWatcher:
         spec = self.spec(EngineSlot.ENTRY_WATCHER)
         options: dict[str, object] = {} if policy is None else {"policy": policy}
-        if spec.implementation in {"4.0.0", "5.0.0"}:
+        if spec.implementation in {"4.0.0", "5.0.0", "5.1.0"}:
             behavior = self._strategy_behavior(EngineSlot.ENTRY_WATCHER)
             resolved_policy = policy or EntryWatcherPolicy()
             resolved_policy = replace(
@@ -294,19 +323,27 @@ class MarketBotAssembly:
                     behavior, "five_minute_higher_low_required"
                 ),
             }
-            if spec.implementation == "5.0.0":
+            if spec.implementation in {"5.0.0", "5.1.0"}:
                 options["no_retest_higher_low_enabled"] = _bool_value(
                     behavior, "no_retest_higher_low_continuation"
+                )
+            if spec.implementation == "5.1.0":
+                options["zone_exit_buffer_percent"] = _decimal_value(
+                    behavior, "zone_exit_buffer_percent"
                 )
         return cast(
             "EntryWatcher",
             self._create(EngineSlot.ENTRY_WATCHER, store=store, **options),
         )
 
-    def build_alert(self) -> AlertEngine:
+    def build_alert(
+        self,
+        *,
+        restored_state: AlertEngineV3State | None = None,
+    ) -> AlertEngine:
         spec = self.spec(EngineSlot.ALERT)
         options: dict[str, object] = {}
-        if spec.implementation == "3.0.0":
+        if spec.implementation in {"3.0.0", "3.1.0", "3.2.0"}:
             behavior = self._strategy_behavior(EngineSlot.ALERT)
             options = {
                 "minimum_reconfirmation_delay": timedelta(
@@ -322,6 +359,25 @@ class MarketBotAssembly:
                     behavior, "same_market_session_required"
                 ),
             }
+            if spec.implementation in {"3.1.0", "3.2.0"}:
+                options["restored_state"] = restored_state
+            elif restored_state is not None:
+                raise ValueError(
+                    "restored Alert state requires alert implementation 3.1.0 or 3.2.0"
+                )
+            if spec.implementation == "3.2.0":
+                options.update(
+                    recovery_required_horizons=_horizon_values(
+                        behavior, "recovery_required_horizons"
+                    ),
+                    recovery_maturity=EntryMaturityLevel(
+                        str(behavior["recovery_maturity"])
+                    ),
+                )
+        elif restored_state is not None:
+            raise ValueError(
+                "restored Alert state requires alert implementation 3.1.0 or 3.2.0"
+            )
         return cast("AlertEngine", self._create(EngineSlot.ALERT, **options))
 
     def build_entry_opportunity(
@@ -332,6 +388,27 @@ class MarketBotAssembly:
         return cast(
             "EntryOpportunityEngine",
             self._create(EngineSlot.ENTRY_OPPORTUNITY, store=store),
+        )
+
+    def build_entry_recovery(self) -> EntryRecoveryEngine:
+        behavior = self._strategy_behavior(EngineSlot.ENTRY_RECOVERY)
+        policy = EntryRecoveryPolicy(
+            version=self.spec(EngineSlot.ENTRY_RECOVERY).strategy.version,
+            intraday_max_age=timedelta(
+                minutes=_int_value(behavior, "intraday_max_age_minutes")
+            ),
+            swing_max_age=timedelta(days=_int_value(behavior, "swing_max_age_days")),
+            minimum_reward_risk=_decimal_value(behavior, "minimum_reward_risk"),
+            require_strong_confirmation=_bool_value(
+                behavior, "strong_confirmation_required"
+            ),
+            require_five_minute_higher_low=_bool_value(
+                behavior, "five_minute_higher_low_required"
+            ),
+        )
+        return cast(
+            "EntryRecoveryEngine",
+            self._create(EngineSlot.ENTRY_RECOVERY, policy=policy),
         )
 
     def build_market_rotation(self) -> RotationEngine:
@@ -407,7 +484,10 @@ class MarketBotAssembly:
         if self.definition.definition_id != "marketbot":
             raise ValueError("definition_id must be marketbot")
         _require_semver(self.definition.version, "definition version")
-        missing = set(EngineSlot) - set(self.definition.engines)
+        required = set(EngineSlot)
+        if self.definition.version in {"4.0.0", "5.0.0", "6.0.0"}:
+            required.remove(EngineSlot.ENTRY_RECOVERY)
+        missing = required - set(self.definition.engines)
         extra = set(self.definition.engines) - set(EngineSlot)
         if missing or extra:
             raise ValueError(f"definition engine slots mismatch; missing={missing}, extra={extra}")
@@ -421,12 +501,15 @@ class MarketBotAssembly:
 
     def _validate_confirmation_behavior(self) -> None:
         alert = self.spec(EngineSlot.ALERT)
-        if alert.implementation == "3.0.0":
+        if alert.implementation in {"3.0.0", "3.1.0", "3.2.0"}:
             behavior = self._strategy_behavior(EngineSlot.ALERT)
             _int_value(behavior, "fresh_reconfirmation_delay_minutes")
             _bool_value(behavior, "strong_confirmation_required")
             _bool_value(behavior, "five_minute_higher_low_required")
             _bool_value(behavior, "same_market_session_required")
+            if alert.implementation == "3.2.0":
+                _horizon_values(behavior, "recovery_required_horizons")
+                EntryMaturityLevel(str(behavior["recovery_maturity"]))
         swing = self.spec(EngineSlot.SWING)
         if swing.implementation == "3.0.0":
             _bool_value(self._strategy_behavior(EngineSlot.SWING), "anchored_vwap_gate")
@@ -453,14 +536,16 @@ class MarketBotAssembly:
             ):
                 _bool_value(behavior, key)
         watcher = self.spec(EngineSlot.ENTRY_WATCHER)
-        if watcher.implementation in {"4.0.0", "5.0.0"}:
+        if watcher.implementation in {"4.0.0", "5.0.0", "5.1.0"}:
             behavior = self._strategy_behavior(EngineSlot.ENTRY_WATCHER)
             _int_value(behavior, "fresh_reconfirmation_delay_minutes")
             _int_value(behavior, "trigger_rearm_cooldown_minutes")
             _bool_value(behavior, "strong_confirmation_required")
             _bool_value(behavior, "five_minute_higher_low_required")
-            if watcher.implementation == "5.0.0":
+            if watcher.implementation in {"5.0.0", "5.1.0"}:
                 _bool_value(behavior, "no_retest_higher_low_continuation")
+            if watcher.implementation == "5.1.0":
+                _decimal_value(behavior, "zone_exit_buffer_percent")
 
 
 def _validate_strategy(slot: EngineSlot, strategy: EngineStrategy) -> None:
@@ -516,6 +601,23 @@ def _bool_value(values: dict[str, object], key: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"strategy behavior {key} must be boolean")
     return value
+
+
+def _horizon_values(
+    values: dict[str, object], key: str
+) -> tuple[AnalysisHorizon, ...]:
+    value = values.get(key)
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"strategy behavior {key} must be a non-empty list")
+    raw_horizons: list[str] = []
+    for item in cast("list[object]", value):
+        if not isinstance(item, str):
+            raise ValueError(f"strategy behavior {key} must contain horizon names")
+        raw_horizons.append(item)
+    horizons = tuple(AnalysisHorizon(item) for item in raw_horizons)
+    if len(horizons) != len(set(horizons)):
+        raise ValueError(f"strategy behavior {key} must contain unique horizons")
+    return horizons
 
 
 def _with_confirmation_override(

@@ -18,6 +18,7 @@ from app.contracts import (
     EntryOpportunity,
     EntryOpportunityEvent,
     EntryOpportunityStatus,
+    EntrySignalFamily,
     EventEnvelope,
 )
 from app.integration import entry_opportunity_monitor
@@ -141,6 +142,21 @@ def test_dashboard_rejects_an_older_snapshot_of_the_same_opportunity() -> None:
 
 
 @pytest.mark.unit
+def test_dashboard_labels_analytical_family_without_fake_core_maturity() -> None:
+    base = _closed_opportunity()
+    analytical = base.model_copy(
+        update={"primary_signal_family": EntrySignalFamily.PATREON_CAPS}
+    )
+    dashboard = OpportunityDashboard(history=25)
+    dashboard.merge(analytical)
+
+    output = format_opportunity_dashboard(dashboard, refreshed_at=NOW)
+
+    assert "FAMILY PATREON_CAPS" in output
+    assert "MAT L4" not in output
+
+
+@pytest.mark.unit
 def test_monitor_decodes_only_entry_opportunity_events() -> None:
     opportunity = _closed_opportunity()
     event = EntryOpportunityEvent(
@@ -208,6 +224,11 @@ class _MonitorStore:
         return (self.opportunity,)
 
     async def list_active(self) -> tuple[EntryOpportunity, ...]:
+        return ()
+
+    async def latest_events(
+        self, _opportunity_ids: tuple[UUID, ...]
+    ) -> tuple[EntryOpportunityEvent, ...]:
         return ()
 
 

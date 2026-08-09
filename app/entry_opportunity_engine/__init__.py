@@ -1,6 +1,6 @@
 """Versioned Entry Opportunity lifecycle engine."""
 
-from .engine import EntryOpportunityEngine
+from .engine import EntryOpportunityEngine, EntryOpportunityEngineV2
 from .memory import InMemoryEntryOpportunityStore
 from .ports import EntryOpportunityStore
 
@@ -9,6 +9,7 @@ EntryOpportunityManager = EntryOpportunityEngine
 
 __all__ = [
     "EntryOpportunityEngine",
+    "EntryOpportunityEngineV2",
     "EntryOpportunityManager",
     "EntryOpportunityStore",
     "InMemoryEntryOpportunityStore",

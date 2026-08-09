@@ -160,6 +160,17 @@ class EntryMaturityLevel(ContractEnum):
     L4 = "L4"
 
 
+class EntrySignalFamily(ContractEnum):
+    """Stable strategy family; deliberately independent from producer identity."""
+
+    CORE_ENTRY = "CORE_ENTRY"
+    CORE_RECOVERY = "CORE_RECOVERY"
+    PATREON_CAPS = "PATREON_CAPS"
+    LONG_PORTFOLIO = "LONG_PORTFOLIO"
+    SIGNAL_FUSION = "SIGNAL_FUSION"
+    PORTFOLIO_FLOW = "PORTFOLIO_FLOW"
+
+
 class EntryLegStatus(ContractEnum):
     """Paper-trade state of one independently managed horizon."""
 

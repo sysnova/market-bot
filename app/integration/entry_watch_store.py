@@ -7,18 +7,31 @@ from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.contracts import EntryWatchStatus, EntryWatchTransition
+from app.contracts import (
+    ENTRY_WATCH_TRANSITION_EVENT,
+    EntryWatchStatus,
+    EntryWatchTransition,
+    EventEnvelope,
+    entry_watch_transition_subject,
+)
 from app.entry_watcher import EntryWatch
 from app.persistence import (
     EntryWatchRecord,
     EntryWatchTransitionRecord,
+    OutboxRepository,
     PersistenceUnitOfWork,
 )
 
 
 class PostgresEntryWatchStore:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        *,
+        source: str = "entry-watcher",
+    ) -> None:
         self._session_factory = session_factory
+        self._source = source
 
     async def is_ready(self) -> bool:
         """Confirm connectivity and that the versioned watcher migration exists."""
@@ -29,7 +42,8 @@ class PostgresEntryWatchStore:
             transitions = await session.scalar(
                 text("select to_regclass('market_bot.entry_watch_transitions')")
             )
-            return relation is not None and transitions is not None
+            outbox = await session.scalar(text("select to_regclass('market_bot.outbox_events')"))
+            return relation is not None and transitions is not None and outbox is not None
 
     async def load_active(self, symbol: str) -> EntryWatch | None:
         async with PersistenceUnitOfWork(self._session_factory) as unit:
@@ -46,6 +60,7 @@ class PostgresEntryWatchStore:
     ) -> None:
         async with PersistenceUnitOfWork(self._session_factory) as unit:
             unit.entry_watches.add(_to_record(watch), _transition_record(transition))
+            await self._enqueue(unit.outbox, transition)
 
     async def transition(
         self, watch: EntryWatch, transition: EntryWatchTransition
@@ -61,10 +76,43 @@ class PostgresEntryWatchStore:
                 current_price=watch.current_price,
                 updated_at=watch.updated_at,
                 terminal_at=watch.terminal_at,
+                anchor_snapshot=watch.anchor_snapshot,
                 transition=_transition_record(transition),
             )
             if not changed:
                 raise RuntimeError("entry watch transition lost an optimistic race")
+            await self._enqueue(unit.outbox, transition)
+
+    async def update_anchor_snapshot(self, watch: EntryWatch) -> None:
+        async with PersistenceUnitOfWork(self._session_factory) as unit:
+            changed = await unit.entry_watches.update_anchor_snapshot(
+                watch.watch_id,
+                status=watch.status.value,
+                anchor_snapshot=watch.anchor_snapshot,
+            )
+            if not changed:
+                raise RuntimeError("entry watch snapshot update lost an optimistic race")
+
+    async def _enqueue(
+        self,
+        outbox: OutboxRepository,
+        transition: EntryWatchTransition,
+    ) -> None:
+        envelope = EventEnvelope(
+            event_type=ENTRY_WATCH_TRANSITION_EVENT,
+            occurred_at=transition.occurred_at,
+            source=self._source,
+            subject=transition.symbol,
+            payload=transition,
+        )
+        await outbox.enqueue(
+            aggregate_type="entry-watch",
+            aggregate_id=str(transition.watch_id),
+            event_type=envelope.event_type,
+            subject=entry_watch_transition_subject(transition.status, transition.symbol),
+            payload=envelope.model_dump(mode="json"),
+            occurred_at=transition.occurred_at,
+        )
 
 
 def _to_record(watch: EntryWatch) -> EntryWatchRecord:

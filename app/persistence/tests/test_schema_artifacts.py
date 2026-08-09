@@ -15,6 +15,7 @@ TABLES = {
     "control_events",
     "entry_opportunities",
     "entry_opportunity_events",
+    "engine_decision_states",
     "entry_watch_transitions",
     "entry_watches",
     "long_portfolio_alerts",
@@ -138,6 +139,16 @@ def test_dbml_documents_exact_version_identity() -> None:
 
 
 @pytest.mark.unit
+def test_engine_decision_state_identity_keeps_implementation_rollbacks_independent() -> None:
+    sql = all_migration_sql()
+    dbml = DBML.read_text(encoding="utf-8").lower()
+
+    assert "unique (engine_name, implementation_version)" in sql
+    assert "unique (engine_name)" not in sql
+    assert "(engine_name, implementation_version) [unique" in dbml
+
+
+@pytest.mark.unit
 def test_market_bar_cache_has_composite_identity_and_runtime_upsert_access() -> None:
     sql = all_migration_sql()
 
@@ -150,6 +161,27 @@ def test_market_bar_cache_has_composite_identity_and_runtime_upsert_access() -> 
     assert "grant delete on market_bot.market_bars" not in sql
     assert "function market_bot.prune_market_bars" in sql
     assert "grant execute on function market_bot.prune_market_bars" in sql
+
+
+@pytest.mark.unit
+def test_entry_opportunity_retention_is_narrow_and_function_gated() -> None:
+    sql = all_migration_sql()
+    dbml = DBML.read_text(encoding="utf-8").lower()
+
+    assert "entry_opportunity_events_legacy_evidence_retention_idx" in sql
+    assert "entry_opportunity_events_legacy_evidence_retention_idx" in dbml
+    assert "function market_bot.prune_entry_opportunity_evidence_events" in sql
+    assert "security definer" in sql
+    assert "for update of event skip locked" in sql
+    assert "limit p_batch_size" in sql
+    assert "entry_opportunity_events_maintenance_delete" in sql
+    assert "prevent_entry_opportunity_event_mutation" in sql
+    for reason in (
+        "long_term_evidence_updated",
+        "swing_evidence_updated",
+        "intraday_evidence_updated",
+    ):
+        assert reason in sql
 
 
 @pytest.mark.unit

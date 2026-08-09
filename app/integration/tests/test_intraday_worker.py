@@ -13,6 +13,7 @@ from app.contracts import (
     EventEnvelope,
     MarketBar,
     PatternDirection,
+    UniverseChanged,
 )
 from app.integration.intraday_worker import IntradayWorker
 from app.intraday_engine.models import IntradayContext
@@ -96,3 +97,27 @@ async def test_intraday_worker_builds_5m_context_inside_its_own_process() -> Non
     assert analyzer.contexts[-1].minute_bars[-1] == live
     assert all(event.event_type == ANALYSIS_RESULT_EVENT for _, event in publisher.events)
     assert all(subject.endswith(".INTRADAY.HIMS") for subject, _ in publisher.events)
+
+
+@pytest.mark.unit
+async def test_intraday_worker_keeps_unknown_symbol_quiet_until_warmup_completes() -> None:
+    publisher = RecordingPublisher()
+    worker = IntradayWorker(publisher=publisher, analyzer=RecordingAnalyzer())
+    bars = tuple(minute(NOW + timedelta(minutes=index)) for index in range(6))
+    worker.activate_universe(())
+
+    assert await worker.bootstrap(bars, symbols=("HIMS",)) == 0
+    assert publisher.events == []
+
+    await worker.handle_universe_changed(
+        UniverseChanged(
+            occurred_at=NOW + timedelta(minutes=6),
+            source="postgresql-local",
+            previous_symbols=(),
+            symbols=("HIMS",),
+            added_symbols=("HIMS",),
+            removed_symbols=(),
+        )
+    )
+
+    assert len(publisher.events) == 1

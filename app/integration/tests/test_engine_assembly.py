@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from app.alert_engine import AlertEngineV3
+from app.alert_engine import AlertEngineV32
 from app.common.settings import AppSettings
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
     InMemoryEntryOpportunityStore,
 )
+from app.entry_recovery_engine import EntryRecoveryEngineV11
 from app.entry_watcher import (
     EntryWatcherV5,
     InMemoryEntryWatchStore,
@@ -27,8 +28,8 @@ from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngine
 from app.swing_engine import SwingEngineV3
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFINITION = ROOT / "configs/marketbot/6.0.0.yaml"
-PREVIOUS_DEFINITION = ROOT / "configs/marketbot/5.0.0.yaml"
+DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
+PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.0.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 
 
@@ -36,7 +37,7 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
     definition = load_marketbot_definition(DEFINITION)
 
     assert set(definition.engines) == set(EngineSlot)
-    assert definition.version == "6.0.0"
+    assert definition.version == "7.1.0"
     assert all(item.strategy.version for item in definition.engines.values())
     assert definition.engines[EngineSlot.INTRADAY].implementation == "4.0.0"
     assert definition.engines[EngineSlot.PORTFOLIO_FLOW].implementation == "2.0.0"
@@ -52,7 +53,7 @@ def test_one_assembly_builds_the_core_and_alert_implementations() -> None:
     assert isinstance(assembly.build_long_term(), LongTermEngineV2)
     assert isinstance(assembly.build_swing(), SwingEngineV3)
     assert isinstance(assembly.build_intraday(), IntradayEngineV4)
-    assert isinstance(assembly.build_alert(), AlertEngineV3)
+    assert isinstance(assembly.build_alert(), AlertEngineV32)
     assert isinstance(
         assembly.build_entry_watcher(store=InMemoryEntryWatchStore()),
         EntryWatcherV5,
@@ -60,18 +61,29 @@ def test_one_assembly_builds_the_core_and_alert_implementations() -> None:
     opportunity = assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore())
     assert isinstance(opportunity, EntryOpportunityEngine)
     assert opportunity.engine_id == "entry-opportunity"
-    assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation == "1.0.0"
+    assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation == "2.0.0"
     assert isinstance(assembly.build_portfolio_flow(), PortfolioFlowEngineV2)
+    assert isinstance(assembly.build_entry_recovery(), EntryRecoveryEngineV11)
 
 
-def test_confirmation_strategy_artifact_is_injected_into_selected_implementations() -> None:
+def test_each_confirmation_engine_loads_its_own_strategy_artifact() -> None:
     assembly = MarketBotAssembly.from_path(DEFINITION)
 
     swing = assembly.build_swing()
     intraday = assembly.build_intraday()
     watcher = assembly.build_entry_watcher(store=InMemoryEntryWatchStore())
 
-    assert swing._strategy_version == "5.0.0"
+    assert assembly.strategy_artifact(EngineSlot.SWING).parent.name == "swing"
+    assert assembly.strategy_artifact(EngineSlot.INTRADAY).parent.name == "intraday"
+    assert assembly.strategy_artifact(EngineSlot.ENTRY_WATCHER).parent.name == "entry_watcher"
+    assert len(
+        {
+            assembly.strategy_artifact(EngineSlot.SWING),
+            assembly.strategy_artifact(EngineSlot.INTRADAY),
+            assembly.strategy_artifact(EngineSlot.ENTRY_WATCHER),
+        }
+    ) == 3
+    assert swing._strategy_version == "1.0.0"
     assert intraday._minimum_momentum_percent == Decimal("0.15")
     assert intraday._maximum_trigger_extension_atr == Decimal("0.50")
     assert intraday._maximum_ema20_extension_atr == Decimal("2.00")
@@ -90,14 +102,15 @@ def test_settings_load_the_definition_as_the_primary_source() -> None:
 
     assembly = MarketBotAssembly.from_settings(settings)
 
-    assert assembly.definition.version == "6.0.0"
+    assert assembly.definition.version == "7.1.0"
     assert isinstance(assembly.build_intraday(), IntradayEngineV4)
 
 
-def test_previous_definition_preserves_alert_v2_for_replay() -> None:
+def test_previous_immutable_definition_remains_loadable_for_rollback() -> None:
     assembly = MarketBotAssembly.from_path(PREVIOUS_DEFINITION)
 
-    assert assembly.build_alert().engine_version == "2.0.0"
+    assert assembly.definition.version == "7.0.0"
+    assert assembly.build_alert().engine_version == "3.1.0"
 
 
 def test_legacy_confirmation_setting_rolls_back_one_compatible_bundle() -> None:

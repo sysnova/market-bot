@@ -14,6 +14,7 @@ from app.contracts import (
     EntryCloseReason,
     EntryOpportunityEvent,
     EntryOpportunityStatus,
+    EntrySignalFamily,
     EntryWatchStatus,
     EntryWatchTransition,
     LocalAlert,
@@ -140,6 +141,10 @@ class AlertEngine:
         if event.occurred_at > now:
             raise ValueError("entry opportunity event cannot be in the future")
         opportunity = event.opportunity
+        analytical_family = opportunity.primary_signal_family not in {
+            EntrySignalFamily.CORE_ENTRY,
+            EntrySignalFamily.CORE_RECOVERY,
+        }
         closed = opportunity.status is EntryOpportunityStatus.CLOSED
         if closed:
             severity = (
@@ -153,6 +158,15 @@ class AlertEngine:
             message = (
                 f"paper opportunity closed at {opportunity.current_price}; "
                 f"peak maturity {opportunity.peak_maturity.value}"
+            )
+        elif analytical_family:
+            severity = AlertSeverity.ACTION
+            kind = AlertKind.ENTRY_OPPORTUNITY_PROGRESS
+            family = opportunity.primary_signal_family.value.replace("_", " ")
+            title = f"{opportunity.symbol} {family} PAPER TRACK"
+            message = (
+                f"analytical family {family}; paper price {opportunity.current_price}; "
+                f"progress {opportunity.progress_percent}%"
             )
         else:
             severity = {
@@ -190,6 +204,10 @@ class AlertEngine:
                 NamedValue(name="invalidation", value=opportunity.invalidation),
                 NamedValue(name="progress_percent", value=opportunity.progress_percent),
                 NamedValue(name="maturity", value=opportunity.current_maturity.value),
+                NamedValue(
+                    name="signal_family",
+                    value=opportunity.primary_signal_family.value,
+                ),
                 NamedValue(
                     name="open_horizon_count",
                     value=sum(item.status.value == "OPEN" for item in opportunity.legs),

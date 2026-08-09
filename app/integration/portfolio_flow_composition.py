@@ -16,6 +16,8 @@ from app.event_bus.codec import decode_envelope
 
 from .distributed_composition import _write_ready  # pyright: ignore[reportPrivateUsage]
 from .engine_assembly import EngineSlot, MarketBotAssembly
+from .entry_signal_adapter import entry_signal_from_alert, publish_entry_signal
+from .universe_policy import universe_health_details
 
 
 class _CoreMessage(Protocol):
@@ -49,6 +51,9 @@ async def run_portfolio_flow_process(*, ready_path: Path | None = None) -> None:
                 payload=alert,
             ),
         )
+        signal = entry_signal_from_alert(alert)
+        if signal is not None:
+            await publish_entry_signal(durable, signal, source="portfolio-flow")
 
     subscriptions = [
         await core.subscribe("marketbot.market.data.quote.>", cb=handle),
@@ -60,6 +65,7 @@ async def run_portfolio_flow_process(*, ready_path: Path | None = None) -> None:
             _write_ready(
                 ready_path,
                 {
+                    **universe_health_details("portfolio-flow"),
                     "service": "portfolio-flow-engine",
                     "ephemeral": True,
                     "marketbot_definition_version": assembly.definition.version,

@@ -245,6 +245,27 @@ class ConsumerCheckpoint(Base):
     )
 
 
+class EngineDecisionStateRecord(Base):
+    __tablename__ = "engine_decision_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "engine_name",
+            "implementation_version",
+            name="engine_decision_states_engine_implementation_key",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
+    engine_name: Mapped[str] = mapped_column(Text, nullable=False)
+    implementation_version: Mapped[str] = mapped_column(Text, nullable=False)
+    state_schema_version: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
 class ServiceHealthRecord(Base):
     __tablename__ = "service_health"
     __table_args__ = (
@@ -431,6 +452,17 @@ class EntryOpportunityEventRecord(Base):
             "occurred_at",
         ),
         Index("entry_opportunity_events_symbol_occurred_idx", "symbol", "occurred_at"),
+        Index(
+            "entry_opportunity_events_legacy_evidence_retention_idx",
+            "opportunity_id",
+            "occurred_at",
+            "id",
+            postgresql_where=text(
+                "reasons in ('[\"long_term_evidence_updated\"]'::jsonb, "
+                "'[\"swing_evidence_updated\"]'::jsonb, "
+                "'[\"intraday_evidence_updated\"]'::jsonb)"
+            ),
+        ),
         {"schema": SCHEMA},
     )
 

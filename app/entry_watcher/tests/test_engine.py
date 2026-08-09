@@ -19,6 +19,7 @@ from app.entry_watcher import (
     EntryWatcherV3,
     EntryWatcherV4,
     EntryWatcherV5,
+    EntryWatcherV51,
     InMemoryEntryWatchStore,
 )
 
@@ -658,6 +659,121 @@ async def test_v4_requires_a_fresh_second_mature_intraday_confirmation() -> None
     assert second is not None
     assert second.status is EntryWatchStatus.TRIGGERED
     assert "fresh_mature_intraday_reconfirmed" in second.reasons
+
+
+@pytest.mark.unit
+async def test_v51_restart_restores_latest_evidence_and_pending_reconfirmation() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV51(store=store)
+    await watcher.ingest(long_watch(price="103"), now=NOW)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="pullback",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="103",
+            as_of=NOW + timedelta(minutes=1),
+            engine_version="3.0.0",
+            extra_metrics=(NamedValue(name="anchored_vwap_gate_passed", value=True),),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    first = analysis(
+        AnalysisHorizon.INTRADAY,
+        classification="bullish_breakout",
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        price="103",
+        as_of=NOW + timedelta(minutes=2),
+        setup="bullish_breakout",
+        engine_version="4.0.0",
+        extra_metrics=(
+            NamedValue(name="confirmation_gate_passed", value=True),
+            NamedValue(name="mature_confirmation_gate_passed", value=True),
+            NamedValue(name="entry_efficiency_gate_passed", value=True),
+            NamedValue(name="confirmation_quality", value="strong"),
+            NamedValue(name="five_minute_higher_low", value=True),
+        ),
+    )
+    assert await watcher.ingest(first, now=NOW + timedelta(minutes=2)) is None
+
+    restarted = EntryWatcherV51(store=store)
+    second = first.model_copy(
+        update={
+            "analysis_id": UUID("0195f3a5-9000-7000-8000-000000000097"),
+            "as_of": NOW + timedelta(minutes=5),
+        }
+    )
+
+    triggered = await restarted.ingest(second, now=NOW + timedelta(minutes=5))
+
+    assert triggered is not None
+    assert triggered.status is EntryWatchStatus.TRIGGERED
+    assert "fresh_mature_intraday_reconfirmed" in triggered.reasons
+
+
+@pytest.mark.unit
+async def test_v51_zone_exit_buffer_prevents_upper_boundary_chatter() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV51(
+        store=store,
+        zone_exit_buffer_percent=Decimal("0.25"),
+    )
+    await watcher.ingest(long_watch(price="103"), now=NOW)
+
+    inside_buffer = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="setup",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            price="105.10",
+            as_of=NOW + timedelta(minutes=1),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    active = await store.load_active("AAPL")
+
+    assert inside_buffer is None
+    assert active is not None and active.status is EntryWatchStatus.IN_ZONE
+
+    outside_buffer = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="setup",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            price="105.30",
+            as_of=NOW + timedelta(minutes=2),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+
+    assert outside_buffer is not None
+    assert outside_buffer.status is EntryWatchStatus.ARMED
+
+
+@pytest.mark.unit
+async def test_v5_keeps_original_zero_buffer_zone_exit_for_rollback() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV5(store=store)
+    await watcher.ingest(long_watch(price="103"), now=NOW)
+
+    transition = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="setup",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            price="105.10",
+            as_of=NOW + timedelta(minutes=1),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    assert transition is not None
+    assert transition.status is EntryWatchStatus.ARMED
 
 
 @pytest.mark.unit

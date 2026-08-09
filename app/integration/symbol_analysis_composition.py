@@ -175,7 +175,7 @@ async def run_market_analyzer(
                 "swing",
                 "intraday",
                 "entry-watcher",
-                "alert-v2",
+                "alert",
             ],
         }
 

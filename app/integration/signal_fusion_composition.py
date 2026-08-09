@@ -46,7 +46,9 @@ from app.signal_fusion_engine import SignalFusionContext
 
 from .distributed_composition import connect_nats, write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
+from .entry_signal_adapter import entry_signal_from_fusion, publish_entry_signal
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
+from .universe_policy import universe_health_details
 
 FUSION_SOURCE_SUBJECTS = (
     "marketbot.v1.analysis.result.>",
@@ -247,6 +249,9 @@ class SignalFusionRuntime:
                 payload=transition,
             ),
         )
+        signal = entry_signal_from_fusion(transition)
+        if signal is not None:
+            await publish_entry_signal(self._publisher, signal, source="signal-fusion")
 
 
 async def run_signal_fusion_process(
@@ -307,6 +312,7 @@ async def run_signal_fusion_process(
         await _hydrate_latest(bus, runtime, selected_symbols)
         published = await runtime.complete_hydration()
         summary: dict[str, object] = {
+            **universe_health_details("signal-fusion"),
             "service": "signal-fusion-v0",
             "engine_version": assembly.spec(EngineSlot.SIGNAL_FUSION).implementation,
             "engine_strategy_version": assembly.spec(EngineSlot.SIGNAL_FUSION).strategy.version,

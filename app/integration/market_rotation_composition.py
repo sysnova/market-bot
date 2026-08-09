@@ -25,6 +25,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_repository import PostgresMarketBarRepository
 from .market_history_composition import load_market_history
 from .market_rotation_store import PostgresMarketRotationStore
+from .universe_policy import universe_health_details
 
 ROTATION_HISTORY_REQUESTS = (
     HistoryRequest(
@@ -123,6 +124,7 @@ async def run_market_rotation_process(
                 ),
             )
             summary: dict[str, object] = {
+                **universe_health_details("market-rotation"),
                 "service": "market-rotation-v1",
                 "run_id": run_id,
                 "sectors": len(results),

@@ -10,10 +10,12 @@ from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    UNIVERSE_CHANGED_EVENT,
     AnalysisResult,
     BarTimeframe,
     EventEnvelope,
     MarketBar,
+    UniverseChanged,
     analysis_result_subject,
 )
 from app.swing_engine.models import SwingContext
@@ -21,6 +23,7 @@ from app.swing_engine.models import SwingContext
 from .bar_aggregator import MinuteBarAggregator
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
+from .universe_warmup import UniverseWarmupGate
 
 SWING_DAILY_BARS = 120
 SWING_INTRADAY_BARS = 160
@@ -48,6 +51,24 @@ class SwingWorker:
         self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=SWING_INTRADAY_BARS)
         self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
+        self._universe = UniverseWarmupGate()
+
+    def activate_universe(self, symbols: tuple[str, ...]) -> None:
+        self._universe.activate(symbols)
+
+    async def handle_universe_event(self, envelope: EventEnvelope) -> int:
+        if envelope.event_type != UNIVERSE_CHANGED_EVENT:
+            return 0
+        change = (
+            envelope.payload
+            if isinstance(envelope.payload, UniverseChanged)
+            else UniverseChanged.model_validate(envelope.payload, strict=False)
+        )
+        return await self.handle_universe_changed(change)
+
+    async def handle_universe_changed(self, change: UniverseChanged) -> int:
+        added = self._universe.apply(change)
+        return sum([await self._evaluate(symbol) for symbol in added])
 
     async def bootstrap(
         self,
@@ -80,6 +101,8 @@ class SwingWorker:
         symbol: str,
         source_event_ids: tuple[UUID, ...] = (),
     ) -> int:
+        if not self._universe.allows(symbol):
+            return 0
         daily = self._store.history(
             symbol, BarTimeframe.DAY_1, limit=SWING_DAILY_BARS, final_only=True
         )

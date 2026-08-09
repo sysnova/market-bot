@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (
     ConsumerCheckpoint,
+    EngineDecisionStateRecord,
     EntryOpportunityEventRecord,
     EntryOpportunityRecord,
     EntryWatchRecord,
@@ -136,9 +137,17 @@ class OutboxRepository(Repository):
         self._session.add(event)
         return event
 
-    async def claim_pending(self, *, limit: int, now: datetime) -> list[OutboxEvent]:
+    async def claim_pending(
+        self,
+        *,
+        limit: int,
+        now: datetime,
+        lease_until: datetime,
+    ) -> list[OutboxEvent]:
         if limit <= 0:
             raise ValueError("limit must be positive")
+        if lease_until <= now:
+            raise ValueError("lease_until must be after now")
         statement = (
             select(OutboxEvent)
             .where(
@@ -150,7 +159,11 @@ class OutboxRepository(Repository):
             .with_for_update(skip_locked=True)
         )
         result = await self._session.scalars(statement)
-        return list(result.all())
+        events = list(result.all())
+        for event in events:
+            event.available_at = lease_until
+            event.attempts = (event.attempts or 0) + 1
+        return events
 
     async def mark_published(self, event_id: UUID, *, published_at: datetime | None = None) -> None:
         statement = (
@@ -160,11 +173,17 @@ class OutboxRepository(Repository):
         )
         await self._session.execute(statement)
 
-    async def record_failure(self, event_id: UUID, *, error: str) -> None:
+    async def record_failure(
+        self,
+        event_id: UUID,
+        *,
+        error: str,
+        available_at: datetime,
+    ) -> None:
         statement = (
             update(OutboxEvent)
             .where(OutboxEvent.id == event_id, OutboxEvent.published_at.is_(None))
-            .values(attempts=OutboxEvent.attempts + 1, last_error=error)
+            .values(last_error=error, available_at=available_at)
         )
         await self._session.execute(statement)
 
@@ -227,6 +246,48 @@ class HealthRepository(Repository):
         await self._session.execute(statement)
 
 
+class EngineDecisionStateRepository(Repository):
+    """Latest bounded checkpoint for a stateful decision engine."""
+
+    async def load(
+        self,
+        engine_name: str,
+        implementation_version: str,
+    ) -> EngineDecisionStateRecord | None:
+        statement = select(EngineDecisionStateRecord).where(
+            EngineDecisionStateRecord.engine_name == engine_name.strip().lower(),
+            EngineDecisionStateRecord.implementation_version == implementation_version,
+        )
+        return await self._session.scalar(statement)
+
+    async def upsert(
+        self,
+        *,
+        engine_name: str,
+        implementation_version: str,
+        state_schema_version: str,
+        payload: dict[str, Any],
+    ) -> None:
+        now = self._clock()
+        base_statement = insert(EngineDecisionStateRecord).values(
+            id=self._id_factory(),
+            engine_name=engine_name.strip().lower(),
+            implementation_version=implementation_version,
+            state_schema_version=state_schema_version,
+            payload=payload,
+            updated_at=now,
+        )
+        statement = base_statement.on_conflict_do_update(
+            index_elements=["engine_name", "implementation_version"],
+            set_={
+                "state_schema_version": base_statement.excluded.state_schema_version,
+                "payload": base_statement.excluded.payload,
+                "updated_at": now,
+            },
+        )
+        await self._session.execute(statement)
+
+
 class EntryWatchRepository(Repository):
     """Persist one active entry thesis per symbol and its immutable transitions."""
 
@@ -267,6 +328,7 @@ class EntryWatchRepository(Repository):
         current_price: Decimal,
         updated_at: datetime,
         terminal_at: datetime | None,
+        anchor_snapshot: dict[str, Any],
         transition: EntryWatchTransitionRecord,
     ) -> bool:
         statement = (
@@ -280,6 +342,7 @@ class EntryWatchRepository(Repository):
                 current_price=current_price,
                 updated_at=updated_at,
                 terminal_at=terminal_at,
+                anchor_snapshot=anchor_snapshot,
             )
             .returning(EntryWatchRecord.id)
         )
@@ -288,6 +351,25 @@ class EntryWatchRepository(Repository):
             return False
         self._session.add(transition)
         return True
+
+    async def update_anchor_snapshot(
+        self,
+        watch_id: UUID,
+        *,
+        status: str,
+        anchor_snapshot: dict[str, Any],
+    ) -> bool:
+        statement = (
+            update(EntryWatchRecord)
+            .where(
+                EntryWatchRecord.id == watch_id,
+                EntryWatchRecord.status == status,
+            )
+            .values(anchor_snapshot=anchor_snapshot)
+            .returning(EntryWatchRecord.id)
+        )
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none() is not None
 
 
 class EntryOpportunityRepository(Repository):
@@ -337,6 +419,24 @@ class EntryOpportunityRepository(Repository):
             EntryOpportunityEventRecord.id == event_id
         )
         return await self._session.scalar(statement) is not None
+
+    async def latest_events(
+        self,
+        opportunity_ids: tuple[UUID, ...],
+    ) -> tuple[EntryOpportunityEventRecord, ...]:
+        if not opportunity_ids:
+            return ()
+        records = await self._session.scalars(
+            select(EntryOpportunityEventRecord)
+            .where(EntryOpportunityEventRecord.opportunity_id.in_(opportunity_ids))
+            .distinct(EntryOpportunityEventRecord.opportunity_id)
+            .order_by(
+                EntryOpportunityEventRecord.opportunity_id,
+                EntryOpportunityEventRecord.occurred_at.desc(),
+                EntryOpportunityEventRecord.id.desc(),
+            )
+        )
+        return tuple(records.all())
 
     async def save(
         self,

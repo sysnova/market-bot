@@ -3,6 +3,17 @@
 MarketBot is a modular monorepo organized around independently evolving engines. Each engine owns
 its code, tests, and local documentation under `app/<engine>/`.
 
+## Dynamic universe boundary
+
+The Core universe is the active PostgreSQL watchlist plus positive holdings. The coordinator
+publishes `UniverseChanged` on `marketbot.v1.universe.changed.core`. Long, Swing, and Intraday may
+collect bars while a symbol is warming, but `consumer_warmup_required=true` prevents publication
+until their own horizon history is loaded and the snapshot is activated. Legacy definitions remain
+open when no universe event is configured.
+
+Every engine readiness/health payload declares `universe_policy` and `warmup_policy`, making Core,
+holdings-only, tagged `PORT_YTD`, fixed rotation, and registered-watchlist universes explicit.
+
 ## Boundaries
 
 ```text
@@ -25,12 +36,12 @@ configuration, and logging. It must not become a dumping ground for shared busin
 
 ## Engine assembly
 
-MarketBot has one composition source: `configs/marketbot/6.0.0.yaml`. It declares every engine
+MarketBot has one composition source: `configs/marketbot/7.1.0.yaml`. It declares every engine
 slot, the concrete implementation version, the strategy version and artifact, and its operational
 mode. `app/integration/engine_assembly.py` is the only implementation catalog and factory.
 
 ```text
-configs/marketbot/6.0.0.yaml
+configs/marketbot/7.1.0.yaml
   implementation + strategy + mode
                  |
                  v
@@ -59,57 +70,76 @@ implementation version. `engine_version` remains provenance for audit and metric
 or compatibility gate. Portfolio Flow therefore has real V1 and V2 implementations and matching
 policy artifacts; selecting V1 restores sell-only behavior without modifying V2.
 
+Swing, Intraday, Entry Watcher, Alert, and Entry Recovery resolve independent strategy artifacts.
+Changing one strategy does not require editing the other engines' definitions. Released definition
+and rule YAML files are append-only: CI rejects modification, deletion, or rename and requires a new
+SemVer file for every reviewed change.
+
+Entry Recovery 1.1 publishes `EntrySetupAssessment(CORE_RECOVERY)` without maturity. Alert 3.2
+consumes that stable contract and owns the configured quality decision (`SWING + INTRADAY -> L2`),
+then publishes the confirmed `EntrySignal CORE_RECOVERY` for Opportunity. Recovery 1.0 and Alert
+3.1 remain selectable as the previous rollback flow.
+
 ## Distributed analysis-only MVP flow
 
 ```text
-                    Alpaca WebSocket process
-                              |
-                              v
-                       NATS JetStream
-                    /         |         \
-                   v          v          v
-            Long process  Swing process  Intraday process
-             own REST       own REST        own REST
-             own store      own store       own store
-                   \          |          /
-                    \         v         /
-                     AnalysisResult events
-                       /       |       \
-                      v        v        v
-          Entry Watcher v4  Alert v2  Entry Opportunity v1
-             PostgreSQL       ^          PostgreSQL
-                  |            |              ^
-                  +-- watcher transitions ----+
-                  |                           |
-                  +------ local alerts -------+
-                                              |
-                          progress/closures over NATS
-                                              |
-                            Alert v2 + confirmed-buy viewer
+Alpaca market stream
+        |
+        v
+Long / Swing / Intraday ---------------------> AnalysisResult v1
+                                                      |
+                           +--------------------------+-------------------+
+                           |                                              |
+                           v                                              v
+                    Alert 3.2 <------------------------------- Entry Watcher 5.1
+              LocalAlert + EntrySignal L1-L4                  PostgreSQL state + outbox
+                                                                          |
+                                                                  Watcher transition
 
-Daily scheduler -> bounded SEC EDGAR scan -> Dilution -> alerts + NDJSON
+Patreon / Long Portfolio / Fusion / Portfolio Flow -------> EntrySignal by family
+                                                                          |
+AnalysisResult + Watcher lifecycle + EntrySignal + 1m bars ---------------+
+                                                                          v
+                                                              Entry Opportunity 2.0
+                                                              PostgreSQL state + outbox
+                                                                          |
+                                             leg invalidation ------------+
+                                                                          v
+                                                              Entry Recovery 1.1
+                                                       EntrySetupAssessment (no level)
+                                                                          |
+                                                                          v
+                                                                    Alert 3.2
+                                                        CORE_RECOVERY EntrySignal L2
+
+PostgreSQL outbox --> headless outbox relay --> NATS JetStream --> read-only tmux monitors
 ```
 
-Backfill never traverses NATS. Each engine asks Alpaca REST only for its own working set and owns a
-private `MarketBarStore`: Long loads 260 daily and 220 weekly bars; Swing loads 120 daily and 160
-15-minute bars; Intraday loads 500 minute bars. Swing derives live 15-minute bars locally and
-Intraday derives live 5-minute bars locally. The launcher starts the WebSocket process only after
-the three engine consumers, Alert, Entry Watcher, and Entry Opportunity report readiness.
+Backfill never traverses the live bar subjects. Market History owns REST coverage and workers do not
+emit decisions for a newly-added symbol until their declared warmup is complete. The launcher starts
+all business processes headlessly; market ingress waits only for required engine readiness. A tmux
+monitor can exit or restart without stopping an engine or blocking market data.
 
-Alert v2 is a separate consumer. It keeps the latest fresh result by ticker and horizon, but never
-reads an engine's store or recalculates indicators. A bullish Long result can emit `LONG_BUY_ZONE`,
-a bullish Swing result can emit `SWING_SETUP`, Intraday plus Long or Swing can emit
-`ENTRY_CONFIRMED`, and all three bullish engines can emit `HIGH_CONVICTION_BUY`.
-Entry Watcher v4 is another independent consumer of the same results. It freezes Long entry zones
-in PostgreSQL and publishes lifecycle transitions back to NATS; Alert v2 renders those transitions
-without reading the watcher database. Intraday v4 keeps extended first impulses in `WATCH`, and
-Entry Watcher v4 requires a second fresh mature confirmation before triggering.
-Entry Opportunity v1 is its own assembly slot and independent NATS process. It consumes watcher
-transitions, analyses, L1-L4 local alerts, and
-final market bars. It materializes one active root per ticker, keeps separate Intraday/Swing/Long
-paper legs, closes Intraday at the regular-session end, and appends immutable gain/loss evidence.
-Its minute reconciler also expires or closes symbols removed from the active universe even when no
-new analysis arrives.
+`EntrySignal` is the stable analytical decision contract. Consumers use its family, setup, optional
+core L1-L4 maturity, levels, and policy provenance; they never route on a producer implementation
+version. Patreon Caps, Long Portfolio, Signal Fusion, and Portfolio Flow retain distinct families
+and therefore cannot be aggregated as fake core L4 decisions. Watcher `TRIGGERED` is the canonical
+core L4 decision identity, but Alert is its only publisher. Entry Recovery is a separately
+versioned evidence engine: it never assigns L1-L4, relaxes, or rewrites the original Watcher
+invalidation. Alert evaluates its recovery assessment and the current Swing+Intraday rule assigns
+L2; changing that quality requires a new Alert rule version.
+
+Entry Opportunity 2.0 materializes paper-only lifecycles. It orders inputs independently by source,
+tracks separate horizon legs, closes the aggregate when all opened horizons terminate, and bounds
+analysis provenance. Non-material analysis refreshes update the materialized snapshot without
+appending another full historical event. A standalone analytical family may create its own paper
+opportunity when the signal provides complete entry-zone and invalidation levels.
+
+Watcher and Opportunity commit state, lifecycle evidence, and their NATS envelope to PostgreSQL in
+one short transaction. A separate relay claims committed outbox rows with `FOR UPDATE SKIP LOCKED`,
+publishes outside the transaction, and records success or exponential-backoff retry. Delivery is
+at-least-once and event IDs remain stable for consumer idempotency.
+
 SEC dilution analysis runs in an independent once-daily process. Its adapter filters an inclusive
 recent filing-date window and relevant forms before optional CompanyFacts work; it is never queried
 during realtime startup or for each market tick.
@@ -118,9 +148,26 @@ The integration layer asks the shared assembly for one concrete engine inside it
 process, but no process imports or invokes another engine. Every output crosses the shared `MarketBar`, `AnalysisResult`,
 `LocalAlert`, `ServiceHealth`, or `EventEnvelope` boundary.
 There is no Trading API, order intent, position sizing, or account state in this composition.
-Every `BUY_CONFIRMED`, PatreonCaps buy, and L1-L4 alert is analytical. Entry Opportunity records,
+Every `BUY_CONFIRMED`, PatreonCaps signal, and L1-L4 signal is analytical. Entry Opportunity records,
 tracks, and closes paper trades in PostgreSQL to measure effectiveness and gain/loss. A future
 broker executor must be a separate opt-in consumer of stable confirmed-signal contracts.
+
+## Universe policies
+
+| Process | Operational universe |
+| --- | --- |
+| Long / Swing / Intraday | active watchlist plus positive holdings, after per-engine warmup |
+| Entry Watcher / Alert | stable analysis events from the core universe |
+| Entry Opportunity / Recovery | active paper opportunities derived from lifecycle/signals |
+| Patreon Caps | complete core universe; holdings affect analytical sizing context only |
+| Elliott / Support / Signal Fusion | positive holdings only |
+| Long Portfolio | configured `PORT_YTD` allocation symbols |
+| Portfolio Flow | live holdings, trades, and quotes |
+| Rotation | configured sectors, profiles, and proxies |
+| SEC / Peter Lynch | registered universe, scheduled or on demand |
+
+Universe refreshes publish `UniverseChanged`; services report both `universe_policy` and
+`warmup_policy` in health so a new symbol cannot silently receive partial evidence.
 
 ## Runtime durability
 
@@ -128,8 +175,9 @@ broker executor must be a separate opt-in consumer of stable confirmed-signal co
 - Durable NATS consumers are distinct per engine; they are not a shared queue group, so every
   required engine receives its own copy of each live bar.
 - NATS JetStream retains live market updates, engine results, service health, and final alerts.
+- PostgreSQL outbox rows bridge durable state and JetStream without a DB-to-NATS dual-write gap.
 - Support Confirmation persists holdings-only assessments and state transitions in JetStream. It
-  is an analytical producer and has no dependency edge into PatreonCaps, ElliottWave, or Alert v2.
+  is an analytical producer and has no dependency edge into PatreonCaps, ElliottWave, or Alert.
 - Signal Fusion consumes the stable NATS outputs from Support Confirmation, Elliott Wave, Long,
   Swing, Intraday, dilution SEC, and PatreonCaps. It does not import or invoke those engines.
   PatreonCaps is derived context and is never counted as another independent Long/Swing vote.

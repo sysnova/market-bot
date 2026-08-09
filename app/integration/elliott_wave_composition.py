@@ -35,6 +35,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
+from .universe_policy import universe_health_details
 
 ELLIOTT_HISTORY_REQUESTS = (
     HistoryRequest(
@@ -185,6 +186,7 @@ async def run_elliott_wave_process(
         runtime = ElliottWaveRuntime(engine=assembly.build_elliott_wave(), publisher=bus)
         published = await runtime.bootstrap(bars, symbols=selected_symbols)
         summary: dict[str, object] = {
+            **universe_health_details("elliott-wave"),
             "service": "elliott-wave-v0",
             "engine_version": assembly.spec(EngineSlot.ELLIOTT_WAVE).implementation,
             "engine_strategy_version": assembly.spec(EngineSlot.ELLIOTT_WAVE).strategy.version,

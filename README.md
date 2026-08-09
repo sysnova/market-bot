@@ -3,8 +3,8 @@
 MarketBot is a Python 3.14 event-driven market analysis monorepo. Engines are isolated under
 `app/<engine>/`; they communicate through stable contracts rather than direct imports.
 
-The current MVP is deliberately analysis-only. Long v2, Swing v3, Intraday v4, Entry Watcher v4,
-Entry Opportunity v1, Alert v2, Market History, and the Alpaca WebSocket ingress run as independent operating-system processes. NATS JetStream distributes
+The current MVP is deliberately analysis-only. Long v2, Swing v3, Intraday v4, Entry Watcher v5.1,
+Entry Opportunity v2, Entry Recovery v1.1, Alert v3.2, Market History, and the Alpaca WebSocket ingress run as independent operating-system processes. NATS JetStream distributes
 live market bars and analytical results between them. An independent daily bot checks recent SEC
 EDGAR filings. There is no order adapter and configuration enforces
 `MARKETBOT_ALPACA_EXECUTION_ENABLED=false`.
@@ -81,7 +81,7 @@ uv run market-bot -analyzer TICKER
 
 The equivalent subcommand form is `uv run marketbot analyzer TICKER`. The ticker is
 passed unchanged (after uppercase normalization and validation) to every applicable engine.
-Long, Swing, Intraday, Entry Watcher, Alert v2, Market Rotation, LONG Portfolio,
+Long, Swing, Intraday, Entry Watcher, Alert, Market Rotation, LONG Portfolio,
 PatreonCaps, Elliott Wave, Support Confirmation, Portfolio Flow, and Signal Fusion are
 represented in one bounded report. Holdings-only and live-window engines are marked
 `SKIPPED` when their gate does not apply. Peter Lynch and the SEC dilution scan are
@@ -96,7 +96,7 @@ implementation, strategy artifact, and mode of every engine with:
 uv run marketbot assembly
 ```
 
-The default definition is `configs/marketbot/6.0.0.yaml`; select another immutable assembly with
+The default definition is `configs/marketbot/7.1.0.yaml`; select another immutable assembly with
 `MARKETBOT_DEFINITION_PATH`.
 
 Individual distributed processes can also be operated directly:
@@ -105,6 +105,8 @@ Individual distributed processes can also be operated directly:
 uv run marketbot alerts serve
 uv run marketbot entry-watch serve
 uv run marketbot entry-opportunity serve
+uv run marketbot engine entry-recovery
+uv run marketbot outbox serve
 uv run marketbot engine long
 uv run marketbot engine swing
 uv run marketbot engine intraday
@@ -123,7 +125,8 @@ historical bars do not enter JetStream. Weekly bars are treated as complete only
 week closes. The WebSocket process never writes bars to PostgreSQL: it publishes live updates only
 through NATS.
 
-Alert v2 consumes every engine's `AnalysisResult` from NATS and emits named `LONG_BUY_ZONE`,
+Alert v3.2 consumes stable `AnalysisResult`, Watcher transition, and setup-assessment contracts from
+NATS and emits named `LONG_BUY_ZONE`,
 `SWING_SETUP`, `ENTRY_CONFIRMED`, and `HIGH_CONVICTION_BUY` notifications. Alerts appear with their actionable context: current price, buy zone,
 invalidation, objective, Long/Swing/Intraday indicators, anchored and session VWAP, and the reasons
 behind each engine decision. SEC warnings are emitted by the independent daily bot. The complete structured analyses are also appended
@@ -140,7 +143,7 @@ confirmation by itself.
 The Entry Watcher remembers Long opportunities that are `EXTENDED`, `WATCH_PULLBACK`, `SETUP`, or
 already in `BUY_ZONE`. It freezes the original zone and invalidation for 56 days by default,
 persists every lifecycle transition in PostgreSQL, and waits for fresh Long, Swing, and Intraday
-confirmation before emitting an `ENTRY TRIGGERED` action alert. SEC dilution analysis is included
+confirmation before publishing `ENTRY TRIGGERED`; Alert alone turns it into an L4 action alert. SEC dilution analysis is included
 as an independent warning but never penalizes, gates, or invalidates an entry. Apply
 `supabase/migrations/20260726180000_entry_watches.sql` and
 `supabase/migrations/20260807010000_entry_opportunity_lifecycle.sql` after the foundation
@@ -149,15 +152,21 @@ database or migration is unavailable, the distributed launcher stops before open
 stream so it cannot silently lose persistent opportunity tracking. The legacy `live` diagnostic
 continues without it and logs that persistent entry watching is disabled.
 
-Entry Opportunity v1 is a separate assembled engine and process. It consolidates repeated watcher
+Watcher and Opportunity write state plus their outgoing envelope to the PostgreSQL transactional
+outbox. The headless outbox relay publishes committed rows to JetStream with at-least-once delivery;
+a monitor or NATS interruption cannot create a committed-state/unpublished-event gap.
+
+Entry Opportunity v2 is a separate assembled engine and process. It consumes source-agnostic
+`EntrySignal` decisions and consolidates repeated watcher
 IDs into one active ticker record. It
 tracks L1-L4 checkpoints plus independent Intraday, Swing, and Long paper legs; records MFE, MAE,
 session-close returns and realized gain/loss; and emits progress or closure events to the focused
 buy monitor. Use `uv run marketbot entry-opportunity report` for open progress bars and audited success
 rates.
 
-Entry Watcher v4 preserves the v3 recent-zone-touch path through a moderate opening gap or
-breakaway, but confirmation now requires an efficient Intraday v4 retest: strong evidence, a
+Entry Watcher v5.1 preserves the recent-zone-touch and no-retest higher-low paths, persists its
+confirmation checkpoint across restarts, and adds configurable zone-exit hysteresis. Confirmation
+still requires efficient Intraday v4 evidence: strong evidence, a
 five-minute higher low, and a second fresh reading at least three minutes later. First impulses
 more than 0.50 ATR above their trigger or 2 ATR above EMA20 stay `WATCH`; they cannot produce L3/L4
 until price and structure reset. A 30-minute post-trigger cooldown also suppresses immediate L4

@@ -188,7 +188,7 @@ class EntryWatcher:
                     analyses=latest,
                 )
 
-        reached_zone = active.invalidation < current_price <= active.zone_high
+        reached_zone = self._reached_target_zone(active, current_price=current_price)
         if active.status is EntryWatchStatus.ARMED and reached_zone:
             return await self._change(
                 active,
@@ -198,7 +198,10 @@ class EntryWatcher:
                 reasons=("target_zone_reached", "awaiting_entry_confirmation"),
                 analyses=latest,
             )
-        if active.status is EntryWatchStatus.IN_ZONE and current_price > active.zone_high:
+        if active.status is EntryWatchStatus.IN_ZONE and self._left_target_zone(
+            active,
+            current_price=current_price,
+        ):
             if continuation is not None:
                 touched_at = self._zone_touched_at(active)
                 return await self._change(
@@ -229,6 +232,12 @@ class EntryWatcher:
                 analyses=latest,
             )
         return None
+
+    def _reached_target_zone(self, watch: EntryWatch, *, current_price: Decimal) -> bool:
+        return watch.invalidation < current_price <= watch.zone_high
+
+    def _left_target_zone(self, watch: EntryWatch, *, current_price: Decimal) -> bool:
+        return current_price > watch.zone_high
 
     @staticmethod
     def _same_thesis(watch: EntryWatch, result: AnalysisResult) -> bool:

@@ -40,7 +40,6 @@ flowchart TD
   AR --> WATCH["Entry Watcher"]
   AR --> PAT
   AR --> FUSION["Signal Fusion"]
-  AR --> OPP["Entry Opportunity"]
   LONG --> LP["Long Portfolio"]
 
   SUP --> SA["Support assessment / transición"]
@@ -54,18 +53,26 @@ flowchart TD
   WT --> ALERT
   WT --> OPP
   ALERT --> LA["LocalAlert L1-L4"]
-  PAT --> LA
-  LP --> LA
-  FLOW["Portfolio Flow"] --> LA
-  LA --> OPP
+  ALERT --> SIG["EntrySignal estable"]
+  PAT --> SIG
+  LP --> SIG
+  FLOW["Portfolio Flow"] --> SIG
+  FUSION --> SIG
+  SIG --> OPP
   BARS --> OPP
 
   OPP --> PG["PostgreSQL\npaper trade abierto, seguimiento y cierre"]
   OPP --> OE["Progreso / cierre"]
   OE --> ALERT
+  OE --> REC["Entry Recovery"]
+  AR --> REC
+  BARS --> REC
+  REC --> RSA["EntrySetupAssessment\nsin L1-L4"]
+  RSA --> ALERT
   FUSION --> FB["BUY_CONFIRMED / RECOVERY_CONFIRMED\nanalíticos"]
 
   LA --> MON["Monitores y ventanas tmux"]
+  SIG --> MON
   FB --> MON
   PG --> MON
 
@@ -90,13 +97,14 @@ contrato confirmado sin importar engines de análisis.
 | Dilution | SEC/CompanyFacts | `AnalysisResult(DILUTION)` | No; Alert puede emitir `SEC_WARNING` |
 | Alert | Long, Swing, Intraday, Dilution; transiciones Watcher y Opportunity | `LocalAlert`, incluidos L1-L4 | Sí, analíticas: L1 por Long+Intraday, L2 por Swing+Intraday, L3 por los tres, L4 por Watcher disparado |
 | Entry Watcher | Long, Swing e Intraday; Dilution como contexto preventivo | transiciones `ARMED/IN_ZONE/TRIGGERED/...` | Indirectamente: `TRIGGERED` se clasifica L4 |
-| Entry Opportunity | todos los `AnalysisResult`, Watcher, barras 1m y `LocalAlert` | progreso/cierre y persistencia PostgreSQL | No genera compra; abre, sigue y cierra el paper trade |
-| Long Portfolio | Long y tenencias/asignaciones PostgreSQL | `LONG_PORTFOLIO_BUY` | Sí, analítica L4 |
-| PatreonCaps | Long, Swing, Intraday, barras y cartera PostgreSQL | assessment, transición y `PATREON_CAPS_BUY` | Sí, analítica L4 |
+| Entry Opportunity | `EntrySignal`, Watcher, barras 1m y análisis vigentes | progreso/cierre y persistencia PostgreSQL | No genera compra; abre, sigue y cierra cada setup/leg de papel |
+| Entry Recovery | Opportunity invalidada, análisis frescos y barras 5m | `EntrySetupAssessment(CORE_RECOVERY)` sin nivel | No; Alert decide L2 con la regla Swing+Intraday vigente |
+| Long Portfolio | Long y tenencias/asignaciones PostgreSQL | `EntrySignal(LONG_PORTFOLIO)` | Sí, familia analítica propia; no L4 |
+| PatreonCaps | Long, Swing, Intraday, barras y cartera PostgreSQL | assessment, transición y `EntrySignal(PATREON_CAPS)` | Sí, familia analítica propia; no L4 |
 | Support Confirmation | barras y tenencias PostgreSQL | assessment/transición | Prealerta `REENTRY ARMED`; no BUY |
 | Elliott Wave | barras daily y tenencias PostgreSQL | assessment | No |
-| Signal Fusion | Long, Swing, Intraday, Dilution, Support, Elliott y PatreonCaps | assessment, `BUY_CONFIRMED`, `RECOVERY_CONFIRMED` | Sí, en su monitor; señal analítica independiente de Alert |
-| Portfolio Flow | quotes, trades y cartera | `PROTECT`, `PORTFOLIO_FLOW_BUY` | Sí, observación analítica sin madurez L1-L4 |
+| Signal Fusion | Long, Swing, Intraday, Dilution, Support, Elliott y PatreonCaps | assessment y `EntrySignal(SIGNAL_FUSION)` | Sí, en su monitor; familia analítica independiente de Alert |
+| Portfolio Flow | quotes, trades y cartera | `PROTECT`, `EntrySignal(PORTFOLIO_FLOW)` | Sí, observación analítica sin madurez L1-L4 |
 | Market Rotation | historial PostgreSQL | contexto global NATS | No |
 | Peter Lynch | fundamentales/SEC | indicador PostgreSQL | No |
 

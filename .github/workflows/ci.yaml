@@ -16,6 +16,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Enforce immutable released definitions and rule artifacts
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            exit 0
+          fi
+          violations="$({
+            git diff --name-status "$BASE_SHA" HEAD -- \
+              'configs/marketbot/*.yaml' 'configs/rules/**/*.yaml' || true
+          } | awk '$1 !~ /^A/ { print }')"
+          if [[ -n "$violations" ]]; then
+            echo "Released MarketBot definitions and rule artifacts are immutable."
+            echo "Add a new version instead of modifying or deleting an existing one:"
+            echo "$violations"
+            exit 1
+          fi
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.14"

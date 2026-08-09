@@ -1,0 +1,8 @@
+rule_id: marketbot.swing
+version: 1.0.0
+status: active
+behavior:
+  anchored_vwap_gate: true
+measurement:
+  dimensions: [engine_version, strategy_version, entry_timing]
+  outcomes: [first_level_hit, mfe_percent, mae_percent]

@@ -5,16 +5,23 @@ from .dispatcher import AlertDispatcher
 from .engine import AlertEngine
 from .outcomes import SolidBuyOutcome, evaluate_solid_buy_outcomes
 from .policy import AlertPolicy, HorizonPolicy
-from .ports import AlertPublisher, AlertSink
+from .ports import AlertDecisionStateStore, AlertPublisher, AlertSink
 from .sinks import AlertSinkReceipt, ConsoleAlertSink, NdjsonAlertSink
+from .state import AlertEngineV3State
 from .v2 import AlertEngineV2
 from .v3 import AlertEngineV3
+from .v31 import AlertEngineV31
+from .v32 import AlertEngineV32
 
 __all__ = [
+    "AlertDecisionStateStore",
     "AlertDispatcher",
     "AlertEngine",
     "AlertEngineV2",
     "AlertEngineV3",
+    "AlertEngineV3State",
+    "AlertEngineV31",
+    "AlertEngineV32",
     "AlertPolicy",
     "AlertPublisher",
     "AlertSink",

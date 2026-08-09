@@ -24,8 +24,10 @@ from app.persistence import create_database_engine, create_session_factory
 
 from .distributed_composition import _write_ready  # pyright: ignore[reportPrivateUsage]
 from .engine_assembly import EngineSlot, MarketBotAssembly
+from .entry_signal_adapter import entry_signal_from_alert, publish_entry_signal
 from .long_portfolio_store import PostgresLongPortfolioAlertStore
 from .postgres_universe import PostgresUniverseClient
+from .universe_policy import universe_health_details
 
 
 async def run_long_portfolio_process(
@@ -114,6 +116,9 @@ async def run_long_portfolio_process(
                 payload=alert,
             ),
         )
+        signal = entry_signal_from_alert(alert)
+        if signal is not None:
+            await publish_entry_signal(bus, signal, source="long-portfolio")
 
     subscription = await bus.subscribe(
         (
@@ -130,6 +135,7 @@ async def run_long_portfolio_process(
     )
     try:
         details: dict[str, object] = {
+            **universe_health_details("long-portfolio"),
             "service": "long-portfolio-v1",
             "marketbot_definition_version": assembly.definition.version,
             "engine_implementation": assembly.spec(EngineSlot.LONG_PORTFOLIO).implementation,

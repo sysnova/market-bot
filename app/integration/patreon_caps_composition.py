@@ -55,11 +55,13 @@ from .distributed_composition import (
     write_ready,
 )
 from .engine_assembly import EngineSlot, MarketBotAssembly
+from .entry_signal_adapter import entry_signal_from_alert, publish_entry_signal
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .patreon_caps_store import PostgresPatreonCapsStore
 from .postgres_universe import PostgresUniverseClient, fallback_universe
+from .universe_policy import universe_health_details
 
 PATREON_HISTORY_REQUESTS = (
     HistoryRequest(
@@ -339,6 +341,9 @@ class PatreonCapsRuntime:
                 payload=alert,
             ),
         )
+        signal = entry_signal_from_alert(alert)
+        if signal is not None:
+            await publish_entry_signal(self._publisher, signal, source="patreon-caps")
 
 
 async def run_patreon_caps_process(
@@ -425,6 +430,7 @@ async def run_patreon_caps_process(
             )
         await runtime.complete_hydration()
         summary: dict[str, object] = {
+            **universe_health_details("patreon-caps"),
             "service": "patreon-caps-v1",
             "marketbot_definition_version": assembly.definition.version,
             "engine_implementation": assembly.spec(EngineSlot.PATREON_CAPS).implementation,

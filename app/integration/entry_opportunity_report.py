@@ -13,6 +13,7 @@ from app.contracts import (
     EntryMaturityLevel,
     EntryOpportunity,
     EntryOpportunityStatus,
+    EntrySignalFamily,
 )
 from app.persistence import create_database_engine, create_session_factory
 
@@ -62,17 +63,20 @@ def build_entry_opportunity_report(
         },
         "open_trades": [_open_trade(item) for item in sorted(active, key=lambda row: row.symbol)],
         "maturity_outcomes": _maturity_outcomes(opportunities),
+        "signal_family_outcomes": _signal_family_outcomes(opportunities),
         "horizon_outcomes": _horizon_outcomes(opportunities),
     }
 
 
 def _open_trade(opportunity: EntryOpportunity) -> dict[str, Any]:
     filled = min(10, max(0, int(opportunity.progress_percent / Decimal("10"))))
+    core_family = opportunity.primary_signal_family.value.startswith("CORE_")
     return {
         "symbol": opportunity.symbol,
         "status": opportunity.status.value,
-        "maturity": opportunity.current_maturity.value,
-        "peak_maturity": opportunity.peak_maturity.value,
+        "signal_family": opportunity.primary_signal_family.value,
+        "maturity": opportunity.current_maturity.value if core_family else None,
+        "peak_maturity": opportunity.peak_maturity.value if core_family else None,
         "progress_percent": str(opportunity.progress_percent),
         "progress_bar": f"[{'#' * filled}{'-' * (10 - filled)}]",
         "current_price": str(opportunity.current_price),
@@ -153,6 +157,36 @@ def _horizon_outcomes(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, 
             AnalysisHorizon.SWING,
             AnalysisHorizon.LONG_TERM,
         )
+    }
+
+
+def _signal_family_outcomes(
+    opportunities: tuple[EntryOpportunity, ...],
+) -> dict[str, Any]:
+    checkpoints = tuple(
+        checkpoint
+        for opportunity in opportunities
+        for checkpoint in opportunity.checkpoints
+    )
+    return {
+        family.value: _outcome_stats(
+            tuple(
+                item.gain_loss_percent
+                for item in checkpoints
+                if item.signal_family is family and item.gain_loss_percent is not None
+            ),
+            open_count=sum(
+                item.signal_family is family and item.status is EntryCheckpointStatus.OPEN
+                for item in checkpoints
+            ),
+            mfe=tuple(
+                item.mfe_percent for item in checkpoints if item.signal_family is family
+            ),
+            mae=tuple(
+                item.mae_percent for item in checkpoints if item.signal_family is family
+            ),
+        )
+        for family in EntrySignalFamily
     }
 
 

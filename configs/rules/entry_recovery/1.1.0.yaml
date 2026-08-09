@@ -1,0 +1,16 @@
+rule_id: marketbot.entry_recovery
+version: 1.1.0
+status: paper
+behavior:
+  intraday_max_age_minutes: 15
+  swing_max_age_days: 3
+  minimum_reward_risk: 1.5
+  strong_confirmation_required: true
+  five_minute_higher_low_required: true
+output:
+  contract: EntrySetupAssessment
+  family: CORE_RECOVERY
+  maturity_owner: alert
+measurement:
+  dimensions: [engine_version, strategy_version, signal_family]
+  outcomes: [recovery_confirmed, mfe_percent, mae_percent, return_15m, return_60m]

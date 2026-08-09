@@ -3,6 +3,7 @@
 from .database import create_database_engine, create_session_factory, normalize_database_url
 from .models import (
     Base,
+    EngineDecisionStateRecord,
     EntryOpportunityEventRecord,
     EntryOpportunityRecord,
     EntryWatchRecord,
@@ -15,6 +16,7 @@ from .models import (
 )
 from .repositories import (
     CheckpointRepository,
+    EngineDecisionStateRepository,
     EntryOpportunityRepository,
     EntryWatchRepository,
     EventPayloadConflictError,
@@ -31,6 +33,8 @@ from .unit_of_work import PersistenceUnitOfWork
 __all__ = [
     "Base",
     "CheckpointRepository",
+    "EngineDecisionStateRecord",
+    "EngineDecisionStateRepository",
     "EntryOpportunityEventRecord",
     "EntryOpportunityRecord",
     "EntryOpportunityRepository",

@@ -9,21 +9,21 @@ PAPER registry snapshot, compiles PRIMARY and CANDIDATE strategies, executes the
 the same context, and durably audits traces and decisions as idempotent NDJSON.
 
 `distributed_composition.py` is the active process boundary for the analytical MVP. It creates one
-private store and one v2 engine per process, performs horizon-specific REST bootstrap, subscribes
-that process to its own durable NATS subjects, and publishes only `AnalysisResult` values. The
-Alpaca WebSocket, persistent Entry Watcher v3, and Alert v2 aggregation have their own process
-composition roots. Entry Watcher consumes results, persists its state in PostgreSQL, and publishes
-transitions through NATS; Alert consumes both results and transitions.
+private engine per process, performs horizon-specific REST bootstrap, subscribes that process to
+logical durable NATS subjects, and publishes only stable contracts. The Alpaca WebSocket,
+persistent Entry Watcher, Entry Opportunity, Alert, outbox relay, and Entry Recovery have separate
+composition roots. Engine implementations are selected independently by the immutable MarketBot
+definition; consumers never route on a producer implementation version.
 
 The legacy live composition also connects the pure horizon engines to `EntryWatcher`. Analysis results
 remain the only cross-engine input. The watcher persists through the PostgreSQL adapter, while
 `AnalysisRuntime` converts its lifecycle transitions into local human alerts. Failure to connect
 to the optional watcher database is isolated from Alpaca analysis and NATS mirroring.
 
-The active distributed analytical generation is selected explicitly in
-`distributed_composition.py`: Long v2, Swing v3, Intraday v3, Entry Watcher v3, and Alert v2. Earlier classes and the
-legacy single-process composition remain available for diagnostics; changing an active generation
-must never silently rewrite an old class.
+The active distributed analytical generation is selected by `configs/marketbot/7.1.0.yaml`:
+Long, Swing, Intraday, Entry Watcher 5.1, Entry Opportunity 2.0, Alert 3.2, and Entry Recovery 1.1.
+Earlier classes and definitions remain available for replay and rollback; changing an active
+generation must never silently rewrite an old class or versioned rule artifact.
 
 `patreon_caps_composition.py` agrega el analisis PatreonCaps v1 sin consumir alertas
 humanas deduplicadas. Hace bootstrap REST de 260 ruedas diarias, 220 semanales, 220 barras de 1H

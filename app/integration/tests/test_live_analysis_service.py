@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from app.contracts import UniverseChanged
 from app.integration.live_analysis_service import LiveAnalysisService
 from app.integration.postgres_universe import UniverseSnapshot
 
@@ -39,18 +40,32 @@ class FakeRuntime:
     def __init__(self) -> None:
         self.evaluated: tuple[str, ...] = ()
         self.enabled = False
+        self.calls: list[str] = []
 
     async def evaluate_all(self, symbols: tuple[str, ...]) -> None:
+        self.calls.append("evaluate")
         self.evaluated = symbols
 
     async def evaluate_long_term_all(self, symbols: tuple[str, ...]) -> None:
         self.evaluated = symbols
 
     def enable_live(self) -> None:
+        self.calls.append("enable")
         self.enabled = True
 
     def disable_live(self) -> None:
+        self.calls.append("disable")
         self.enabled = False
+
+
+class RecordingUniversePublisher:
+    def __init__(self, runtime: FakeRuntime) -> None:
+        self.runtime = runtime
+        self.changes: list[UniverseChanged] = []
+
+    async def publish_universe_changed(self, change: UniverseChanged) -> None:
+        assert self.runtime.calls[-1] == "evaluate"
+        self.changes.append(change)
 
 
 class BlockingMarketData(FakeMarketData):
@@ -132,6 +147,32 @@ async def test_refresh_universe_backfills_only_added_symbols_and_reenables_live(
     assert market_data.calls[-1] == ("snapshots", ("NVDA",))
     assert runtime.evaluated == ("MSFT", "NVDA")
     assert runtime.enabled is True
+
+
+@pytest.mark.unit
+async def test_refresh_publishes_universe_change_only_after_added_symbols_are_warm() -> None:
+    market_data = FakeMarketData()
+    runtime = FakeRuntime()
+    changes = RecordingUniversePublisher(runtime)
+    service = LiveAnalysisService(
+        symbols=("AAPL", "MSFT"),
+        market_data=market_data,
+        local_bus=FakeBus(),
+        runtime=runtime,
+        universe_publisher=changes,
+        universe_source="postgresql-local",
+    )
+
+    changed = await service.refresh_universe(("MSFT", "NVDA"), NOW)
+
+    assert changed is True
+    assert len(changes.changes) == 1
+    event = changes.changes[0]
+    assert event.previous_symbols == ("AAPL", "MSFT")
+    assert event.symbols == ("MSFT", "NVDA")
+    assert event.added_symbols == ("NVDA",)
+    assert event.removed_symbols == ("AAPL",)
+    assert runtime.calls[-1] == "enable"
 
 
 @pytest.mark.unit

@@ -105,6 +105,19 @@ Table market_bot.consumer_checkpoints {
   }
 }
 
+Table market_bot.engine_decision_states {
+  id uuid [pk]
+  engine_name text [not null]
+  implementation_version text [not null]
+  state_schema_version text [not null]
+  payload jsonb [not null]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (engine_name, implementation_version) [unique, name: "engine_decision_states_engine_implementation_key"]
+  }
+}
+
 Table market_bot.service_health {
   id uuid [pk]
   service_name text [not null, unique]
@@ -209,6 +222,7 @@ Table market_bot.entry_opportunity_events {
   indexes {
     (opportunity_id, occurred_at) [name: "entry_opportunity_events_opportunity_occurred_idx"]
     (symbol, occurred_at) [name: "entry_opportunity_events_symbol_occurred_idx"]
+    (opportunity_id, occurred_at, id) [name: "entry_opportunity_events_legacy_evidence_retention_idx", note: "Partial: exact legacy single-reason evidence_updated events only"]
   }
 }
 

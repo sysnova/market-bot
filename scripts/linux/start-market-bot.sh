@@ -49,11 +49,10 @@ STATUS_ROOT="$RUNTIME_ROOT/status"
 LOG_ROOT="$RUNTIME_ROOT/logs"
 
 run_analysis() {
-  local args=(run marketbot alerts serve --runtime-root "$RUNTIME_ROOT" \
-    --ready-path "$STATUS_ROOT/alert-v2.ready.json")
-  ((NO_BELL)) && args+=(--no-bell)
   cd "$PROJECT_ROOT"
-  exec uv "${args[@]}"
+  wait_ready "$STATUS_ROOT/alert.ready.json"
+  touch "$LOG_ROOT/alert.out.log"
+  exec tail -n 200 -F "$LOG_ROOT/alert.out.log"
 }
 
 run_confirmed() {
@@ -80,27 +79,9 @@ run_long_portfolio_monitor() {
 
 run_patreon_caps_analysis() {
   cd "$PROJECT_ROOT"
-  mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
-  rm -f "$STATUS_ROOT/patreon-caps-v1.ready.json" \
-    "$STATUS_ROOT/patreon-caps-analysis.ready.json"
-  uv run marketbot engine patreon-caps \
-    --ready-path "$STATUS_ROOT/patreon-caps-v1.ready.json" \
-    >>"$LOG_ROOT/patreon-caps-v1.log" 2>&1 &
-  local engine_pid=$!
-  uv run marketbot monitor patreon-caps \
-    --ready-path "$STATUS_ROOT/patreon-caps-analysis.ready.json" &
-  local monitor_pid=$!
-  cleanup_patreon() {
-    trap - EXIT INT TERM
-    kill "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
-    wait "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
-  }
-  trap cleanup_patreon EXIT INT TERM
-  local status=0
-  wait -n "$engine_pid" "$monitor_pid" || status=$?
-  cleanup_patreon
-  return "$status"
+  wait_ready "$STATUS_ROOT/patreon-caps-v1.ready.json"
+  exec uv run marketbot monitor patreon-caps \
+    --ready-path "$STATUS_ROOT/patreon-caps-analysis.ready.json"
 }
 
 run_patreon_caps_alerts() {
@@ -113,108 +94,25 @@ run_patreon_caps_alerts() {
 
 run_elliott_wave() {
   cd "$PROJECT_ROOT"
-  mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
-  rm -f "$STATUS_ROOT/elliott-wave-v0.ready.json" \
-    "$STATUS_ROOT/elliott-wave-analysis.ready.json"
-  uv run marketbot engine elliott-wave \
-    --ready-path "$STATUS_ROOT/elliott-wave-v0.ready.json" \
-    >>"$LOG_ROOT/elliott-wave-v0.log" 2>&1 &
-  local engine_pid=$!
-  local monitor_pid=""
-  cleanup_elliott() {
-    trap - EXIT INT TERM
-    kill "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
-    wait "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
-  }
-  trap cleanup_elliott EXIT INT TERM
-  while [[ ! -f "$STATUS_ROOT/elliott-wave-v0.ready.json" ]]; do
-    if ! kill -0 "$engine_pid" 2>/dev/null; then
-      local status=0
-      wait "$engine_pid" || status=$?
-      cleanup_elliott
-      return "$status"
-    fi
-    sleep 0.2
-  done
-  uv run marketbot monitor elliott-wave \
-    --ready-path "$STATUS_ROOT/elliott-wave-analysis.ready.json" &
-  monitor_pid=$!
-  local status=0
-  wait -n "$engine_pid" "$monitor_pid" || status=$?
-  cleanup_elliott
-  return "$status"
+  wait_ready "$STATUS_ROOT/elliott-wave-v0.ready.json"
+  exec uv run marketbot monitor elliott-wave \
+    --ready-path "$STATUS_ROOT/elliott-wave-analysis.ready.json"
 }
 
 run_support_confirmation() {
   cd "$PROJECT_ROOT"
-  mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  wait_ready "$STATUS_ROOT/market-history-v1.ready.json"
-  rm -f "$STATUS_ROOT/support-confirmation-v0.ready.json" \
-    "$STATUS_ROOT/support-confirmation-analysis.ready.json"
-  uv run marketbot engine support-confirmation \
-    --ready-path "$STATUS_ROOT/support-confirmation-v0.ready.json" \
-    >>"$LOG_ROOT/support-confirmation-v0.log" 2>&1 &
-  local engine_pid=$!
-  local monitor_pid=""
-  cleanup_support_confirmation() {
-    trap - EXIT INT TERM
-    kill "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
-    wait "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
-  }
-  trap cleanup_support_confirmation EXIT INT TERM
-  while [[ ! -f "$STATUS_ROOT/support-confirmation-v0.ready.json" ]]; do
-    if ! kill -0 "$engine_pid" 2>/dev/null; then
-      local status=0
-      wait "$engine_pid" || status=$?
-      cleanup_support_confirmation
-      return "$status"
-    fi
-    sleep 0.2
-  done
+  wait_ready "$STATUS_ROOT/support-confirmation-v0.ready.json"
   local monitor_args=(run marketbot monitor support-confirmation \
     --ready-path "$STATUS_ROOT/support-confirmation-analysis.ready.json")
   ((NO_BELL)) && monitor_args+=(--no-bell)
-  uv "${monitor_args[@]}" &
-  monitor_pid=$!
-  local status=0
-  wait -n "$engine_pid" "$monitor_pid" || status=$?
-  cleanup_support_confirmation
-  return "$status"
+  exec uv "${monitor_args[@]}"
 }
 
 run_signal_fusion_analysis() {
   cd "$PROJECT_ROOT"
-  mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT/signal-fusion-v0.ready.json" \
-    "$STATUS_ROOT/signal-fusion-analysis.ready.json"
-  uv run marketbot engine signal-fusion \
-    --ready-path "$STATUS_ROOT/signal-fusion-v0.ready.json" \
-    >>"$LOG_ROOT/signal-fusion-v0.log" 2>&1 &
-  local engine_pid=$!
-  local monitor_pid=""
-  cleanup_signal_fusion() {
-    trap - EXIT INT TERM
-    kill "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
-    wait "${engine_pid:-}" "${monitor_pid:-}" 2>/dev/null || true
-  }
-  trap cleanup_signal_fusion EXIT INT TERM
-  while [[ ! -f "$STATUS_ROOT/signal-fusion-v0.ready.json" ]]; do
-    if ! kill -0 "$engine_pid" 2>/dev/null; then
-      local status=0
-      wait "$engine_pid" || status=$?
-      cleanup_signal_fusion
-      return "$status"
-    fi
-    sleep 0.2
-  done
-  uv run marketbot monitor signal-fusion --mode analysis --no-bell \
-    --ready-path "$STATUS_ROOT/signal-fusion-analysis.ready.json" &
-  monitor_pid=$!
-  local status=0
-  wait -n "$engine_pid" "$monitor_pid" || status=$?
-  cleanup_signal_fusion
-  return "$status"
+  wait_ready "$STATUS_ROOT/signal-fusion-v0.ready.json"
+  exec uv run marketbot monitor signal-fusion --mode analysis --no-bell \
+    --ready-path "$STATUS_ROOT/signal-fusion-analysis.ready.json"
 }
 
 run_signal_fusion_buys() {
@@ -287,21 +185,28 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
-  rm -f "$STATUS_ROOT"/{alert-v2,entry-watcher-v2,entry-watcher-v3,entry-watcher-v4,entry-watcher-v5,entry-opportunity-v1,entry-opportunity-monitor,market-history-v1,long-term-v2,swing-v2,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{outbox-relay,alert,alert-v2,entry-watcher,entry-watcher-v2,entry-watcher-v3,entry-watcher-v4,entry-watcher-v5,entry-opportunity,entry-opportunity-v1,entry-recovery,entry-opportunity-monitor,market-history-v1,long-term,long-term-v2,swing,swing-v2,intraday,intraday-v2,market-rotation-v1,portfolio-flow-v1,long-portfolio-v1,confirmed-buy-monitor,long-portfolio-monitor,patreon-caps-v1,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-v0,elliott-wave-analysis,support-confirmation-v0,support-confirmation-analysis,signal-fusion-v0,signal-fusion-analysis,signal-fusion-buys}.ready.json
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
   echo "Runtime: $RUNTIME_ROOT"
 
-  start_background entry-watcher-v5 run marketbot entry-watch serve \
-    --ready-path "$STATUS_ROOT/entry-watcher-v5.ready.json"
-  start_background entry-opportunity-v1 run marketbot entry-opportunity serve \
-    --ready-path "$STATUS_ROOT/entry-opportunity-v1.ready.json"
-  wait_ready "$STATUS_ROOT/alert-v2.ready.json" \
-    "$STATUS_ROOT/entry-watcher-v5.ready.json" \
-    "$STATUS_ROOT/entry-opportunity-v1.ready.json"
-  wait_ready "$STATUS_ROOT/confirmed-buy-monitor.ready.json"
-  wait_ready "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
+  start_background outbox-relay run marketbot outbox serve \
+    --ready-path "$STATUS_ROOT/outbox-relay.ready.json"
+  wait_ready "$STATUS_ROOT/outbox-relay.ready.json"
+  start_background alert run marketbot alerts serve \
+    --runtime-root "$RUNTIME_ROOT" --no-bell \
+    --ready-path "$STATUS_ROOT/alert.ready.json"
+  start_background entry-watcher run marketbot entry-watch serve \
+    --ready-path "$STATUS_ROOT/entry-watcher.ready.json"
+  start_background entry-opportunity run marketbot entry-opportunity serve \
+    --ready-path "$STATUS_ROOT/entry-opportunity.ready.json"
+  start_background entry-recovery run marketbot engine entry-recovery \
+    --ready-path "$STATUS_ROOT/entry-recovery.ready.json"
+  wait_ready "$STATUS_ROOT/alert.ready.json" \
+    "$STATUS_ROOT/entry-watcher.ready.json" \
+    "$STATUS_ROOT/entry-opportunity.ready.json" \
+    "$STATUS_ROOT/entry-recovery.ready.json"
 
   local symbol_args=()
   [[ -n "$SYMBOLS" ]] && symbol_args=(--symbols "$SYMBOLS")
@@ -312,33 +217,35 @@ run_control() {
     --runtime-root "$RUNTIME_ROOT" \
     --ready-path "$STATUS_ROOT/long-portfolio-v1.ready.json"
   wait_ready "$STATUS_ROOT/long-portfolio-v1.ready.json"
-  start_background long-term-v2 run marketbot engine long \
-    --ready-path "$STATUS_ROOT/long-term-v2.ready.json" "${symbol_args[@]}"
-  start_background swing-v2 run marketbot engine swing \
-    --ready-path "$STATUS_ROOT/swing-v2.ready.json" "${symbol_args[@]}"
-  start_background intraday-v2 run marketbot engine intraday \
-    --ready-path "$STATUS_ROOT/intraday-v2.ready.json" "${symbol_args[@]}"
+  start_background long-term run marketbot engine long \
+    --ready-path "$STATUS_ROOT/long-term.ready.json" "${symbol_args[@]}"
+  start_background swing run marketbot engine swing \
+    --ready-path "$STATUS_ROOT/swing.ready.json" "${symbol_args[@]}"
+  start_background intraday run marketbot engine intraday \
+    --ready-path "$STATUS_ROOT/intraday.ready.json" "${symbol_args[@]}"
   start_background market-rotation-v1 run marketbot engine rotation \
     --ready-path "$STATUS_ROOT/market-rotation-v1.ready.json"
   start_background portfolio-flow-v1 run marketbot engine portfolio-flow \
     --ready-path "$STATUS_ROOT/portfolio-flow-v1.ready.json"
+  start_background patreon-caps-v1 run marketbot engine patreon-caps \
+    --ready-path "$STATUS_ROOT/patreon-caps-v1.ready.json"
+  start_background elliott-wave-v0 run marketbot engine elliott-wave \
+    --ready-path "$STATUS_ROOT/elliott-wave-v0.ready.json"
+  start_background support-confirmation-v0 run marketbot engine support-confirmation \
+    --ready-path "$STATUS_ROOT/support-confirmation-v0.ready.json"
+  start_background signal-fusion-v0 run marketbot engine signal-fusion \
+    --ready-path "$STATUS_ROOT/signal-fusion-v0.ready.json"
   wait_ready \
-    "$STATUS_ROOT/long-term-v2.ready.json" \
-    "$STATUS_ROOT/swing-v2.ready.json" \
-    "$STATUS_ROOT/intraday-v2.ready.json" \
+    "$STATUS_ROOT/long-term.ready.json" \
+    "$STATUS_ROOT/swing.ready.json" \
+    "$STATUS_ROOT/intraday.ready.json" \
     "$STATUS_ROOT/market-rotation-v1.ready.json"
   wait_ready "$STATUS_ROOT/portfolio-flow-v1.ready.json"
-  wait_ready "$STATUS_ROOT/long-portfolio-monitor.ready.json"
-  wait_ready "$STATUS_ROOT/patreon-caps-v1.ready.json" \
-    "$STATUS_ROOT/patreon-caps-analysis.ready.json" \
-    "$STATUS_ROOT/patreon-caps-alerts.ready.json"
-  wait_ready "$STATUS_ROOT/elliott-wave-v0.ready.json" \
-    "$STATUS_ROOT/elliott-wave-analysis.ready.json"
-  wait_ready "$STATUS_ROOT/support-confirmation-v0.ready.json" \
-    "$STATUS_ROOT/support-confirmation-analysis.ready.json"
-  wait_ready "$STATUS_ROOT/signal-fusion-v0.ready.json" \
-    "$STATUS_ROOT/signal-fusion-analysis.ready.json" \
-    "$STATUS_ROOT/signal-fusion-buys.ready.json"
+  wait_ready \
+    "$STATUS_ROOT/patreon-caps-v1.ready.json" \
+    "$STATUS_ROOT/elliott-wave-v0.ready.json" \
+    "$STATUS_ROOT/support-confirmation-v0.ready.json" \
+    "$STATUS_ROOT/signal-fusion-v0.ready.json"
 
   start_background alpaca-market-stream run marketbot market stream "${symbol_args[@]}"
   echo "All engines ready. Logs: $LOG_ROOT"

@@ -7,6 +7,7 @@ from .enums import (
     AnalysisHorizon,
     BarTimeframe,
     EntryOpportunityStatus,
+    EntrySignalFamily,
     EntryWatchStatus,
 )
 
@@ -17,11 +18,14 @@ LOCAL_ALERT_EVENT: Final = "alert.local.produced"
 SERVICE_HEALTH_EVENT: Final = "service.health.reported"
 ENTRY_WATCH_TRANSITION_EVENT: Final = "entry-watch.transitioned"
 ENTRY_OPPORTUNITY_EVENT: Final = "entry-opportunity.updated"
+ENTRY_SIGNAL_EVENT: Final = "entry-signal.confirmed"
+ENTRY_SETUP_ASSESSMENT_EVENT: Final = "entry-setup.assessed"
 PATREON_CAPS_ASSESSMENT_EVENT: Final = "patreon-caps.assessed"
 PATREON_CAPS_TRANSITION_EVENT: Final = "patreon-caps.transitioned"
 ELLIOTT_WAVE_ASSESSMENT_EVENT: Final = "elliott-wave.assessed"
 SUPPORT_ASSESSMENT_EVENT: Final = "support-confirmation.assessed"
 SUPPORT_TRANSITION_EVENT: Final = "support-confirmation.transitioned"
+UNIVERSE_CHANGED_EVENT: Final = "universe.changed"
 FUSION_ASSESSMENT_EVENT: Final = "signal-fusion.assessed"
 FUSION_TRANSITION_EVENT: Final = "signal-fusion.transitioned"
 FUSION_BUY_CONFIRMED_EVENT: Final = "signal-fusion.buy-confirmed"
@@ -46,12 +50,24 @@ def service_health_subject(service: str) -> str:
     return f"marketbot.v1.service.health.{_service_token(service)}"
 
 
+def universe_changed_subject() -> str:
+    return "marketbot.v1.universe.changed.core"
+
+
 def entry_watch_transition_subject(status: EntryWatchStatus, symbol: str) -> str:
     return f"marketbot.v1.entry-watch.transition.{status.value}.{_symbol_token(symbol)}"
 
 
 def entry_opportunity_subject(status: EntryOpportunityStatus, symbol: str) -> str:
     return f"marketbot.v1.entry-opportunity.transition.{status.value}.{_symbol_token(symbol)}"
+
+
+def entry_signal_subject(family: EntrySignalFamily, symbol: str) -> str:
+    return f"marketbot.v1.entry-signal.{family.value}.{_symbol_token(symbol)}"
+
+
+def entry_setup_assessment_subject(family: EntrySignalFamily, symbol: str) -> str:
+    return f"marketbot.v1.entry-setup.{family.value}.{_symbol_token(symbol)}"
 
 
 def patreon_caps_assessment_subject(symbol: str) -> str:

@@ -38,6 +38,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
+from .universe_policy import universe_health_details
 
 SUPPORT_HISTORY_REQUESTS = (
     HistoryRequest(
@@ -279,6 +280,7 @@ async def run_support_confirmation_process(
         )
         published = await runtime.bootstrap(bars, symbols=selected_symbols)
         summary: dict[str, object] = {
+            **universe_health_details("support-confirmation"),
             "service": "support-confirmation-v0",
             "engine_version": assembly.spec(EngineSlot.SUPPORT_CONFIRMATION).implementation,
             "engine_strategy_version": assembly.spec(

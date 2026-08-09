@@ -14,6 +14,7 @@ from app.contracts import (
     EntryOpportunity,
     EntryOpportunityEvent,
     EntryOpportunityStatus,
+    EntrySignalFamily,
 )
 
 NOW = datetime(2026, 8, 6, 18, tzinfo=UTC)
@@ -78,3 +79,23 @@ def test_invalidated_opportunity_emits_critical_close_alarm_alert() -> None:
     assert alert.kind is AlertKind.ENTRY_OPPORTUNITY_CLOSED
     assert alert.severity is AlertSeverity.CRITICAL
     assert "ORIGINAL THESIS INVALIDATED" in alert.title
+
+
+@pytest.mark.unit
+def test_standalone_analytical_family_is_not_presented_as_core_l_maturity() -> None:
+    base = event()
+    analytical = base.model_copy(
+        update={
+            "opportunity": base.opportunity.model_copy(
+                update={"primary_signal_family": EntrySignalFamily.PATREON_CAPS}
+            )
+        }
+    )
+
+    alert = AlertEngine().ingest_entry_opportunity(analytical, now=NOW)
+
+    assert "PATREON CAPS" in alert.title
+    assert "L3" not in alert.title
+    assert next(item.value for item in alert.metrics if item.name == "signal_family") == (
+        "PATREON_CAPS"
+    )

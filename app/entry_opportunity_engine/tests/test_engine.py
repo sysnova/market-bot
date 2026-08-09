@@ -15,6 +15,8 @@ from app.contracts import (
     EntryLegStatus,
     EntryMaturityLevel,
     EntryOpportunityStatus,
+    EntrySignal,
+    EntrySignalFamily,
     EntryWatchStatus,
     EntryWatchTransition,
     LocalAlert,
@@ -24,6 +26,7 @@ from app.contracts import (
 )
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
+    EntryOpportunityEngineV2,
     InMemoryEntryOpportunityStore,
 )
 
@@ -41,9 +44,10 @@ def watch_transition(
     previous: EntryWatchStatus | None = None,
     horizons: tuple[AnalysisHorizon, ...] = (AnalysisHorizon.LONG_TERM,),
     reasons: tuple[str, ...] = ("fixture",),
+    transition_id: UUID | None = None,
 ) -> EntryWatchTransition:
     return EntryWatchTransition(
-        transition_id=UUID(
+        transition_id=transition_id or UUID(
             {
                 EntryWatchStatus.ARMED: "0195f3a5-9000-7000-8000-000000000081",
                 EntryWatchStatus.IN_ZONE: "0195f3a5-9000-7000-8000-000000000082",
@@ -75,6 +79,7 @@ def analysis(
     verdict: AnalysisVerdict,
     direction: PatternDirection,
     as_of: datetime,
+    analysis_id: UUID | None = None,
 ) -> AnalysisResult:
     metrics = [NamedValue(name="reference_price", value=Decimal(price))]
     if horizon is AnalysisHorizon.LONG_TERM:
@@ -86,7 +91,7 @@ def analysis(
             )
         )
     return AnalysisResult(
-        analysis_id=UUID("0195f3a5-9000-7000-8000-000000000071"),
+        analysis_id=analysis_id or UUID("0195f3a5-9000-7000-8000-000000000071"),
         engine_id="fixture",
         engine_version="4.0.0",
         symbol="AAPL",
@@ -163,6 +168,34 @@ def alert(
         reasons=("fixture_maturity",),
         deduplication_key=f"fixture:aapl:{level.value}",
         kind=kind,
+    )
+
+
+def entry_signal(
+    family: EntrySignalFamily,
+    *,
+    signal_id: str,
+    setup_id: str,
+    created_at: datetime,
+    maturity: EntryMaturityLevel | None = None,
+    complete_levels: bool = True,
+) -> EntrySignal:
+    return EntrySignal(
+        signal_id=UUID(signal_id),
+        family=family,
+        maturity=maturity,
+        symbol="AAPL",
+        created_at=created_at,
+        setup_id=setup_id,
+        entry_price=Decimal("101"),
+        horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        zone_low=Decimal("98") if complete_levels else None,
+        zone_high=Decimal("101") if complete_levels else None,
+        invalidation=Decimal("94") if complete_levels else None,
+        targets=(Decimal("110"),) if complete_levels else (),
+        policy_id=f"{family.value.lower()}-policy",
+        policy_version="1.0.0",
+        reasons=("fixture_signal",),
     )
 
 
@@ -344,6 +377,461 @@ async def test_session_close_closes_intraday_leg_but_keeps_swing_and_long_open()
     assert legs[AnalysisHorizon.SWING].status is EntryLegStatus.OPEN
     assert legs[AnalysisHorizon.LONG_TERM].status is EntryLegStatus.OPEN
     assert any("intraday_session_closed" in event.reasons for event in events)
+
+
+@pytest.mark.unit
+async def test_delayed_triggered_is_not_dropped_after_a_newer_bar() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+    latest_bar_at = NOW + timedelta(minutes=30)
+    await manager.ingest_bar(bar(timestamp=latest_bar_at, close="104"))
+
+    events = await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.TRIGGERED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="103",
+            occurred_at=NOW + timedelta(minutes=5),
+            previous=EntryWatchStatus.IN_ZONE,
+            horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        )
+    )
+
+    active = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.OPEN
+    assert active.updated_at == latest_bar_at
+    assert active.current_price == Decimal("104")
+    assert {
+        leg.entry_price
+        for leg in active.legs
+        if leg.status is EntryLegStatus.OPEN
+    } == {Decimal("103")}
+
+
+@pytest.mark.unit
+async def test_delayed_alert_is_not_dropped_after_a_newer_bar() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+    latest_bar_at = NOW + timedelta(minutes=30)
+    await manager.ingest_bar(bar(timestamp=latest_bar_at, close="104"))
+
+    events = await manager.ingest_alert(
+        alert(EntryMaturityLevel.L1, created_at=NOW + timedelta(minutes=5))
+    )
+
+    active = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.CONFIRMING
+    assert active.updated_at == latest_bar_at
+    assert active.current_price == Decimal("104")
+    assert {
+        leg.entry_price
+        for leg in active.legs
+        if leg.status is EntryLegStatus.OPEN
+    } == {Decimal("101")}
+
+
+@pytest.mark.unit
+async def test_older_watcher_event_is_rejected_by_its_causal_stream_cursor() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.IN_ZONE,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="99",
+            occurred_at=NOW + timedelta(minutes=10),
+            previous=EntryWatchStatus.ARMED,
+        )
+    )
+    before = await store.load_active("AAPL")
+    assert before is not None
+
+    events = await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="101",
+            occurred_at=NOW + timedelta(minutes=5),
+            transition_id=UUID("0195f3a5-9000-7000-8000-000000000086"),
+        )
+    )
+
+    after = await store.load_active("AAPL")
+    assert events == ()
+    assert after == before
+
+
+@pytest.mark.unit
+async def test_bearish_analysis_closes_a_confirming_horizon_leg() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+    await manager.ingest_alert(
+        alert(EntryMaturityLevel.L1, created_at=NOW + timedelta(minutes=1))
+    )
+
+    events = await manager.ingest_analysis(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            price="99",
+            verdict=AnalysisVerdict.CAUTION,
+            direction=PatternDirection.BEARISH,
+            as_of=NOW + timedelta(minutes=2),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+
+    active = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.CONFIRMING
+    legs = {item.horizon: item for item in active.legs}
+    assert legs[AnalysisHorizon.INTRADAY].status is EntryLegStatus.INVALIDATED
+    assert legs[AnalysisHorizon.LONG_TERM].status is EntryLegStatus.OPEN
+
+
+@pytest.mark.unit
+async def test_bar_closes_opportunity_when_every_opened_leg_reaches_target() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+    await manager.ingest_alert(
+        alert(EntryMaturityLevel.L1, created_at=NOW + timedelta(minutes=1))
+    )
+
+    events = await manager.ingest_bar(
+        bar(
+            timestamp=NOW + timedelta(minutes=2),
+            close="110",
+            low="100",
+            high="111",
+        )
+    )
+
+    assert await store.load_active("AAPL") is None
+    closed = await store.load_latest("AAPL")
+    assert closed is not None
+    assert closed.status is EntryOpportunityStatus.CLOSED
+    assert closed.close_reason is EntryCloseReason.ALL_HORIZONS_CLOSED
+    assert all(
+        leg.status is EntryLegStatus.TARGET_HIT
+        for leg in closed.legs
+        if leg.opened_at is not None
+    )
+    assert len(events) == 1
+    assert "long_term_target_hit" in events[0].reasons
+    assert "intraday_target_hit" in events[0].reasons
+    assert "all_horizons_closed" in events[0].reasons
+
+
+@pytest.mark.unit
+async def test_non_material_analyses_keep_bounded_provenance_without_snapshot_events() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+
+    latest_result: AnalysisResult | None = None
+    for offset in range(1, 101):
+        latest_result = analysis(
+            AnalysisHorizon.SWING,
+            price=str(100 + offset / 100),
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            as_of=NOW + timedelta(minutes=offset),
+            analysis_id=UUID(f"0195f3a5-9000-7000-8000-{offset:012d}"),
+        )
+        assert await manager.ingest_analysis(
+            latest_result,
+            now=latest_result.as_of,
+        ) == ()
+
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert len(active.source_analysis_ids) <= 32
+    assert active.source_analysis_ids[0] == UUID(
+        "0195f3a5-9000-7000-8000-000000000011"
+    )
+    assert len(active.latest_analyses) == 1
+    assert active.latest_analyses[0] == latest_result
+    assert len(store.events) == 1
+    revision = active.revision
+
+    assert latest_result is not None
+    assert await manager.ingest_analysis(latest_result, now=latest_result.as_of) == ()
+    assert (await store.load_active("AAPL")).revision == revision  # type: ignore[union-attr]
+
+
+@pytest.mark.unit
+async def test_v2_core_signals_advance_l1_to_l4_without_producer_metadata() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV2(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+    setup_id = "watch:0195f3a5-9000-7000-8000-000000000021"
+
+    await manager.ingest_signal(
+        entry_signal(
+            EntrySignalFamily.CORE_ENTRY,
+            signal_id="0195f3a5-9000-7000-8000-000000000201",
+            setup_id=setup_id,
+            created_at=NOW + timedelta(minutes=1),
+            maturity=EntryMaturityLevel.L1,
+        )
+    )
+    events = await manager.ingest_signal(
+        entry_signal(
+            EntrySignalFamily.CORE_ENTRY,
+            signal_id="0195f3a5-9000-7000-8000-000000000202",
+            setup_id=setup_id,
+            created_at=NOW + timedelta(minutes=2),
+            maturity=EntryMaturityLevel.L4,
+        )
+    )
+
+    active = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.OPEN
+    assert active.peak_maturity is EntryMaturityLevel.L4
+    assert active.primary_signal_family is EntrySignalFamily.CORE_ENTRY
+    assert len(active.signal_references) == 1
+    assert active.signal_references[0].maturity is EntryMaturityLevel.L4
+    assert "engine_id" not in type(active.signal_references[0]).model_fields
+
+
+@pytest.mark.unit
+async def test_v2_recovery_gets_a_distinct_l4_checkpoint_and_outcome_setup() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV2(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+    await manager.ingest_signal(
+        entry_signal(
+            EntrySignalFamily.CORE_ENTRY,
+            signal_id="0195f3a5-9000-7000-8000-000000000211",
+            setup_id="watch:0195f3a5-9000-7000-8000-000000000021",
+            created_at=NOW + timedelta(minutes=1),
+            maturity=EntryMaturityLevel.L4,
+        )
+    )
+
+    await manager.ingest_signal(
+        entry_signal(
+            EntrySignalFamily.CORE_RECOVERY,
+            signal_id="0195f3a5-9000-7000-8000-000000000212",
+            setup_id="recovery:0195f3a5-9000-7000-8000-000000000001",
+            created_at=NOW + timedelta(minutes=5),
+            maturity=EntryMaturityLevel.L4,
+        )
+    )
+
+    active = await store.load_active("AAPL")
+    assert active is not None
+    l4 = [item for item in active.checkpoints if item.level is EntryMaturityLevel.L4]
+    assert [(item.signal_family, item.setup_id) for item in l4] == [
+        (
+            EntrySignalFamily.CORE_ENTRY,
+            "watch:0195f3a5-9000-7000-8000-000000000021",
+        ),
+        (
+            EntrySignalFamily.CORE_RECOVERY,
+            "recovery:0195f3a5-9000-7000-8000-000000000001",
+        ),
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "family",
+    (
+        EntrySignalFamily.PATREON_CAPS,
+        EntrySignalFamily.LONG_PORTFOLIO,
+        EntrySignalFamily.SIGNAL_FUSION,
+        EntrySignalFamily.PORTFOLIO_FLOW,
+    ),
+)
+async def test_v2_registers_analytical_families_without_core_maturity(
+    family: EntrySignalFamily,
+) -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV2(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+
+    events = await manager.ingest_signal(
+        entry_signal(
+            family,
+            signal_id=f"0195f3a5-9000-7000-8000-{list(EntrySignalFamily).index(family) + 301:012d}",
+            setup_id=f"{family.value.lower()}:aapl:2026-08-09",
+            created_at=NOW + timedelta(minutes=1),
+        )
+    )
+
+    active = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.ARMED
+    assert active.current_maturity is EntryMaturityLevel.ARMED
+    reference = active.signal_references[-1]
+    assert reference.family is family
+    assert reference.maturity is None
+    assert all(leg.status is EntryLegStatus.WATCHING for leg in active.legs)
+
+
+@pytest.mark.unit
+async def test_v2_creates_standalone_paper_opportunity_for_complete_analytical_signal() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV2(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    signal = entry_signal(
+        EntrySignalFamily.PATREON_CAPS,
+        signal_id="0195f3a5-9000-7000-8000-000000000401",
+        setup_id="patreon:aapl:2026-08-09",
+        created_at=NOW,
+    )
+
+    events = await manager.ingest_signal(signal)
+
+    active = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.OPEN
+    assert active.original_watch_id is None
+    assert active.primary_signal_family is EntrySignalFamily.PATREON_CAPS
+    assert active.signal_references[0].maturity is None
+    assert {leg.horizon for leg in active.legs} == set(signal.horizons)
+    assert all(leg.status is EntryLegStatus.OPEN for leg in active.legs)
+    assert all(leg.target == Decimal("110") for leg in active.legs)
+
+
+@pytest.mark.unit
+async def test_v2_requires_complete_levels_for_standalone_signal() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV2(store=store, id_factory=lambda: OPPORTUNITY_ID)
+
+    events = await manager.ingest_signal(
+        entry_signal(
+            EntrySignalFamily.LONG_PORTFOLIO,
+            signal_id="0195f3a5-9000-7000-8000-000000000402",
+            setup_id="long-portfolio:aapl:2026-08-09",
+            created_at=NOW,
+            complete_levels=False,
+        )
+    )
+
+    assert events == ()
+    assert await store.load_active("AAPL") is None
+
+
+@pytest.mark.unit
+async def test_v2_deduplicates_signals_by_id_and_setup() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV2(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    first = entry_signal(
+        EntrySignalFamily.SIGNAL_FUSION,
+        signal_id="0195f3a5-9000-7000-8000-000000000403",
+        setup_id="fusion:aapl:2026-08-09",
+        created_at=NOW,
+    )
+    await manager.ingest_signal(first)
+    active = await store.load_active("AAPL")
+    assert active is not None
+    revision = active.revision
+
+    assert await manager.ingest_signal(first) == ()
+    assert await manager.ingest_signal(
+        first.model_copy(
+            update={
+                "signal_id": UUID("0195f3a5-9000-7000-8000-000000000404"),
+                "created_at": NOW + timedelta(minutes=1),
+            }
+        )
+    ) == ()
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.revision == revision
+    assert len(active.signal_references) == 1
+
+
+@pytest.mark.unit
+async def test_v2_legacy_alert_compatibility_delegates_to_entry_signal() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV2(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+
+    events = await manager.ingest_alert(
+        alert(EntryMaturityLevel.L1, created_at=NOW + timedelta(minutes=1))
+    )
+
+    active = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.CONFIRMING
+    assert active.signal_references[0].family is EntrySignalFamily.CORE_ENTRY
+    assert active.signal_references[0].maturity is EntryMaturityLevel.L1
 
 
 @pytest.mark.unit
