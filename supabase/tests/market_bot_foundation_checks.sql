@@ -1,5 +1,6 @@
 do $$
 declare
+  expected_table_count constant integer := 19;
   market_bot_table_count integer;
   rls_enabled_count integer;
   rls_forced_count integer;
@@ -9,8 +10,11 @@ begin
   from information_schema.tables
   where table_schema = 'market_bot';
 
-  if market_bot_table_count <> 14 then
-    raise exception 'Expected 14 market_bot tables, found %', market_bot_table_count;
+  if market_bot_table_count <> expected_table_count then
+    raise exception
+      'Expected % market_bot tables, found %',
+      expected_table_count,
+      market_bot_table_count;
   end if;
 
   if exists (
@@ -38,9 +42,11 @@ begin
   where pg_namespace.nspname = 'market_bot'
     and pg_class.relkind = 'r';
 
-  if rls_enabled_count <> 14 or rls_forced_count <> 14 then
+  if rls_enabled_count <> expected_table_count
+    or rls_forced_count <> expected_table_count then
     raise exception
-      'Expected RLS enabled and forced on all 14 tables, found enabled=% forced=%',
+      'Expected RLS enabled and forced on all % tables, found enabled=% forced=%',
+      expected_table_count,
       rls_enabled_count,
       rls_forced_count;
   end if;
