@@ -58,6 +58,29 @@ fan-out publisher and may be mirrored to NATS.
 `stream_once` represents one authenticated connection. The root supervisor owns
 reconnection policy, health reporting and shutdown orchestration.
 
+## Isolated signal backtesting
+
+`marketbot market backtest` runs Core buy-signal engines and Signal Fusion entirely inside one
+process. It reads historical OHLCV bars from Alpaca, but uses only an in-memory event bus and
+in-memory Entry Watch/Opportunity stores. It never connects to operational NATS or PostgreSQL.
+
+The required symbol list is also the simulated holdings list. Each symbol receives one share by
+default; quantity can be overridden without changing the engines' signal logic.
+
+```powershell
+uv run marketbot market backtest 2026-08-05 `
+  --symbols AAPL,MSFT `
+  --simulated-date 2026-08-10 `
+  --cadence-seconds 0.25 `
+  --default-quantity 1 `
+  --output .runtime/backtests/research-42.json
+```
+
+`--cadence-seconds` is the real wait between successive market-minute timestamps. Use `0` for an
+immediate run. All symbols sharing a timestamp are delivered together before applying the wait.
+The JSON artifact contains emitted alerts, stable Entry Signals, Signal Fusion transitions and
+the paper opportunity lifecycle for the run.
+
 ## Tests
 
 ```powershell

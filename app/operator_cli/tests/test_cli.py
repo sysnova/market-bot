@@ -2,6 +2,8 @@ import asyncio
 import json
 import re
 from collections.abc import Callable
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -79,6 +81,7 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("engine", "swing"),
         ("engine", "intraday"),
         ("market", "stream"),
+        ("market", "backtest"),
         ("market", "history"),
         ("alerts", "serve"),
         ("entry-watch", "serve"),
@@ -94,6 +97,47 @@ def test_distributed_process_commands_are_explicit() -> None:
 
         assert result.exit_code == 0
         assert "process" in result.stdout.lower()
+
+
+def test_market_backtest_parses_isolated_run_configuration() -> None:
+    async def fake_backtest(config: object) -> dict[str, object]:
+        assert config.source_date == date(2026, 8, 5)
+        assert config.simulated_date == date(2026, 8, 10)
+        assert config.cadence_seconds == 0.25
+        assert config.symbols == ("AAPL", "MSFT")
+        assert config.default_holding_quantity == Decimal("1")
+        assert config.run_id == "research-42"
+        assert config.output_path == Path("results/research-42.json")
+        return {"events_published": 780, "mode": "backtest"}
+
+    with patch(
+        "app.integration.signal_backtest.run_signal_backtest",
+        new=fake_backtest,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "market",
+                "backtest",
+                "2026-08-05",
+                "--simulated-date",
+                "2026-08-10",
+                "--symbols",
+                "AAPL,MSFT",
+                "--cadence-seconds",
+                "0.25",
+                "--run-id",
+                "research-42",
+                "--output",
+                "results/research-42.json",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "events_published": 780,
+        "mode": "backtest",
+    }
 
 
 def test_live_help_exposes_analysis_only_operation() -> None:

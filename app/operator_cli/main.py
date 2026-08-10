@@ -1,9 +1,11 @@
 """Top-level MarketBot operator CLI."""
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 import typer
 
@@ -79,6 +81,15 @@ def _run_market_analyzer(
             mirror_to_nats=mirror_to_nats,
         )
     )
+
+
+def _iso_date(value: str, *, option_name: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise typer.BadParameter(
+            f"{option_name} must use YYYY-MM-DD",
+        ) from error
 
 
 def _placeholder(name: str, help_text: str) -> typer.Typer:
@@ -435,6 +446,72 @@ def market_stream_process(
             symbols=tuple(symbols.split(",")) if symbols else None,
         )
     )
+
+
+@market.command("backtest")
+def market_backtest_process(
+    source_date: Annotated[
+        str,
+        typer.Argument(help="Historical NY market date to replay (YYYY-MM-DD)."),
+    ],
+    symbols: Annotated[
+        str,
+        typer.Option(help="Required comma-separated symbols to evaluate."),
+    ],
+    simulated_date: Annotated[
+        str | None,
+        typer.Option(help="Date exposed to engines; defaults to today in New York."),
+    ] = None,
+    cadence_seconds: Annotated[
+        float,
+        typer.Option(min=0, help="Real seconds between successive market-minute bars."),
+    ] = 0,
+    default_quantity: Annotated[
+        str,
+        typer.Option(help="Simulated holding quantity assigned to every input symbol."),
+    ] = "1",
+    run_id: Annotated[
+        str | None,
+        typer.Option(help="Optional run identity; generated automatically when omitted."),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option(help="JSON result artifact; defaults under .runtime/backtests."),
+    ] = None,
+) -> None:
+    """Run a buy-signal backtesting process without operational NATS or PostgreSQL."""
+
+    from app.integration.signal_backtest import SignalBacktestConfig, run_signal_backtest
+
+    parsed_source = _iso_date(source_date, option_name="source date")
+    target_date = (
+        _iso_date(simulated_date, option_name="--simulated-date")
+        if simulated_date is not None
+        else SystemClock().now().astimezone(ZoneInfo("America/New_York")).date()
+    )
+    try:
+        quantity = Decimal(default_quantity)
+    except InvalidOperation as error:
+        raise typer.BadParameter(
+            "must be a positive decimal", param_hint="--default-quantity"
+        ) from error
+    normalized_symbols = tuple(symbols.split(","))
+    resolved_run_id = run_id or f"backtest-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}"
+    output_path = output or Path(".runtime/backtests") / f"{resolved_run_id}.json"
+    summary = _run_async(
+        run_signal_backtest(
+            SignalBacktestConfig(
+                source_date=parsed_source,
+                simulated_date=target_date,
+                cadence_seconds=cadence_seconds,
+                symbols=normalized_symbols,
+                default_holding_quantity=quantity,
+                run_id=resolved_run_id,
+                output_path=output_path,
+            )
+        )
+    )
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
 @market.command("history")
