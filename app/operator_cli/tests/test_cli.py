@@ -315,16 +315,22 @@ def test_peter_lynch_command_runs_once_and_prints_json() -> None:
         "saved": 2,
     }
 
-    async def fake_run(*, progress: Callable[[str], None]) -> dict[str, object]:
+    received: dict[str, object] = {}
+
+    async def fake_run(
+        *, progress: Callable[[str], None], analysis_ttl_days: int | None = None
+    ) -> dict[str, object]:
+        received["analysis_ttl_days"] = analysis_ttl_days
         progress("Watchlist: 2 símbolos activos.")
         progress("[1/2] TEST: seleccionado 6/6 (FAST_GROWER).")
         return summary
 
     with patch("app.integration.peter_lynch_composition.run_peter_lynch_once", new=fake_run):
-        result = runner.invoke(app, ["engine", "peter-lynch"])
+        result = runner.invoke(app, ["engine", "peter-lynch", "--ttl-days", "30"])
 
     assert result.exit_code == 0
     assert json.loads(result.stdout) == summary
+    assert received["analysis_ttl_days"] == 30
     assert "[Peter Lynch] Watchlist: 2 símbolos activos." in result.stderr
     assert "[Peter Lynch] [1/2] TEST: seleccionado 6/6" in result.stderr
 

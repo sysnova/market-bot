@@ -24,7 +24,7 @@ from app.peter_lynch_engine import PeterLynchEngine, PeterLynchEvaluation, Peter
 from .distributed_composition import build_rest
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .peter_lynch_sec_adapter import PeterLynchSecAdapter, SecPeterLynchFacts
-from .peter_lynch_store import PostgresPeterLynchStore
+from .peter_lynch_store import PeterLynchWorklist, PostgresPeterLynchStore
 from .universe_policy import universe_health_details
 
 ProgressReporter = Callable[[str], None]
@@ -35,7 +35,14 @@ def _ignore_progress(_message: str) -> None:
 
 
 class WatchlistStore(Protocol):
-    async def load_symbols(self) -> tuple[str, ...]: ...
+    async def load_worklist(
+        self,
+        *,
+        as_of: date,
+        ttl_days: int,
+        engine_version: str,
+        policy_version: str,
+    ) -> PeterLynchWorklist: ...
 
     async def save(self, evaluations: tuple[PeterLynchEvaluation, ...]) -> int: ...
 
@@ -66,6 +73,7 @@ class PeterLynchRunService:
     sec: SecFactsProvider
     calculator: PeterLynchEngine
     batch_size: int = 20
+    analysis_ttl_days: int = 1
     progress: ProgressReporter = field(default=_ignore_progress, repr=False)
 
     async def run(self, *, now: datetime) -> dict[str, object]:
@@ -73,9 +81,21 @@ class PeterLynchRunService:
             raise ValueError("Peter Lynch run time must be timezone-aware")
         if self.batch_size < 1:
             raise ValueError("Peter Lynch batch size must be positive")
-        symbols = await self.store.load_symbols()
-        self.progress(f"Watchlist: {len(symbols)} símbolos activos.")
         as_of = now.astimezone(UTC).date()
+        if self.analysis_ttl_days < 1:
+            raise ValueError("Peter Lynch analysis TTL must be positive")
+        worklist = await self.store.load_worklist(
+            as_of=as_of,
+            ttl_days=self.analysis_ttl_days,
+            engine_version=self.calculator.ENGINE_VERSION,
+            policy_version=self.calculator.POLICY_VERSION,
+        )
+        symbols = worklist.symbols
+        self.progress(
+            f"Watchlist: {worklist.total} símbolos activos; "
+            f"{worklist.skipped_current} análisis vigentes omitidos; "
+            f"{len(symbols)} pendientes."
+        )
         snapshots: dict[str, Mapping[str, object]] = {}
         failed_price_symbols: set[str] = set()
         for index in range(0, len(symbols), self.batch_size):
@@ -172,23 +192,36 @@ class PeterLynchRunService:
         self.progress(f"Persistencia: {saved} evaluaciones actualizadas.")
         return {
             "service": "peter-lynch-v1",
+            "analysis_ttl_days": self.analysis_ttl_days,
+            "watchlist_total": worklist.total,
+            "pending": len(symbols),
             "evaluated": evaluated,
             "selected": selected,
             "discarded": discarded,
             "unsupported": unsupported,
             "errors": errors,
             "saved": saved,
+            "skipped_current": worklist.skipped_current,
         }
 
 
 async def run_peter_lynch_once(
-    *, progress: ProgressReporter | None = None
+    *,
+    progress: ProgressReporter | None = None,
+    analysis_ttl_days: int | None = None,
 ) -> dict[str, object]:
     """Build production adapters, evaluate the active watchlist once, and exit."""
 
     report = progress or _ignore_progress
     report("Inicializando configuración y conexiones.")
     settings = AppSettings()
+    resolved_ttl_days = (
+        settings.peter_lynch_analysis_ttl_days
+        if analysis_ttl_days is None
+        else analysis_ttl_days
+    )
+    if not 1 <= resolved_ttl_days <= 365:
+        raise ValueError("Peter Lynch analysis TTL must be between 1 and 365 days")
     assembly = MarketBotAssembly.from_settings(settings)
     if not settings.alpaca_configured:
         raise ValueError("Alpaca market-data credentials are not configured")
@@ -214,6 +247,7 @@ async def run_peter_lynch_once(
             ticker_resolver=resolver,
             sec=sec,
             batch_size=settings.alpaca_rest_batch_size,
+            analysis_ttl_days=resolved_ttl_days,
             calculator=assembly.build_peter_lynch(),
             progress=report,
         ).run(now=SystemClock().now())

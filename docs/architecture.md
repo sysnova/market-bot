@@ -38,7 +38,8 @@ configuration, and logging. It must not become a dumping ground for shared busin
 
 MarketBot has one composition source: `configs/marketbot/7.1.0.yaml`. It declares every engine
 slot, the concrete implementation version, the strategy version and artifact, and its operational
-mode. `app/integration/engine_assembly.py` is the only implementation catalog and factory.
+mode. `app/integration/engine_catalog.py` is the concrete implementation catalog and
+`app/integration/engine_assembly.py` is the stable selector/facade.
 
 ```text
 configs/marketbot/7.1.0.yaml
@@ -46,10 +47,13 @@ configs/marketbot/7.1.0.yaml
                  |
                  v
         MarketBotAssembly
-          | validates every slot
-          | rejects unknown versions
-          | validates each selected implementation independently
-          | resolves immutable strategy artifacts
+          | validates definition-level requirements
+          | selects an EngineRegistration
+          v
+        engine-owned strategy adapter
+          | validates its own business-rule keys
+          | translates the artifact into constructor options
+          | builds the selected implementation
           |
           +--> local live runtime / analyzer
           +--> Long / Swing / Intraday workers
@@ -72,9 +76,24 @@ presentation. Operator monitors are explicitly separated from headless readiness
 gate the market stream. `scheduled` engines remain owned by their external scheduler and
 `on-demand` engines remain available through their explicit operator command.
 
-The lightweight YAML model and mode loader live in `marketbot_definition.py`; concrete engine
-catalog and factories remain in `engine_assembly.py`. Operator commands are likewise registered by
+The lightweight YAML model and mode loader live in `marketbot_definition.py`. The generic registry
+and lifecycle metadata live in `engine_registry.py`; the root catalog only maps slots and versions
+to concrete classes. Strategy interpretation for Swing, Intraday, Entry Watcher, Alert, Entry
+Recovery, Portfolio Flow, Long Portfolio, and Patreon Caps lives in each owning engine.
+`MarketBotAssembly` therefore has no
+business-rule key or implementation-version branch. Operator commands are likewise registered by
 focused runtime and infrastructure modules instead of accumulating every concern in `main.py`.
+
+Every registration declares `required_since`, the first MarketBot definition version in which its
+slot is mandatory. Old immutable definitions remain valid when a later engine is introduced; no
+special-case list of historical definition versions is maintained. Integration code may use the
+generic `assembly.build(slot, ...)` path, while typed `build_*` methods remain as compatibility
+facades for current compositions.
+
+When a composition needs policy metadata before construction—for example, a rule version used to
+restore state or Patreon macro symbols—it calls `assembly.resolve_strategy(slot, runtime_inputs)`.
+The engine-owned adapter parses and validates the artifact. Compositions may consume the resulting
+typed policy, but they never open strategy YAML files or construct policy objects themselves.
 
 The catalog may contain old implementations for rollback, but the definition chooses exactly one
 per slot. Consumers depend on stable event capabilities, never on a producer's concrete

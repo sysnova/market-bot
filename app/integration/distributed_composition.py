@@ -10,7 +10,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 import httpx
 from sqlalchemy import text
@@ -66,7 +66,7 @@ from app.contracts import (
 from app.entry_opportunity_engine import EntryOpportunityEngineV2
 from app.entry_watcher import EntryWatcherPolicy
 from app.event_bus import NatsJetStreamEventBus
-from app.patreon_caps_engine import load_patreon_caps_policy
+from app.patreon_caps_engine import PatreonCapsPolicy
 from app.persistence import create_database_engine, create_session_factory
 
 from .alert_decision_state_store import PostgresAlertDecisionStateStore
@@ -332,8 +332,9 @@ async def run_market_stream_process(
     rotation_subscription: Subscription | None = None
     rotation_refresh = asyncio.Event()
     previous_core_symbols: tuple[str, ...] = ()
-    macro_symbols = load_patreon_caps_policy(
-        assembly.strategy_artifact(EngineSlot.PATREON_CAPS)
+    macro_symbols = cast(
+        "PatreonCapsPolicy",
+        assembly.resolve_strategy(EngineSlot.PATREON_CAPS),
     ).macro_symbols
     try:
         bus = await _connect_nats(settings)

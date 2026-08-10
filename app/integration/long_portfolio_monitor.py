@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 from app.alert_engine.sinks import ConsoleAlertSink
@@ -30,7 +31,6 @@ from app.long_portfolio_engine import (
     LongPortfolioPolicy,
     LongPortfolioState,
     LongPortfolioValidationGate,
-    load_long_portfolio_policy,
 )
 from app.persistence import create_database_engine, create_session_factory
 
@@ -81,11 +81,18 @@ async def run_long_portfolio_monitor(
         raise RuntimeError("market_bot.long_portfolio_alerts is not available")
     portfolio_data = PostgresUniverseClient(database)
     allocations = await portfolio_data.get_portfolio_allocations()
-    policy = load_long_portfolio_policy(
-        config_path or assembly.strategy_artifact(EngineSlot.LONG_PORTFOLIO),
-        allocations=allocations,
+    policy = cast(
+        "LongPortfolioPolicy",
+        assembly.resolve_strategy(
+            EngineSlot.LONG_PORTFOLIO,
+            artifact_override=config_path,
+            allocations=allocations,
+        ),
     )
-    validator = assembly.build_long_portfolio(policy)
+    validator = assembly.build_long_portfolio(
+        allocations=allocations,
+        strategy_artifact_override=config_path,
+    )
     bus = await NatsJetStreamEventBus.connect(
         servers=[settings.nats_url.get_secret_value()], prefix="marketbot", stream="MARKETBOT"
     )

@@ -54,6 +54,7 @@ class AppSettings(BaseSettings):
     sec_document_max_bytes: int = Field(default=350_000, ge=10_000, le=5_000_000)
     sec_document_max_snippets: int = Field(default=5, ge=1, le=20)
     sec_document_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+    peter_lynch_analysis_ttl_days: int = Field(default=90, ge=1, le=365)
 
     @model_validator(mode="after")
     def validate_external_data(self) -> AppSettings:

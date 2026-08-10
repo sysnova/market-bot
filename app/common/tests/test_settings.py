@@ -64,6 +64,7 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.alpaca_rest_batch_size == 20
     assert settings.market_history_refresh_seconds == 3600
     assert settings.market_history_request_timeout_seconds == 600
+    assert settings.peter_lynch_analysis_ttl_days == 90
     assert settings.alpaca_execution_enabled is False
     serialized = json.dumps(settings.redacted())
     assert "paper-key-id" not in serialized
@@ -120,3 +121,8 @@ def test_sec_filing_lookback_accepts_ninety_days() -> None:
 
     with pytest.raises(ValidationError):
         AppSettings(_env_file=None, sec_filing_lookback_days=91)
+
+
+def test_peter_lynch_analysis_ttl_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        AppSettings(_env_file=None, peter_lynch_analysis_ttl_days=0)

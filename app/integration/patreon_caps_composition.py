@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from app.common.clock import SystemClock
 from app.common.settings import AppSettings, Environment
@@ -43,7 +43,7 @@ from app.patreon_caps_engine import (
     PatreonCapsContext,
     PatreonCapsEngine,
     PatreonCapsEvaluation,
-    load_patreon_caps_policy,
+    PatreonCapsPolicy,
 )
 from app.patreon_caps_engine.macro import classify_macro_regime
 from app.persistence import create_database_engine, create_session_factory
@@ -355,8 +355,12 @@ async def run_patreon_caps_process(
 ) -> dict[str, object] | None:
     settings = AppSettings()
     assembly = MarketBotAssembly.from_settings(settings)
-    policy = load_patreon_caps_policy(
-        config_path or assembly.strategy_artifact(EngineSlot.PATREON_CAPS)
+    policy = cast(
+        "PatreonCapsPolicy",
+        assembly.resolve_strategy(
+            EngineSlot.PATREON_CAPS,
+            artifact_override=config_path,
+        ),
     )
     database = create_database_engine(
         settings.database_url.get_secret_value(),
@@ -394,7 +398,10 @@ async def run_patreon_caps_process(
             item for item in await store.load_active() if item.rule_version == policy.rule_version
         )
         last_evaluated_at = await store.latest_transition_times(rule_version=policy.rule_version)
-        engine = assembly.build_patreon_caps(policy, restored_watches=restored)
+        engine = assembly.build_patreon_caps(
+            restored_watches=restored,
+            strategy_artifact_override=config_path,
+        )
         runtime = PatreonCapsRuntime(
             engine=engine,
             publisher=bus,

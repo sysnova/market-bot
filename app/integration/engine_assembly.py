@@ -2,67 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import replace
-from datetime import timedelta
-from decimal import Decimal
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-import yaml
-
-from app.alert_engine import (
-    AlertEngine,
-    AlertEngineV2,
-    AlertEngineV3,
-    AlertEngineV3State,
-    AlertEngineV31,
-    AlertEngineV32,
-)
 from app.common.settings import AppSettings
-from app.contracts import AnalysisHorizon, EntryMaturityLevel
-from app.dilution_sec_engine import DilutionSecEngine
-from app.elliott_wave_engine import ElliottWaveEngine
-from app.entry_opportunity_engine import (
-    EntryOpportunityEngine,
-    EntryOpportunityEngineV2,
-    EntryOpportunityStore,
-)
-from app.entry_recovery_engine import (
-    EntryRecoveryEngine,
-    EntryRecoveryEngineV11,
-    EntryRecoveryPolicy,
-)
-from app.entry_watcher import (
-    EntryWatcher,
-    EntryWatcherPolicy,
-    EntryWatcherV2,
-    EntryWatcherV3,
-    EntryWatcherV4,
-    EntryWatcherV5,
-    EntryWatcherV51,
-)
-from app.entry_watcher.ports import EntryWatchStore
-from app.intraday_engine import (
-    IntradayEngine,
-    IntradayEngineV2,
-    IntradayEngineV3,
-    IntradayEngineV4,
-)
-from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, LongPortfolioState
-from app.long_term_engine import LongTermEngine, LongTermEngineV2
-from app.market_rotation_engine import RotationEngine
-from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy, PatreonCapsWatch
-from app.peter_lynch_engine import PeterLynchEngine
-from app.portfolio_flow_engine import (
-    PortfolioFlowEngineV1,
-    PortfolioFlowEngineV2,
-    load_portfolio_flow_policy,
-)
-from app.signal_fusion_engine import SignalFusionEngine
-from app.support_confirmation_engine import SupportConfirmationEngine
-from app.swing_engine import SwingEngine, SwingEngineV2, SwingEngineV3
 
+from .engine_catalog import default_engine_registry
+from .engine_registry import EngineFactory, EngineRegistration, EngineRegistry
 from .marketbot_definition import (
     EngineMode,
     EngineSlot,
@@ -72,16 +19,32 @@ from .marketbot_definition import (
     StrategyKind,
     load_configured_marketbot_definition,
     load_marketbot_definition,
+    require_exact_semver,
+    validate_engine_strategy,
 )
-from .marketbot_definition import (
-    require_exact_semver as _require_semver,
-)
-from .marketbot_definition import (
-    require_mapping as _mapping,
-)
-from .marketbot_definition import (
-    validate_engine_strategy as _validate_strategy,
-)
+
+if TYPE_CHECKING:
+    from app.alert_engine import AlertEngine, AlertEngineV3State
+    from app.dilution_sec_engine import DilutionSecEngine
+    from app.elliott_wave_engine import ElliottWaveEngine
+    from app.entry_opportunity_engine import EntryOpportunityEngine, EntryOpportunityStore
+    from app.entry_recovery_engine import EntryRecoveryEngine
+    from app.entry_watcher import EntryWatcher, EntryWatcherPolicy
+    from app.entry_watcher.ports import EntryWatchStore
+    from app.intraday_engine import IntradayEngine
+    from app.long_portfolio_engine import (
+        LongPortfolioEngine,
+        LongPortfolioState,
+        PortfolioAllocation,
+    )
+    from app.long_term_engine import LongTermEngine
+    from app.market_rotation_engine import RotationEngine
+    from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsWatch
+    from app.peter_lynch_engine import PeterLynchEngine
+    from app.portfolio_flow_engine import PortfolioFlowEngineV1
+    from app.signal_fusion_engine import SignalFusionEngine
+    from app.support_confirmation_engine import SupportConfirmationEngine
+    from app.swing_engine import SwingEngine
 
 __all__ = [
     "EngineMode",
@@ -94,73 +57,20 @@ __all__ = [
     "load_marketbot_definition",
 ]
 
+LegacyCatalog = Mapping[EngineSlot, Mapping[str, EngineFactory]]
 
-EngineFactory = Callable[..., object]
-
-_DEFAULT_CATALOG: dict[EngineSlot, dict[str, EngineFactory]] = {
-    EngineSlot.LONG_TERM: {
-        "1.1.1": LongTermEngine,
-        "2.0.0": LongTermEngineV2,
-    },
-    EngineSlot.SWING: {
-        "1.1.1": SwingEngine,
-        "2.0.0": SwingEngineV2,
-        "3.0.0": SwingEngineV3,
-    },
-    EngineSlot.INTRADAY: {
-        "1.0.0": IntradayEngine,
-        "2.0.0": IntradayEngineV2,
-        "3.0.0": IntradayEngineV3,
-        "4.0.0": IntradayEngineV4,
-    },
-    EngineSlot.ENTRY_WATCHER: {
-        "1.0.0": EntryWatcher,
-        "2.0.0": EntryWatcherV2,
-        "3.0.0": EntryWatcherV3,
-        "4.0.0": EntryWatcherV4,
-        "5.0.0": EntryWatcherV5,
-        "5.1.0": EntryWatcherV51,
-    },
-    EngineSlot.ENTRY_OPPORTUNITY: {
-        "1.0.0": EntryOpportunityEngine,
-        "2.0.0": EntryOpportunityEngineV2,
-    },
-    EngineSlot.ENTRY_RECOVERY: {
-        "1.0.0": EntryRecoveryEngine,
-        "1.1.0": EntryRecoveryEngineV11,
-    },
-    EngineSlot.ALERT: {
-        "1.0.0": AlertEngine,
-        "2.0.0": AlertEngineV2,
-        "3.0.0": AlertEngineV3,
-        "3.1.0": AlertEngineV31,
-        "3.2.0": AlertEngineV32,
-    },
-    EngineSlot.MARKET_ROTATION: {"1.0.0": RotationEngine},
-    EngineSlot.PORTFOLIO_FLOW: {
-        "1.0.0": PortfolioFlowEngineV1,
-        "2.0.0": PortfolioFlowEngineV2,
-    },
-    EngineSlot.LONG_PORTFOLIO: {"1.0.0": LongPortfolioEngine},
-    EngineSlot.PATREON_CAPS: {"1.0.0": PatreonCapsEngine},
-    EngineSlot.ELLIOTT_WAVE: {"0.1.0": ElliottWaveEngine},
-    EngineSlot.SUPPORT_CONFIRMATION: {"0.2.0": SupportConfirmationEngine},
-    EngineSlot.SIGNAL_FUSION: {"0.3.0": SignalFusionEngine},
-    EngineSlot.DILUTION_SEC: {"1.0.0": DilutionSecEngine},
-    EngineSlot.PETER_LYNCH: {"1.1.0": PeterLynchEngine},
-}
 
 class MarketBotAssembly:
-    """Validate one definition and construct every engine from one catalog."""
+    """Validate one definition and construct engines through registered adapters."""
 
     def __init__(
         self,
         definition: MarketBotDefinition,
         *,
-        catalog: dict[EngineSlot, dict[str, EngineFactory]] | None = None,
+        catalog: EngineRegistry | LegacyCatalog | None = None,
     ) -> None:
         self.definition = definition
-        self._catalog = catalog or _DEFAULT_CATALOG
+        self._registry = _as_registry(catalog)
         self._validate()
 
     @classmethod
@@ -176,13 +86,16 @@ class MarketBotAssembly:
     def spec(self, slot: EngineSlot) -> EngineSpec:
         return self.definition.engines[slot]
 
+    def required_slots(self) -> frozenset[EngineSlot]:
+        """Return requirements applicable to this definition schema version."""
+
+        return self._registry.required_slots(self.definition.version)
+
     def slots_for_mode(self, mode: EngineMode) -> tuple[EngineSlot, ...]:
         """Return slots participating in one operational lifecycle mode."""
 
         return tuple(
-            slot
-            for slot, spec in self.definition.engines.items()
-            if spec.mode is mode
+            slot for slot, spec in self.definition.engines.items() if spec.mode is mode
         )
 
     def strategy_artifact(self, slot: EngineSlot) -> Path:
@@ -191,53 +104,47 @@ class MarketBotAssembly:
             raise ValueError(f"engine {slot.value} uses an embedded strategy")
         return artifact
 
+    def resolve_strategy(
+        self,
+        slot: EngineSlot,
+        *,
+        artifact_override: Path | None = None,
+        **context: object,
+    ) -> object:
+        """Resolve an engine-owned policy without parsing its artifact in a composition."""
+
+        return self._registry.registration(slot).resolve_strategy(
+            self.spec(slot),
+            artifact_override=artifact_override,
+            **context,
+        )
+
+    def build(
+        self,
+        slot: EngineSlot,
+        *args: object,
+        strategy_artifact_override: Path | None = None,
+        **kwargs: object,
+    ) -> object:
+        """Build any registered engine without extending this class for each new version."""
+
+        return self._registry.registration(slot).build(
+            self.spec(slot),
+            *args,
+            strategy_artifact_override=strategy_artifact_override,
+            **kwargs,
+        )
+
+    # Typed compatibility methods keep existing composition roots stable. New generic
+    # integrations can call build(slot, ...) directly.
     def build_long_term(self) -> LongTermEngine:
-        return cast("LongTermEngine", self._create(EngineSlot.LONG_TERM))
+        return cast("LongTermEngine", self.build(EngineSlot.LONG_TERM))
 
     def build_swing(self) -> SwingEngine:
-        spec = self.spec(EngineSlot.SWING)
-        options: dict[str, object] = {}
-        if spec.implementation == "3.0.0":
-            behavior = self._strategy_behavior(EngineSlot.SWING)
-            options = {
-                "anchored_vwap_gate": _bool_value(behavior, "anchored_vwap_gate"),
-                "strategy_version": spec.strategy.version,
-            }
-        return cast("SwingEngine", self._create(EngineSlot.SWING, **options))
+        return cast("SwingEngine", self.build(EngineSlot.SWING))
 
     def build_intraday(self) -> IntradayEngine:
-        spec = self.spec(EngineSlot.INTRADAY)
-        options: dict[str, object] = {}
-        behavior: dict[str, object] = {}
-        if spec.implementation in {"3.0.0", "4.0.0"}:
-            behavior = self._strategy_behavior(EngineSlot.INTRADAY)
-            options = {
-                "minimum_momentum_percent": _decimal_value(
-                    behavior, "minimum_momentum_percent"
-                ),
-                "minimum_risk_percent": _decimal_value(behavior, "minimum_risk_percent"),
-                "minimum_atr_risk_multiple": _decimal_value(
-                    behavior, "minimum_atr_risk_multiple"
-                ),
-                "reward_risk_ratio": _decimal_value(behavior, "reward_risk_ratio"),
-                "strategy_version": spec.strategy.version,
-            }
-        if spec.implementation == "4.0.0":
-            options.update(
-                maximum_trigger_extension_atr=_decimal_value(
-                    behavior, "maximum_trigger_extension_atr"
-                ),
-                maximum_ema20_extension_atr=_decimal_value(
-                    behavior, "maximum_ema20_extension_atr"
-                ),
-                strong_confirmation_required=_bool_value(
-                    behavior, "strong_confirmation_required"
-                ),
-                five_minute_higher_low_required=_bool_value(
-                    behavior, "five_minute_higher_low_required"
-                ),
-            )
-        return cast("IntradayEngine", self._create(EngineSlot.INTRADAY, **options))
+        return cast("IntradayEngine", self.build(EngineSlot.INTRADAY))
 
     def build_entry_watcher(
         self,
@@ -245,40 +152,9 @@ class MarketBotAssembly:
         store: EntryWatchStore,
         policy: EntryWatcherPolicy | None = None,
     ) -> EntryWatcher:
-        spec = self.spec(EngineSlot.ENTRY_WATCHER)
-        options: dict[str, object] = {} if policy is None else {"policy": policy}
-        if spec.implementation in {"4.0.0", "5.0.0", "5.1.0"}:
-            behavior = self._strategy_behavior(EngineSlot.ENTRY_WATCHER)
-            resolved_policy = policy or EntryWatcherPolicy()
-            resolved_policy = replace(
-                resolved_policy,
-                trigger_rearm_cooldown=timedelta(
-                    minutes=_int_value(behavior, "trigger_rearm_cooldown_minutes")
-                ),
-            )
-            options = {
-                "policy": resolved_policy,
-                "minimum_reconfirmation_delay": timedelta(
-                    minutes=_int_value(behavior, "fresh_reconfirmation_delay_minutes")
-                ),
-                "strong_confirmation_required": _bool_value(
-                    behavior, "strong_confirmation_required"
-                ),
-                "five_minute_higher_low_required": _bool_value(
-                    behavior, "five_minute_higher_low_required"
-                ),
-            }
-            if spec.implementation in {"5.0.0", "5.1.0"}:
-                options["no_retest_higher_low_enabled"] = _bool_value(
-                    behavior, "no_retest_higher_low_continuation"
-                )
-            if spec.implementation == "5.1.0":
-                options["zone_exit_buffer_percent"] = _decimal_value(
-                    behavior, "zone_exit_buffer_percent"
-                )
         return cast(
             "EntryWatcher",
-            self._create(EngineSlot.ENTRY_WATCHER, store=store, **options),
+            self.build(EngineSlot.ENTRY_WATCHER, store=store, policy=policy),
         )
 
     def build_alert(
@@ -286,44 +162,10 @@ class MarketBotAssembly:
         *,
         restored_state: AlertEngineV3State | None = None,
     ) -> AlertEngine:
-        spec = self.spec(EngineSlot.ALERT)
-        options: dict[str, object] = {}
-        if spec.implementation in {"3.0.0", "3.1.0", "3.2.0"}:
-            behavior = self._strategy_behavior(EngineSlot.ALERT)
-            options = {
-                "minimum_reconfirmation_delay": timedelta(
-                    minutes=_int_value(behavior, "fresh_reconfirmation_delay_minutes")
-                ),
-                "strong_confirmation_required": _bool_value(
-                    behavior, "strong_confirmation_required"
-                ),
-                "five_minute_higher_low_required": _bool_value(
-                    behavior, "five_minute_higher_low_required"
-                ),
-                "same_market_session_required": _bool_value(
-                    behavior, "same_market_session_required"
-                ),
-            }
-            if spec.implementation in {"3.1.0", "3.2.0"}:
-                options["restored_state"] = restored_state
-            elif restored_state is not None:
-                raise ValueError(
-                    "restored Alert state requires alert implementation 3.1.0 or 3.2.0"
-                )
-            if spec.implementation == "3.2.0":
-                options.update(
-                    recovery_required_horizons=_horizon_values(
-                        behavior, "recovery_required_horizons"
-                    ),
-                    recovery_maturity=EntryMaturityLevel(
-                        str(behavior["recovery_maturity"])
-                    ),
-                )
-        elif restored_state is not None:
-            raise ValueError(
-                "restored Alert state requires alert implementation 3.1.0 or 3.2.0"
-            )
-        return cast("AlertEngine", self._create(EngineSlot.ALERT, **options))
+        return cast(
+            "AlertEngine",
+            self.build(EngineSlot.ALERT, restored_state=restored_state),
+        )
 
     def build_entry_opportunity(
         self,
@@ -332,203 +174,98 @@ class MarketBotAssembly:
     ) -> EntryOpportunityEngine:
         return cast(
             "EntryOpportunityEngine",
-            self._create(EngineSlot.ENTRY_OPPORTUNITY, store=store),
+            self.build(EngineSlot.ENTRY_OPPORTUNITY, store=store),
         )
 
     def build_entry_recovery(self) -> EntryRecoveryEngine:
-        behavior = self._strategy_behavior(EngineSlot.ENTRY_RECOVERY)
-        policy = EntryRecoveryPolicy(
-            version=self.spec(EngineSlot.ENTRY_RECOVERY).strategy.version,
-            intraday_max_age=timedelta(
-                minutes=_int_value(behavior, "intraday_max_age_minutes")
-            ),
-            swing_max_age=timedelta(days=_int_value(behavior, "swing_max_age_days")),
-            minimum_reward_risk=_decimal_value(behavior, "minimum_reward_risk"),
-            require_strong_confirmation=_bool_value(
-                behavior, "strong_confirmation_required"
-            ),
-            require_five_minute_higher_low=_bool_value(
-                behavior, "five_minute_higher_low_required"
-            ),
-        )
-        return cast(
-            "EntryRecoveryEngine",
-            self._create(EngineSlot.ENTRY_RECOVERY, policy=policy),
-        )
+        return cast("EntryRecoveryEngine", self.build(EngineSlot.ENTRY_RECOVERY))
 
     def build_market_rotation(self) -> RotationEngine:
-        return cast("RotationEngine", self._create(EngineSlot.MARKET_ROTATION))
+        return cast("RotationEngine", self.build(EngineSlot.MARKET_ROTATION))
 
     def build_portfolio_flow(self) -> PortfolioFlowEngineV1:
-        policy = load_portfolio_flow_policy(self.strategy_artifact(EngineSlot.PORTFOLIO_FLOW))
-        return cast(
-            "PortfolioFlowEngineV1",
-            self._create(EngineSlot.PORTFOLIO_FLOW, policy=policy),
-        )
+        return cast("PortfolioFlowEngineV1", self.build(EngineSlot.PORTFOLIO_FLOW))
 
     def build_long_portfolio(
         self,
-        policy: LongPortfolioPolicy,
         *,
+        allocations: tuple[PortfolioAllocation, ...],
         restored_states: Iterable[LongPortfolioState] = (),
+        strategy_artifact_override: Path | None = None,
     ) -> LongPortfolioEngine:
         return cast(
             "LongPortfolioEngine",
-            self._create(
+            self.build(
                 EngineSlot.LONG_PORTFOLIO,
-                policy,
+                allocations=allocations,
                 restored_states=restored_states,
+                strategy_artifact_override=strategy_artifact_override,
             ),
         )
 
     def build_patreon_caps(
         self,
-        policy: PatreonCapsPolicy,
         *,
         restored_watches: tuple[PatreonCapsWatch, ...] = (),
+        strategy_artifact_override: Path | None = None,
     ) -> PatreonCapsEngine:
         return cast(
             "PatreonCapsEngine",
-            self._create(
+            self.build(
                 EngineSlot.PATREON_CAPS,
-                policy,
                 restored_watches=restored_watches,
+                strategy_artifact_override=strategy_artifact_override,
             ),
         )
 
     def build_elliott_wave(self) -> ElliottWaveEngine:
-        return cast("ElliottWaveEngine", self._create(EngineSlot.ELLIOTT_WAVE))
+        return cast("ElliottWaveEngine", self.build(EngineSlot.ELLIOTT_WAVE))
 
     def build_support_confirmation(self) -> SupportConfirmationEngine:
         return cast(
             "SupportConfirmationEngine",
-            self._create(EngineSlot.SUPPORT_CONFIRMATION),
+            self.build(EngineSlot.SUPPORT_CONFIRMATION),
         )
 
     def build_signal_fusion(self) -> SignalFusionEngine:
-        return cast("SignalFusionEngine", self._create(EngineSlot.SIGNAL_FUSION))
+        return cast("SignalFusionEngine", self.build(EngineSlot.SIGNAL_FUSION))
 
     def build_dilution_sec(self) -> DilutionSecEngine:
-        return cast("DilutionSecEngine", self._create(EngineSlot.DILUTION_SEC))
+        return cast("DilutionSecEngine", self.build(EngineSlot.DILUTION_SEC))
 
     def build_peter_lynch(self) -> PeterLynchEngine:
-        return cast("PeterLynchEngine", self._create(EngineSlot.PETER_LYNCH))
-
-    def _create(self, slot: EngineSlot, *args: object, **kwargs: object) -> object:
-        spec = self.spec(slot)
-        return self._catalog[slot][spec.implementation](*args, **kwargs)
-
-    def _strategy_behavior(self, slot: EngineSlot) -> dict[str, object]:
-        artifact = self.strategy_artifact(slot)
-        payload = yaml.safe_load(artifact.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError(f"strategy artifact for {slot.value} must be a mapping")
-        return _mapping(cast("dict[str, object]", payload), "behavior")
+        return cast("PeterLynchEngine", self.build(EngineSlot.PETER_LYNCH))
 
     def _validate(self) -> None:
         if self.definition.definition_id != "marketbot":
             raise ValueError("definition_id must be marketbot")
-        _require_semver(self.definition.version, "definition version")
-        required = set(EngineSlot)
-        if self.definition.version in {"4.0.0", "5.0.0", "6.0.0"}:
-            required.remove(EngineSlot.ENTRY_RECOVERY)
-        missing = required - set(self.definition.engines)
-        extra = set(self.definition.engines) - set(EngineSlot)
+        require_exact_semver(self.definition.version, "definition version")
+        missing = self.required_slots() - set(self.definition.engines)
+        extra = set(self.definition.engines) - self._registry.slots()
         if missing or extra:
-            raise ValueError(f"definition engine slots mismatch; missing={missing}, extra={extra}")
+            raise ValueError(
+                f"definition engine slots mismatch; missing={missing}, extra={extra}"
+            )
         for slot, spec in self.definition.engines.items():
-            _require_semver(spec.implementation, f"{slot.value} implementation")
-            _require_semver(spec.strategy.version, f"{slot.value} strategy")
-            if spec.implementation not in self._catalog.get(slot, {}):
-                raise ValueError(f"unregistered implementation: {slot.value}@{spec.implementation}")
-            _validate_strategy(slot, spec.strategy)
-        self._validate_confirmation_behavior()
-
-    def _validate_confirmation_behavior(self) -> None:
-        alert = self.spec(EngineSlot.ALERT)
-        if alert.implementation in {"3.0.0", "3.1.0", "3.2.0"}:
-            behavior = self._strategy_behavior(EngineSlot.ALERT)
-            _int_value(behavior, "fresh_reconfirmation_delay_minutes")
-            _bool_value(behavior, "strong_confirmation_required")
-            _bool_value(behavior, "five_minute_higher_low_required")
-            _bool_value(behavior, "same_market_session_required")
-            if alert.implementation == "3.2.0":
-                _horizon_values(behavior, "recovery_required_horizons")
-                EntryMaturityLevel(str(behavior["recovery_maturity"]))
-        swing = self.spec(EngineSlot.SWING)
-        if swing.implementation == "3.0.0":
-            _bool_value(self._strategy_behavior(EngineSlot.SWING), "anchored_vwap_gate")
-        intraday = self.spec(EngineSlot.INTRADAY)
-        behavior: dict[str, object] = {}
-        if intraday.implementation in {"3.0.0", "4.0.0"}:
-            behavior = self._strategy_behavior(EngineSlot.INTRADAY)
-            for key in (
-                "minimum_momentum_percent",
-                "minimum_risk_percent",
-                "minimum_atr_risk_multiple",
-                "reward_risk_ratio",
-            ):
-                _decimal_value(behavior, key)
-        if intraday.implementation == "4.0.0":
-            for key in (
-                "maximum_trigger_extension_atr",
-                "maximum_ema20_extension_atr",
-            ):
-                _decimal_value(behavior, key)
-            for key in (
-                "strong_confirmation_required",
-                "five_minute_higher_low_required",
-            ):
-                _bool_value(behavior, key)
-        watcher = self.spec(EngineSlot.ENTRY_WATCHER)
-        if watcher.implementation in {"4.0.0", "5.0.0", "5.1.0"}:
-            behavior = self._strategy_behavior(EngineSlot.ENTRY_WATCHER)
-            _int_value(behavior, "fresh_reconfirmation_delay_minutes")
-            _int_value(behavior, "trigger_rearm_cooldown_minutes")
-            _bool_value(behavior, "strong_confirmation_required")
-            _bool_value(behavior, "five_minute_higher_low_required")
-            if watcher.implementation in {"5.0.0", "5.1.0"}:
-                _bool_value(behavior, "no_retest_higher_low_continuation")
-            if watcher.implementation == "5.1.0":
-                _decimal_value(behavior, "zone_exit_buffer_percent")
+            require_exact_semver(spec.implementation, f"{slot.value} implementation")
+            require_exact_semver(spec.strategy.version, f"{slot.value} strategy")
+            registration = self._registry.registration(slot)
+            if spec.implementation not in registration.implementations:
+                raise ValueError(
+                    f"unregistered implementation: {slot.value}@{spec.implementation}"
+                )
+            validate_engine_strategy(slot, spec.strategy)
+            registration.validate(spec)
 
 
-def _decimal_value(values: dict[str, object], key: str) -> Decimal:
-    try:
-        value = Decimal(str(values[key]))
-    except (KeyError, ValueError) as error:
-        raise ValueError(f"strategy behavior {key} must be decimal") from error
-    if not value.is_finite() or value < Decimal("0"):
-        raise ValueError(f"strategy behavior {key} must be a non-negative finite decimal")
-    return value
-
-
-def _int_value(values: dict[str, object], key: str) -> int:
-    value = values.get(key)
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-        raise ValueError(f"strategy behavior {key} must be a positive integer")
-    return value
-
-
-def _bool_value(values: dict[str, object], key: str) -> bool:
-    value = values.get(key)
-    if not isinstance(value, bool):
-        raise ValueError(f"strategy behavior {key} must be boolean")
-    return value
-
-
-def _horizon_values(
-    values: dict[str, object], key: str
-) -> tuple[AnalysisHorizon, ...]:
-    value = values.get(key)
-    if not isinstance(value, list) or not value:
-        raise ValueError(f"strategy behavior {key} must be a non-empty list")
-    raw_horizons: list[str] = []
-    for item in cast("list[object]", value):
-        if not isinstance(item, str):
-            raise ValueError(f"strategy behavior {key} must contain horizon names")
-        raw_horizons.append(item)
-    horizons = tuple(AnalysisHorizon(item) for item in raw_horizons)
-    if len(horizons) != len(set(horizons)):
-        raise ValueError(f"strategy behavior {key} must contain unique horizons")
-    return horizons
+def _as_registry(catalog: EngineRegistry | LegacyCatalog | None) -> EngineRegistry:
+    if catalog is None:
+        return default_engine_registry()
+    if isinstance(catalog, EngineRegistry):
+        return catalog
+    return EngineRegistry(
+        {
+            slot: EngineRegistration.simple(implementations=implementations)
+            for slot, implementations in catalog.items()
+        }
+    )

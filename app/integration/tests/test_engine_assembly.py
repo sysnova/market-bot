@@ -23,6 +23,7 @@ from app.integration.engine_assembly import (
     MarketBotAssembly,
     load_marketbot_definition,
 )
+from app.integration.engine_registry import EngineRegistration, EngineRegistry
 from app.integration.marketbot_definition import (
     EngineMode as DefinitionEngineMode,
 )
@@ -33,7 +34,9 @@ from app.integration.marketbot_definition import (
     load_marketbot_definition as load_definition_model,
 )
 from app.intraday_engine import IntradayEngineV3, IntradayEngineV4
+from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, PortfolioAllocation
 from app.long_term_engine import LongTermEngineV2
+from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.swing_engine import SwingEngineV3
 
@@ -83,6 +86,45 @@ def test_one_assembly_builds_the_core_and_alert_implementations() -> None:
     assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation == "2.0.0"
     assert isinstance(assembly.build_portfolio_flow(), PortfolioFlowEngineV2)
     assert isinstance(assembly.build_entry_recovery(), EntryRecoveryEngineV11)
+
+
+def test_generic_build_api_does_not_require_a_new_assembly_method() -> None:
+    assembly = MarketBotAssembly.from_path(DEFINITION)
+
+    assert isinstance(assembly.build(EngineSlot.LONG_TERM), LongTermEngineV2)
+    assert isinstance(assembly.build(EngineSlot.SWING), SwingEngineV3)
+    assert isinstance(assembly.build(EngineSlot.INTRADAY), IntradayEngineV4)
+
+
+def test_artifact_engines_resolve_their_own_runtime_policies() -> None:
+    assembly = MarketBotAssembly.from_path(DEFINITION)
+    allocations = (
+        PortfolioAllocation(symbol="HIMS", weight_percent=Decimal("75.73")),
+    )
+
+    long_policy = assembly.resolve_strategy(
+        EngineSlot.LONG_PORTFOLIO,
+        allocations=allocations,
+    )
+    patreon_policy = assembly.resolve_strategy(EngineSlot.PATREON_CAPS)
+
+    assert isinstance(long_policy, LongPortfolioPolicy)
+    assert long_policy.allocations == allocations
+    assert isinstance(patreon_policy, PatreonCapsPolicy)
+    assert patreon_policy.rule_version == "1.1.0"
+
+
+def test_artifact_engines_build_without_policy_objects_from_compositions() -> None:
+    assembly = MarketBotAssembly.from_path(DEFINITION)
+    allocations = (
+        PortfolioAllocation(symbol="HIMS", weight_percent=Decimal("75.73")),
+    )
+
+    long_engine = assembly.build_long_portfolio(allocations=allocations)
+    patreon_engine = assembly.build_patreon_caps()
+
+    assert isinstance(long_engine, LongPortfolioEngine)
+    assert isinstance(patreon_engine, PatreonCapsEngine)
 
 
 def test_each_confirmation_engine_loads_its_own_strategy_artifact() -> None:
@@ -195,6 +237,39 @@ def test_unknown_implementation_fails_before_any_process_starts() -> None:
         MarketBotAssembly(replace(definition, engines=engines))
 
 
+def test_engine_owned_strategy_validation_still_fails_before_startup(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "intraday-invalid.yaml"
+    artifact.write_text(
+        """\
+rule_version: 1.0.0
+behavior:
+  minimum_momentum_percent: invalid
+  minimum_risk_percent: 0.25
+  minimum_atr_risk_multiple: 0.50
+  reward_risk_ratio: 1.50
+  maximum_trigger_extension_atr: 0.50
+  maximum_ema20_extension_atr: 2.00
+  strong_confirmation_required: true
+  five_minute_higher_low_required: true
+""",
+        encoding="utf-8",
+    )
+    definition = load_marketbot_definition(DEFINITION)
+    engines = dict(definition.engines)
+    engines[EngineSlot.INTRADAY] = replace(
+        engines[EngineSlot.INTRADAY],
+        strategy=replace(engines[EngineSlot.INTRADAY].strategy, artifact=artifact),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="strategy behavior minimum_momentum_percent must be decimal",
+    ):
+        MarketBotAssembly(replace(definition, engines=engines))
+
+
 def test_operational_compositions_cannot_construct_catalog_engines_directly() -> None:
     catalog_names = {
         "AlertEngine",
@@ -241,6 +316,53 @@ def test_operational_compositions_cannot_construct_catalog_engines_directly() ->
                 violations.append(f"{path.name}:{node.lineno}:{node.func.id}")
 
     assert violations == []
+
+
+def test_assembly_does_not_own_engine_version_or_business_rule_branches() -> None:
+    source = (INTEGRATION / "engine_assembly.py").read_text(encoding="utf-8")
+
+    assert "spec.implementation ==" not in source
+    assert "spec.implementation in" not in source
+    assert "_validate_confirmation_behavior" not in source
+    assert "minimum_momentum_percent" not in source
+    assert "fresh_reconfirmation_delay_minutes" not in source
+
+
+def test_compositions_do_not_load_engine_strategy_artifacts_directly() -> None:
+    composition_files = (
+        "distributed_composition.py",
+        "long_portfolio_composition.py",
+        "long_portfolio_monitor.py",
+        "patreon_caps_composition.py",
+    )
+
+    for filename in composition_files:
+        source = (INTEGRATION / filename).read_text(encoding="utf-8")
+        assert "load_long_portfolio_policy" not in source
+        assert "load_patreon_caps_policy" not in source
+
+
+def test_registry_rejects_duplicate_engine_registration() -> None:
+    registration = EngineRegistration.simple(
+        implementations={"1.0.0": object},
+        required_since="1.0.0",
+    )
+    registry = EngineRegistry({EngineSlot.LONG_TERM: registration})
+
+    with pytest.raises(ValueError, match="already registered"):
+        registry.register(EngineSlot.LONG_TERM, registration)
+
+
+def test_required_engine_slots_are_derived_from_registration_metadata() -> None:
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/6.0.0.yaml")
+
+    assert EngineSlot.ENTRY_RECOVERY not in assembly.definition.engines
+    assert EngineSlot.ENTRY_RECOVERY not in assembly.required_slots()
+
+    current = MarketBotAssembly.from_path(DEFINITION)
+    assert EngineSlot.ENTRY_RECOVERY in current.required_slots()
+
+
 def test_definition_model_is_a_separate_public_boundary() -> None:
     definition = load_definition_model(Path("configs/marketbot/7.1.0.yaml"))
 

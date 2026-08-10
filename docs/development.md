@@ -36,3 +36,17 @@ uv run pytest -m "not integration"
 Create `app/<engine>/` with its implementation, tests, and a small README describing ownership and
 public contract usage. Do not import another engine. If coordination needs a new message or port,
 evolve `app/contracts/` explicitly and request root integrator review.
+
+For a new implementation of an existing engine:
+
+1. Keep the previous class for rollback and add the new class in the owning engine package.
+2. If constructor options come from a rule artifact, extend that engine's `strategy.py`; never add
+   its rule names or version branches to `MarketBotAssembly`.
+3. Register the implementation version in `app/integration/engine_catalog.py`.
+4. Add a new immutable strategy artifact and MarketBot definition; do not edit released YAML.
+
+For a new logical engine, additionally add its `EngineSlot`, registry entry with an explicit
+`required_since`, operational composition/command, runtime-process specification, and universe
+policy. `required_since` protects every older immutable definition from becoming invalid. A new
+composition can call `assembly.build(slot, dependencies...)` directly; a typed facade is optional
+and should be added only when it improves an established public integration API.

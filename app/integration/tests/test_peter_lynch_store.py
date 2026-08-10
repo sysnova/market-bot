@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.integration.peter_lynch_store import PostgresPeterLynchStore, updated_metadata
+from app.integration.peter_lynch_store import (
+    PostgresPeterLynchStore,
+    lynch_analysis_is_current,
+    updated_metadata,
+)
 from app.peter_lynch_engine import (
     AnnualEps,
     LynchCategory,
@@ -71,6 +75,39 @@ def test_metadata_merge_is_idempotent_and_preserves_other_indicators() -> None:
     assert rejected["indicatorDetails"]["LYNCH"]["eligible"] is False
 
 
+def test_current_analysis_requires_valid_window_and_exact_versions() -> None:
+    metadata = updated_metadata({}, _evaluation())
+
+    assert lynch_analysis_is_current(
+        metadata,
+        as_of=date(2026, 8, 2),
+        ttl_days=1,
+        engine_version="1.1.0",
+        policy_version="peter-lynch-screen-1.1.0",
+    )
+    assert not lynch_analysis_is_current(
+        metadata,
+        as_of=date(2026, 8, 3),
+        ttl_days=1,
+        engine_version="1.1.0",
+        policy_version="peter-lynch-screen-1.1.0",
+    )
+    assert not lynch_analysis_is_current(
+        metadata,
+        as_of=date(2026, 8, 2),
+        ttl_days=1,
+        engine_version="2.0.0",
+        policy_version="peter-lynch-screen-1.1.0",
+    )
+    assert not lynch_analysis_is_current(
+        metadata,
+        as_of=date(2026, 8, 2),
+        ttl_days=1,
+        engine_version="1.1.0",
+        policy_version="peter-lynch-screen-2.0.0",
+    )
+
+
 @pytest.mark.unit
 async def test_store_locks_active_watchlist_rows_and_updates_in_one_transaction() -> None:
     result = MagicMock()
@@ -90,3 +127,37 @@ async def test_store_locks_active_watchlist_rows_and_updates_in_one_transaction(
     update_params = connection.execute.await_args_list[1].args[1]
     assert update_params["row_id"] == "row-1"
     assert '"LYNCH"' in update_params["metadata"]
+
+
+@pytest.mark.unit
+async def test_store_returns_only_expired_or_version_mismatched_symbols() -> None:
+    current = updated_metadata({}, _evaluation())
+    expired = updated_metadata({}, _evaluation())
+    expired["indicatorDetails"]["LYNCH"]["evaluatedAt"] = "2026-08-01"
+    old_version = updated_metadata({}, _evaluation())
+    old_version["indicatorDetails"]["LYNCH"]["engineVersion"] = "1.0.0"
+    result = MagicMock()
+    result.all.return_value = [
+        SimpleNamespace(symbol="CURRENT", metadata_json=current),
+        SimpleNamespace(symbol="EXPIRED", metadata_json=expired),
+        SimpleNamespace(symbol="OLD", metadata_json=old_version),
+        SimpleNamespace(symbol="NEW", metadata_json={}),
+    ]
+    connection = AsyncMock()
+    connection.execute.return_value = result
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=connection)
+    context.__aexit__ = AsyncMock(return_value=False)
+    database = MagicMock()
+    database.connect.return_value = context
+
+    worklist = await PostgresPeterLynchStore(database).load_worklist(
+        as_of=date(2026, 8, 2),
+        ttl_days=1,
+        engine_version="1.1.0",
+        policy_version="peter-lynch-screen-1.1.0",
+    )
+
+    assert worklist.total == 4
+    assert worklist.symbols == ("EXPIRED", "OLD", "NEW")
+    assert worklist.skipped_current == 1

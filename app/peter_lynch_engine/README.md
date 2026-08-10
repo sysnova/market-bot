@@ -20,3 +20,16 @@ Successful candidates receive the `LYNCH` watchlist indicator. Every valid evalu
 replaces `indicatorDetails.LYNCH`; transient provider failures leave existing metadata
 unchanged. The command runs once and exits and is intentionally absent from both startup
 launchers.
+
+Before calling Alpaca or SEC, the process reads the persisted `indicatorDetails.LYNCH`
+metadata. A symbol is skipped while its analysis is inside
+`MARKETBOT_PETER_LYNCH_ANALYSIS_TTL_DAYS` (90 UTC days by default) and both its engine
+and policy versions match the selected implementation. Expiration or either version
+changing makes the symbol pending again. This applies to eligible and rejected results;
+transient provider failures continue to preserve the previous metadata.
+
+One manual run can override the configured window without changing the environment:
+
+```powershell
+uv run marketbot engine peter-lynch --ttl-days 30
+```

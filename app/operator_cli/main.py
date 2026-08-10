@@ -278,7 +278,19 @@ def rotation_engine_process(
 
 
 @engine.command("peter-lynch")
-def peter_lynch_engine_process() -> None:
+def peter_lynch_engine_process(
+    ttl_days: Annotated[
+        int | None,
+        typer.Option(
+            min=1,
+            max=365,
+            help=(
+                "Analysis validity in UTC days; defaults to "
+                "MARKETBOT_PETER_LYNCH_ANALYSIS_TTL_DAYS."
+            ),
+        ),
+    ] = None,
+) -> None:
     """Evaluate the active watchlist once with the Peter Lynch fundamental screen."""
 
     from app.integration.peter_lynch_composition import run_peter_lynch_once
@@ -286,7 +298,9 @@ def peter_lynch_engine_process() -> None:
     def report(message: str) -> None:
         typer.echo(f"[Peter Lynch] {message}", err=True)
 
-    summary = _run_async(run_peter_lynch_once(progress=report))
+    summary = _run_async(
+        run_peter_lynch_once(progress=report, analysis_ttl_days=ttl_days)
+    )
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 

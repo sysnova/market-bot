@@ -6,6 +6,7 @@ import asyncio
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 from app.alert_engine.sinks import NdjsonAlertSink
 from app.common.clock import SystemClock
@@ -19,7 +20,7 @@ from app.contracts import (
     local_alert_subject,
 )
 from app.event_bus import NatsJetStreamEventBus
-from app.long_portfolio_engine import load_long_portfolio_policy
+from app.long_portfolio_engine import LongPortfolioPolicy
 from app.persistence import create_database_engine, create_session_factory
 
 from .distributed_composition import _write_ready  # pyright: ignore[reportPrivateUsage]
@@ -48,9 +49,13 @@ async def run_long_portfolio_process(
     )
     portfolio_data = PostgresUniverseClient(database)
     allocations = await portfolio_data.get_portfolio_allocations()
-    policy = load_long_portfolio_policy(
-        config_path or assembly.strategy_artifact(EngineSlot.LONG_PORTFOLIO),
-        allocations=allocations,
+    policy = cast(
+        "LongPortfolioPolicy",
+        assembly.resolve_strategy(
+            EngineSlot.LONG_PORTFOLIO,
+            artifact_override=config_path,
+            allocations=allocations,
+        ),
     )
     requested = symbol.strip().upper() if symbol is not None else None
     if requested is not None and policy.allocation_for(requested) is None:
@@ -72,8 +77,9 @@ async def run_long_portfolio_process(
             "20260802223000_long_portfolio_states.sql"
         )
     engine = assembly.build_long_portfolio(
-        policy,
+        allocations=allocations,
         restored_states=await store.load_states(rule_version=policy.rule_version),
+        strategy_artifact_override=config_path,
     )
     holding_quantities = await portfolio_data.get_holding_quantities()
     holdings_loaded_at = clock.now()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Any, cast
@@ -20,6 +21,15 @@ class PeterLynchStoreError(RuntimeError):
     """Local watchlist reads or updates failed."""
 
 
+@dataclass(frozen=True, slots=True)
+class PeterLynchWorklist:
+    """Active symbols remaining after current-analysis filtering."""
+
+    symbols: tuple[str, ...]
+    total: int
+    skipped_current: int
+
+
 class PostgresPeterLynchStore:
     def __init__(
         self,
@@ -33,12 +43,31 @@ class PostgresPeterLynchStore:
         self._watchlist_code = watchlist_code
 
     async def load_symbols(self) -> tuple[str, ...]:
+        """Compatibility view returning every active symbol without freshness filtering."""
+
+        return (
+            await self.load_worklist(
+                as_of=date.max,
+                ttl_days=0,
+                engine_version="",
+                policy_version="",
+            )
+        ).symbols
+
+    async def load_worklist(
+        self,
+        *,
+        as_of: date,
+        ttl_days: int,
+        engine_version: str,
+        policy_version: str,
+    ) -> PeterLynchWorklist:
         try:
             async with self._engine.connect() as connection:
                 rows = (
                     await connection.execute(
                         text("""
-                            select ws.symbol
+                            select ws.symbol, ws.metadata_json
                             from stock.watchlist w
                             join stock.customer c on c.id = w.customer_id
                             join stock.watchlist_symbol ws on ws.watchlist_id = w.id
@@ -57,7 +86,38 @@ class PostgresPeterLynchStore:
                 ).all()
         except SQLAlchemyError as error:
             raise PeterLynchStoreError("Local PostgreSQL watchlist query failed") from error
-        return tuple(dict.fromkeys(str(row.symbol).strip().upper() for row in rows))
+        symbols: list[str] = []
+        skipped = 0
+        seen: set[str] = set()
+        for row in rows:
+            symbol = str(row.symbol).strip().upper()
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            if ttl_days < 1:
+                symbols.append(symbol)
+                continue
+            raw_metadata: object = row.metadata_json
+            metadata: Mapping[str, object] = (
+                cast("Mapping[str, object]", raw_metadata)
+                if isinstance(raw_metadata, Mapping)
+                else cast("dict[str, object]", {})
+            )
+            if lynch_analysis_is_current(
+                metadata,
+                as_of=as_of,
+                ttl_days=ttl_days,
+                engine_version=engine_version,
+                policy_version=policy_version,
+            ):
+                skipped += 1
+            else:
+                symbols.append(symbol)
+        return PeterLynchWorklist(
+            symbols=tuple(symbols),
+            total=len(seen),
+            skipped_current=skipped,
+        )
 
     async def save(self, evaluations: tuple[PeterLynchEvaluation, ...]) -> int:
         if not evaluations:
@@ -137,6 +197,40 @@ def updated_metadata(
     details["LYNCH"] = _evaluation_detail(evaluation)
     metadata["indicatorDetails"] = details
     return metadata
+
+
+def lynch_analysis_is_current(
+    metadata: Mapping[str, object],
+    *,
+    as_of: date,
+    ttl_days: int,
+    engine_version: str,
+    policy_version: str,
+) -> bool:
+    """Return whether persisted LYNCH evidence is reusable for this exact policy."""
+
+    if ttl_days < 1:
+        return False
+    raw_details = metadata.get("indicatorDetails")
+    if not isinstance(raw_details, Mapping):
+        return False
+    details = cast("Mapping[object, object]", raw_details).get("LYNCH")
+    if not isinstance(details, Mapping):
+        return False
+    values = cast("Mapping[object, object]", details)
+    if values.get("engineVersion") != engine_version:
+        return False
+    if values.get("policyVersion") != policy_version:
+        return False
+    evaluated_at = values.get("evaluatedAt")
+    if not isinstance(evaluated_at, str):
+        return False
+    try:
+        evaluated_on = date.fromisoformat(evaluated_at)
+    except ValueError:
+        return False
+    age_days = (as_of - evaluated_on).days
+    return 0 <= age_days < ttl_days
 
 
 def _evaluation_detail(evaluation: PeterLynchEvaluation) -> dict[str, Any]:

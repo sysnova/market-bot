@@ -9,6 +9,7 @@ import pytest
 from app.dilution_sec_engine import SecTickerNotFoundError, SecTransportError
 from app.integration.peter_lynch_composition import PeterLynchRunService
 from app.integration.peter_lynch_sec_adapter import SecPeterLynchFacts
+from app.integration.peter_lynch_store import PeterLynchWorklist
 from app.peter_lynch_engine import PeterLynchEngine
 
 
@@ -41,7 +42,11 @@ def facts(symbol: str) -> SecPeterLynchFacts:
 async def test_manual_run_evaluates_once_and_saves_only_non_transient_results() -> None:
     progress: list[str] = []
     store = AsyncMock()
-    store.load_symbols.return_value = ("GOOD", "UNSUPPORTED", "BROKEN")
+    store.load_worklist.return_value = PeterLynchWorklist(
+        symbols=("GOOD", "UNSUPPORTED", "BROKEN"),
+        total=4,
+        skipped_current=1,
+    )
     prices = AsyncMock()
     prices.fetch_snapshots.return_value = {
         symbol: {"latestTrade": {"p": 20, "t": "2026-07-31T20:00:00Z"}}
@@ -69,18 +74,30 @@ async def test_manual_run_evaluates_once_and_saves_only_non_transient_results() 
 
     assert summary == {
         "service": "peter-lynch-v1",
+        "analysis_ttl_days": 1,
+        "watchlist_total": 4,
+        "pending": 3,
         "evaluated": 1,
         "selected": 1,
         "discarded": 0,
         "unsupported": 1,
         "errors": 1,
         "saved": 2,
+        "skipped_current": 1,
     }
     saved = store.save.await_args.args[0]
+    store.load_worklist.assert_awaited_once_with(
+        as_of=date(2026, 8, 2),
+        ttl_days=1,
+        engine_version="1.1.0",
+        policy_version="peter-lynch-screen-1.1.0",
+    )
     assert [item.symbol for item in saved] == ["GOOD", "UNSUPPORTED"]
     assert saved[0].eligible is True
     assert saved[1].eligible is False
-    assert progress[0] == "Watchlist: 3 símbolos activos."
+    assert progress[0] == (
+        "Watchlist: 4 símbolos activos; 1 análisis vigentes omitidos; 3 pendientes."
+    )
     assert any("[1/3] GOOD: consultando fundamentales SEC" in item for item in progress)
     assert any("GOOD: seleccionado 6/6" in item for item in progress)
     assert any("UNSUPPORTED: no soportado" in item for item in progress)
@@ -91,7 +108,9 @@ async def test_manual_run_evaluates_once_and_saves_only_non_transient_results() 
 @pytest.mark.unit
 async def test_alpaca_transport_failure_preserves_every_existing_tag() -> None:
     store = AsyncMock()
-    store.load_symbols.return_value = ("A", "B")
+    store.load_worklist.return_value = PeterLynchWorklist(
+        symbols=("A", "B"), total=2, skipped_current=0
+    )
     prices = AsyncMock()
     prices.fetch_snapshots.side_effect = RuntimeError("alpaca unavailable")
 
@@ -110,9 +129,39 @@ async def test_alpaca_transport_failure_preserves_every_existing_tag() -> None:
 
 
 @pytest.mark.unit
+async def test_current_worklist_exits_without_calling_external_providers() -> None:
+    store = AsyncMock()
+    store.load_worklist.return_value = PeterLynchWorklist(
+        symbols=(), total=2, skipped_current=2
+    )
+    prices = AsyncMock()
+    resolver = AsyncMock()
+    sec = AsyncMock()
+
+    summary = await PeterLynchRunService(
+        store=store,
+        prices=prices,
+        ticker_resolver=resolver,
+        sec=sec,
+        calculator=PeterLynchEngine(),
+    ).run(now=datetime(2026, 8, 2, 12, tzinfo=UTC))
+
+    assert summary["watchlist_total"] == 2
+    assert summary["pending"] == 0
+    assert summary["skipped_current"] == 2
+    assert summary["saved"] == 0
+    prices.fetch_snapshots.assert_not_awaited()
+    resolver.resolve.assert_not_awaited()
+    sec.load.assert_not_awaited()
+    store.save.assert_not_awaited()
+
+
+@pytest.mark.unit
 async def test_stale_trade_uses_fresh_daily_bar_and_invalid_price_fails_closed() -> None:
     store = AsyncMock()
-    store.load_symbols.return_value = ("FALLBACK", "STALE")
+    store.load_worklist.return_value = PeterLynchWorklist(
+        symbols=("FALLBACK", "STALE"), total=2, skipped_current=0
+    )
     prices = AsyncMock()
     prices.fetch_snapshots.return_value = {
         "FALLBACK": {
