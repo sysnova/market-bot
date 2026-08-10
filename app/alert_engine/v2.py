@@ -12,6 +12,7 @@ from app.contracts import (
     AnalysisResult,
     AnalysisVerdict,
     LocalAlert,
+    NamedValue,
     PatternDirection,
 )
 
@@ -133,6 +134,7 @@ class AlertEngineV2(AlertEngine):
             horizons=tuple(item.horizon for item in embedded),
             component_analysis_ids=tuple(item.analysis_id for item in embedded),
             component_analyses=embedded,
+            metrics=_entry_signal_metrics(kind, components),
             score=score,
             reasons=_unique(tuple(reasons)),
             deduplication_key=deduplication_key,
@@ -141,6 +143,131 @@ class AlertEngineV2(AlertEngine):
         self._emitted_keys.add(deduplication_key)
         self._last_emitted[state_key] = (now, severity)
         return alert
+
+
+def _entry_signal_metrics(
+    kind: AlertKind,
+    components: tuple[AnalysisResult, ...],
+) -> tuple[NamedValue, ...]:
+    """Expose Alert-owned entry levels for the stable EntrySignal adapter."""
+
+    if kind not in {AlertKind.ENTRY_CONFIRMED, AlertKind.HIGH_CONVICTION_BUY}:
+        return ()
+    by_horizon = {item.horizon: item for item in components}
+    intraday = by_horizon.get(AnalysisHorizon.INTRADAY)
+    swing = by_horizon.get(AnalysisHorizon.SWING)
+    long_term = by_horizon.get(AnalysisHorizon.LONG_TERM)
+    entry_price = _first_decimal((intraday, swing, long_term), "reference_price")
+    if entry_price is None:
+        return ()
+    output = [NamedValue(name="entry_price", value=entry_price)]
+    level_source, levels = _first_complete_levels((swing, long_term, intraday))
+    if levels is not None:
+        zone_low, zone_high, invalidation = levels
+        output.extend(
+            (
+                NamedValue(name="buy_zone_low", value=zone_low),
+                NamedValue(name="buy_zone_high", value=zone_high),
+                NamedValue(name="invalidation", value=invalidation),
+            )
+        )
+    target = _first_decimal(
+        (level_source,),
+        "target_2r",
+        "target",
+        "target_price",
+        "objective_level",
+    )
+    if target is None:
+        target = _first_decimal(
+            (intraday, swing, long_term),
+            "objective_level",
+            "target_2r",
+            "target",
+            "target_price",
+        )
+    if target is not None and target > entry_price:
+        output.append(NamedValue(name="target", value=target))
+    policy_version = _first_text(
+        (level_source, intraday, swing, long_term),
+        "entry_confirmation_rule_version",
+    )
+    if policy_version is not None:
+        output.append(
+            NamedValue(
+                name="entry_confirmation_rule_version",
+                value=policy_version,
+            )
+        )
+    return tuple(output)
+
+
+def _first_complete_levels(
+    values: tuple[AnalysisResult | None, ...],
+) -> tuple[AnalysisResult | None, tuple[Decimal, Decimal, Decimal] | None]:
+    for result in values:
+        if result is None:
+            continue
+        metrics = _metrics(result)
+        zone_low = _decimal_value(
+            metrics.get("entry_zone_low", metrics.get("buy_zone_low"))
+        )
+        zone_high = _decimal_value(
+            metrics.get("entry_zone_high", metrics.get("buy_zone_high"))
+        )
+        invalidation = _decimal_value(
+            metrics.get("invalidation", metrics.get("invalidation_level"))
+        )
+        if (
+            zone_low is not None
+            and zone_high is not None
+            and invalidation is not None
+            and invalidation < zone_low <= zone_high
+        ):
+            return result, (zone_low, zone_high, invalidation)
+    return None, None
+
+
+def _first_decimal(
+    values: tuple[AnalysisResult | None, ...],
+    *names: str,
+) -> Decimal | None:
+    for result in values:
+        if result is None:
+            continue
+        metrics = _metrics(result)
+        for name in names:
+            value = _decimal_value(metrics.get(name))
+            if value is not None:
+                return value
+    return None
+
+
+def _first_text(
+    values: tuple[AnalysisResult | None, ...],
+    name: str,
+) -> str | None:
+    for result in values:
+        if result is None:
+            continue
+        value = _metrics(result).get(name)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _metrics(result: AnalysisResult) -> dict[str, object]:
+    return {item.name: item.value for item in result.metrics}
+
+
+def _decimal_value(value: object) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return None
+    return parsed if parsed.is_finite() and parsed > 0 else None
 
 
 def _bullish(result: AnalysisResult | None, minimum: Decimal) -> AnalysisResult | None:
