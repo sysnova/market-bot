@@ -20,7 +20,7 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.entry_watcher_enabled is True
     assert settings.entry_watch_ttl_days == 56
     assert settings.alert_checkpoint_interval_seconds == 30
-    assert settings.definition_path == Path("configs/marketbot/7.3.0.yaml")
+    assert settings.definition_path == Path("configs/marketbot/7.4.0.yaml")
     assert settings.entry_confirmation_rule_version is None
 
 

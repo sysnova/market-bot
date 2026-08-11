@@ -56,7 +56,7 @@ from app.support_confirmation_engine import SupportConfirmationEngine
 from app.swing_engine import SwingEngine, SwingEngineV2, SwingEngineV3, SwingEngineV4
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
-from app.volume_structure_engine import VolumeStructureEngine
+from app.volume_structure_engine import VolumeStructureEngine, VolumeStructureEngineV11
 
 from .engine_registry import EngineRegistration, EngineRegistry
 from .marketbot_definition import EngineSlot
@@ -168,7 +168,10 @@ def default_engine_registry() -> EngineRegistry:
                 implementations={"0.2.0": SupportConfirmationEngine}
             ),
             EngineSlot.VOLUME_STRUCTURE: simple(
-                implementations={"1.0.0": VolumeStructureEngine},
+                implementations={
+                    "1.0.0": VolumeStructureEngine,
+                    "1.1.0": VolumeStructureEngineV11,
+                },
                 required_since="7.3.0",
             ),
             EngineSlot.SIGNAL_FUSION: simple(

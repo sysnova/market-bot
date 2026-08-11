@@ -39,10 +39,12 @@ from app.long_term_engine import LongTermEngineV2
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.swing_engine import SwingEngineV4
+from app.volume_structure_engine import VolumeStructureEngineV11
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFINITION = ROOT / "configs/marketbot/7.2.0.yaml"
-LATEST_DEFINITION = ROOT / "configs/marketbot/7.3.0.yaml"
+VOLUME_STRUCTURE_DEFINITION = ROOT / "configs/marketbot/7.3.0.yaml"
+LATEST_DEFINITION = ROOT / "configs/marketbot/7.4.0.yaml"
 PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 
@@ -62,13 +64,26 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
 
 
 def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
-    definition = load_marketbot_definition(LATEST_DEFINITION)
+    definition = load_marketbot_definition(VOLUME_STRUCTURE_DEFINITION)
 
     assert set(definition.engines) == set(EngineSlot)
     assert definition.version == "7.3.0"
     assert definition.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"
     assert definition.engines[EngineSlot.ALERT].implementation == "3.4.0"
     assert definition.engines[EngineSlot.SIGNAL_FUSION].implementation == "0.4.0"
+
+
+def test_latest_definition_activates_invalidation_aware_volume_structure() -> None:
+    previous = load_marketbot_definition(VOLUME_STRUCTURE_DEFINITION)
+    definition = load_marketbot_definition(LATEST_DEFINITION)
+
+    assert previous.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"
+    assert definition.version == "7.4.0"
+    assert definition.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.1.0"
+    assert isinstance(
+        MarketBotAssembly(definition).build_volume_structure(),
+        VolumeStructureEngineV11,
+    )
 
 
 def test_operational_modes_select_slots_from_the_definition() -> None:

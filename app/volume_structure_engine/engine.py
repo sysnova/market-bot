@@ -35,6 +35,7 @@ class VolumeStructureEngine:
 
     engine_id = "volume-structure"
     engine_version = "1.0.0"
+    enforce_post_divergence_invalidation = False
 
     def evaluate(self, context: VolumeStructureContext) -> AnalysisResult:
         bars = tuple(bar for bar in context.weekly_bars if bar.is_final)
@@ -42,6 +43,7 @@ class VolumeStructureEngine:
             return _result(
                 context,
                 bars,
+                engine_version=self.engine_version,
                 verdict=AnalysisVerdict.INSUFFICIENT_DATA,
                 direction=PatternDirection.NEUTRAL,
                 score=ZERO,
@@ -87,6 +89,7 @@ class VolumeStructureEngine:
             return _result(
                 context,
                 bars,
+                engine_version=self.engine_version,
                 verdict=AnalysisVerdict.WATCH,
                 direction=PatternDirection.NEUTRAL,
                 score=ZERO,
@@ -101,6 +104,29 @@ class VolumeStructureEngine:
             )
 
         first, second = pair
+        invalidation_atr = self._invalidation_atr(
+            bars,
+            second,
+            current_atr=atr,
+        )
+        invalidation = _invalidation_level(bars[second].low, invalidation_atr)
+        breach = (
+            _invalidation_breach(bars, second, invalidation)
+            if self.enforce_post_divergence_invalidation
+            else None
+        )
+        if breach is not None:
+            return self._invalidated_result(
+                context,
+                bars,
+                obv,
+                first,
+                second,
+                atr=atr,
+                average_volume=average_volume,
+                invalidation=invalidation,
+                breach=breach,
+            )
         ema10 = _ema(tuple(bar.close for bar in bars), 10)
         reclaim_trigger = max(bars[second].high, ema10)
         reclaimed = bars[-1].close >= reclaim_trigger
@@ -115,7 +141,18 @@ class VolumeStructureEngine:
             state="RECLAIM_CONFIRMED" if reclaimed else "DIVERGENCE_CONFIRMED",
             boost=Decimal("10") if reclaimed else Decimal("6"),
             reclaim_trigger=reclaim_trigger,
+            invalidation=invalidation,
         )
+
+    def _invalidation_atr(
+        self,
+        bars: tuple[MarketBar, ...],
+        second: int,
+        *,
+        current_atr: Decimal,
+    ) -> Decimal:
+        del bars, second
+        return current_atr
 
     def _divergence_result(
         self,
@@ -130,6 +167,7 @@ class VolumeStructureEngine:
         state: str,
         boost: Decimal,
         reclaim_trigger: Decimal | None = None,
+        invalidation: Decimal | None = None,
     ) -> AnalysisResult:
         price_change = (bars[second].low - bars[first].low) / bars[first].low * HUNDRED
         obv_improvement = (
@@ -144,9 +182,7 @@ class VolumeStructureEngine:
             + min(Decimal("15"), obv_improvement * Decimal("10"))
             + (Decimal("10") if state == "RECLAIM_CONFIRMED" else ZERO),
         )
-        invalidation = max(
-            Decimal("0.0001"), bars[second].low - atr * Decimal("0.5")
-        )
+        invalidation = invalidation or _invalidation_level(bars[second].low, atr)
         metrics = [
             NamedValue(name="divergence_state", value=state),
             NamedValue(name="weekly_close", value=bars[-1].close),
@@ -180,6 +216,7 @@ class VolumeStructureEngine:
         return _result(
             context,
             bars,
+            engine_version=self.engine_version,
             verdict=(
                 AnalysisVerdict.FAVORABLE
                 if state != "DEVELOPING"
@@ -191,6 +228,78 @@ class VolumeStructureEngine:
             reasons=tuple(reasons),
             metrics=tuple(metrics),
         )
+
+    def _invalidated_result(
+        self,
+        context: VolumeStructureContext,
+        bars: tuple[MarketBar, ...],
+        obv: tuple[Decimal, ...],
+        first: int,
+        second: int,
+        *,
+        atr: Decimal,
+        average_volume: Decimal,
+        invalidation: Decimal,
+        breach: MarketBar,
+    ) -> AnalysisResult:
+        price_change = (bars[second].low - bars[first].low) / bars[first].low * HUNDRED
+        obv_improvement = (
+            ZERO
+            if average_volume <= ZERO
+            else (obv[second] - obv[first]) / average_volume
+        )
+        return _result(
+            context,
+            bars,
+            engine_version=self.engine_version,
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.NEUTRAL,
+            score=ZERO,
+            confidence=ZERO,
+            reasons=(
+                "weekly_obv_bullish_divergence_historical",
+                "weekly_obv_divergence_invalidation_breached",
+                "volume_structure_boost_revoked",
+            ),
+            metrics=(
+                NamedValue(name="divergence_state", value="DIVERGENCE_INVALIDATED"),
+                NamedValue(name="weekly_close", value=bars[-1].close),
+                NamedValue(name="price_pivot_1", value=bars[first].low),
+                NamedValue(name="price_pivot_2", value=bars[second].low),
+                NamedValue(name="price_pivot_1_at", value=bars[first].timestamp),
+                NamedValue(name="price_pivot_2_at", value=bars[second].timestamp),
+                NamedValue(name="price_change_percent", value=_rounded(price_change)),
+                NamedValue(name="obv_pivot_1", value=obv[first]),
+                NamedValue(name="obv_pivot_2", value=obv[second]),
+                NamedValue(
+                    name="obv_improvement_normalized",
+                    value=_rounded(obv_improvement),
+                ),
+                NamedValue(name="pivot_separation_weeks", value=second - first),
+                NamedValue(name="weekly_atr", value=_rounded(atr)),
+                NamedValue(name="invalidation", value=_rounded(invalidation)),
+                NamedValue(name="invalidation_breached_at", value=breach.timestamp),
+                NamedValue(name="invalidation_breach_close", value=breach.close),
+                NamedValue(name="evidence_boost", value=ZERO),
+            ),
+        )
+
+
+class VolumeStructureEngineV11(VolumeStructureEngine):
+    """Revoke historical divergence evidence after a completed weekly close breach."""
+
+    engine_version = "1.1.0"
+    enforce_post_divergence_invalidation = True
+
+    def _invalidation_atr(
+        self,
+        bars: tuple[MarketBar, ...],
+        second: int,
+        *,
+        current_atr: Decimal,
+    ) -> Decimal:
+        del current_atr
+        return _atr(bars[: second + 1])
 
 
 def _latest_divergence_pair(
@@ -269,6 +378,19 @@ def _is_divergence(
     return meaningful_price_low and normalized_obv >= MINIMUM_OBV_IMPROVEMENT
 
 
+def _invalidation_level(second_low: Decimal, atr: Decimal) -> Decimal:
+    return max(Decimal("0.0001"), second_low - atr * Decimal("0.5"))
+
+
+def _invalidation_breach(
+    bars: tuple[MarketBar, ...], second: int, invalidation: Decimal
+) -> MarketBar | None:
+    return next(
+        (bar for bar in bars[second + 1 :] if bar.close <= invalidation),
+        None,
+    )
+
+
 def _confirmed_low_pivots(
     bars: tuple[MarketBar, ...], radius: int = PIVOT_RADIUS
 ) -> tuple[int, ...]:
@@ -325,6 +447,7 @@ def _result(
     context: VolumeStructureContext,
     bars: tuple[MarketBar, ...],
     *,
+    engine_version: str,
     verdict: AnalysisVerdict,
     direction: PatternDirection,
     score: Decimal,
@@ -335,7 +458,7 @@ def _result(
     as_of = bars[-1].timestamp if bars else context.weekly_bars[-1].timestamp
     return AnalysisResult(
         engine_id=VolumeStructureEngine.engine_id,
-        engine_version=VolumeStructureEngine.engine_version,
+        engine_version=engine_version,
         symbol=context.symbol.strip().upper(),
         horizon=AnalysisHorizon.VOLUME_STRUCTURE,
         as_of=as_of,
