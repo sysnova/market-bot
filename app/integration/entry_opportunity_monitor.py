@@ -169,7 +169,12 @@ async def run_entry_opportunity_monitor(
     )
     refresh_task: asyncio.Task[None] | None = None
     try:
-        opportunities = await _load_tracked_opportunities(store=store, history=history)
+        refreshed_at = clock.now()
+        opportunities = await _load_tracked_opportunities(
+            store=store,
+            history=history,
+            refreshed_at=refreshed_at,
+        )
         latest_events = await store.latest_events(
             tuple(item.opportunity_id for item in opportunities)
         )
@@ -204,6 +209,7 @@ async def run_entry_opportunity_monitor(
                 lock=lock,
                 render=render,
                 output=output,
+                clock=clock,
             )
         )
         await asyncio.Event().wait()
@@ -226,11 +232,17 @@ async def _refresh_from_postgres(
     lock: asyncio.Lock,
     render: Callable[[], None],
     output: TextIO,
+    clock: SystemClock,
 ) -> None:
     while True:
         await asyncio.sleep(interval.total_seconds())
         try:
-            opportunities = await _load_tracked_opportunities(store=store, history=history)
+            refreshed_at = clock.now()
+            opportunities = await _load_tracked_opportunities(
+                store=store,
+                history=history,
+                refreshed_at=refreshed_at,
+            )
             latest_events = await store.latest_events(
                 tuple(item.opportunity_id for item in opportunities)
             )
@@ -258,12 +270,19 @@ async def _load_tracked_opportunities(
     *,
     store: PostgresEntryOpportunityStore,
     history: int,
+    refreshed_at: datetime,
 ) -> tuple[EntryOpportunity, ...]:
     recent, active = await asyncio.gather(
         store.list_recent(limit=history),
         store.list_active(),
     )
-    by_id = {item.opportunity_id: item for item in recent}
+    today = refreshed_at.date()
+    by_id = {
+        item.opportunity_id: item
+        for item in recent
+        if item.status is not EntryOpportunityStatus.CLOSED
+        or (item.closed_at is not None and item.closed_at.date() == today)
+    }
     for item in active:
         current = by_id.get(item.opportunity_id)
         if current is None or item.revision >= current.revision:

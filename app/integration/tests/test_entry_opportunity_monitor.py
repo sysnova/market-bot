@@ -20,6 +20,7 @@ from app.contracts import (
     EntryOpportunityStatus,
     EntrySignalFamily,
     EventEnvelope,
+    new_uuid7,
 )
 from app.integration import entry_opportunity_monitor
 from app.integration.entry_opportunity_monitor import (
@@ -139,6 +140,60 @@ def test_dashboard_rejects_an_older_snapshot_of_the_same_opportunity() -> None:
     dashboard.merge(older)
 
     assert dashboard.items() == (newest,)
+
+
+@pytest.mark.unit
+async def test_load_tracked_opportunities_keeps_open_and_today_closed_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    today_closed = _closed_opportunity().model_copy(
+        update={"symbol": "AAPL", "opportunity_id": new_uuid7()}
+    )
+    yesterday_closed = _closed_opportunity(
+        revision=5,
+    ).model_copy(
+        update={
+            "symbol": "MSFT",
+            "opportunity_id": new_uuid7(),
+            "closed_at": NOW - timedelta(days=1),
+            "updated_at": NOW - timedelta(days=1),
+            "checkpoints": (
+                _closed_opportunity().checkpoints[0].model_copy(
+                    update={"closed_at": NOW - timedelta(days=1)}
+                ),
+            ),
+            "legs": (
+                _closed_opportunity().legs[0].model_copy(
+                    update={"closed_at": NOW - timedelta(days=1)}
+                ),
+            ),
+        }
+    )
+    open_opportunity = _closed_opportunity(revision=6).model_copy(
+        update={
+            "symbol": "NVDA",
+            "opportunity_id": new_uuid7(),
+            "status": EntryOpportunityStatus.OPEN,
+            "closed_at": None,
+            "close_reason": None,
+        }
+    )
+
+    class _Store:
+        async def list_recent(self, *, limit: int) -> tuple[EntryOpportunity, ...]:
+            assert limit == 25
+            return (open_opportunity, today_closed, yesterday_closed)
+
+        async def list_active(self) -> tuple[EntryOpportunity, ...]:
+            return (open_opportunity,)
+
+    tracked = await entry_opportunity_monitor._load_tracked_opportunities(
+        store=_Store(),
+        history=25,
+        refreshed_at=NOW,
+    )
+
+    assert tuple(item.symbol for item in tracked) == ("NVDA", "AAPL")
 
 
 @pytest.mark.unit
