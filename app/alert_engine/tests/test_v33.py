@@ -61,7 +61,27 @@ def test_v33_emits_swing_setup_only_after_real_reward_risk_gate_passes() -> None
     assert alert.kind is AlertKind.SWING_SETUP
 
 
-def _swing(*, actionable: bool, reward_risk: str) -> AnalysisResult:
+def test_v33_rejects_breakout_with_zero_reward_risk() -> None:
+    engine = AlertEngineV33()
+
+    alert = engine.ingest(
+        _swing(
+            actionable=True,
+            reward_risk="0",
+            classification="breakout",
+        ),
+        now=NOW,
+    )
+
+    assert alert is None
+
+
+def _swing(
+    *,
+    actionable: bool,
+    reward_risk: str,
+    classification: str = "pullback",
+) -> AnalysisResult:
     return AnalysisResult(
         engine_id="swing",
         engine_version="4.0.0",
@@ -75,7 +95,7 @@ def _swing(*, actionable: bool, reward_risk: str) -> AnalysisResult:
         reasons=("bullish_daily_trend",),
         metrics=(
             NamedValue(name="reference_price", value=Decimal("314.495")),
-            NamedValue(name="classification", value="pullback"),
+            NamedValue(name="classification", value=classification),
             NamedValue(name="anchored_vwap_gate_passed", value=True),
             NamedValue(name="structure_broken_confirmed", value=False),
             NamedValue(name="swing_entry_gate_passed", value=actionable),

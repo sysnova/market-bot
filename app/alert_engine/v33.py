@@ -161,8 +161,7 @@ class AlertEngineV33(AlertEngineV32):
         if metrics.get("swing_entry_gate_passed") is not True:
             return False
         reward_risk = metrics.get("reward_risk_to_resistance")
-        classification = metrics.get("classification")
-        return classification == "breakout" or (
+        return (
             isinstance(reward_risk, Decimal)
             and reward_risk >= self._minimum_swing_reward_risk_to_resistance
         )

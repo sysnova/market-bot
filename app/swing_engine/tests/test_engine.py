@@ -310,3 +310,18 @@ def test_v4_preserves_actionable_swing_when_resistance_offers_at_least_one_and_h
     assert result.verdict is AnalysisVerdict.FAVORABLE
     assert metrics["reward_risk_to_resistance"] == Decimal("3.0239")
     assert metrics["swing_entry_gate_passed"] is True
+
+
+@pytest.mark.unit
+def test_v4_rejects_breakout_without_an_overhead_resistance() -> None:
+    case = json.loads(FIXTURES.read_text(encoding="utf-8"))[1]
+
+    result = SwingEngineV4().analyze(_context(case))
+    metrics = {metric.name: metric.value for metric in result.metrics}
+
+    assert metrics["classification"] == "breakout"
+    assert metrics["reward_risk_to_resistance"] == Decimal("0")
+    assert metrics["swing_entry_gate_passed"] is False
+    assert result.verdict is AnalysisVerdict.WATCH
+    assert result.score == Decimal("64.00")
+    assert "insufficient_reward_risk_to_resistance" in result.reasons

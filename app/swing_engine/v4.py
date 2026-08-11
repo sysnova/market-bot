@@ -47,8 +47,9 @@ class SwingEngineV4(SwingEngineV3):
         reward_risk = metrics.get("reward_risk_to_resistance")
         anchored_vwap_passed = metrics.get("anchored_vwap_gate_passed") is True
 
-        # A confirmed breakout has already cleared this historical resistance.
-        reward_risk_passed = classification == "breakout" or (
+        # Clearing the historical resistance does not create new upside by itself.
+        # Breakouts remain non-actionable until an overhead level offers real R/R.
+        reward_risk_passed = (
             isinstance(reward_risk, Decimal)
             and reward_risk >= self._minimum_reward_risk_to_resistance
         )
@@ -70,7 +71,7 @@ class SwingEngineV4(SwingEngineV3):
                 ),
             }
         )
-        if classification != "pullback" or reward_risk_passed:
+        if classification not in {"pullback", "breakout"} or reward_risk_passed:
             return tagged
         return tagged.model_copy(
             update={
