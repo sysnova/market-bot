@@ -184,7 +184,7 @@ def test_console_sink_labels_early_intraday_as_unconfirmed_watch() -> None:
     ConsoleAlertSink(stream=stream, color=True, bell=True).emit(early)
 
     assert stream.getvalue().splitlines()[0] == (
-        "\x1b[1;30;103m TEST | EARLY INTRADAY $315.14 | "
+        "\x1b[1;93m TEST | EARLY INTRADAY $315.14 | "
         "WITHOUT CONFIRMATION \x1b[0m"
     )
     assert "BUY L" not in stream.getvalue()
@@ -215,7 +215,7 @@ def test_console_sink_highlights_entry_watch_candidate_price(
     ConsoleAlertSink(stream=stream, color=True).emit(watch)
 
     assert stream.getvalue().splitlines()[0] == (
-        f"\x1b[1;30;48;5;208m TEST | {label} | "
+        f"\x1b[1;93m TEST | {label} | "
         "ENTRY CANDIDATE $311.19 \x1b[0m"
     )
 
@@ -224,12 +224,12 @@ def test_console_sink_highlights_entry_watch_candidate_price(
 @pytest.mark.parametrize(
     ("kind", "horizon", "label", "style"),
     (
-        (AlertKind.SWING_SETUP, AnalysisHorizon.SWING, "SWING SETUP", "\x1b[1;30;46m"),
+        (AlertKind.SWING_SETUP, AnalysisHorizon.SWING, "SWING SETUP", "\x1b[1;96m"),
         (
             AlertKind.LONG_BUY_ZONE,
             AnalysisHorizon.LONG_TERM,
             "LONG BUY ZONE",
-            "\x1b[1;30;42m",
+            "\x1b[1;92m",
         ),
     ),
 )
