@@ -741,17 +741,13 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
             )
             await watcher.ingest(result, now=clock.now())
 
-        subscriptions.append(
-            await bus.subscribe(
-                "marketbot.v1.analysis.result.>",
-                handle_analysis,
-                options=SubscriptionOptions(
-                    durable_name="marketbot-entry-watcher-analysis-v1",
-                    replay_all=False,
-                    ack_wait_seconds=60,
-                ),
-            )
+        subscription = await bus.subscribe(
+            "marketbot.v1.analysis.result.>",
+            handle_analysis,
+            options=_entry_watcher_subscription_options(),
         )
+        subscriptions.append(subscription)
+        await bus.wait_until_caught_up(subscription, timeout_seconds=60)
         details = {
             "service": watcher_service,
             "engine_version": watcher_version,
@@ -1126,6 +1122,13 @@ def _horizon_durable_name(horizon: AnalysisHorizon, subscription_index: int) -> 
 
 def _alert_durable_name(input_name: str) -> str:
     return f"marketbot-alert-{input_name}-v1"
+
+
+def _entry_watcher_subscription_options() -> SubscriptionOptions:
+    return SubscriptionOptions(
+        replay_latest_per_subject=True,
+        ack_wait_seconds=60,
+    )
 
 
 def _write_ready(path: Path, summary: Mapping[str, object]) -> None:

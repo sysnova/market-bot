@@ -15,6 +15,7 @@ from app.contracts import (
 from app.integration.distributed_composition import (
     _alert_durable_name,
     _build_worker,
+    _entry_watcher_subscription_options,
     _horizon_durable_name,
     _publish_health,
     _service_name,
@@ -124,6 +125,16 @@ def test_durable_names_follow_logical_service_and_contract_major() -> None:
     )
     assert _alert_durable_name("analysis") == "marketbot-alert-analysis-v1"
     assert _alert_durable_name("entry-watch") == "marketbot-alert-entry-watch-v1"
+
+
+@pytest.mark.unit
+def test_entry_watcher_subscription_replays_latest_subject_snapshots() -> None:
+    options = _entry_watcher_subscription_options()
+
+    assert options.durable_name is None
+    assert options.replay_all is False
+    assert options.replay_latest_per_subject is True
+    assert options.ack_wait_seconds == 60
 
 
 @pytest.mark.unit
