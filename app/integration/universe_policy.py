@@ -49,11 +49,16 @@ PORTFOLIO_FLOW = UniversePolicyDetails(
     universe_policy="positive-holdings-with-live-trades-and-quotes",
     warmup_policy="startup-holdings-snapshot-then-live-flow-window",
 )
+VOLUME_STRUCTURE = UniversePolicyDetails(
+    universe_policy="active-watchlist-plus-positive-holdings",
+    warmup_policy="completed-weekly-history-before-divergence-evaluation",
+)
 
 ENGINE_UNIVERSE_POLICIES: dict[str, UniversePolicyDetails] = {
     "long-term": CORE_DYNAMIC,
     "swing": CORE_DYNAMIC,
     "intraday": CORE_DYNAMIC,
+    "volume-structure": VOLUME_STRUCTURE,
     "entry-watcher": DERIVED_CORE,
     "entry-opportunity": DERIVED_CORE,
     "entry-recovery": DERIVED_CORE,

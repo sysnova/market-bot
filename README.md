@@ -96,7 +96,7 @@ implementation, strategy artifact, and mode of every engine with:
 uv run marketbot assembly
 ```
 
-The default definition is `configs/marketbot/7.2.0.yaml`; select another immutable assembly with
+The default definition is `configs/marketbot/7.3.0.yaml`; select another immutable assembly with
 `MARKETBOT_DEFINITION_PATH`.
 
 Individual distributed processes can also be operated directly:

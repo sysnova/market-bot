@@ -28,6 +28,11 @@ def _default_horizons() -> tuple[HorizonPolicy, ...]:
         HorizonPolicy(AnalysisHorizon.DILUTION, Decimal("0.20"), timedelta(hours=24)),
         HorizonPolicy(AnalysisHorizon.SWING, Decimal("0.30"), timedelta(hours=8)),
         HorizonPolicy(AnalysisHorizon.INTRADAY, Decimal("0.25"), timedelta(minutes=30)),
+        HorizonPolicy(
+            AnalysisHorizon.VOLUME_STRUCTURE,
+            Decimal("0.10"),
+            timedelta(days=14),
+        ),
     )
 
 

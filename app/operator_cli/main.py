@@ -427,6 +427,40 @@ def signal_fusion_process(
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
+@engine.command("volume-structure")
+def volume_structure_process(
+    symbols: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated symbols; defaults to watchlist plus positive holdings."
+        ),
+    ] = None,
+    once: Annotated[
+        bool,
+        typer.Option(help="Analyze the current weekly history once and exit."),
+    ] = False,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after history hydration."),
+    ] = Path(".runtime/status/volume-structure-v1.ready.json"),
+) -> None:
+    """Run weekly price/OBV divergence analysis without execution authority."""
+
+    from app.integration.volume_structure_composition import (
+        run_volume_structure_process,
+    )
+
+    summary = _run_async(
+        run_volume_structure_process(
+            symbols=symbols,
+            ready_path=ready_path,
+            once=once,
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 @engine.command("entry-recovery")
 def entry_recovery_process(
     ready_path: Annotated[

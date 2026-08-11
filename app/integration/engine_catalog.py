@@ -9,6 +9,7 @@ from app.alert_engine import (
     AlertEngineV31,
     AlertEngineV32,
     AlertEngineV33,
+    AlertEngineV34,
 )
 from app.alert_engine.strategy import configure_engine as configure_alert
 from app.alert_engine.strategy import validate_strategy as validate_alert
@@ -50,11 +51,12 @@ from app.peter_lynch_engine import PeterLynchEngine
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.portfolio_flow_engine.strategy import configure_engine as configure_portfolio_flow
 from app.portfolio_flow_engine.strategy import validate_strategy as validate_portfolio_flow
-from app.signal_fusion_engine import SignalFusionEngine
+from app.signal_fusion_engine import SignalFusionEngine, SignalFusionEngineV04
 from app.support_confirmation_engine import SupportConfirmationEngine
 from app.swing_engine import SwingEngine, SwingEngineV2, SwingEngineV3, SwingEngineV4
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
+from app.volume_structure_engine import VolumeStructureEngine
 
 from .engine_registry import EngineRegistration, EngineRegistry
 from .marketbot_definition import EngineSlot
@@ -127,6 +129,7 @@ def default_engine_registry() -> EngineRegistry:
                     "3.1.0": AlertEngineV31,
                     "3.2.0": AlertEngineV32,
                     "3.3.0": AlertEngineV33,
+                    "3.4.0": AlertEngineV34,
                 },
                 required_since="0.0.0",
                 configure=configure_alert,
@@ -164,8 +167,15 @@ def default_engine_registry() -> EngineRegistry:
             EngineSlot.SUPPORT_CONFIRMATION: simple(
                 implementations={"0.2.0": SupportConfirmationEngine}
             ),
+            EngineSlot.VOLUME_STRUCTURE: simple(
+                implementations={"1.0.0": VolumeStructureEngine},
+                required_since="7.3.0",
+            ),
             EngineSlot.SIGNAL_FUSION: simple(
-                implementations={"0.3.0": SignalFusionEngine}
+                implementations={
+                    "0.3.0": SignalFusionEngine,
+                    "0.4.0": SignalFusionEngineV04,
+                }
             ),
             EngineSlot.DILUTION_SEC: simple(
                 implementations={"1.0.0": DilutionSecEngine}

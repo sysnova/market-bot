@@ -42,6 +42,7 @@ from app.swing_engine import SwingEngineV4
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFINITION = ROOT / "configs/marketbot/7.2.0.yaml"
+LATEST_DEFINITION = ROOT / "configs/marketbot/7.3.0.yaml"
 PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 
@@ -49,7 +50,7 @@ INTEGRATION = ROOT / "app/integration"
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
     definition = load_marketbot_definition(DEFINITION)
 
-    assert set(definition.engines) == set(EngineSlot)
+    assert set(definition.engines) == set(EngineSlot) - {EngineSlot.VOLUME_STRUCTURE}
     assert definition.version == "7.2.0"
     assert all(item.strategy.version for item in definition.engines.values())
     assert definition.engines[EngineSlot.INTRADAY].implementation == "4.0.0"
@@ -58,6 +59,16 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
         definition.engines[EngineSlot.LONG_PORTFOLIO].strategy.artifact
         == ROOT / "configs/rules/long_portfolio/1.0.0.yaml"
     )
+
+
+def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
+    definition = load_marketbot_definition(LATEST_DEFINITION)
+
+    assert set(definition.engines) == set(EngineSlot)
+    assert definition.version == "7.3.0"
+    assert definition.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"
+    assert definition.engines[EngineSlot.ALERT].implementation == "3.4.0"
+    assert definition.engines[EngineSlot.SIGNAL_FUSION].implementation == "0.4.0"
 
 
 def test_operational_modes_select_slots_from_the_definition() -> None:

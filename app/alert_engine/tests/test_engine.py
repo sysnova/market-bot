@@ -25,6 +25,12 @@ from app.contracts import (
 NOW = datetime(2026, 7, 26, 15, 0, tzinfo=UTC)
 HASH = "sha256:" + "a" * 64
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "aggregation_cases.json"
+CORE_ANALYSIS_HORIZONS = (
+    AnalysisHorizon.LONG_TERM,
+    AnalysisHorizon.DILUTION,
+    AnalysisHorizon.SWING,
+    AnalysisHorizon.INTRADAY,
+)
 
 
 def _analysis(
@@ -56,7 +62,7 @@ def _feed_case(
     engine: AlertEngine, case: dict[str, Any], now: datetime = NOW
 ) -> LocalAlert | None:
     alert = None
-    for horizon in AnalysisHorizon:
+    for horizon in CORE_ANALYSIS_HORIZONS:
         if horizon is AnalysisHorizon.DILUTION:
             result = _analysis(
                 horizon,
@@ -85,7 +91,7 @@ def test_weighted_policy_and_dilution_overlay(case: dict[str, Any]) -> None:
 
     assert alert is not None
     assert alert.severity.value == case["expected_severity"]
-    assert alert.horizons == tuple(AnalysisHorizon)
+    assert alert.horizons == CORE_ANALYSIS_HORIZONS
     assert alert.expires_at == NOW + timedelta(minutes=15)
     assert "TEST" in alert.title
 

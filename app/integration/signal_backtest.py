@@ -27,6 +27,7 @@ from app.contracts import (
     ENTRY_WATCH_TRANSITION_EVENT,
     FUSION_TRANSITION_EVENT,
     MARKET_BAR_EVENT,
+    AnalysisHorizon,
     AnalysisResult,
     BarTimeframe,
     EntryOpportunityEvent,
@@ -55,6 +56,7 @@ from .long_term_worker import LongTermWorker
 from .signal_fusion_composition import FUSION_SOURCE_SUBJECTS, SignalFusionRuntime
 from .support_confirmation_composition import SupportConfirmationRuntime
 from .swing_worker import SwingWorker
+from .volume_structure_composition import VolumeStructureRuntime
 
 _NEW_YORK = ZoneInfo("America/New_York")
 _HISTORY = {
@@ -282,7 +284,12 @@ async def run_signal_backtest(
         symbols=config.symbols,
         holding_quantities=config.holding_quantities,
     )
+    volume_structure = VolumeStructureRuntime(
+        engine=assembly.build_volume_structure(),
+        publisher=bus,
+    )
     signals: list[EntrySignal] = []
+    volume_structure_results: list[AnalysisResult] = []
     fusion_transitions: list[FusionTransition] = []
     handler_errors: list[Exception] = []
 
@@ -290,6 +297,8 @@ async def run_signal_backtest(
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
             return
         result = _payload(envelope, AnalysisResult)
+        if result.horizon is AnalysisHorizon.VOLUME_STRUCTURE:
+            volume_structure_results.append(result)
         await _publish_opportunity_events(
             bus, await opportunity.ingest_analysis(result, now=clock.now())
         )
@@ -393,6 +402,7 @@ async def run_signal_backtest(
             handler_errors,
         )
 
+        await volume_structure.bootstrap(data.warmup_bars, symbols=config.symbols)
         await support.bootstrap(data.warmup_bars, symbols=config.symbols)
         await wave.bootstrap(data.warmup_bars, symbols=config.symbols)
         await long_worker.bootstrap(data.warmup_bars, symbols=config.symbols)
@@ -430,6 +440,9 @@ async def run_signal_backtest(
             "operational_database_used": False,
             "alerts": [item.model_dump(mode="json") for item in alert_recorder.alerts],
             "entry_signals": [item.model_dump(mode="json") for item in signals],
+            "volume_structure_results": [
+                item.model_dump(mode="json") for item in volume_structure_results
+            ],
             "fusion_transitions": [
                 item.model_dump(mode="json") for item in fusion_transitions
             ],

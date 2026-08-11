@@ -29,6 +29,7 @@ class EngineSlot(StrEnum):
     PATREON_CAPS = "patreon-caps"
     ELLIOTT_WAVE = "elliott-wave"
     SUPPORT_CONFIRMATION = "support-confirmation"
+    VOLUME_STRUCTURE = "volume-structure"
     SIGNAL_FUSION = "signal-fusion"
     DILUTION_SEC = "dilution-sec"
     PETER_LYNCH = "peter-lynch"

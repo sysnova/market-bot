@@ -90,6 +90,7 @@ class AnalysisHorizon(ContractEnum):
     DILUTION = "DILUTION"
     SWING = "SWING"
     INTRADAY = "INTRADAY"
+    VOLUME_STRUCTURE = "VOLUME_STRUCTURE"
 
 
 class AnalysisVerdict(ContractEnum):
@@ -130,6 +131,7 @@ class AlertKind(ContractEnum):
     PATREON_CAPS_WATCH = "PATREON_CAPS_WATCH"
     PATREON_CAPS_BUY = "PATREON_CAPS_BUY"
     PATREON_CAPS_INVALIDATED = "PATREON_CAPS_INVALIDATED"
+    OBV_BULLISH_DIVERGENCE = "OBV_BULLISH_DIVERGENCE"
 
 
 class EntryWatchStatus(ContractEnum):

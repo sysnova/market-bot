@@ -62,6 +62,7 @@ FUSION_ANALYSIS_HORIZONS = (
     AnalysisHorizon.SWING,
     AnalysisHorizon.INTRADAY,
     AnalysisHorizon.DILUTION,
+    AnalysisHorizon.VOLUME_STRUCTURE,
 )
 
 
@@ -134,12 +135,7 @@ class SignalFusionRuntime:
             _keep_latest(self._patreon, item.symbol, item)
         elif envelope.event_type == ANALYSIS_RESULT_EVENT:
             item = _payload(envelope, AnalysisResult)
-            if item.horizon not in {
-                AnalysisHorizon.LONG_TERM,
-                AnalysisHorizon.SWING,
-                AnalysisHorizon.INTRADAY,
-                AnalysisHorizon.DILUTION,
-            }:
+            if item.horizon not in FUSION_ANALYSIS_HORIZONS:
                 return
             symbol = item.symbol
             current = self._analyses.setdefault(item.symbol, {}).get(item.horizon)

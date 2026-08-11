@@ -7,7 +7,7 @@ from datetime import timedelta
 from app.common.strategy import StrategySource
 from app.contracts import AnalysisHorizon, EntryMaturityLevel
 
-_CONFIGURED_IMPLEMENTATIONS = {"3.0.0", "3.1.0", "3.2.0", "3.3.0"}
+_CONFIGURED_IMPLEMENTATIONS = {"3.0.0", "3.1.0", "3.2.0", "3.3.0", "3.4.0"}
 
 
 def validate_strategy(implementation: str, source: StrategySource) -> None:
@@ -18,7 +18,7 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
     behavior.boolean("strong_confirmation_required")
     behavior.boolean("five_minute_higher_low_required")
     behavior.boolean("same_market_session_required")
-    if implementation in {"3.2.0", "3.3.0"}:
+    if implementation in {"3.2.0", "3.3.0", "3.4.0"}:
         tuple(
             AnalysisHorizon(value)
             for value in behavior.non_empty_unique_strings(
@@ -26,7 +26,7 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
             )
         )
         EntryMaturityLevel(str(behavior.values["recovery_maturity"]))
-    if implementation == "3.3.0":
+    if implementation in {"3.3.0", "3.4.0"}:
         minimum = behavior.decimal("minimum_swing_reward_risk_to_resistance")
         if minimum <= 0:
             raise ValueError(
@@ -63,13 +63,13 @@ def configure_engine(
             "same_market_session_required"
         ),
     )
-    if implementation in {"3.1.0", "3.2.0", "3.3.0"}:
+    if implementation in {"3.1.0", "3.2.0", "3.3.0", "3.4.0"}:
         kwargs["restored_state"] = restored_state
     elif restored_state is not None:
         raise ValueError(
             "restored Alert state requires alert implementation 3.1.0 or newer"
         )
-    if implementation in {"3.2.0", "3.3.0"}:
+    if implementation in {"3.2.0", "3.3.0", "3.4.0"}:
         kwargs.update(
             recovery_required_horizons=tuple(
                 AnalysisHorizon(value)
@@ -81,7 +81,7 @@ def configure_engine(
                 str(behavior.values["recovery_maturity"])
             ),
         )
-    if implementation == "3.3.0":
+    if implementation in {"3.3.0", "3.4.0"}:
         kwargs.update(
             minimum_swing_reward_risk_to_resistance=behavior.decimal(
                 "minimum_swing_reward_risk_to_resistance"

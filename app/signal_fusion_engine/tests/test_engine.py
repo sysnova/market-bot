@@ -19,7 +19,11 @@ from app.contracts import (
     WaveAssessment,
     WavePhase,
 )
-from app.signal_fusion_engine import SignalFusionContext, SignalFusionEngine
+from app.signal_fusion_engine import (
+    SignalFusionContext,
+    SignalFusionEngine,
+    SignalFusionEngineV04,
+)
 
 NOW = datetime(2026, 8, 2, 20, tzinfo=UTC)
 
@@ -38,6 +42,7 @@ def _analysis(
         AnalysisHorizon.SWING: "2",
         AnalysisHorizon.INTRADAY: "3",
         AnalysisHorizon.DILUTION: "4",
+        AnalysisHorizon.VOLUME_STRUCTURE: "5",
     }
     metrics: tuple[NamedValue, ...] = ()
     if horizon is AnalysisHorizon.SWING:
@@ -314,3 +319,34 @@ def test_patreon_does_not_replace_missing_independent_sources() -> None:
     assert result.patreon_context == PatreonCapsState.CONFIRMED_BASE.value
     assert "LONG_TERM" in result.missing_sources
     assert "INTRADAY" in result.missing_sources
+
+
+def test_v04_adds_auditable_bounded_volume_structure_boost() -> None:
+    volume = AnalysisResult(
+        engine_id="volume-structure",
+        engine_version="1.0.0",
+        symbol="TGT",
+        horizon=AnalysisHorizon.VOLUME_STRUCTURE,
+        as_of=NOW,
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        score=Decimal("80"),
+        confidence=Decimal("0.8"),
+        reasons=("weekly_obv_bullish_divergence",),
+        metrics=(
+            NamedValue(name="divergence_state", value="DIVERGENCE_CONFIRMED"),
+            NamedValue(name="evidence_boost", value=Decimal("6")),
+        ),
+        context_hash=f"sha256:{'5' * 64}",
+    )
+    context = _context(
+        analyses=(*_context().analyses, volume),
+    )
+
+    baseline = SignalFusionEngine().evaluate(context)
+    enriched = SignalFusionEngineV04().evaluate(context)
+
+    assert enriched.score == min(Decimal("100"), baseline.score + Decimal("6"))
+    assert enriched.engine_version == "0.4.0"
+    assert "volume_structure_boost:+6" in enriched.reasons
+    assert volume.analysis_id in enriched.source_analysis_ids

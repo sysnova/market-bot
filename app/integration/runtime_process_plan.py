@@ -257,6 +257,11 @@ def build_runtime_process_plan(
             ("run", "marketbot", "engine", "support-confirmation"),
         ),
         (
+            "volume-structure-v1",
+            EngineSlot.VOLUME_STRUCTURE,
+            ("run", "marketbot", "engine", "volume-structure"),
+        ),
+        (
             "signal-fusion-v0",
             EngineSlot.SIGNAL_FUSION,
             ("run", "marketbot", "engine", "signal-fusion"),
@@ -264,7 +269,12 @@ def build_runtime_process_plan(
     )
     for name, slot, command in analytical_specs:
         arguments = (*command, "--ready-path", str(ready(name)))
-        if slot in {EngineSlot.LONG_TERM, EngineSlot.SWING, EngineSlot.INTRADAY}:
+        if slot in {
+            EngineSlot.LONG_TERM,
+            EngineSlot.SWING,
+            EngineSlot.INTRADAY,
+            EngineSlot.VOLUME_STRUCTURE,
+        }:
             arguments += symbol_arguments
         add(name, arguments, slot=slot, dependencies=analytical_dependencies)
 

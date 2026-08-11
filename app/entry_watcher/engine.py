@@ -30,6 +30,7 @@ _ACTIVE = {EntryWatchStatus.ARMED, EntryWatchStatus.IN_ZONE}
 _ARMABLE_CLASSIFICATIONS = {"buy_zone", "extended", "setup", "watch_pullback"}
 _SWING_CONFIRMATIONS = {"breakout", "pullback"}
 _PRICE_PRIORITY = {
+    AnalysisHorizon.VOLUME_STRUCTURE: -1,
     AnalysisHorizon.LONG_TERM: 0,
     AnalysisHorizon.DILUTION: 1,
     AnalysisHorizon.SWING: 2,
@@ -39,6 +40,7 @@ _PRICE_PRIORITY = {
 
 def _default_max_ages() -> dict[AnalysisHorizon, timedelta]:
     return {
+        AnalysisHorizon.VOLUME_STRUCTURE: timedelta(days=14),
         AnalysisHorizon.LONG_TERM: timedelta(days=7),
         AnalysisHorizon.DILUTION: timedelta(hours=24),
         AnalysisHorizon.SWING: timedelta(hours=8),

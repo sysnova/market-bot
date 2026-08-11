@@ -663,7 +663,7 @@ async def run_alert_process(
             ),
             "decision_state": (
                 "postgresql"
-                if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0"}
+                if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0", "3.4.0"}
                 else "memory"
             ),
             "decision_checkpoint_interval_seconds": (

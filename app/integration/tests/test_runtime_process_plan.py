@@ -24,6 +24,7 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     names = {process.name for process in plan.processes}
     assert "entry-recovery" in names
     assert "signal-fusion-v0" in names
+    assert "volume-structure-v1" in names
     assert "dilution-sec" not in names
     assert "peter-lynch" not in names
 
@@ -56,6 +57,7 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     assert positions["long-portfolio-v1"] < positions["long-term"]
     assert positions["long-term"] < positions["alpaca-market-stream"]
     assert positions["signal-fusion-v0"] < positions["alpaca-market-stream"]
+    assert positions["volume-structure-v1"] < positions["alpaca-market-stream"]
     assert "confirmed-buy-monitor" not in plan.process("alpaca-market-stream").dependencies
 
 

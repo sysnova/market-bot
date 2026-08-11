@@ -20,7 +20,7 @@ remain the only cross-engine input. The watcher persists through the PostgreSQL 
 `AnalysisRuntime` converts its lifecycle transitions into local human alerts. Failure to connect
 to the optional watcher database is isolated from Alpaca analysis and NATS mirroring.
 
-The active distributed analytical generation is selected by `configs/marketbot/7.2.0.yaml`:
+The active distributed analytical generation is selected by `configs/marketbot/7.3.0.yaml`:
 Long 2, Swing 4, Intraday 4, Entry Watcher 5.1, Entry Opportunity 2.0, Alert 3.3, and
 Entry Recovery 1.1.
 Earlier classes and definitions remain available for replay and rollback; changing an active

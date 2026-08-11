@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from app.signal_fusion_engine import SignalFusionEngine
     from app.support_confirmation_engine import SupportConfirmationEngine
     from app.swing_engine import SwingEngine
+    from app.volume_structure_engine import VolumeStructureEngine
 
 __all__ = [
     "EngineMode",
@@ -225,6 +226,12 @@ class MarketBotAssembly:
         return cast(
             "SupportConfirmationEngine",
             self.build(EngineSlot.SUPPORT_CONFIRMATION),
+        )
+
+    def build_volume_structure(self) -> VolumeStructureEngine:
+        return cast(
+            "VolumeStructureEngine",
+            self.build(EngineSlot.VOLUME_STRUCTURE),
         )
 
     def build_signal_fusion(self) -> SignalFusionEngine:
