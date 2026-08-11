@@ -276,6 +276,51 @@ def test_console_sink_highlights_analysis_candidate_reference_price(
 
 
 @pytest.mark.unit
+def test_console_sink_shows_real_swing_resistance_reward_risk() -> None:
+    analysis = AnalysisResult(
+        engine_id="swing",
+        engine_version="4.0.0",
+        symbol="VLO",
+        horizon=AnalysisHorizon.SWING,
+        as_of=NOW,
+        verdict=AnalysisVerdict.WATCH,
+        direction=PatternDirection.BULLISH,
+        score=Decimal("81"),
+        confidence=Decimal("0.81"),
+        reasons=("bullish_daily_trend",),
+        metrics=(
+            NamedValue(name="reference_price", value=Decimal("317.4538")),
+            NamedValue(name="invalidation", value=Decimal("302.3636")),
+            NamedValue(name="resistance", value=Decimal("320.24")),
+            NamedValue(name="target_2r", value=Decimal("347.6342")),
+            NamedValue(name="risk_percent", value=Decimal("4.7535")),
+            NamedValue(
+                name="reward_risk_to_resistance", value=Decimal("0.1846")
+            ),
+        ),
+        context_hash="sha256:" + "e" * 64,
+    )
+    candidate = _alert(AlertSeverity.WATCH).model_copy(
+        update={
+            "symbol": "VLO",
+            "kind": AlertKind.SWING_SETUP,
+            "title": "VLO SWING SETUP",
+            "horizons": (AnalysisHorizon.SWING,),
+            "component_analyses": (analysis,),
+        }
+    )
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream).emit(candidate)
+
+    output = stream.getvalue()
+    assert "Resistance $320.24" in output
+    assert "R/R to resistance 0.1846R" in output
+    assert "Risk to invalidation 4.7535%" in output
+    assert "$347.6342" not in output
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("horizons", "expected"),
     (

@@ -75,6 +75,17 @@ class AlertEngineV33(AlertEngineV32):
         fresh: dict[AnalysisHorizon, AnalysisResult],
     ) -> tuple[AlertKind, tuple[AnalysisResult, ...]] | None:
         selected = super()._select_alert(incoming, fresh)
+        if selected is not None and selected[0] is AlertKind.SWING_SETUP:
+            swing = next(
+                (
+                    item
+                    for item in selected[1]
+                    if item.horizon is AnalysisHorizon.SWING
+                ),
+                None,
+            )
+            if swing is None or not self._swing_entry_actionable(swing):
+                return None
         if selected is not None and selected[0] in _BUY_KINDS:
             if self._confirmation_gates_pass(selected[1]):
                 return selected

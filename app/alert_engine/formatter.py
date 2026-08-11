@@ -219,11 +219,18 @@ def _level_line(
         *(values.get("invalidation") for values in analysis_metrics),
         *(values.get("invalidation_level") for values in analysis_metrics),
     )
-    objective = _first(
-        alert_metrics.get("objective"),
-        *(values.get("target_2r") for values in analysis_metrics),
-        *(values.get("objective_level") for values in analysis_metrics),
-    )
+    if alert.kind is AlertKind.SWING_SETUP:
+        objective_label = "Resistance"
+        objective = _first(
+            *(values.get("resistance") for values in analysis_metrics),
+        )
+    else:
+        objective_label = "Objective"
+        objective = _first(
+            alert_metrics.get("objective"),
+            *(values.get("target_2r") for values in analysis_metrics),
+            *(values.get("objective_level") for values in analysis_metrics),
+        )
     fields: list[str] = []
     if price is not None:
         fields.append(f"Price {_money(price)}")
@@ -232,7 +239,7 @@ def _level_line(
     if invalidation is not None:
         fields.append(f"Invalidation {_money(invalidation)}")
     if objective is not None:
-        fields.append(f"Objective {_money(objective)}")
+        fields.append(f"{objective_label} {_money(objective)}")
     return " | ".join(fields) or None
 
 
@@ -322,7 +329,14 @@ def _swing_fields(metrics: dict[str, Any]) -> list[str]:
     if breakout is not None:
         suffix = f" ({_percent(breakout_distance)})" if breakout_distance is not None else ""
         fields.append(f"Breakout AVWAP {_money(breakout)}{suffix}")
-    _append(fields, "R/R", _ratio(metrics.get("risk_percent"), metrics.get("target_2r")))
+    risk = _optional_number(metrics.get("risk_percent"))
+    _append(fields, "Risk to invalidation", f"{risk}%" if risk is not None else None)
+    reward_risk = _optional_number(metrics.get("reward_risk_to_resistance"))
+    _append(
+        fields,
+        "R/R to resistance",
+        f"{reward_risk}R" if reward_risk is not None else None,
+    )
     return fields
 
 
@@ -409,12 +423,3 @@ def _money_pair(left: object, right: object) -> str | None:
     left_value = _money(left) if left is not None else "n/a"
     right_value = _money(right) if right is not None else "n/a"
     return f"{left_value}/{right_value}"
-
-
-def _ratio(risk_percent: object, target: object) -> str | None:
-    parts: list[str] = []
-    if risk_percent is not None:
-        parts.append(f"risk {_percent(risk_percent)}")
-    if target is not None:
-        parts.append(f"target {_money(target)}")
-    return ", ".join(parts) or None
