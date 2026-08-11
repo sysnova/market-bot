@@ -10,9 +10,13 @@ from typing import Any
 import pytest
 
 from app.contracts import EventEnvelope
-from app.event_bus import NatsJetStreamEventBus, SubscriptionOptions
+from app.event_bus import SubscriptionOptions
 from app.event_bus.codec import encode_envelope
-from app.event_bus.nats_jetstream import stream_subjects
+from app.event_bus.nats_jetstream import (
+    JETSTREAM_API_TIMEOUT_SECONDS,
+    NatsJetStreamEventBus,
+    stream_subjects,
+)
 
 
 @dataclass
@@ -38,6 +42,7 @@ class FakeJetStream:
     stream_queries: list[str] = field(default_factory=list)
     streams_added: list[tuple[str, list[str], float]] = field(default_factory=list)
     last_messages: dict[str, FakeMessage] = field(default_factory=dict)
+    stream_info_error: Exception | None = None
 
     async def publish(
         self, subject: str, payload: bytes, *, headers: dict[str, str] | None = None
@@ -60,7 +65,14 @@ class FakeJetStream:
 
     async def stream_info(self, stream: str) -> object:
         self.stream_queries.append(stream)
-        return object()
+        if self.stream_info_error is not None:
+            raise self.stream_info_error
+        return SimpleNamespace(
+            config=SimpleNamespace(
+                subjects=stream_subjects("marketbot"),
+                max_age=15 * 24 * 60 * 60,
+            )
+        )
 
     async def add_stream(
         self, *, name: str, subjects: list[str], max_age: float
@@ -89,8 +101,10 @@ class FakeClient:
     js: FakeJetStream
     is_closed: bool = False
     drains: int = 0
+    jetstream_timeouts: list[float] = field(default_factory=list)
 
-    def jetstream(self) -> FakeJetStream:
+    def jetstream(self, *, timeout: float) -> FakeJetStream:
+        self.jetstream_timeouts.append(timeout)
         return self.js
 
     async def drain(self) -> None:
@@ -101,6 +115,68 @@ class FakeClient:
 @pytest.mark.unit
 def test_stream_subjects_persist_only_versioned_events_and_dlq() -> None:
     assert stream_subjects("marketbot") == ["marketbot.v1.>", "marketbot.dlq"]
+
+
+@pytest.mark.unit
+async def test_connect_uses_extended_jetstream_api_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    import nats
+
+    js = FakeJetStream()
+    client = FakeClient(js)
+
+    async def connect(**_: Any) -> FakeClient:
+        return client
+
+    monkeypatch.setattr(nats, "connect", connect)
+
+    bus = await NatsJetStreamEventBus.connect(servers=["nats://localhost:4222"])
+
+    assert client.jetstream_timeouts == [JETSTREAM_API_TIMEOUT_SECONDS]
+    await bus.close()
+
+
+@pytest.mark.unit
+async def test_connect_does_not_create_stream_after_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nats
+    from nats.errors import TimeoutError as NatsTimeoutError
+
+    js = FakeJetStream(stream_info_error=NatsTimeoutError())
+    client = FakeClient(js)
+
+    async def connect(**_: Any) -> FakeClient:
+        return client
+
+    monkeypatch.setattr(nats, "connect", connect)
+
+    with pytest.raises(NatsTimeoutError):
+        await NatsJetStreamEventBus.connect(servers=["nats://localhost:4222"])
+
+    assert js.streams_added == []
+
+
+@pytest.mark.unit
+async def test_connect_creates_stream_only_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nats
+    from nats.js.errors import NotFoundError
+
+    js = FakeJetStream(stream_info_error=NotFoundError())
+    client = FakeClient(js)
+
+    async def connect(**_: Any) -> FakeClient:
+        return client
+
+    monkeypatch.setattr(nats, "connect", connect)
+
+    bus = await NatsJetStreamEventBus.connect(servers=["nats://localhost:4222"])
+
+    assert js.streams_added == [
+        ("MARKETBOT", ["marketbot.v1.>", "marketbot.dlq"], 15 * 24 * 60 * 60)
+    ]
+    await bus.close()
 
 
 @pytest.mark.unit

@@ -16,6 +16,7 @@ from .protocols import EventHandler, Subscription, SubscriptionOptions
 from .subjects import validate_publish_subject, validate_subscription_subject
 
 STREAM_MAX_AGE_SECONDS = 15 * 24 * 60 * 60
+JETSTREAM_API_TIMEOUT_SECONDS = 30.0
 
 
 def stream_subjects(prefix: str) -> list[str]:
@@ -145,7 +146,7 @@ class NatsJetStreamEventBus:
         """Connect and ensure the stream covering this bus prefix exists."""
 
         import nats
-        from nats.errors import Error as NatsError
+        from nats.js.errors import NotFoundError
 
         client = await nats.connect(
             servers=list(servers),
@@ -153,7 +154,7 @@ class NatsJetStreamEventBus:
             max_reconnect_attempts=3,
             reconnect_time_wait=0.5,
         )
-        jetstream = client.jetstream()
+        jetstream = client.jetstream(timeout=JETSTREAM_API_TIMEOUT_SECONDS)
         typed_jetstream = cast(_JetStream, jetstream)
         desired_subjects = stream_subjects(prefix)
         try:
@@ -166,7 +167,7 @@ class NatsJetStreamEventBus:
                 config.subjects = desired_subjects
                 config.max_age = STREAM_MAX_AGE_SECONDS
                 await typed_jetstream.update_stream(config=config)
-        except NatsError:
+        except NotFoundError:
             await typed_jetstream.add_stream(
                 name=stream,
                 subjects=desired_subjects,
