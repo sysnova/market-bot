@@ -43,6 +43,16 @@ def test_linux_launcher_uses_canonical_batches_and_readiness_paths() -> None:
     assert "start_background market-history-v1 run marketbot market history" not in script
 
 
+def test_linux_launcher_runs_from_project_and_fails_fast_while_waiting() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    control = script.split("run_control()", 1)[1].split("launch_tmux()", 1)[0]
+    wait_ready = script.split("wait_ready()", 1)[1].split("run_control()", 1)[0]
+
+    assert 'cd "$PROJECT_ROOT"' in control
+    assert "declare -F check_children" in wait_ready
+    assert "check_children || return 1" in wait_ready
+
+
 def test_linux_launcher_preserves_arguments_without_shell_reparsing() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 

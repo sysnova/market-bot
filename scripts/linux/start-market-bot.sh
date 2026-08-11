@@ -174,6 +174,9 @@ run_signal_fusion_buys() {
 wait_ready() {
   local deadline=$((SECONDS + READY_TIMEOUT)) missing path
   while :; do
+    if declare -F check_children >/dev/null; then
+      check_children || return 1
+    fi
     missing=0
     for path in "$@"; do
       [[ -f "$path" ]] || missing=1
@@ -189,6 +192,7 @@ wait_ready() {
 }
 
 run_control() {
+  cd "$PROJECT_ROOT"
   local -a child_pids=()
   local -a child_names=()
 
