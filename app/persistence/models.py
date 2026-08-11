@@ -269,7 +269,10 @@ class EngineDecisionStateRecord(Base):
 class AlertAnalysisStateRecord(Base):
     __tablename__ = "alert_analysis_states"
     __table_args__ = (
-        CheckConstraint("horizon in ('LONG_TERM', 'SWING', 'INTRADAY')", name="horizon"),
+        CheckConstraint(
+            "horizon in ('LONG_TERM', 'DILUTION', 'SWING', 'INTRADAY', 'VOLUME_STRUCTURE')",
+            name="horizon",
+        ),
         UniqueConstraint(
             "engine_name",
             "implementation_version",

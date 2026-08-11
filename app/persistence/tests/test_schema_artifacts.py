@@ -159,10 +159,12 @@ def test_alert_state_is_normalized_and_migrated_from_legacy_checkpoint() -> None
     assert "alert_analysis_states_identity_key" in sql
     assert "alert_continuation_candidates_identity_key" in sql
     assert "alert_continuation_sessions_identity_key" in sql
+    assert "horizon in ('long_term', 'dilution', 'swing', 'intraday', 'volume_structure')" in sql
     assert "gen_random_uuid" not in sql
     assert "alert_analysis_states_identity_key" in dbml
     assert "alert_continuation_candidates_identity_key" in dbml
     assert "alert_continuation_sessions_identity_key" in dbml
+    assert "long_term | dilution | swing | intraday | volume_structure" in dbml
 
 
 @pytest.mark.unit

@@ -138,6 +138,25 @@ async def test_postgres_alert_state_store_round_trips_normalized_checkpoint(
 
 
 @pytest.mark.unit
+async def test_postgres_alert_state_store_round_trips_volume_structure_analysis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    normalized = FakeNormalizedRepository()
+    legacy = FakeLegacyRepository()
+    install_fake_uow(monkeypatch, normalized, legacy)
+    store = PostgresAlertDecisionStateStore(MagicMock(), implementation_version="3.2.0")
+    state = AlertEngineV3State(
+        latest_analyses=(analysis("VLO", AnalysisHorizon.VOLUME_STRUCTURE),)
+    )
+
+    await store.save(state)
+    restored = await store.load()
+
+    assert restored == state
+    assert normalized.analysis_batches[-1][0]["horizon"] == "VOLUME_STRUCTURE"
+
+
+@pytest.mark.unit
 async def test_postgres_alert_state_store_writes_only_changed_symbol_horizon(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

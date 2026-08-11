@@ -5,10 +5,11 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import CheckConstraint, UniqueConstraint
 
 from app.persistence.models import (
     Base,
+    AlertAnalysisStateRecord,
     EngineDecisionStateRecord,
     EntryOpportunityEventRecord,
     EntryOpportunityRecord,
@@ -148,6 +149,23 @@ def test_engine_decision_state_has_one_checkpoint_per_implementation() -> None:
         "engine_name",
         "implementation_version",
     ]
+
+
+@pytest.mark.unit
+def test_alert_analysis_state_accepts_all_analysis_horizons() -> None:
+    matching = [
+        constraint
+        for constraint in AlertAnalysisStateRecord.__table__.constraints
+        if isinstance(constraint, CheckConstraint)
+        and constraint.name == "alert_analysis_states_horizon_check"
+    ]
+
+    assert len(matching) == 1
+    assert "LONG_TERM" in str(matching[0].sqltext)
+    assert "DILUTION" in str(matching[0].sqltext)
+    assert "SWING" in str(matching[0].sqltext)
+    assert "INTRADAY" in str(matching[0].sqltext)
+    assert "VOLUME_STRUCTURE" in str(matching[0].sqltext)
 
 
 @pytest.mark.unit
