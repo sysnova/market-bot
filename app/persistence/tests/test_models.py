@@ -21,6 +21,9 @@ from app.persistence.models import (
 )
 
 EXPECTED_TABLES = {
+    "alert_analysis_states",
+    "alert_continuation_candidates",
+    "alert_continuation_sessions",
     "consumer_checkpoints",
     "control_events",
     "entry_opportunities",

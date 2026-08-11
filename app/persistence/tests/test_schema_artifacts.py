@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS = ROOT / "supabase" / "migrations"
 DBML = ROOT / "resources" / "diagrams" / "market_bot.dbml"
 TABLES = {
+    "alert_analysis_states",
+    "alert_continuation_candidates",
+    "alert_continuation_sessions",
     "consumer_checkpoints",
     "control_events",
     "entry_opportunities",
@@ -146,6 +149,20 @@ def test_engine_decision_state_identity_keeps_implementation_rollbacks_independe
     assert "unique (engine_name, implementation_version)" in sql
     assert "unique (engine_name)" not in sql
     assert "(engine_name, implementation_version) [unique" in dbml
+
+
+@pytest.mark.unit
+def test_alert_state_is_normalized_and_migrated_from_legacy_checkpoint() -> None:
+    sql = all_migration_sql()
+    dbml = DBML.read_text(encoding="utf-8").lower()
+
+    assert "alert_analysis_states_identity_key" in sql
+    assert "alert_continuation_candidates_identity_key" in sql
+    assert "alert_continuation_sessions_identity_key" in sql
+    assert "gen_random_uuid" not in sql
+    assert "alert_analysis_states_identity_key" in dbml
+    assert "alert_continuation_candidates_identity_key" in dbml
+    assert "alert_continuation_sessions_identity_key" in dbml
 
 
 @pytest.mark.unit

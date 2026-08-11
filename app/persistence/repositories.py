@@ -14,6 +14,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (
+    AlertAnalysisStateRecord,
+    AlertContinuationCandidateRecord,
+    AlertContinuationSessionRecord,
     ConsumerCheckpoint,
     EngineDecisionStateRecord,
     EntryOpportunityEventRecord,
@@ -282,6 +285,142 @@ class EngineDecisionStateRepository(Repository):
             set_={
                 "state_schema_version": base_statement.excluded.state_schema_version,
                 "payload": base_statement.excluded.payload,
+                "updated_at": now,
+            },
+        )
+        await self._session.execute(statement)
+
+
+class AlertDecisionStateRepository(Repository):
+    """Normalized, incrementally updated Alert Engine recovery state."""
+
+    async def load_analyses(
+        self,
+        engine_name: str,
+        implementation_version: str,
+    ) -> tuple[AlertAnalysisStateRecord, ...]:
+        statement = select(AlertAnalysisStateRecord).where(
+            AlertAnalysisStateRecord.engine_name == engine_name.strip().lower(),
+            AlertAnalysisStateRecord.implementation_version == implementation_version,
+        )
+        return tuple((await self._session.scalars(statement)).all())
+
+    async def load_candidates(
+        self,
+        engine_name: str,
+        implementation_version: str,
+    ) -> tuple[AlertContinuationCandidateRecord, ...]:
+        statement = select(AlertContinuationCandidateRecord).where(
+            AlertContinuationCandidateRecord.engine_name == engine_name.strip().lower(),
+            AlertContinuationCandidateRecord.implementation_version == implementation_version,
+            AlertContinuationCandidateRecord.active.is_(True),
+        )
+        return tuple((await self._session.scalars(statement)).all())
+
+    async def load_sessions(
+        self,
+        engine_name: str,
+        implementation_version: str,
+    ) -> tuple[AlertContinuationSessionRecord, ...]:
+        statement = select(AlertContinuationSessionRecord).where(
+            AlertContinuationSessionRecord.engine_name == engine_name.strip().lower(),
+            AlertContinuationSessionRecord.implementation_version == implementation_version,
+        )
+        return tuple((await self._session.scalars(statement)).all())
+
+    async def upsert_analyses(
+        self,
+        *,
+        engine_name: str,
+        implementation_version: str,
+        values: tuple[dict[str, Any], ...],
+    ) -> None:
+        if not values:
+            return
+        now = self._clock()
+        base_statement = insert(AlertAnalysisStateRecord).values(
+            [
+                {
+                    "id": self._id_factory(),
+                    "engine_name": engine_name.strip().lower(),
+                    "implementation_version": implementation_version,
+                    "updated_at": now,
+                    **value,
+                }
+                for value in values
+            ]
+        )
+        statement = base_statement.on_conflict_do_update(
+            index_elements=["engine_name", "implementation_version", "symbol", "horizon"],
+            set_={
+                "analysis_id": base_statement.excluded.analysis_id,
+                "payload": base_statement.excluded.payload,
+                "updated_at": now,
+            },
+        )
+        await self._session.execute(statement)
+
+    async def upsert_candidates(
+        self,
+        *,
+        engine_name: str,
+        implementation_version: str,
+        values: tuple[dict[str, Any], ...],
+    ) -> None:
+        if not values:
+            return
+        now = self._clock()
+        base_statement = insert(AlertContinuationCandidateRecord).values(
+            [
+                {
+                    "id": self._id_factory(),
+                    "engine_name": engine_name.strip().lower(),
+                    "implementation_version": implementation_version,
+                    "updated_at": now,
+                    **value,
+                }
+                for value in values
+            ]
+        )
+        statement = base_statement.on_conflict_do_update(
+            index_elements=["engine_name", "implementation_version", "symbol"],
+            set_={
+                "active": base_statement.excluded.active,
+                "payload": base_statement.excluded.payload,
+                "updated_at": now,
+            },
+        )
+        await self._session.execute(statement)
+
+    async def upsert_sessions(
+        self,
+        *,
+        engine_name: str,
+        implementation_version: str,
+        values: tuple[dict[str, Any], ...],
+    ) -> None:
+        if not values:
+            return
+        now = self._clock()
+        base_statement = insert(AlertContinuationSessionRecord).values(
+            [
+                {
+                    "id": self._id_factory(),
+                    "engine_name": engine_name.strip().lower(),
+                    "implementation_version": implementation_version,
+                    "updated_at": now,
+                    **value,
+                }
+                for value in values
+            ]
+        )
+        statement = base_statement.on_conflict_do_update(
+            index_elements=["engine_name", "implementation_version", "symbol"],
+            set_={
+                "market_session": func.greatest(
+                    AlertContinuationSessionRecord.market_session,
+                    base_statement.excluded.market_session,
+                ),
                 "updated_at": now,
             },
         )

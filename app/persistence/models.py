@@ -266,6 +266,77 @@ class EngineDecisionStateRecord(Base):
     )
 
 
+class AlertAnalysisStateRecord(Base):
+    __tablename__ = "alert_analysis_states"
+    __table_args__ = (
+        CheckConstraint("horizon in ('LONG_TERM', 'SWING', 'INTRADAY')", name="horizon"),
+        UniqueConstraint(
+            "engine_name",
+            "implementation_version",
+            "symbol",
+            "horizon",
+            name="alert_analysis_states_identity_key",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
+    engine_name: Mapped[str] = mapped_column(Text, nullable=False)
+    implementation_version: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    horizon: Mapped[str] = mapped_column(Text, nullable=False)
+    analysis_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class AlertContinuationCandidateRecord(Base):
+    __tablename__ = "alert_continuation_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "engine_name",
+            "implementation_version",
+            "symbol",
+            name="alert_continuation_candidates_identity_key",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
+    engine_name: Mapped[str] = mapped_column(Text, nullable=False)
+    implementation_version: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class AlertContinuationSessionRecord(Base):
+    __tablename__ = "alert_continuation_sessions"
+    __table_args__ = (
+        UniqueConstraint(
+            "engine_name",
+            "implementation_version",
+            "symbol",
+            name="alert_continuation_sessions_identity_key",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=new_entity_id)
+    engine_name: Mapped[str] = mapped_column(Text, nullable=False)
+    implementation_version: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    market_session: Mapped[date] = mapped_column(Date, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
 class ServiceHealthRecord(Base):
     __tablename__ = "service_health"
     __table_args__ = (

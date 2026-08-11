@@ -20,6 +20,7 @@ async def test_successful_context_commits_and_closes() -> None:
         assert active.outbox is not None
         assert active.checkpoints is not None
         assert active.engine_decision_states is not None
+        assert active.alert_decision_states is not None
         assert active.health is not None
 
     session.commit.assert_awaited_once()

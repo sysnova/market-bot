@@ -468,6 +468,7 @@ async def run_alert_process(
     settings = AppSettings()
     assembly = MarketBotAssembly.from_settings(settings)
     configure_logging(level=settings.log_level, json_output=settings.log_json)
+    logger = get_logger("alert")
     clock = SystemClock()
     database: AsyncEngine = create_database_engine(
         settings.database_url.get_secret_value(),
@@ -493,6 +494,28 @@ async def run_alert_process(
         await database.dispose()
         raise
     engine = assembly.build_alert(restored_state=restored_state)
+    stateful_engine = engine if isinstance(engine, AlertEngineV31) else None
+    checkpoint_requested = asyncio.Event()
+
+    async def checkpoint_alert_state() -> None:
+        if stateful_engine is None:
+            return
+        while True:
+            await checkpoint_requested.wait()
+            await asyncio.sleep(settings.alert_checkpoint_interval_seconds)
+            checkpoint_requested.clear()
+            try:
+                await state_store.save_if_changed(stateful_engine.snapshot_state())
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                checkpoint_requested.set()
+                await logger.aexception(
+                    "alert_checkpoint_failed",
+                    error_type=type(error).__name__,
+                )
+
+    checkpoint_task: asyncio.Task[None] | None = None
     dispatcher = AlertDispatcher(
         sinks=(
             ConsoleAlertSink(stream=sys.stdout, bell=bell, color=True),
@@ -519,8 +542,8 @@ async def run_alert_process(
                 play_early_intraday_sound(fallback=sys.stdout)
             elif bell and alert.kind is AlertKind.SWING_SETUP:
                 play_swing_setup_watch_sound(fallback=sys.stdout)
-        if isinstance(engine, AlertEngineV31):
-            await state_store.save(engine.snapshot_state())
+        if stateful_engine is not None:
+            checkpoint_requested.set()
 
     async def handle_entry_watch(envelope: EventEnvelope) -> None:
         if envelope.event_type != ENTRY_WATCH_TRANSITION_EVENT:
@@ -619,6 +642,11 @@ async def run_alert_process(
         await bus.close()
         await database.dispose()
         raise
+    if stateful_engine is not None:
+        checkpoint_task = asyncio.create_task(
+            checkpoint_alert_state(),
+            name="alert-checkpoint",
+        )
     try:
         details = {
             "service": "alert",
@@ -638,6 +666,11 @@ async def run_alert_process(
                 if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0"}
                 else "memory"
             ),
+            "decision_checkpoint_interval_seconds": (
+                settings.alert_checkpoint_interval_seconds
+                if stateful_engine is not None
+                else None
+            ),
             **universe_health_details("alert"),
         }
         await _publish_health(
@@ -652,6 +685,17 @@ async def run_alert_process(
     finally:
         for subscription in subscriptions:
             await subscription.unsubscribe()
+        if checkpoint_task is not None and stateful_engine is not None:
+            checkpoint_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await checkpoint_task
+            try:
+                await state_store.save_if_changed(stateful_engine.snapshot_state())
+            except Exception as error:
+                await logger.aexception(
+                    "alert_checkpoint_final_flush_failed",
+                    error_type=type(error).__name__,
+                )
         await bus.close()
         await database.dispose()
 

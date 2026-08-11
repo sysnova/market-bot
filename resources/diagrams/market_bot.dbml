@@ -118,6 +118,48 @@ Table market_bot.engine_decision_states {
   }
 }
 
+Table market_bot.alert_analysis_states {
+  id uuid [pk]
+  engine_name text [not null]
+  implementation_version text [not null]
+  symbol text [not null]
+  horizon text [not null, note: "LONG_TERM | SWING | INTRADAY"]
+  analysis_id uuid [not null]
+  payload jsonb [not null]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (engine_name, implementation_version, symbol, horizon) [unique, name: "alert_analysis_states_identity_key"]
+  }
+}
+
+Table market_bot.alert_continuation_candidates {
+  id uuid [pk]
+  engine_name text [not null]
+  implementation_version text [not null]
+  symbol text [not null]
+  active boolean [not null]
+  payload jsonb [not null]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (engine_name, implementation_version, symbol) [unique, name: "alert_continuation_candidates_identity_key"]
+  }
+}
+
+Table market_bot.alert_continuation_sessions {
+  id uuid [pk]
+  engine_name text [not null]
+  implementation_version text [not null]
+  symbol text [not null]
+  market_session date [not null]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (engine_name, implementation_version, symbol) [unique, name: "alert_continuation_sessions_identity_key"]
+  }
+}
+
 Table market_bot.service_health {
   id uuid [pk]
   service_name text [not null, unique]

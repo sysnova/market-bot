@@ -2,6 +2,9 @@
 
 from .database import create_database_engine, create_session_factory, normalize_database_url
 from .models import (
+    AlertAnalysisStateRecord,
+    AlertContinuationCandidateRecord,
+    AlertContinuationSessionRecord,
     Base,
     EngineDecisionStateRecord,
     EntryOpportunityEventRecord,
@@ -15,6 +18,7 @@ from .models import (
     new_entity_id,
 )
 from .repositories import (
+    AlertDecisionStateRepository,
     CheckpointRepository,
     EngineDecisionStateRepository,
     EntryOpportunityRepository,
@@ -31,6 +35,10 @@ from .repositories import (
 from .unit_of_work import PersistenceUnitOfWork
 
 __all__ = [
+    "AlertAnalysisStateRecord",
+    "AlertContinuationCandidateRecord",
+    "AlertContinuationSessionRecord",
+    "AlertDecisionStateRepository",
     "Base",
     "CheckpointRepository",
     "EngineDecisionStateRecord",

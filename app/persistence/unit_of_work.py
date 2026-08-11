@@ -7,6 +7,7 @@ from types import TracebackType
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .repositories import (
+    AlertDecisionStateRepository,
     CheckpointRepository,
     EngineDecisionStateRepository,
     EntryOpportunityRepository,
@@ -30,6 +31,7 @@ class PersistenceUnitOfWork:
         self.outbox: OutboxRepository
         self.checkpoints: CheckpointRepository
         self.engine_decision_states: EngineDecisionStateRepository
+        self.alert_decision_states: AlertDecisionStateRepository
         self.health: HealthRepository
         self.entry_watches: EntryWatchRepository
         self.entry_opportunities: EntryOpportunityRepository
@@ -44,6 +46,7 @@ class PersistenceUnitOfWork:
         self.outbox = OutboxRepository(session)
         self.checkpoints = CheckpointRepository(session)
         self.engine_decision_states = EngineDecisionStateRepository(session)
+        self.alert_decision_states = AlertDecisionStateRepository(session)
         self.health = HealthRepository(session)
         self.entry_watches = EntryWatchRepository(session)
         self.entry_opportunities = EntryOpportunityRepository(session)

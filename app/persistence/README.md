@@ -5,6 +5,10 @@ This engine owns the PostgreSQL adapter for MarketBot. It maps the private
 outbox, consumer checkpoints, and latest service-health snapshot.
 It also stores fixed entry theses in `entry_watches` and their immutable audit history in
 `entry_watch_transitions`.
+Alert recovery state is normalized across `alert_analysis_states`,
+`alert_continuation_candidates`, and `alert_continuation_sessions`. The legacy
+`engine_decision_states` row remains a read-only migration fallback; runtime checkpoints must not
+rewrite the aggregate JSON payload.
 
 ## Runtime contract
 
@@ -15,6 +19,8 @@ It also stores fixed entry theses in `entry_watches` and their immutable audit h
   Local CI may explicitly disable SSL.
 - Repository calls never commit. `PersistenceUnitOfWork` commits a successful
   context and rolls back failures, keeping transactions short.
+- Alert checkpoints batch changes and upsert only modified symbol/horizon rows. Candidate removal
+  is represented by an inactive tombstone because the runtime role deliberately has no `DELETE`.
 - Delivery is at-least-once. `processed_events` deduplicates per consumer and
   event; `outbox_events` is claimed with `FOR UPDATE SKIP LOCKED`.
 
