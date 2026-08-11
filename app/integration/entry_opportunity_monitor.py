@@ -42,12 +42,14 @@ class OpportunityDashboard:
         self.history = history
         self._items: dict[UUID, EntryOpportunity] = {}
         self._reasons: dict[UUID, tuple[str, ...]] = {}
+        self._focused_opportunity_id: UUID | None = None
 
     def merge(
         self,
         opportunity: EntryOpportunity,
         *,
         reasons: tuple[str, ...] = (),
+        focus: bool = False,
     ) -> bool:
         current = self._items.get(opportunity.opportunity_id)
         if current is not None and (
@@ -62,10 +64,44 @@ class OpportunityDashboard:
         self._items[opportunity.opportunity_id] = opportunity
         if reasons:
             self._reasons[opportunity.opportunity_id] = reasons
+        if focus:
+            self._focused_opportunity_id = opportunity.opportunity_id
         self._trim()
         return changed or bool(reasons)
 
     def items(self) -> tuple[EntryOpportunity, ...]:
+        ordered = list(self._sorted_items())
+        if self._focused_opportunity_id is not None:
+            focused = next(
+                (
+                    item
+                    for item in ordered
+                    if item.opportunity_id == self._focused_opportunity_id
+                ),
+                None,
+            )
+            if focused is not None:
+                ordered.remove(focused)
+                ordered.append(focused)
+        return tuple(ordered)
+
+    def is_focused(self, opportunity_id: UUID) -> bool:
+        return opportunity_id == self._focused_opportunity_id
+
+    def reasons_for(self, opportunity_id: UUID) -> tuple[str, ...]:
+        return self._reasons.get(opportunity_id, ())
+
+    def _trim(self) -> None:
+        retained = self._sorted_items()[: self.history]
+        retained_ids = {item.opportunity_id for item in retained}
+        self._items = {item.opportunity_id: item for item in retained}
+        self._reasons = {
+            key: value for key, value in self._reasons.items() if key in retained_ids
+        }
+        if self._focused_opportunity_id not in retained_ids:
+            self._focused_opportunity_id = None
+
+    def _sorted_items(self) -> tuple[EntryOpportunity, ...]:
         return tuple(
             sorted(
                 self._items.values(),
@@ -76,17 +112,6 @@ class OpportunityDashboard:
                 ),
             )
         )
-
-    def reasons_for(self, opportunity_id: UUID) -> tuple[str, ...]:
-        return self._reasons.get(opportunity_id, ())
-
-    def _trim(self) -> None:
-        retained = self.items()[: self.history]
-        retained_ids = {item.opportunity_id for item in retained}
-        self._items = {item.opportunity_id: item for item in retained}
-        self._reasons = {
-            key: value for key, value in self._reasons.items() if key in retained_ids
-        }
 
 
 async def run_entry_opportunity_monitor(
@@ -133,7 +158,7 @@ async def run_entry_opportunity_monitor(
         if event is None:
             return
         async with lock:
-            dashboard.merge(event.opportunity, reasons=event.reasons)
+            dashboard.merge(event.opportunity, reasons=event.reasons, focus=True)
             render()
 
     subscription = await bus.subscribe(
@@ -278,6 +303,20 @@ def format_opportunity_dashboard(
         lines.append("No hay oportunidades registradas en PostgreSQL.")
         return "\n".join(lines) + "\n"
     for opportunity in opportunities:
+        if dashboard.is_focused(opportunity.opportunity_id):
+            reasons = dashboard.reasons_for(opportunity.opportunity_id)
+            lines.extend(
+                (
+                    "",
+                    (
+                        f">>> ACTUALIZACION RECIENTE NATS | {opportunity.symbol} | "
+                        f"UPDATED {opportunity.updated_at:%Y-%m-%d %H:%M:%S} | "
+                        f"REV {opportunity.revision} | "
+                        f"{','.join(reasons) if reasons else '-'}"
+                    ),
+                    ">>> Snapshot actualizado movido al final del monitor",
+                )
+            )
         lines.extend(
             _format_opportunity(
                 opportunity,

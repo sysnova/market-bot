@@ -142,6 +142,33 @@ def test_dashboard_rejects_an_older_snapshot_of_the_same_opportunity() -> None:
 
 
 @pytest.mark.unit
+def test_dashboard_moves_the_latest_nats_update_to_the_bottom() -> None:
+    dashboard = OpportunityDashboard(history=25)
+    xom = _closed_opportunity().model_copy(update={"symbol": "XOM"})
+    aapl = _closed_opportunity().model_copy(
+        update={
+            "opportunity_id": UUID("01987e76-3c00-7006-8000-000000000001"),
+            "symbol": "AAPL",
+            "updated_at": NOW - timedelta(minutes=1),
+        }
+    )
+    dashboard.merge(xom)
+    dashboard.merge(aapl)
+    assert tuple(item.symbol for item in dashboard.items()) == ("XOM", "AAPL")
+
+    dashboard.merge(
+        xom.model_copy(update={"revision": 5}),
+        reasons=("maturity_l2_reached",),
+        focus=True,
+    )
+
+    assert tuple(item.symbol for item in dashboard.items()) == ("AAPL", "XOM")
+    output = format_opportunity_dashboard(dashboard, refreshed_at=NOW)
+    assert output.rfind("ACTUALIZACION RECIENTE NATS") < output.rfind("XOM")
+    assert output.rfind("AAPL") < output.rfind("ACTUALIZACION RECIENTE NATS")
+
+
+@pytest.mark.unit
 def test_dashboard_labels_analytical_family_without_fake_core_maturity() -> None:
     base = _closed_opportunity()
     analytical = base.model_copy(
@@ -293,6 +320,7 @@ async def test_monitor_redraws_for_nats_event_and_cleans_up(
 
     assert output.getvalue().count("ENTRY OPPORTUNITIES") >= 2
     assert "ULTIMO EVENTO all_horizons_closed" in output.getvalue()
+    assert "ACTUALIZACION RECIENTE NATS" in output.getvalue()
     assert _MonitorBus.instance is not None
     assert _MonitorBus.instance.subject == "marketbot.v1.entry-opportunity.transition.>"
     assert _MonitorBus.instance.subscription.unsubscribed is True
