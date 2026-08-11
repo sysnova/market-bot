@@ -1,0 +1,9 @@
+rule_id: marketbot.swing
+version: 1.1.0
+status: active
+behavior:
+  anchored_vwap_gate: true
+  minimum_reward_risk_to_resistance: 1.5
+measurement:
+  dimensions: [engine_version, strategy_version, entry_timing]
+  outcomes: [first_level_hit, mfe_percent, mae_percent]

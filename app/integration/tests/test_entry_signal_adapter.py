@@ -115,6 +115,16 @@ def test_entry_watch_local_alert_is_not_emitted_as_a_second_l4() -> None:
     assert entry_signal_from_alert(alert) is None
 
 
+def test_early_intraday_watch_never_materializes_a_core_entry_signal() -> None:
+    alert = _alert(
+        kind=AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION,
+        title="NVO EARLY INTRADAY WITHOUT CONFIRMATION",
+        horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+    )
+
+    assert entry_signal_from_alert(alert) is None
+
+
 def test_fusion_confirmation_becomes_its_own_signal_family() -> None:
     transition = FusionTransition(
         assessment_id=new_uuid7(),

@@ -32,7 +32,7 @@ selection before starting services:
 uv run marketbot assembly
 ```
 
-The default is `configs/marketbot/7.1.0.yaml`. Each engine entry separates:
+The default is `configs/marketbot/7.2.0.yaml`. Each engine entry separates:
 
 - `implementation`: concrete Python behavior;
 - `strategy`: embedded rules or an exact-version YAML artifact;
@@ -41,7 +41,7 @@ The default is `configs/marketbot/7.1.0.yaml`. Each engine entry separates:
 To deploy another complete, reviewed assembly, create a new immutable definition and select it:
 
 ```powershell
-$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.1.0.yaml"
+$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.2.0.yaml"
 .\scripts\windows\start-market-bot.ps1
 ```
 

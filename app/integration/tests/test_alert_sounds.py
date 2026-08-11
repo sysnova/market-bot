@@ -75,6 +75,51 @@ def test_aggressive_flow_uses_a_short_two_tone_alarm(
     assert script.count("[console]::Beep") == 2
 
 
+def test_early_intraday_uses_a_distinct_rising_watch_tone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launched: list[list[str]] = []
+    monkeypatch.setattr(alert_sounds.shutil, "which", lambda _: "powershell.exe")
+    monkeypatch.setattr(
+        alert_sounds.subprocess,
+        "Popen",
+        lambda command, **_: launched.append(command) or SimpleNamespace(),
+    )
+
+    assert alert_sounds.play_early_intraday_sound(fallback=StringIO()) is True
+    script = launched[0][-1]
+    assert "Beep(720, 140)" in script
+    assert "Beep(980, 240)" in script
+    assert script != alert_sounds._AGGRESSIVE_FLOW_SCRIPT
+    assert script != alert_sounds._SOLID_BUY_SCRIPT
+
+
+@pytest.mark.parametrize(
+    ("play", "expected"),
+    (
+        (alert_sounds.play_entry_zone_watch_sound, "Beep(820, 260)"),
+        (alert_sounds.play_swing_setup_watch_sound, "Beep(660, 180)"),
+    ),
+)
+def test_unconfirmed_candidate_watches_use_single_soft_native_tones(
+    monkeypatch: pytest.MonkeyPatch,
+    play: object,
+    expected: str,
+) -> None:
+    launched: list[list[str]] = []
+    monkeypatch.setattr(alert_sounds.shutil, "which", lambda _: "powershell.exe")
+    monkeypatch.setattr(
+        alert_sounds.subprocess,
+        "Popen",
+        lambda command, **_: launched.append(command) or SimpleNamespace(),
+    )
+
+    assert play(fallback=StringIO()) is True  # type: ignore[operator]
+    script = launched[0][-1]
+    assert expected in script
+    assert script.count("[console]::Beep") == 1
+
+
 @pytest.mark.parametrize(
     ("maturity", "tone", "tone_count"),
     (

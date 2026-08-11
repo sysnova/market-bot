@@ -2,6 +2,11 @@
 
 ## Versiones
 
+La composicion activa usa `SwingEngineV4`. Conserva la clasificacion estructural alcista, pero
+baja un pullback a `WATCH` cuando ofrece menos de `1.5R` hasta la primera resistencia y expone
+`swing_entry_gate_passed=false`. De este modo Alert puede distinguir una estructura vigente de una
+entrada accionable. V1-V3 permanecen disponibles para replay y rollback.
+
 - `SwingEngineV1` / `SwingEngine`: reglas `1.1.1` originales.
 - `SwingEngineV2`: versión activa `2.0.0`. Clasifica régimen con ADX y percentil de ATR,
   construye una zona alrededor del soporte técnico más próximo, informa distancia en ATR y
@@ -28,8 +33,8 @@ and 3-ATR risk budget for a favorable verdict.
 `evaluate()` returns the engine-owned detailed calculation. Both methods are pure; Alpaca,
 NATS, persistence, alert presentation, and order execution belong to external adapters.
 
-La composición live selecciona `SwingEngineV2`; V1 permanece disponible para reproducir
-resultados anteriores.
+La composición live selecciona `SwingEngineV4`; las versiones anteriores permanecen disponibles
+para reproducir resultados anteriores.
 
 Run the focused suite with:
 

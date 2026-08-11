@@ -8,6 +8,7 @@ from app.alert_engine import (
     AlertEngineV3,
     AlertEngineV31,
     AlertEngineV32,
+    AlertEngineV33,
 )
 from app.alert_engine.strategy import configure_engine as configure_alert
 from app.alert_engine.strategy import validate_strategy as validate_alert
@@ -51,7 +52,7 @@ from app.portfolio_flow_engine.strategy import configure_engine as configure_por
 from app.portfolio_flow_engine.strategy import validate_strategy as validate_portfolio_flow
 from app.signal_fusion_engine import SignalFusionEngine
 from app.support_confirmation_engine import SupportConfirmationEngine
-from app.swing_engine import SwingEngine, SwingEngineV2, SwingEngineV3
+from app.swing_engine import SwingEngine, SwingEngineV2, SwingEngineV3, SwingEngineV4
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
 
@@ -73,6 +74,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.1.1": SwingEngine,
                     "2.0.0": SwingEngineV2,
                     "3.0.0": SwingEngineV3,
+                    "4.0.0": SwingEngineV4,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,
@@ -124,6 +126,7 @@ def default_engine_registry() -> EngineRegistry:
                     "3.0.0": AlertEngineV3,
                     "3.1.0": AlertEngineV31,
                     "3.2.0": AlertEngineV32,
+                    "3.3.0": AlertEngineV33,
                 },
                 required_since="0.0.0",
                 configure=configure_alert,

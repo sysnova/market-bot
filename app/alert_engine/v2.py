@@ -304,7 +304,11 @@ def _severity(
     score: Decimal,
     critical_threshold: Decimal,
 ) -> AlertSeverity:
-    if kind in {AlertKind.LONG_BUY_ZONE, AlertKind.SWING_SETUP}:
+    if kind in {
+        AlertKind.LONG_BUY_ZONE,
+        AlertKind.SWING_SETUP,
+        AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION,
+    }:
         return AlertSeverity.WATCH
     if kind is AlertKind.BEARISH_CONSENSUS:
         return AlertSeverity.CRITICAL if score >= critical_threshold else AlertSeverity.ACTION
@@ -318,6 +322,8 @@ def _message(kind: AlertKind, count: int, score: Decimal) -> str:
         return f"Long engine identified an attractive buy zone; score {score}"
     if kind is AlertKind.SWING_SETUP:
         return f"Swing engine identified an intact actionable structure; score {score}"
+    if kind is AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION:
+        return "Bullish Intraday setup detected for manual monitoring; entry is not confirmed"
     if kind is AlertKind.ENTRY_CONFIRMED:
         return f"Intraday timing confirms a setup across {count} aligned engines; score {score}"
     if kind is AlertKind.HIGH_CONVICTION_BUY:

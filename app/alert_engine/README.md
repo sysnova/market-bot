@@ -20,10 +20,17 @@ L2 Swing-continuation path that does not require a Long thesis: two distinct str
 readings in the same New York market date, separated by the configured delay and both reporting
 a five-minute higher low, confirm the still-fresh Swing setup once per symbol/session.
 
-`AlertEngineV32` is the active distributed generation. It preserves the durable V3.1 state and
+`AlertEngineV32` preserves the durable V3.1 state and
 also consumes source-agnostic `EntrySetupAssessment` evidence. For `CORE_RECOVERY`, its versioned
 artifact currently assigns L2 to fresh Swing + Intraday evidence; only Alert then materializes the
 confirmed `EntrySignal` consumed by Opportunity. Recovery never assigns its own L1-L4 quality.
+
+`AlertEngineV33` is the active generation. It will not emit `ENTRY_CONFIRMED` when Intraday reports
+`mature_confirmation_gate_passed=false` or Swing reports insufficient reward/risk to its first
+resistance. When bullish structure and a strong Intraday higher low still deserve manual attention,
+it emits `EARLY_INTRADAY_WITHOUT_CONFIRMATION` as a WATCH alert; that alert never becomes
+`CORE_ENTRY`. The visible Analysis window renders it with a yellow banner and a distinct rising
+two-tone watch sound when bells are enabled.
 
 `AlertEngineV2` remains available for replay. It emits explicit `AlertKind` values:
 

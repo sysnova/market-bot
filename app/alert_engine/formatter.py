@@ -29,6 +29,10 @@ _BUY_LABELS = {
 }
 _PROTECT_BANNER_STYLE = "\x1b[1;97;41m"
 _FLOW_BUY_BANNER_STYLE = "\x1b[1;30;103m"
+_EARLY_INTRADAY_BANNER_STYLE = "\x1b[1;30;103m"
+_ENTRY_WATCH_BANNER_STYLE = "\x1b[1;30;48;5;208m"
+_SWING_SETUP_BANNER_STYLE = "\x1b[1;30;46m"
+_LONG_BUY_ZONE_BANNER_STYLE = "\x1b[1;30;42m"
 _OPPORTUNITY_PROGRESS_STYLES = {
     "ARMED": "\x1b[1;97;44m",
     "IN_ZONE": "\x1b[1;30;103m",
@@ -54,6 +58,22 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
         price = _metrics(alert).get("current_price")
         banner = f"{alert.symbol} | BUY FLOW {_money(price)} | AGGRESSIVE ENTRY WATCH"
         lines.append(f"{_FLOW_BUY_BANNER_STYLE} {banner} {_RESET_STYLE}" if color else banner)
+    if alert.kind is AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION:
+        values = _metrics(alert)
+        price = values.get("current_price")
+        banner = (
+            f"{alert.symbol} | EARLY INTRADAY {_money(price)} | "
+            "WITHOUT CONFIRMATION"
+        )
+        lines.append(
+            f"{_EARLY_INTRADAY_BANNER_STYLE} {banner} {_RESET_STYLE}"
+            if color
+            else banner
+        )
+    watch_banner = _candidate_watch_banner(alert, analyses)
+    if watch_banner is not None:
+        style, banner = watch_banner
+        lines.append(f"{style} {banner} {_RESET_STYLE}" if color else banner)
     if alert.kind is AlertKind.ENTRY_OPPORTUNITY_PROGRESS:
         values = _metrics(alert)
         progress = _number(values.get("progress_percent"))
@@ -122,6 +142,49 @@ def _buy_banner(
     level = maturity.value.split("_", maxsplit=1)[0]
     banner = f"{alert.symbol} | BUY {level} {_money(confirmed_price)} | {_BUY_LABELS[maturity]}"
     return maturity, banner
+
+
+def _candidate_watch_banner(
+    alert: LocalAlert,
+    analyses: dict[AnalysisHorizon, AnalysisResult],
+) -> tuple[str, str] | None:
+    price = _first(
+        _metrics(alert).get("current_price"),
+        *(
+            _metrics(analysis).get("reference_price")
+            for horizon in (
+                AnalysisHorizon.INTRADAY,
+                AnalysisHorizon.SWING,
+                AnalysisHorizon.LONG_TERM,
+            )
+            if (analysis := analyses.get(horizon)) is not None
+        ),
+    )
+    if price is None:
+        return None
+    if alert.kind is AlertKind.ENTRY_WATCH:
+        title = alert.title.upper()
+        if "BREAKAWAY WATCH" in title:
+            return (
+                _ENTRY_WATCH_BANNER_STYLE,
+                f"{alert.symbol} | BREAKAWAY WATCH | ENTRY CANDIDATE {_money(price)}",
+            )
+        if "IN_ZONE" in title:
+            return (
+                _ENTRY_WATCH_BANNER_STYLE,
+                f"{alert.symbol} | IN ZONE | ENTRY CANDIDATE {_money(price)}",
+            )
+    if alert.kind is AlertKind.SWING_SETUP:
+        return (
+            _SWING_SETUP_BANNER_STYLE,
+            f"{alert.symbol} | SWING SETUP | ENTRY CANDIDATE {_money(price)}",
+        )
+    if alert.kind is AlertKind.LONG_BUY_ZONE:
+        return (
+            _LONG_BUY_ZONE_BANNER_STYLE,
+            f"{alert.symbol} | LONG BUY ZONE | ENTRY CANDIDATE {_money(price)}",
+        )
+    return None
 
 
 def _entry_progress_style(maturity: object) -> str:

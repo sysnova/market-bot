@@ -171,6 +171,106 @@ def test_console_sink_highlights_aggressive_buy_pressure_without_an_l_level() ->
 
 
 @pytest.mark.unit
+def test_console_sink_labels_early_intraday_as_unconfirmed_watch() -> None:
+    early = _alert(AlertSeverity.WATCH).model_copy(
+        update={
+            "kind": AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION,
+            "title": "TEST EARLY INTRADAY WITHOUT CONFIRMATION",
+            "metrics": (NamedValue(name="current_price", value=Decimal("315.14")),),
+        }
+    )
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True, bell=True).emit(early)
+
+    assert stream.getvalue().splitlines()[0] == (
+        "\x1b[1;30;103m TEST | EARLY INTRADAY $315.14 | "
+        "WITHOUT CONFIRMATION \x1b[0m"
+    )
+    assert "BUY L" not in stream.getvalue()
+    assert "\a" not in stream.getvalue()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("title", "label"),
+    (
+        ("TEST ENTRY IN_ZONE EARLY WATCH", "IN ZONE"),
+        ("TEST ENTRY BREAKAWAY WATCH", "BREAKAWAY WATCH"),
+    ),
+)
+def test_console_sink_highlights_entry_watch_candidate_price(
+    title: str,
+    label: str,
+) -> None:
+    watch = _alert(AlertSeverity.WATCH).model_copy(
+        update={
+            "kind": AlertKind.ENTRY_WATCH,
+            "title": title,
+            "metrics": (NamedValue(name="current_price", value=Decimal("311.19")),),
+        }
+    )
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True).emit(watch)
+
+    assert stream.getvalue().splitlines()[0] == (
+        f"\x1b[1;30;48;5;208m TEST | {label} | "
+        "ENTRY CANDIDATE $311.19 \x1b[0m"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("kind", "horizon", "label", "style"),
+    (
+        (AlertKind.SWING_SETUP, AnalysisHorizon.SWING, "SWING SETUP", "\x1b[1;30;46m"),
+        (
+            AlertKind.LONG_BUY_ZONE,
+            AnalysisHorizon.LONG_TERM,
+            "LONG BUY ZONE",
+            "\x1b[1;30;42m",
+        ),
+    ),
+)
+def test_console_sink_highlights_analysis_candidate_reference_price(
+    kind: AlertKind,
+    horizon: AnalysisHorizon,
+    label: str,
+    style: str,
+) -> None:
+    analysis = AnalysisResult(
+        engine_id=horizon.value.lower(),
+        engine_version="4.0.0",
+        symbol="TEST",
+        horizon=horizon,
+        as_of=NOW,
+        verdict=AnalysisVerdict.WATCH,
+        direction=PatternDirection.BULLISH,
+        score=Decimal("70"),
+        confidence=Decimal("0.7"),
+        reasons=("candidate",),
+        metrics=(NamedValue(name="reference_price", value=Decimal("311.19")),),
+        context_hash="sha256:" + "d" * 64,
+    )
+    candidate = _alert(AlertSeverity.WATCH).model_copy(
+        update={
+            "kind": kind,
+            "title": f"TEST {label}",
+            "horizons": (horizon,),
+            "component_analyses": (analysis,),
+        }
+    )
+    stream = StringIO()
+
+    ConsoleAlertSink(stream=stream, color=True).emit(candidate)
+
+    assert stream.getvalue().splitlines()[0] == (
+        f"{style} TEST | {label} | ENTRY CANDIDATE $311.19 \x1b[0m"
+    )
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("horizons", "expected"),
     (

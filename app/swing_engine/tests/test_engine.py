@@ -16,7 +16,14 @@ from app.contracts import (
     MarketBar,
     PatternDirection,
 )
-from app.swing_engine import SwingClassification, SwingContext, SwingEngine, SwingEngineV2
+from app.swing_engine import (
+    SwingClassification,
+    SwingContext,
+    SwingEngine,
+    SwingEngineV2,
+    SwingEngineV3,
+    SwingEngineV4,
+)
 from app.swing_engine.indicators import anchored_vwap
 
 AS_OF = datetime(2026, 1, 2, tzinfo=UTC)
@@ -273,3 +280,33 @@ def test_v2_exposes_regime_entry_zone_and_confirmed_structure_break() -> None:
     assert metrics["entry_zone_low"] <= metrics["entry_zone_high"]
     assert "price_vs_entry_zone_atr" in metrics
     assert "reward_risk_to_resistance" in metrics
+
+
+@pytest.mark.unit
+def test_v4_keeps_bullish_structure_but_rejects_late_swing_entry_asymmetry() -> None:
+    case = json.loads(FIXTURES.read_text(encoding="utf-8"))[0]
+    context = _context(case).model_copy(update={"price": Decimal("87")})
+
+    legacy = SwingEngineV3().analyze(context)
+    result = SwingEngineV4().analyze(context)
+    metrics = {metric.name: metric.value for metric in result.metrics}
+
+    assert legacy.verdict is AnalysisVerdict.FAVORABLE
+    assert metrics["classification"] == "pullback"
+    assert metrics["reward_risk_to_resistance"] == Decimal("0.7384")
+    assert metrics["swing_entry_gate_passed"] is False
+    assert result.verdict is AnalysisVerdict.WATCH
+    assert result.score == Decimal("64.00")
+    assert "insufficient_reward_risk_to_resistance" in result.reasons
+
+
+@pytest.mark.unit
+def test_v4_preserves_actionable_swing_when_resistance_offers_at_least_one_and_half_r() -> None:
+    case = json.loads(FIXTURES.read_text(encoding="utf-8"))[0]
+
+    result = SwingEngineV4().analyze(_context(case))
+    metrics = {metric.name: metric.value for metric in result.metrics}
+
+    assert result.verdict is AnalysisVerdict.FAVORABLE
+    assert metrics["reward_risk_to_resistance"] == Decimal("3.0239")
+    assert metrics["swing_entry_gate_passed"] is True

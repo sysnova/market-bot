@@ -86,7 +86,7 @@ class AlertEngineV3(AlertEngineV2):
             fresh.get(AnalysisHorizon.SWING),
             self._policy.watch_threshold,
         )
-        if swing is None or not _valid_swing(swing) or not self._qualifies(result):
+        if swing is None or not self._valid_swing(swing) or not self._qualifies(result):
             return None
 
         candidate = self._swing_continuation_candidates.get(result.symbol)
@@ -134,6 +134,11 @@ class AlertEngineV3(AlertEngineV2):
                 ),
             }
         )
+
+    def _valid_swing(self, result: AnalysisResult) -> bool:
+        """Version hook for later Alert policies without changing v3 replay."""
+
+        return _valid_swing(result)
 
     def _qualifies(self, result: AnalysisResult) -> bool:
         metrics = _metrics(result)

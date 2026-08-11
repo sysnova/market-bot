@@ -96,7 +96,7 @@ implementation, strategy artifact, and mode of every engine with:
 uv run marketbot assembly
 ```
 
-The default definition is `configs/marketbot/7.1.0.yaml`; select another immutable assembly with
+The default definition is `configs/marketbot/7.2.0.yaml`; select another immutable assembly with
 `MARKETBOT_DEFINITION_PATH`.
 
 Individual distributed processes can also be operated directly:
@@ -125,9 +125,11 @@ historical bars do not enter JetStream. Weekly bars are treated as complete only
 week closes. The WebSocket process never writes bars to PostgreSQL: it publishes live updates only
 through NATS.
 
-Alert v3.2 consumes stable `AnalysisResult`, Watcher transition, and setup-assessment contracts from
+Alert v3.3 consumes stable `AnalysisResult`, Watcher transition, and setup-assessment contracts from
 NATS and emits named `LONG_BUY_ZONE`,
-`SWING_SETUP`, `ENTRY_CONFIRMED`, and `HIGH_CONVICTION_BUY` notifications. Alerts appear with their actionable context: current price, buy zone,
+`SWING_SETUP`, `EARLY_INTRADAY_WITHOUT_CONFIRMATION`, `ENTRY_CONFIRMED`, and
+`HIGH_CONVICTION_BUY` notifications. A core entry now requires both the Intraday mature gate and
+at least 1.5R from the Swing entry to its first resistance. Alerts appear with their actionable context: current price, buy zone,
 invalidation, objective, Long/Swing/Intraday indicators, anchored and session VWAP, and the reasons
 behind each engine decision. SEC warnings are emitted by the independent daily bot. The complete structured analyses are also appended
 durably to one ledger per New York market date, for example

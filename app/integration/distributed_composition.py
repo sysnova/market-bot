@@ -42,6 +42,7 @@ from app.contracts import (
     MARKET_ROTATION_SUBJECT,
     SERVICE_HEALTH_EVENT,
     UNIVERSE_CHANGED_EVENT,
+    AlertKind,
     AnalysisHorizon,
     AnalysisResult,
     BarTimeframe,
@@ -71,6 +72,11 @@ from app.persistence import create_database_engine, create_session_factory
 
 from .alert_decision_state_store import PostgresAlertDecisionStateStore
 from .alert_publisher import AlertEventPublisher
+from .alert_sounds import (
+    play_early_intraday_sound,
+    play_entry_zone_watch_sound,
+    play_swing_setup_watch_sound,
+)
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .entry_opportunity_store import PostgresEntryOpportunityStore
 from .entry_signal_adapter import entry_signal_from_alert_watch, publish_entry_signal
@@ -475,7 +481,7 @@ async def run_alert_process(
     )
     restored_state = None
     try:
-        if alert_spec.implementation in {"3.1.0", "3.2.0"}:
+        if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0"}:
             if not await state_store.is_ready():
                 raise RuntimeError(
                     "alert decision state schema is unavailable; "
@@ -489,7 +495,7 @@ async def run_alert_process(
     engine = assembly.build_alert(restored_state=restored_state)
     dispatcher = AlertDispatcher(
         sinks=(
-            ConsoleAlertSink(stream=sys.stdout, bell=bell),
+            ConsoleAlertSink(stream=sys.stdout, bell=bell, color=True),
             NdjsonAlertSink(runtime_root / "alerts" / "marketbot-alerts.ndjson"),
         ),
         publisher=AlertEventPublisher(bus),
@@ -506,6 +512,13 @@ async def run_alert_process(
         alert = engine.ingest(result, now=clock.now())
         if alert is not None:
             await dispatcher.dispatch(alert)
+            if (
+                bell
+                and alert.kind is AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION
+            ):
+                play_early_intraday_sound(fallback=sys.stdout)
+            elif bell and alert.kind is AlertKind.SWING_SETUP:
+                play_swing_setup_watch_sound(fallback=sys.stdout)
         if isinstance(engine, AlertEngineV31):
             await state_store.save(engine.snapshot_state())
 
@@ -519,6 +532,11 @@ async def run_alert_process(
         )
         alert = engine.ingest_entry_watch(transition, now=clock.now())
         await dispatcher.dispatch(alert)
+        if bell and (
+            "IN_ZONE" in alert.title.upper()
+            or "BREAKAWAY WATCH" in alert.title.upper()
+        ):
+            play_entry_zone_watch_sound(fallback=sys.stdout)
         signal = entry_signal_from_alert_watch(transition)
         if signal is not None:
             await publish_entry_signal(bus, signal, source="alert")
@@ -617,7 +635,7 @@ async def run_alert_process(
             ),
             "decision_state": (
                 "postgresql"
-                if alert_spec.implementation in {"3.1.0", "3.2.0"}
+                if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0"}
                 else "memory"
             ),
             **universe_health_details("alert"),

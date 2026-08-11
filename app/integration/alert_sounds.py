@@ -25,6 +25,11 @@ _SOLID_BUY_SCRIPT = (
 _AGGRESSIVE_FLOW_SCRIPT = (
     "[console]::Beep(1350, 120); Start-Sleep -Milliseconds 60; [console]::Beep(1650, 220)"
 )
+_EARLY_INTRADAY_SCRIPT = (
+    "[console]::Beep(720, 140); Start-Sleep -Milliseconds 70; [console]::Beep(980, 240)"
+)
+_ENTRY_ZONE_WATCH_SCRIPT = "[console]::Beep(820, 260)"
+_SWING_SETUP_WATCH_SCRIPT = "[console]::Beep(660, 180)"
 _ENTRY_CLOSE_SCRIPT = (
     "[console]::Beep(1100, 180); Start-Sleep -Milliseconds 70; "
     "[console]::Beep(750, 240); Start-Sleep -Milliseconds 70; [console]::Beep(450, 380)"
@@ -65,6 +70,24 @@ def play_aggressive_flow_sound(*, fallback: TextIO) -> bool:
     """Play the short two-tone alarm for an aggressive buy-pressure watch."""
 
     return _play_windows_sound(_AGGRESSIVE_FLOW_SCRIPT, fallback=fallback)
+
+
+def play_early_intraday_sound(*, fallback: TextIO) -> bool:
+    """Play a short rising watch tone distinct from confirmed-buy alarms."""
+
+    return _play_windows_sound(_EARLY_INTRADAY_SCRIPT, fallback=fallback)
+
+
+def play_entry_zone_watch_sound(*, fallback: TextIO) -> bool:
+    """Play one medium watch tone for in-zone and breakaway candidates."""
+
+    return _play_windows_sound(_ENTRY_ZONE_WATCH_SCRIPT, fallback=fallback)
+
+
+def play_swing_setup_watch_sound(*, fallback: TextIO) -> bool:
+    """Play one soft tone for an actionable Swing setup awaiting timing."""
+
+    return _play_windows_sound(_SWING_SETUP_WATCH_SCRIPT, fallback=fallback)
 
 
 def play_entry_close_sound(*, fallback: TextIO) -> bool:
