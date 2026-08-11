@@ -30,6 +30,10 @@ def test_public_enums_are_stable() -> None:
     assert AlertKind.PORTFOLIO_FLOW_BUY.value == "PORTFOLIO_FLOW_BUY"
 
 
+def test_strategy_mode_reads_legacy_shadow_as_candidate() -> None:
+    assert StrategyMode("SHADOW") is StrategyMode.CANDIDATE
+
+
 def test_models_are_strict_frozen_and_forbid_extra_fields() -> None:
     policy = AlertPolicy(policy_id="desk", min_confidence=Decimal("0.75"))
     with pytest.raises(ValidationError):

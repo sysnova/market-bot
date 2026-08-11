@@ -4,6 +4,7 @@
 # ruff: noqa: S105
 
 from enum import StrEnum
+from typing import Self
 
 
 class ContractEnum(StrEnum):
@@ -23,6 +24,13 @@ class StrategyMode(ContractEnum):
     CANDIDATE = "CANDIDATE"
     RESEARCH = "RESEARCH"
     DISABLED = "DISABLED"
+
+    @classmethod
+    def _missing_(cls, value: object) -> Self | None:
+        # SHADOW was renamed to CANDIDATE; durable events may still carry the old value.
+        if value == "SHADOW":
+            return cls.CANDIDATE
+        return None
 
 
 class RuleType(ContractEnum):
