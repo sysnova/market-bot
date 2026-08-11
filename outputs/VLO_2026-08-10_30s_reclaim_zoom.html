@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VLO reclaim zoom 30s</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #07111f; color: #e5e7eb; font-family: Inter, Segoe UI, Arial, sans-serif; }
+  .wrap { padding: 16px; }
+  .panel { background: linear-gradient(180deg, #0c1326 0%, #09101f 100%); border: 1px solid #1e2a46; border-radius: 16px; padding: 16px; }
+  h1 { margin: 0 0 6px; font-size: 22px; }
+  .meta { color: #94a3b8; font-size: 13px; margin-bottom: 10px; display:flex; gap: 16px; flex-wrap: wrap; }
+  .legend { display:flex; gap:14px; flex-wrap: wrap; color:#cbd5e1; font-size:13px; margin: 10px 0 14px; }
+  .dot { width:10px; height:10px; border-radius:999px; display:inline-block; margin-right:6px; }
+  .chart-wrap { overflow-x: auto; border:1px solid #1e2a46; border-radius: 12px; background:#08101f; }
+  svg { width:2600px; height:auto; display:block; background:#08101f; }
+  .note { margin-top: 12px; color:#cbd5e1; font-size: 13px; line-height: 1.45; }
+  code { color:#fbbf24; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <h1>VLO - reclaim zoom</h1>
+    <div class="meta">
+      <div>Window: <code>2026-08-10 14:02:30 UTC</code> to <code>14:15:00 UTC</code></div>
+      <div>Bars: <code>26</code></div>
+      <div>OR high: <code>310.6599</code></div>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:#22c55e"></span>Reclaim above OR high</span>
+      <span><span class="dot" style="background:#38bdf8"></span>First close above VWAP</span>
+      <span><span class="dot" style="background:#a855f7"></span>2-bar persistence</span>
+      <span><span class="dot" style="background:#f59e0b"></span>5m higher-low</span>
+      <span><span class="dot" style="background:#ef4444"></span>Local volume spike</span>
+    </div>
+    <div class="chart-wrap">
+      <svg viewBox="0 0 2600 920" role="img" aria-label="VLO reclaim zoom 30s chart">
+        <rect x="0" y="0" width="2600" height="920" fill="#08101f"/>
+<line x1="100" y1="50.00" x2="2480" y2="50.00" stroke="#26354f" stroke-width="1" opacity="0.5"/>
+<line x1="100" y1="165.00" x2="2480" y2="165.00" stroke="#26354f" stroke-width="1" opacity="0.5"/>
+<line x1="100" y1="280.00" x2="2480" y2="280.00" stroke="#26354f" stroke-width="1" opacity="0.5"/>
+<line x1="100" y1="395.00" x2="2480" y2="395.00" stroke="#26354f" stroke-width="1" opacity="0.5"/>
+<line x1="100" y1="510.00" x2="2480" y2="510.00" stroke="#26354f" stroke-width="1" opacity="0.5"/>
+<text x="12" y="54.00" fill="#aab6cf" font-size="12" font-family="Inter, Segoe UI, Arial">312.08</text>
+<text x="12" y="284.00" fill="#aab6cf" font-size="12" font-family="Inter, Segoe UI, Arial">310.42</text>
+<text x="12" y="514.00" fill="#aab6cf" font-size="12" font-family="Inter, Segoe UI, Arial">308.75</text>
+<text x="12" y="250.51" fill="#aab6cf" font-size="12" font-family="Inter, Segoe UI, Arial">310.66</text>
+<line x1="145.77" y1="339.07" x2="145.77" y2="465.48" stroke="#fb7185" stroke-width="1.1"/>
+<rect x="114.65" y="369.31" width="62.25" height="26.40" fill="#fb7185" opacity="0.96"/>
+<rect x="114.65" y="720.59" width="62.25" height="9.41" fill="#fb7185" opacity="0.2"/>
+<line x1="237.31" y1="337.69" x2="237.31" y2="449.76" stroke="#34d399" stroke-width="1.1"/>
+<rect x="206.18" y="348.75" width="62.25" height="17.27" fill="#34d399" opacity="0.96"/>
+<rect x="206.18" y="667.97" width="62.25" height="62.03" fill="#34d399" opacity="0.2"/>
+<line x1="328.85" y1="304.53" x2="328.85" y2="448.20" stroke="#34d399" stroke-width="1.1"/>
+<rect x="297.72" y="345.98" width="62.25" height="32.12" fill="#34d399" opacity="0.96"/>
+<rect x="297.72" y="702.77" width="62.25" height="27.23" fill="#34d399" opacity="0.2"/>
+<line x1="420.38" y1="311.44" x2="420.38" y2="379.14" stroke="#fb7185" stroke-width="1.1"/>
+<rect x="389.26" y="345.98" width="62.25" height="8.29" fill="#fb7185" opacity="0.96"/>
+<rect x="389.26" y="710.68" width="62.25" height="19.32" fill="#fb7185" opacity="0.2"/>
+<line x1="511.92" y1="292.10" x2="511.92" y2="379.14" stroke="#34d399" stroke-width="1.1"/>
+<rect x="480.80" y="312.82" width="62.25" height="31.78" fill="#34d399" opacity="0.96"/>
+<rect x="480.80" y="698.09" width="62.25" height="31.91" fill="#34d399" opacity="0.2"/>
+<line x1="603.46" y1="292.17" x2="603.46" y2="401.58" stroke="#34d399" stroke-width="1.1"/>
+<rect x="572.34" y="361.18" width="62.25" height="6.71" fill="#34d399" opacity="0.96"/>
+<rect x="572.34" y="692.35" width="62.25" height="37.65" fill="#34d399" opacity="0.2"/>
+<line x1="695.00" y1="268.61" x2="695.00" y2="370.85" stroke="#34d399" stroke-width="1.1"/>
+<rect x="663.88" y="293.48" width="62.25" height="46.77" fill="#34d399" opacity="0.96"/>
+<rect x="663.88" y="691.14" width="62.25" height="38.86" fill="#34d399" opacity="0.2"/>
+<line x1="786.54" y1="281.04" x2="786.54" y2="412.99" stroke="#34d399" stroke-width="1.1"/>
+<rect x="755.42" y="320.13" width="62.25" height="9.26" fill="#34d399" opacity="0.96"/>
+<rect x="755.42" y="704.16" width="62.25" height="25.84" fill="#34d399" opacity="0.2"/>
+<line x1="878.08" y1="292.11" x2="878.08" y2="410.73" stroke="#34d399" stroke-width="1.1"/>
+<rect x="846.95" y="321.42" width="62.25" height="89.31" fill="#34d399" opacity="0.96"/>
+<rect x="846.95" y="718.55" width="62.25" height="11.45" fill="#34d399" opacity="0.2"/>
+<line x1="969.62" y1="303.15" x2="969.62" y2="361.18" stroke="#34d399" stroke-width="1.1"/>
+<rect x="938.49" y="311.36" width="62.25" height="19.43" fill="#34d399" opacity="0.96"/>
+<rect x="938.49" y="709.45" width="62.25" height="20.55" fill="#34d399" opacity="0.2"/>
+<line x1="1061.15" y1="303.15" x2="1061.15" y2="361.18" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1030.03" y="303.32" width="62.25" height="28.85" fill="#34d399" opacity="0.96"/>
+<rect x="1030.03" y="668.07" width="62.25" height="61.93" fill="#34d399" opacity="0.2"/>
+<line x1="1152.69" y1="274.13" x2="1152.69" y2="338.16" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1121.57" y="274.13" width="62.25" height="55.27" fill="#34d399" opacity="0.96"/>
+<rect x="1121.57" y="664.03" width="62.25" height="65.97" fill="#34d399" opacity="0.2"/>
+<line x1="1244.23" y1="246.50" x2="1244.23" y2="386.98" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1213.11" y="285.71" width="62.25" height="8.18" fill="#34d399" opacity="0.96"/>
+<rect x="1213.11" y="644.88" width="62.25" height="85.12" fill="#34d399" opacity="0.2"/>
+<line x1="1335.77" y1="223.01" x2="1335.77" y2="370.89" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1304.65" y="243.05" width="62.25" height="127.85" fill="#34d399" opacity="0.96"/>
+<rect x="1304.65" y="710.44" width="62.25" height="19.56" fill="#34d399" opacity="0.2"/>
+<line x1="1427.31" y1="240.97" x2="1427.31" y2="283.81" stroke="#fb7185" stroke-width="1.1"/>
+<rect x="1396.18" y="243.05" width="62.25" height="17.96" fill="#fb7185" opacity="0.96"/>
+<rect x="1396.18" y="693.83" width="62.25" height="36.17" fill="#fb7185" opacity="0.2"/>
+<line x1="1518.85" y1="131.82" x2="1518.85" y2="302.42" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1487.72" y="184.33" width="62.25" height="64.15" fill="#34d399" opacity="0.96"/>
+<rect x="1487.72" y="560.00" width="62.25" height="170.00" fill="#34d399" opacity="0.2"/>
+<line x1="1610.38" y1="131.82" x2="1610.38" y2="239.59" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1579.26" y="180.18" width="62.25" height="8.29" fill="#34d399" opacity="0.96"/>
+<rect x="1579.26" y="671.97" width="62.25" height="58.03" fill="#34d399" opacity="0.2"/>
+<line x1="1701.92" y1="131.82" x2="1701.92" y2="268.66" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1670.80" y="155.13" width="62.25" height="11.92" fill="#34d399" opacity="0.96"/>
+<rect x="1670.80" y="722.19" width="62.25" height="7.81" fill="#34d399" opacity="0.2"/>
+<line x1="1793.46" y1="147.02" x2="1793.46" y2="179.31" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1762.34" y="147.02" width="62.25" height="22.80" fill="#34d399" opacity="0.96"/>
+<rect x="1762.34" y="720.41" width="62.25" height="9.59" fill="#34d399" opacity="0.2"/>
+<line x1="1885.00" y1="94.52" x2="1885.00" y2="286.06" stroke="#34d399" stroke-width="1.1"/>
+<rect x="1853.88" y="159.01" width="62.25" height="40.51" fill="#34d399" opacity="0.96"/>
+<rect x="1853.88" y="669.73" width="62.25" height="60.27" fill="#34d399" opacity="0.2"/>
+<line x1="1976.54" y1="116.62" x2="1976.54" y2="273.46" stroke="#fb7185" stroke-width="1.1"/>
+<rect x="1945.42" y="119.64" width="62.25" height="14.95" fill="#fb7185" opacity="0.96"/>
+<rect x="1945.42" y="700.69" width="62.25" height="29.31" fill="#fb7185" opacity="0.2"/>
+<line x1="2068.08" y1="126.29" x2="2068.08" y2="200.91" stroke="#fb7185" stroke-width="1.1"/>
+<rect x="2036.95" y="140.11" width="62.25" height="45.60" fill="#fb7185" opacity="0.96"/>
+<rect x="2036.95" y="701.98" width="62.25" height="28.02" fill="#fb7185" opacity="0.2"/>
+<line x1="2159.62" y1="129.06" x2="2159.62" y2="199.87" stroke="#34d399" stroke-width="1.1"/>
+<rect x="2128.49" y="156.69" width="62.25" height="8.98" fill="#34d399" opacity="0.96"/>
+<rect x="2128.49" y="681.27" width="62.25" height="48.73" fill="#34d399" opacity="0.2"/>
+<line x1="2251.15" y1="142.92" x2="2251.15" y2="231.30" stroke="#34d399" stroke-width="1.1"/>
+<rect x="2220.03" y="185.02" width="62.25" height="1.00" fill="#34d399" opacity="0.96"/>
+<rect x="2220.03" y="633.45" width="62.25" height="96.55" fill="#34d399" opacity="0.2"/>
+<line x1="2342.69" y1="160.84" x2="2342.69" y2="215.41" stroke="#34d399" stroke-width="1.1"/>
+<rect x="2311.57" y="181.56" width="62.25" height="33.85" fill="#34d399" opacity="0.96"/>
+<rect x="2311.57" y="699.92" width="62.25" height="30.08" fill="#34d399" opacity="0.2"/>
+<line x1="2434.23" y1="180.14" x2="2434.23" y2="240.96" stroke="#fb7185" stroke-width="1.1"/>
+<rect x="2403.11" y="203.67" width="62.25" height="15.89" fill="#fb7185" opacity="0.96"/>
+<rect x="2403.11" y="681.05" width="62.25" height="48.95" fill="#fb7185" opacity="0.2"/>
+<path d="M145.77,708.83 L237.31,705.21 L328.85,703.49 L420.38,702.31 L511.92,700.24 L603.46,697.96 L695.00,695.36 L786.54,693.77 L878.08,693.11 L969.62,691.86 L1061.15,688.28 L1152.69,684.05 L1244.23,678.53 L1335.77,677.21 L1427.31,674.81 L1518.85,663.32 L1610.38,659.01 L1701.92,658.44 L1793.46,657.72 L1885.00,653.25 L1976.54,651.06 L2068.08,648.99 L2159.62,645.34 L2251.15,639.04 L2342.69,637.11 L2434.23,634.14" fill="none" stroke="#7dd3fc" stroke-width="2" opacity="0.92"/>
+<path d="M145.77,430.20 L237.31,421.05 L328.85,418.35 L420.38,416.49 L511.92,412.27 L603.46,410.75 L695.00,406.02 L786.54,402.66 L878.08,397.63 L969.62,393.24 L1061.15,388.13 L1152.69,379.08 L1244.23,369.58 L1335.77,356.07 L1427.31,341.24 L1518.85,326.04 L1610.38,314.71 L1701.92,303.23 L1793.46,290.11 L1885.00,277.90 L1976.54,264.84 L2068.08,256.69 L2159.62,247.23 L2251.15,238.76 L2342.69,232.20 L2434.23,225.12" fill="none" stroke="#f59e0b" stroke-width="2" opacity="0.88"/>
+<line x1="1335.77" y1="50" x2="1335.77" y2="510" stroke="#22c55e" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.95"/>
+<circle cx="1335.77" cy="243.05" r="5" fill="#22c55e" stroke="#08101f" stroke-width="1.2"/>
+<rect x="1343.77" y="215.05" width="240" height="22" rx="6" fill="#08101f" opacity="0.88" stroke="#22c55e" stroke-width="1"/>
+<text x="1353.77" y="230.05" fill="#e5e7eb" font-size="12" font-family="Inter, Segoe UI, Arial">Reclaim above OR high 310.66</text>
+<line x1="145.77" y1="50" x2="145.77" y2="510" stroke="#38bdf8" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.95"/>
+<circle cx="145.77" cy="395.71" r="5" fill="#38bdf8" stroke="#08101f" stroke-width="1.2"/>
+<rect x="153.77" y="367.71" width="240" height="22" rx="6" fill="#08101f" opacity="0.88" stroke="#38bdf8" stroke-width="1"/>
+<text x="163.77" y="382.71" fill="#e5e7eb" font-size="12" font-family="Inter, Segoe UI, Arial">First close above VWAP</text>
+<line x1="1610.38" y1="50" x2="1610.38" y2="510" stroke="#a855f7" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.95"/>
+<circle cx="1610.38" cy="180.18" r="5" fill="#a855f7" stroke="#08101f" stroke-width="1.2"/>
+<rect x="1618.38" y="152.18" width="240" height="22" rx="6" fill="#08101f" opacity="0.88" stroke="#a855f7" stroke-width="1"/>
+<text x="1628.38" y="167.18" fill="#e5e7eb" font-size="12" font-family="Inter, Segoe UI, Arial">2-bar persistence above OR high</text>
+<line x1="511.92" y1="50" x2="511.92" y2="510" stroke="#f59e0b" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.95"/>
+<circle cx="511.92" cy="379.14" r="5" fill="#f59e0b" stroke="#08101f" stroke-width="1.2"/>
+<rect x="519.92" y="351.14" width="240" height="22" rx="6" fill="#08101f" opacity="0.88" stroke="#f59e0b" stroke-width="1"/>
+<text x="529.92" y="366.14" fill="#e5e7eb" font-size="12" font-family="Inter, Segoe UI, Arial">5m higher-low confirmed</text>
+<line x1="1518.85" y1="50" x2="1518.85" y2="510" stroke="#ef4444" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.95"/>
+<circle cx="1518.85" cy="184.33" r="5" fill="#ef4444" stroke="#08101f" stroke-width="1.2"/>
+<rect x="1526.85" y="156.33" width="240" height="22" rx="6" fill="#08101f" opacity="0.88" stroke="#ef4444" stroke-width="1"/>
+<text x="1536.85" y="171.33" fill="#e5e7eb" font-size="12" font-family="Inter, Segoe UI, Arial">Local volume spike</text>
+      </svg>
+    </div>
+    <div class="note">
+      This zoom shows the difference between an early VWAP bounce and a bot-confirmed continuation. The bot is waiting for reclaim + persistence + higher-low, not just a single candle above VWAP.
+    </div>
+  </div>
+</div>
+</body>
+</html>

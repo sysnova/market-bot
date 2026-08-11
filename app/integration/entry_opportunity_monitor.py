@@ -17,6 +17,7 @@ from app.contracts import (
     ENTRY_OPPORTUNITY_EVENT,
     EntryCheckpointStatus,
     EntryLegStatus,
+    EntryMaturityLevel,
     EntryOpportunity,
     EntryOpportunityEvent,
     EntryOpportunityStatus,
@@ -373,14 +374,27 @@ def _format_opportunity(
     ]
     for item in opportunity.checkpoints:
         setup = f"{item.level.value}/{item.signal_family.value}"
-        performance = (
-            f"G/L {_percent_text(item.gain_loss_percent)}"
-            if item.status is EntryCheckpointStatus.CLOSED
-            else f"P/L LIVE {_live_percent(item.entry_price, item.current_price)}"
-        )
+        tracking = item.level in {
+            EntryMaturityLevel.ARMED,
+            EntryMaturityLevel.IN_ZONE,
+        }
+        if tracking:
+            price_label = "REFERENCE"
+            performance = (
+                f"MOVE FINAL {_percent_text(item.gain_loss_percent)}"
+                if item.status is EntryCheckpointStatus.CLOSED
+                else f"MOVE LIVE {_live_percent(item.entry_price, item.current_price)}"
+            )
+        else:
+            price_label = "ENTRY"
+            performance = (
+                f"G/L {_percent_text(item.gain_loss_percent)}"
+                if item.status is EntryCheckpointStatus.CLOSED
+                else f"P/L LIVE {_live_percent(item.entry_price, item.current_price)}"
+            )
         lines.append(
             f"    {setup:<28} {item.status.value:<7} "
-            f"ENTRY {item.entry_price} PX {item.current_price} "
+            f"{price_label} {item.entry_price} PX {item.current_price} "
             f"EXIT {item.exit_price or '-'} {performance} | "
             f"INV {item.invalidation} TARGET {item.target or '-'} | "
             f"MFE {_percent_text(item.mfe_percent)} MAE {_percent_text(item.mae_percent)} | "
@@ -396,18 +410,25 @@ def _format_opportunity(
         lines.append("    -")
     for leg in opportunity.legs:
         entry = leg.entry_price
-        performance = (
-            f"G/L {_percent_text(leg.gain_loss_percent)}"
-            if leg.status not in {EntryLegStatus.WATCHING, EntryLegStatus.OPEN}
-            else (
-                f"P/L LIVE {_live_percent(entry, leg.current_price)}"
-                if entry is not None
-                else "P/L LIVE -"
+        tracking = leg.status is EntryLegStatus.WATCHING and entry is None
+        if tracking:
+            price_label = "REFERENCE"
+            performance = "MOVE -"
+        else:
+            price_label = "ENTRY"
+            performance = (
+                f"G/L {_percent_text(leg.gain_loss_percent)}"
+                if leg.status not in {EntryLegStatus.WATCHING, EntryLegStatus.OPEN}
+                else (
+                    f"P/L LIVE {_live_percent(entry, leg.current_price)}"
+                    if entry is not None
+                    else "P/L LIVE -"
+                )
             )
-        )
         lines.append(
             f"    {leg.horizon.value:<10} {leg.status.value:<15} "
-            f"ENTRY {entry or '-'} PX {leg.current_price} EXIT {leg.exit_price or '-'} "
+            f"{price_label} {entry or '-'} PX {leg.current_price} "
+            f"EXIT {leg.exit_price or '-'} "
             f"{performance} | INV {leg.invalidation} TARGET {leg.target or '-'} | "
             f"MFE {_percent_text(leg.mfe_percent)} MAE {_percent_text(leg.mae_percent)} | "
             f"OPENED {leg.opened_at.strftime('%m-%d %H:%M') if leg.opened_at else '-'} "

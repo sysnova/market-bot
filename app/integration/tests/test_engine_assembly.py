@@ -10,11 +10,13 @@ from app.alert_engine import AlertEngineV33
 from app.common.settings import AppSettings
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
+    EntryOpportunityEngineV3,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_recovery_engine import EntryRecoveryEngineV11
 from app.entry_watcher import (
     EntryWatcherV5,
+    EntryWatcherV52,
     InMemoryEntryWatchStore,
 )
 from app.integration.engine_assembly import (
@@ -44,7 +46,8 @@ from app.volume_structure_engine import VolumeStructureEngineV11
 ROOT = Path(__file__).resolve().parents[3]
 DEFINITION = ROOT / "configs/marketbot/7.2.0.yaml"
 VOLUME_STRUCTURE_DEFINITION = ROOT / "configs/marketbot/7.3.0.yaml"
-LATEST_DEFINITION = ROOT / "configs/marketbot/7.4.0.yaml"
+INVALIDATION_DEFINITION = ROOT / "configs/marketbot/7.4.0.yaml"
+LATEST_DEFINITION = ROOT / "configs/marketbot/7.5.0.yaml"
 PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 
@@ -75,7 +78,7 @@ def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
 
 def test_latest_definition_activates_invalidation_aware_volume_structure() -> None:
     previous = load_marketbot_definition(VOLUME_STRUCTURE_DEFINITION)
-    definition = load_marketbot_definition(LATEST_DEFINITION)
+    definition = load_marketbot_definition(INVALIDATION_DEFINITION)
 
     assert previous.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"
     assert definition.version == "7.4.0"
@@ -83,6 +86,26 @@ def test_latest_definition_activates_invalidation_aware_volume_structure() -> No
     assert isinstance(
         MarketBotAssembly(definition).build_volume_structure(),
         VolumeStructureEngineV11,
+    )
+
+
+def test_latest_definition_activates_quality_radar_and_current_maturity() -> None:
+    previous = load_marketbot_definition(INVALIDATION_DEFINITION)
+    definition = load_marketbot_definition(LATEST_DEFINITION)
+    assembly = MarketBotAssembly(definition)
+
+    assert previous.engines[EngineSlot.ENTRY_WATCHER].implementation == "5.1.0"
+    assert previous.engines[EngineSlot.ENTRY_OPPORTUNITY].implementation == "2.0.0"
+    assert definition.version == "7.5.0"
+    assert definition.engines[EngineSlot.ENTRY_WATCHER].implementation == "5.2.0"
+    assert definition.engines[EngineSlot.ENTRY_OPPORTUNITY].implementation == "3.0.0"
+    assert isinstance(
+        assembly.build_entry_watcher(store=InMemoryEntryWatchStore()),
+        EntryWatcherV52,
+    )
+    assert isinstance(
+        assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV3,
     )
 
 

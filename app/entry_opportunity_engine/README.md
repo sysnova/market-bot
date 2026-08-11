@@ -22,6 +22,10 @@ opportunity even when no Entry Watcher root exists. Signal IDs and `(family, set
 idempotency; the compact references are bounded to 32 setups. `ingest_alert` remains only as a
 temporary compatibility adapter for older in-process callers.
 
+`EntryOpportunityEngineV3` mirrors the watcher's current tracking state, so a zone exit can
+move `current_maturity` and status from `IN_ZONE` back to `ARMED`. `peak_maturity` remains
+`IN_ZONE`, preserving the highest stage reached, and L1-L4 confirmation never regresses.
+
 Commands:
 
 ```bash

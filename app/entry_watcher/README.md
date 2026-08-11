@@ -15,6 +15,11 @@
 anti-chase gate and may confirm L4 without a prior Long-zone touch after two fresh, strong,
 price-efficient Intraday readings report a five-minute higher low and live reward/risk is at least 2.
 
+`EntryWatcherV52` (`5.2.0`) limits initial radar creation to non-extended Long candidates
+scoring at least 50 and no more than 4% and 2 ATR above the frozen zone. These limits affect
+only the initial `ARMED`; once a qualified watch exists, the existing zone, continuation,
+confirmation, invalidation, and expiry policies remain unchanged.
+
 The Entry Watcher preserves a Long entry thesis across later market evaluations. It freezes
 the original buy zone, invalidation, expected correction, source analysis, and expiry instead
 of recalculating those levels away when price finally pulls back.

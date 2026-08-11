@@ -15,7 +15,11 @@ from app.alert_engine.strategy import configure_engine as configure_alert
 from app.alert_engine.strategy import validate_strategy as validate_alert
 from app.dilution_sec_engine import DilutionSecEngine
 from app.elliott_wave_engine import ElliottWaveEngine
-from app.entry_opportunity_engine import EntryOpportunityEngine, EntryOpportunityEngineV2
+from app.entry_opportunity_engine import (
+    EntryOpportunityEngine,
+    EntryOpportunityEngineV2,
+    EntryOpportunityEngineV3,
+)
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
 from app.entry_recovery_engine.strategy import validate_strategy as validate_recovery
@@ -26,6 +30,7 @@ from app.entry_watcher import (
     EntryWatcherV4,
     EntryWatcherV5,
     EntryWatcherV51,
+    EntryWatcherV52,
 )
 from app.entry_watcher.strategy import configure_engine as configure_watcher
 from app.entry_watcher.strategy import validate_strategy as validate_watcher
@@ -101,6 +106,7 @@ def default_engine_registry() -> EngineRegistry:
                     "4.0.0": EntryWatcherV4,
                     "5.0.0": EntryWatcherV5,
                     "5.1.0": EntryWatcherV51,
+                    "5.2.0": EntryWatcherV52,
                 },
                 required_since="0.0.0",
                 configure=configure_watcher,
@@ -110,6 +116,7 @@ def default_engine_registry() -> EngineRegistry:
                 implementations={
                     "1.0.0": EntryOpportunityEngine,
                     "2.0.0": EntryOpportunityEngineV2,
+                    "3.0.0": EntryOpportunityEngineV3,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(

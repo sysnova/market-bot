@@ -184,6 +184,54 @@ def test_dashboard_labels_analytical_family_without_fake_core_maturity() -> None
 
 
 @pytest.mark.unit
+def test_dashboard_labels_tracking_checkpoints_as_references_not_entries() -> None:
+    base = _closed_opportunity()
+    checkpoint = base.checkpoints[0].model_copy(
+        update={
+            "level": EntryMaturityLevel.ARMED,
+            "status": EntryCheckpointStatus.OPEN,
+            "closed_at": None,
+            "exit_price": None,
+            "outcome": None,
+            "gain_loss_percent": None,
+        }
+    )
+    leg = base.legs[0].model_copy(
+        update={
+            "status": EntryLegStatus.WATCHING,
+            "opened_at": None,
+            "entry_price": None,
+            "closed_at": None,
+            "exit_price": None,
+            "gain_loss_percent": None,
+        }
+    )
+    tracking = base.model_copy(
+        update={
+            "status": EntryOpportunityStatus.ARMED,
+            "current_maturity": EntryMaturityLevel.ARMED,
+            "peak_maturity": EntryMaturityLevel.ARMED,
+            "progress_percent": Decimal("20"),
+            "closed_at": None,
+            "close_reason": None,
+            "legs": (leg,),
+            "checkpoints": (checkpoint,),
+        }
+    )
+    dashboard = OpportunityDashboard(history=25)
+    dashboard.merge(tracking)
+
+    output = format_opportunity_dashboard(dashboard, refreshed_at=NOW)
+
+    assert "REFERENCE 100 PX 105" in output
+    assert "MOVE LIVE +5.0000%" in output
+    assert "ENTRY 100 PX 105" not in output
+    assert "P/L LIVE +5.0000%" not in output
+    assert "REFERENCE - PX 105" in output
+    assert "MOVE -" in output
+
+
+@pytest.mark.unit
 def test_monitor_decodes_only_entry_opportunity_events() -> None:
     opportunity = _closed_opportunity()
     event = EntryOpportunityEvent(

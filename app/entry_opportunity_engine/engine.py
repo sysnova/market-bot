@@ -64,6 +64,7 @@ class EntryOpportunityEngine:
 
     engine_id = "entry-opportunity"
     engine_version = "1.0.0"
+    regress_tracking_maturity = False
 
     def __init__(
         self,
@@ -188,6 +189,7 @@ class EntryOpportunityEngine:
             horizons=transition.horizons,
             source_analysis_ids=transition.source_analysis_ids,
             checkpoint_setup_id=f"watch:{transition.watch_id}",
+            allow_tracking_regression=self.regress_tracking_maturity,
         )
         changed = _with_source_cursor(
             changed,
@@ -546,10 +548,11 @@ class EntryOpportunityEngine:
         checkpoint_family: EntrySignalFamily = EntrySignalFamily.CORE_ENTRY,
         checkpoint_setup_id: str | None = None,
         force_checkpoint: bool = False,
+        allow_tracking_regression: bool = False,
     ) -> EntryOpportunity:
-        current_rank = _rank(opportunity.peak_maturity)
+        peak_rank = _rank(opportunity.peak_maturity)
         level_rank = _rank(level)
-        peak = level if level_rank > current_rank else opportunity.peak_maturity
+        peak = level if level_rank > peak_rank else opportunity.peak_maturity
         checkpoints = opportunity.checkpoints
         checkpoint_exists = any(
             item.level is level
@@ -557,7 +560,7 @@ class EntryOpportunityEngine:
             and item.setup_id == checkpoint_setup_id
             for item in checkpoints
         )
-        if (level_rank > current_rank or force_checkpoint) and not checkpoint_exists:
+        if (level_rank > peak_rank or force_checkpoint) and not checkpoint_exists:
             checkpoints = (
                 *checkpoints,
                 self._new_checkpoint(
@@ -572,9 +575,20 @@ class EntryOpportunityEngine:
             )
         status = opportunity.status
         legs = opportunity.legs
-        if level is EntryMaturityLevel.IN_ZONE and status is EntryOpportunityStatus.ARMED:
+        tracking_update = (
+            allow_tracking_regression
+            and status in {EntryOpportunityStatus.ARMED, EntryOpportunityStatus.IN_ZONE}
+            and level in {EntryMaturityLevel.ARMED, EntryMaturityLevel.IN_ZONE}
+        )
+        if tracking_update:
+            status = (
+                EntryOpportunityStatus.IN_ZONE
+                if level is EntryMaturityLevel.IN_ZONE
+                else EntryOpportunityStatus.ARMED
+            )
+        elif level is EntryMaturityLevel.IN_ZONE and status is EntryOpportunityStatus.ARMED:
             status = EntryOpportunityStatus.IN_ZONE
-        if level_rank >= current_rank and level in {
+        if level_rank >= peak_rank and level in {
             EntryMaturityLevel.L1,
             EntryMaturityLevel.L2,
             EntryMaturityLevel.L3,
@@ -598,10 +612,12 @@ class EntryOpportunityEngine:
             update={
                 "status": status,
                 "current_maturity": (
-                    level if level_rank >= current_rank else opportunity.current_maturity
+                    level
+                    if tracking_update or level_rank >= peak_rank
+                    else opportunity.current_maturity
                 ),
                 "peak_maturity": peak,
-                "progress_percent": _PROGRESS[peak],
+                "progress_percent": _PROGRESS[level] if tracking_update else _PROGRESS[peak],
                 "current_price": (
                     price if now >= opportunity.updated_at else opportunity.current_price
                 ),
@@ -926,6 +942,13 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
             legs=legs,
             checkpoints=(checkpoint,),
         )
+
+
+class EntryOpportunityEngineV3(EntryOpportunityEngineV2):
+    """Reflect watcher ARMED/IN_ZONE regressions while retaining peak maturity."""
+
+    engine_version = "3.0.0"
+    regress_tracking_maturity = True
 
 
 def _is_core_signal(signal: EntrySignal) -> bool:

@@ -20,6 +20,7 @@ from app.entry_watcher import (
     EntryWatcherV4,
     EntryWatcherV5,
     EntryWatcherV51,
+    EntryWatcherV52,
     InMemoryEntryWatchStore,
 )
 
@@ -119,6 +120,66 @@ async def test_extended_long_setup_arms_and_freezes_original_zone() -> None:
     assert active.expires_at == NOW + timedelta(weeks=8)
     assert active.anchor_snapshot["metrics"]["support"] == "96"
     assert active.anchor_snapshot["watcher_engine_version"] == "1.0.0"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("classification", "price", "score", "distance_atr"),
+    (
+        ("extended", "106", "80", "0.25"),
+        ("watch_pullback", "106", "32.33", "0.25"),
+        ("watch_pullback", "120", "80", "3"),
+    ),
+)
+async def test_v52_rejects_noisy_initial_armed_candidates(
+    classification: str,
+    price: str,
+    score: str,
+    distance_atr: str,
+) -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV52(store=store)
+    result = analysis(
+        AnalysisHorizon.LONG_TERM,
+        classification=classification,
+        verdict=AnalysisVerdict.WATCH,
+        direction=PatternDirection.BULLISH,
+        price=price,
+        score=score,
+        extra_metrics=(
+            NamedValue(
+                name="distance_to_buy_zone_atr",
+                value=Decimal(distance_atr),
+            ),
+        ),
+    )
+
+    transition = await watcher.ingest(result, now=NOW)
+
+    assert transition is None
+    assert await store.load_active("AAPL") is None
+
+
+@pytest.mark.unit
+async def test_v52_arms_a_quality_pullback_near_the_zone() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV52(store=store)
+    result = analysis(
+        AnalysisHorizon.LONG_TERM,
+        classification="watch_pullback",
+        verdict=AnalysisVerdict.WATCH,
+        direction=PatternDirection.BULLISH,
+        price="108",
+        score="60",
+        extra_metrics=(
+            NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),
+        ),
+    )
+
+    transition = await watcher.ingest(result, now=NOW)
+
+    assert transition is not None
+    assert transition.status is EntryWatchStatus.ARMED
 
 
 @pytest.mark.unit

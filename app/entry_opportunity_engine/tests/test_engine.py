@@ -27,6 +27,7 @@ from app.contracts import (
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
     EntryOpportunityEngineV2,
+    EntryOpportunityEngineV3,
     InMemoryEntryOpportunityStore,
 )
 
@@ -260,6 +261,44 @@ async def test_same_ticker_advances_one_opportunity_and_preserves_original_thesi
         AnalysisHorizon.INTRADAY,
     }
     assert len(store.opportunities) == 1
+
+
+@pytest.mark.unit
+async def test_v3_current_maturity_regresses_while_peak_is_preserved() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV3(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    watch_id = "0195f3a5-9000-7000-8000-000000000021"
+    await manager.ingest_transition(
+        watch_transition(EntryWatchStatus.ARMED, watch_id=watch_id, price="110")
+    )
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.IN_ZONE,
+            watch_id=watch_id,
+            price="99",
+            occurred_at=NOW + timedelta(minutes=1),
+            previous=EntryWatchStatus.ARMED,
+        )
+    )
+
+    events = await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id=watch_id,
+            price="103",
+            occurred_at=NOW + timedelta(minutes=2),
+            previous=EntryWatchStatus.IN_ZONE,
+            transition_id=UUID("0195f3a5-9000-7000-8000-000000000086"),
+        )
+    )
+
+    active = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.ARMED
+    assert active.current_maturity is EntryMaturityLevel.ARMED
+    assert active.peak_maturity is EntryMaturityLevel.IN_ZONE
+    assert active.progress_percent == Decimal("20")
 
 
 @pytest.mark.unit
