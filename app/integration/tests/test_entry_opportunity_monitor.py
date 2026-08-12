@@ -131,6 +131,51 @@ def test_dashboard_renders_maturity_entries_closed_gain_loss_and_tracking_detail
 
 
 @pytest.mark.unit
+def test_dashboard_highlights_trade_summary_with_foreground_colors_only() -> None:
+    dashboard = OpportunityDashboard(history=25)
+    dashboard.merge(_closed_opportunity())
+
+    output = format_opportunity_dashboard(dashboard, refreshed_at=NOW, color=True)
+
+    assert "COMPRA \033[1;96mAAPL\033[0m" in output
+    assert "ENTRADA \033[1;93m100\033[0m" in output
+    assert "SALIDA \033[1;95m105\033[0m" in output
+    assert "P/L \033[1;92m+5.0000%\033[0m" in output
+    assert all(code not in output for code in ("\033[40m", "\033[41m", "\033[42m"))
+
+
+@pytest.mark.unit
+def test_dashboard_uses_red_for_a_negative_live_trade_summary() -> None:
+    base = _closed_opportunity()
+    checkpoint = base.checkpoints[0].model_copy(
+        update={
+            "status": EntryCheckpointStatus.OPEN,
+            "current_price": Decimal("95"),
+            "closed_at": None,
+            "exit_price": None,
+            "outcome": None,
+            "gain_loss_percent": None,
+        }
+    )
+    opportunity = base.model_copy(
+        update={
+            "status": EntryOpportunityStatus.OPEN,
+            "current_price": Decimal("95"),
+            "closed_at": None,
+            "close_reason": None,
+            "checkpoints": (checkpoint,),
+        }
+    )
+    dashboard = OpportunityDashboard(history=25)
+    dashboard.merge(opportunity)
+
+    output = format_opportunity_dashboard(dashboard, refreshed_at=NOW, color=True)
+
+    assert "MARCA \033[1;95m95\033[0m" in output
+    assert "P/L \033[1;91m-5.0000%\033[0m" in output
+
+
+@pytest.mark.unit
 def test_dashboard_rejects_an_older_snapshot_of_the_same_opportunity() -> None:
     dashboard = OpportunityDashboard(history=25)
     newest = _closed_opportunity(revision=4)

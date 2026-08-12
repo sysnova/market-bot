@@ -32,6 +32,13 @@ from .entry_opportunity_store import PostgresEntryOpportunityStore
 
 _CLEAR_SCREEN = "\033[2J\033[H"
 _FOUR_PLACES = Decimal("0.0001")
+_RESET_STYLE = "\033[0m"
+_TICKER_STYLE = "\033[1;96m"
+_ENTRY_STYLE = "\033[1;93m"
+_EXIT_STYLE = "\033[1;95m"
+_POSITIVE_STYLE = "\033[1;92m"
+_NEGATIVE_STYLE = "\033[1;91m"
+_NEUTRAL_STYLE = "\033[1;93m"
 
 
 class OpportunityDashboard:
@@ -149,9 +156,14 @@ async def run_entry_opportunity_monitor(
     dashboard = OpportunityDashboard(history=history)
     clock = SystemClock()
     lock = asyncio.Lock()
+    color = _supports_color(output)
 
     def render() -> None:
-        snapshot = format_opportunity_dashboard(dashboard, refreshed_at=clock.now())
+        snapshot = format_opportunity_dashboard(
+            dashboard,
+            refreshed_at=clock.now(),
+            color=color,
+        )
         print(f"{_CLEAR_SCREEN}{snapshot}", file=output, end="", flush=True)
 
     async def handle(envelope: EventEnvelope) -> None:
@@ -304,6 +316,7 @@ def format_opportunity_dashboard(
     dashboard: OpportunityDashboard,
     *,
     refreshed_at: datetime,
+    color: bool = False,
 ) -> str:
     """Build a stable, terminal-friendly complete opportunity snapshot."""
 
@@ -341,6 +354,7 @@ def format_opportunity_dashboard(
             _format_opportunity(
                 opportunity,
                 dashboard.reasons_for(opportunity.opportunity_id),
+                color=color,
             )
         )
     return "\n".join(lines) + "\n"
@@ -349,6 +363,8 @@ def format_opportunity_dashboard(
 def _format_opportunity(
     opportunity: EntryOpportunity,
     reasons: tuple[str, ...],
+    *,
+    color: bool,
 ) -> list[str]:
     filled = min(10, max(0, int(opportunity.progress_percent / Decimal("10"))))
     progress = f"[{'#' * filled}{'-' * (10 - filled)}]"
@@ -370,10 +386,12 @@ def _format_opportunity(
     lines = [
         "",
         (
-            f"{opportunity.symbol:<7} {opportunity.status.value:<10} "
+            f"{_styled(opportunity.symbol, _TICKER_STYLE, color):<7} "
+            f"{opportunity.status.value:<10} "
             f"{decision} {progress} "
             f"{opportunity.progress_percent}% | REV {opportunity.revision}{closed}"
         ),
+        *_trade_summary_lines(opportunity, color=color),
         (
             f"  ORIG {opportunity.original_price} | PX {opportunity.current_price} | "
             f"ZONE {opportunity.zone_low}-{opportunity.zone_high} | "
@@ -466,8 +484,63 @@ def _format_opportunity(
     return lines
 
 
+def _trade_summary_lines(
+    opportunity: EntryOpportunity,
+    *,
+    color: bool,
+) -> list[str]:
+    lines: list[str] = []
+    for checkpoint in opportunity.checkpoints:
+        closed = checkpoint.status is EntryCheckpointStatus.CLOSED
+        if closed:
+            assert checkpoint.exit_price is not None
+            assert checkpoint.gain_loss_percent is not None
+            mark_label = "SALIDA"
+            mark = checkpoint.exit_price
+            performance = checkpoint.gain_loss_percent
+        else:
+            mark_label = "MARCA"
+            mark = checkpoint.current_price
+            performance = _live_percent_value(
+                checkpoint.entry_price,
+                checkpoint.current_price,
+            )
+        lines.append(
+            "  COMPRA "
+            f"{_styled(opportunity.symbol, _TICKER_STYLE, color)} | "
+            f"MADUREZ {checkpoint.level.value} | ESTADO {checkpoint.status.value} | "
+            f"ENTRADA {_styled(str(checkpoint.entry_price), _ENTRY_STYLE, color)} | "
+            f"{mark_label} {_styled(str(mark), _EXIT_STYLE, color)} | "
+            f"P/L {_styled_percent(performance, color=color)}"
+        )
+    return lines
+
+
 def _live_percent(entry: Decimal, current: Decimal) -> str:
-    return _percent_text((current - entry) / entry * Decimal("100"))
+    return _percent_text(_live_percent_value(entry, current))
+
+
+def _live_percent_value(entry: Decimal, current: Decimal) -> Decimal:
+    return (current - entry) / entry * Decimal("100")
+
+
+def _styled_percent(value: Decimal, *, color: bool) -> str:
+    if value > 0:
+        style = _POSITIVE_STYLE
+    elif value < 0:
+        style = _NEGATIVE_STYLE
+    else:
+        style = _NEUTRAL_STYLE
+    return _styled(_percent_text(value), style, color)
+
+
+def _styled(value: str, style: str, enabled: bool) -> str:
+    return f"{style}{value}{_RESET_STYLE}" if enabled else value
+
+
+def _supports_color(stream: TextIO) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty is not None and isatty())
 
 
 def _percent_text(value: Decimal | None) -> str:
