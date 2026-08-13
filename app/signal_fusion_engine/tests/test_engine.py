@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from app.contracts import (
@@ -7,6 +7,7 @@ from app.contracts import (
     AnalysisVerdict,
     BarTimeframe,
     FusionState,
+    GammaAssessment,
     MacroRegime,
     NamedValue,
     PatreonCapsAssessment,
@@ -19,10 +20,12 @@ from app.contracts import (
     WaveAssessment,
     WavePhase,
 )
+from app.options_gamma_engine import gamma_analysis_from_assessment
 from app.signal_fusion_engine import (
     SignalFusionContext,
     SignalFusionEngine,
     SignalFusionEngineV04,
+    SignalFusionEngineV05,
 )
 
 NOW = datetime(2026, 8, 2, 20, tzinfo=UTC)
@@ -350,3 +353,48 @@ def test_v04_adds_auditable_bounded_volume_structure_boost() -> None:
     assert enriched.engine_version == "0.4.0"
     assert "volume_structure_boost:+6" in enriched.reasons
     assert volume.analysis_id in enriched.source_analysis_ids
+
+
+def test_v05_applies_fresh_gamma_penalty_without_promoting_or_vetoing_state() -> None:
+    gamma = GammaAssessment(
+        symbol="TGT",
+        generated_at=NOW - timedelta(minutes=5),
+        expires_at=NOW + timedelta(minutes=15),
+        engine_version="1.0.0",
+        methodology_version="1.0.0",
+        spot_price=Decimal("105"),
+        spot_as_of=NOW - timedelta(minutes=5),
+        expiration_from=date(2026, 8, 2),
+        expiration_to=date(2026, 9, 16),
+        open_interest_as_of=date(2026, 8, 1),
+        status="AVAILABLE",
+        quality_score=Decimal("95"),
+        contract_count=100,
+        usable_contract_count=100,
+        coverage_ratio=Decimal("1"),
+        gamma_regime="MIXED",
+        directional_bias="NEUTRAL",
+        net_gamma_exposure=Decimal("0"),
+        absolute_gamma_exposure=Decimal("1000000"),
+        net_gamma_ratio=Decimal("0"),
+        call_wall=Decimal("112"),
+        put_wall=Decimal("100"),
+        absolute_gamma_wall=Decimal("105"),
+        max_pain=Decimal("105"),
+        expected_move_low=Decimal("98"),
+        expected_move_high=Decimal("112"),
+        pin_risk=True,
+        acceleration_risk=False,
+        dealer_sign_assumption="CALL_POSITIVE_PUT_NEGATIVE",
+        context_hash=f"sha256:{'f' * 64}",
+    )
+    gamma_analysis = gamma_analysis_from_assessment(gamma)
+    context = _context(analyses=(*_context().analyses, gamma_analysis))
+
+    baseline = SignalFusionEngineV04().evaluate(context)
+    enriched = SignalFusionEngineV05().evaluate(context)
+
+    assert enriched.state is baseline.state
+    assert enriched.score == baseline.score - Decimal("4")
+    assert "options_gamma_pin_risk:-4" in enriched.reasons
+    assert gamma_analysis.analysis_id in enriched.source_analysis_ids

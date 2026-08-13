@@ -10,6 +10,7 @@ from app.alert_engine import (
     AlertEngineV32,
     AlertEngineV33,
     AlertEngineV34,
+    AlertEngineV35,
 )
 from app.alert_engine.strategy import configure_engine as configure_alert
 from app.alert_engine.strategy import validate_strategy as validate_alert
@@ -48,6 +49,7 @@ from app.long_portfolio_engine.strategy import resolve_strategy as resolve_long_
 from app.long_portfolio_engine.strategy import validate_strategy as validate_long_portfolio
 from app.long_term_engine import LongTermEngine, LongTermEngineV2
 from app.market_rotation_engine import RotationEngine
+from app.options_gamma_engine import OptionsGammaEngine
 from app.patreon_caps_engine import PatreonCapsEngine
 from app.patreon_caps_engine.strategy import configure_engine as configure_patreon_caps
 from app.patreon_caps_engine.strategy import resolve_strategy as resolve_patreon_caps
@@ -56,7 +58,11 @@ from app.peter_lynch_engine import PeterLynchEngine
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.portfolio_flow_engine.strategy import configure_engine as configure_portfolio_flow
 from app.portfolio_flow_engine.strategy import validate_strategy as validate_portfolio_flow
-from app.signal_fusion_engine import SignalFusionEngine, SignalFusionEngineV04
+from app.signal_fusion_engine import (
+    SignalFusionEngine,
+    SignalFusionEngineV04,
+    SignalFusionEngineV05,
+)
 from app.support_confirmation_engine import SupportConfirmationEngine
 from app.swing_engine import SwingEngine, SwingEngineV2, SwingEngineV3, SwingEngineV4
 from app.swing_engine.strategy import configure_engine as configure_swing
@@ -137,6 +143,7 @@ def default_engine_registry() -> EngineRegistry:
                     "3.2.0": AlertEngineV32,
                     "3.3.0": AlertEngineV33,
                     "3.4.0": AlertEngineV34,
+                    "3.5.0": AlertEngineV35,
                 },
                 required_since="0.0.0",
                 configure=configure_alert,
@@ -181,10 +188,15 @@ def default_engine_registry() -> EngineRegistry:
                 },
                 required_since="7.3.0",
             ),
+            EngineSlot.OPTIONS_GAMMA: simple(
+                implementations={"1.0.0": OptionsGammaEngine},
+                required_since="7.6.0",
+            ),
             EngineSlot.SIGNAL_FUSION: simple(
                 implementations={
                     "0.3.0": SignalFusionEngine,
                     "0.4.0": SignalFusionEngineV04,
+                    "0.5.0": SignalFusionEngineV05,
                 }
             ),
             EngineSlot.DILUTION_SEC: simple(

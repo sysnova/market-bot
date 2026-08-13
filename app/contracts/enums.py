@@ -4,7 +4,7 @@
 # ruff: noqa: S105
 
 from enum import StrEnum
-from typing import Self
+from typing import Self, cast
 
 
 class ContractEnum(StrEnum):
@@ -29,7 +29,7 @@ class StrategyMode(ContractEnum):
     def _missing_(cls, value: object) -> Self | None:
         # SHADOW was renamed to CANDIDATE; durable events may still carry the old value.
         if value == "SHADOW":
-            return cls.CANDIDATE
+            return cast("Self", cls.CANDIDATE)
         return None
 
 
@@ -99,6 +99,7 @@ class AnalysisHorizon(ContractEnum):
     SWING = "SWING"
     INTRADAY = "INTRADAY"
     VOLUME_STRUCTURE = "VOLUME_STRUCTURE"
+    OPTIONS_GAMMA = "OPTIONS_GAMMA"
 
 
 class AnalysisVerdict(ContractEnum):

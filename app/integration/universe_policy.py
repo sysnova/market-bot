@@ -53,12 +53,17 @@ VOLUME_STRUCTURE = UniversePolicyDetails(
     universe_policy="active-watchlist-plus-positive-holdings",
     warmup_policy="completed-weekly-history-before-divergence-evaluation",
 )
+OPTIONS_GAMMA = UniversePolicyDetails(
+    universe_policy="active-watchlist-plus-positive-holdings",
+    warmup_policy="startup-universe-snapshot-then-periodic-options-refresh",
+)
 
 ENGINE_UNIVERSE_POLICIES: dict[str, UniversePolicyDetails] = {
     "long-term": CORE_DYNAMIC,
     "swing": CORE_DYNAMIC,
     "intraday": CORE_DYNAMIC,
     "volume-structure": VOLUME_STRUCTURE,
+    "options-gamma": OPTIONS_GAMMA,
     "entry-watcher": DERIVED_CORE,
     "entry-opportunity": DERIVED_CORE,
     "entry-recovery": DERIVED_CORE,

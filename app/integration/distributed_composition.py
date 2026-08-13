@@ -482,7 +482,13 @@ async def run_alert_process(
     )
     restored_state = None
     try:
-        if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0"}:
+        if alert_spec.implementation in {
+            "3.1.0",
+            "3.2.0",
+            "3.3.0",
+            "3.4.0",
+            "3.5.0",
+        }:
             if not await state_store.is_ready():
                 raise RuntimeError(
                     "alert decision state schema is unavailable; "
@@ -663,7 +669,8 @@ async def run_alert_process(
             ),
             "decision_state": (
                 "postgresql"
-                if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0", "3.4.0"}
+                if alert_spec.implementation
+                in {"3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0"}
                 else "memory"
             ),
             "decision_checkpoint_interval_seconds": (

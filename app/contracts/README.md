@@ -86,6 +86,12 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   estructura de soporte todavia no hayan confirmado. PatreonCaps es contexto derivado, no un voto
   adicional.
 
+- Options Gamma publica `GammaAssessment` por
+  `marketbot.v1.options-gamma.assessment.<SYMBOL>` y una proyeccion compatible como
+  `AnalysisResult(OPTIONS_GAMMA)`. El assessment conserva niveles por vencimiento, cobertura,
+  calidad, TTL y la hipotesis explicita de signo dealer. Los consumidores usan la proyeccion
+  estable y deben ignorarla cuando esta vencida, degradada o distante del spot actual.
+
 - Entry Opportunity: `EntryOpportunity.source_cursors` conserva un cursor causal acotado por
   stream de entrada. Es aditivo y opcional para que los snapshots v1 anteriores se lean con una
   tupla vacia; los consumidores no deben usarlo como version del engine productor.

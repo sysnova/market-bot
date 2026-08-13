@@ -365,6 +365,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "elliott-wave-v0",
         "support-confirmation-v0",
         "volume-structure-v1",
+        "options-gamma-v1",
         "signal-fusion-v0",
         "confirmed-buy-monitor",
         "alpaca-market-stream",

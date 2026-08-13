@@ -25,6 +25,7 @@ PATREON_CAPS_TRANSITION_EVENT: Final = "patreon-caps.transitioned"
 ELLIOTT_WAVE_ASSESSMENT_EVENT: Final = "elliott-wave.assessed"
 SUPPORT_ASSESSMENT_EVENT: Final = "support-confirmation.assessed"
 SUPPORT_TRANSITION_EVENT: Final = "support-confirmation.transitioned"
+OPTIONS_GAMMA_ASSESSMENT_EVENT: Final = "options-gamma.assessed"
 UNIVERSE_CHANGED_EVENT: Final = "universe.changed"
 FUSION_ASSESSMENT_EVENT: Final = "signal-fusion.assessed"
 FUSION_TRANSITION_EVENT: Final = "signal-fusion.transitioned"
@@ -94,6 +95,10 @@ def support_transition_subject(state: object, symbol: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError("support state is invalid")
     return f"marketbot.v1.support-confirmation.transition.{value}.{_symbol_token(symbol)}"
+
+
+def options_gamma_assessment_subject(symbol: str) -> str:
+    return f"marketbot.v1.options-gamma.assessment.{_symbol_token(symbol)}"
 
 
 def fusion_assessment_subject(symbol: str) -> str:

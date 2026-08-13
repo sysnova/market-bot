@@ -262,6 +262,11 @@ def build_runtime_process_plan(
             ("run", "marketbot", "engine", "volume-structure"),
         ),
         (
+            "options-gamma-v1",
+            EngineSlot.OPTIONS_GAMMA,
+            ("run", "marketbot", "engine", "options-gamma"),
+        ),
+        (
             "signal-fusion-v0",
             EngineSlot.SIGNAL_FUSION,
             ("run", "marketbot", "engine", "signal-fusion"),
@@ -274,6 +279,7 @@ def build_runtime_process_plan(
             EngineSlot.SWING,
             EngineSlot.INTRADAY,
             EngineSlot.VOLUME_STRUCTURE,
+            EngineSlot.OPTIONS_GAMMA,
         }:
             arguments += symbol_arguments
         add(name, arguments, slot=slot, dependencies=analytical_dependencies)
@@ -294,13 +300,17 @@ def build_runtime_process_plan(
         operator_monitor=True,
     )
 
-    headless_names = tuple(
-        process.name for process in processes if not process.operator_monitor
+    # Gamma is fail-open context: an options-provider outage must not block equities.
+    stream_dependencies = tuple(
+        process.name
+        for process in processes
+        if not process.operator_monitor
+        and process.engine_slot is not EngineSlot.OPTIONS_GAMMA
     )
     add(
         "alpaca-market-stream",
         ("run", "marketbot", "market", "stream", *symbol_arguments),
-        dependencies=headless_names,
+        dependencies=stream_dependencies,
         has_readiness=False,
     )
 

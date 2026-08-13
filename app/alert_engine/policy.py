@@ -33,6 +33,11 @@ def _default_horizons() -> tuple[HorizonPolicy, ...]:
             Decimal("0.10"),
             timedelta(days=14),
         ),
+        HorizonPolicy(
+            AnalysisHorizon.OPTIONS_GAMMA,
+            Decimal("0.05"),
+            timedelta(minutes=60),
+        ),
     )
 
 

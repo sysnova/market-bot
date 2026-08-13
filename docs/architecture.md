@@ -36,13 +36,13 @@ configuration, and logging. It must not become a dumping ground for shared busin
 
 ## Engine assembly
 
-MarketBot has one composition source: `configs/marketbot/7.2.0.yaml`. It declares every engine
+MarketBot has one composition source: `configs/marketbot/7.6.0.yaml`. It declares every engine
 slot, the concrete implementation version, the strategy version and artifact, and its operational
 mode. `app/integration/engine_catalog.py` is the concrete implementation catalog and
 `app/integration/engine_assembly.py` is the stable selector/facade.
 
 ```text
-configs/marketbot/7.2.0.yaml
+configs/marketbot/7.6.0.yaml
   implementation + strategy + mode
                  |
                  v
@@ -60,6 +60,7 @@ configs/marketbot/7.2.0.yaml
           +--> Entry Watcher / Entry Opportunity / Alert
           +--> Portfolio Flow / Rotation / LONG Portfolio
           +--> Patreon / Elliott / Support / Fusion
+          +--> Options Gamma
           +--> SEC / Peter Lynch
 ```
 
@@ -75,6 +76,12 @@ same `marketbot runtime-plan` JSON; their scripts own only platform supervision 
 presentation. Operator monitors are explicitly separated from headless readiness, so they cannot
 gate the market stream. `scheduled` engines remain owned by their external scheduler and
 `on-demand` engines remain available through their explicit operator command.
+
+Options Gamma is an active headless, read-only Alpaca process. It refreshes the Core universe at a
+bounded interval and publishes both `GammaAssessment` and `AnalysisResult(OPTIONS_GAMMA)`. Alert,
+Entry Watcher, and Signal Fusion consume only the stable analysis contract. Missing, stale, or
+low-quality Gamma context contributes zero; the process is deliberately not a readiness dependency
+of the Alpaca equity stream.
 
 The lightweight YAML model and mode loader live in `marketbot_definition.py`. The generic registry
 and lifecycle metadata live in `engine_registry.py`; the root catalog only maps slots and versions
@@ -144,6 +151,11 @@ AnalysisResult + Watcher lifecycle + EntrySignal + 1m bars ---------------+
                                                         CORE_RECOVERY EntrySignal L2
 
 PostgreSQL outbox --> headless outbox relay --> NATS JetStream --> read-only tmux monitors
+
+Alpaca options snapshots --> Options Gamma --> AnalysisResult(OPTIONS_GAMMA)
+                                                   |       |
+                                                   v       v
+                                              Alert 3.5  Signal Fusion 0.5
 ```
 
 Backfill never traverses the live bar subjects. Market History owns REST coverage and workers do not

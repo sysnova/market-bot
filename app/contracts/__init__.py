@@ -20,6 +20,7 @@ from .analysis_events import (
     MARKET_BAR_UPDATED_EVENT,
     MARKET_ROTATION_EVENT,
     MARKET_ROTATION_SUBJECT,
+    OPTIONS_GAMMA_ASSESSMENT_EVENT,
     PATREON_CAPS_ASSESSMENT_EVENT,
     PATREON_CAPS_TRANSITION_EVENT,
     SERVICE_HEALTH_EVENT,
@@ -38,6 +39,7 @@ from .analysis_events import (
     fusion_transition_subject,
     local_alert_subject,
     market_bar_subject,
+    options_gamma_assessment_subject,
     patreon_caps_assessment_subject,
     patreon_caps_transition_subject,
     service_health_subject,
@@ -110,6 +112,11 @@ from .market_history import (
     MarketHistoryStatus,
 )
 from .market_rotation import MarketRotationReport, RotationSector
+from .options_gamma import (
+    GammaAssessment,
+    GammaDirectionalBias,
+    GammaExpirationAssessment,
+)
 from .patreon_caps import PatreonCapsAssessment, PatreonCapsTransition
 from .rules import (
     ContextValue,
@@ -158,6 +165,7 @@ __all__ = [
     "MARKET_HISTORY_ENSURE_SUBJECT",
     "MARKET_ROTATION_EVENT",
     "MARKET_ROTATION_SUBJECT",
+    "OPTIONS_GAMMA_ASSESSMENT_EVENT",
     "PATREON_CAPS_ASSESSMENT_EVENT",
     "PATREON_CAPS_TRANSITION_EVENT",
     "SERVICE_HEALTH_EVENT",
@@ -201,6 +209,9 @@ __all__ = [
     "FusionAssessment",
     "FusionState",
     "FusionTransition",
+    "GammaAssessment",
+    "GammaDirectionalBias",
+    "GammaExpirationAssessment",
     "Identifier",
     "LocalAlert",
     "MacroRegime",
@@ -269,6 +280,7 @@ __all__ = [
     "local_alert_subject",
     "market_bar_subject",
     "new_uuid7",
+    "options_gamma_assessment_subject",
     "patreon_caps_assessment_subject",
     "patreon_caps_transition_subject",
     "service_health_subject",

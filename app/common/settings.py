@@ -1,5 +1,6 @@
 """Typed process configuration and safe diagnostic rendering."""
 
+from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
@@ -32,7 +33,7 @@ class AppSettings(BaseSettings):
     entry_watcher_enabled: bool = True
     entry_watch_ttl_days: int = Field(default=56, ge=7, le=365)
     alert_checkpoint_interval_seconds: int = Field(default=30, ge=5, le=300)
-    definition_path: Path = Path("configs/marketbot/7.5.0.yaml")
+    definition_path: Path = Path("configs/marketbot/7.6.0.yaml")
     entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0", "5.0.0"] | None = None
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     alpaca_api_key_id: SecretStr | None = None
@@ -44,6 +45,14 @@ class AppSettings(BaseSettings):
     market_history_request_timeout_seconds: int = Field(default=600, ge=10, le=3600)
     alpaca_data_base_url: HttpUrl = HttpUrl("https://data.alpaca.markets")
     alpaca_market_data_stream_url: AnyUrl = AnyUrl("wss://stream.data.alpaca.markets/v2")
+    alpaca_options_data_base_url: HttpUrl = HttpUrl("https://data.alpaca.markets")
+    alpaca_options_feed: Literal["opra", "indicative"] | None = None
+    options_gamma_refresh_seconds: int = Field(default=600, ge=60, le=3600)
+    options_gamma_days_forward: int = Field(default=45, ge=1, le=180)
+    options_gamma_strike_range_percent: Decimal = Field(
+        default=Decimal("50"), ge=Decimal("10"), le=Decimal("200")
+    )
+    options_gamma_concurrency: int = Field(default=4, ge=1, le=20)
     alpaca_execution_enabled: Literal[False] = False
     universe_refresh_seconds: int = Field(default=120, ge=30, le=3600)
     rotation_interval_minutes: int = Field(default=5, ge=1, le=1440)

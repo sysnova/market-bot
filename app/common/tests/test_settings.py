@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.entry_watcher_enabled is True
     assert settings.entry_watch_ttl_days == 56
     assert settings.alert_checkpoint_interval_seconds == 30
-    assert settings.definition_path == Path("configs/marketbot/7.5.0.yaml")
+    assert settings.definition_path == Path("configs/marketbot/7.6.0.yaml")
     assert settings.entry_confirmation_rule_version is None
 
 
@@ -65,6 +66,10 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.alpaca_rest_batch_size == 20
     assert settings.market_history_refresh_seconds == 3600
     assert settings.market_history_request_timeout_seconds == 600
+    assert settings.options_gamma_refresh_seconds == 600
+    assert settings.options_gamma_days_forward == 45
+    assert settings.options_gamma_strike_range_percent == Decimal("50")
+    assert settings.options_gamma_concurrency == 4
     assert settings.peter_lynch_analysis_ttl_days == 90
     assert settings.alpaca_execution_enabled is False
     serialized = json.dumps(settings.redacted())

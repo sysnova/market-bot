@@ -475,6 +475,38 @@ def entry_recovery_process(
     _run_async(run_entry_recovery_process(ready_path=ready_path))
 
 
+@engine.command("options-gamma")
+def options_gamma_process(
+    symbols: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated symbols; defaults to watchlist plus positive holdings."
+        ),
+    ] = None,
+    once: Annotated[
+        bool,
+        typer.Option(help="Refresh Alpaca options once, publish, and exit."),
+    ] = False,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after the first complete refresh."),
+    ] = Path(".runtime/status/options-gamma-v1.ready.json"),
+) -> None:
+    """Run the headless Alpaca options-gamma context producer."""
+
+    from app.integration.options_gamma_composition import run_options_gamma_process
+
+    summary = _run_async(
+        run_options_gamma_process(
+            symbols=symbols,
+            ready_path=ready_path,
+            once=once,
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.alert_engine import AlertEngineV33
+from app.alert_engine import AlertEngineV33, AlertEngineV35
 from app.common.settings import AppSettings
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
@@ -38,8 +38,10 @@ from app.integration.marketbot_definition import (
 from app.intraday_engine import IntradayEngineV3, IntradayEngineV4
 from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, PortfolioAllocation
 from app.long_term_engine import LongTermEngineV2
+from app.options_gamma_engine import OptionsGammaEngine
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
+from app.signal_fusion_engine import SignalFusionEngineV05
 from app.swing_engine import SwingEngineV4
 from app.volume_structure_engine import VolumeStructureEngineV11
 
@@ -48,6 +50,7 @@ DEFINITION = ROOT / "configs/marketbot/7.2.0.yaml"
 VOLUME_STRUCTURE_DEFINITION = ROOT / "configs/marketbot/7.3.0.yaml"
 INVALIDATION_DEFINITION = ROOT / "configs/marketbot/7.4.0.yaml"
 LATEST_DEFINITION = ROOT / "configs/marketbot/7.5.0.yaml"
+GAMMA_DEFINITION = ROOT / "configs/marketbot/7.6.0.yaml"
 PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 
@@ -55,7 +58,10 @@ INTEGRATION = ROOT / "app/integration"
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
     definition = load_marketbot_definition(DEFINITION)
 
-    assert set(definition.engines) == set(EngineSlot) - {EngineSlot.VOLUME_STRUCTURE}
+    assert set(definition.engines) == set(EngineSlot) - {
+        EngineSlot.VOLUME_STRUCTURE,
+        EngineSlot.OPTIONS_GAMMA,
+    }
     assert definition.version == "7.2.0"
     assert all(item.strategy.version for item in definition.engines.values())
     assert definition.engines[EngineSlot.INTRADAY].implementation == "4.0.0"
@@ -69,7 +75,7 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
 def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
     definition = load_marketbot_definition(VOLUME_STRUCTURE_DEFINITION)
 
-    assert set(definition.engines) == set(EngineSlot)
+    assert set(definition.engines) == set(EngineSlot) - {EngineSlot.OPTIONS_GAMMA}
     assert definition.version == "7.3.0"
     assert definition.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"
     assert definition.engines[EngineSlot.ALERT].implementation == "3.4.0"
@@ -107,6 +113,19 @@ def test_latest_definition_activates_quality_radar_and_current_maturity() -> Non
         assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
         EntryOpportunityEngineV3,
     )
+
+
+def test_gamma_definition_adds_active_producer_and_bounded_consumers() -> None:
+    previous = load_marketbot_definition(LATEST_DEFINITION)
+    definition = load_marketbot_definition(GAMMA_DEFINITION)
+    assembly = MarketBotAssembly(definition)
+
+    assert EngineSlot.OPTIONS_GAMMA not in previous.engines
+    assert definition.version == "7.6.0"
+    assert definition.engines[EngineSlot.OPTIONS_GAMMA].mode is EngineMode.ACTIVE
+    assert isinstance(assembly.build(EngineSlot.OPTIONS_GAMMA), OptionsGammaEngine)
+    assert isinstance(assembly.build_alert(), AlertEngineV35)
+    assert isinstance(assembly.build_signal_fusion(), SignalFusionEngineV05)
 
 
 def test_operational_modes_select_slots_from_the_definition() -> None:

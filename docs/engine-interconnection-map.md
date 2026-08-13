@@ -30,11 +30,13 @@ flowchart TD
   BARS --> PAT["PatreonCaps"]
   BARS --> SUP["Support Confirmation"]
   BARS --> ELL["Elliott Wave"]
+  ALP --> GAMMA["Options Gamma"]
 
   LONG --> AR["AnalysisResult por horizonte"]
   SWING --> AR
   INTRA --> AR
   DIL --> AR
+  GAMMA --> AR
 
   AR --> ALERT["Alert Engine"]
   AR --> WATCH["Entry Watcher"]
@@ -95,15 +97,16 @@ contrato confirmado sin importar engines de análisis.
 | Swing | barras daily/15m | `AnalysisResult(SWING)` | No directamente; Alert lo interpreta |
 | Intraday | barras 1m/5m | `AnalysisResult(INTRADAY)` | No directamente; Alert lo interpreta |
 | Dilution | SEC/CompanyFacts | `AnalysisResult(DILUTION)` | No; Alert puede emitir `SEC_WARNING` |
-| Alert | Long, Swing, Intraday, Dilution; transiciones Watcher y Opportunity | `LocalAlert`, incluidos L1-L4 | Sí, analíticas: L1 por Long+Intraday, L2 por Swing+Intraday, L3 por los tres, L4 por Watcher disparado |
-| Entry Watcher | Long, Swing e Intraday; Dilution como contexto preventivo | transiciones `ARMED/IN_ZONE/TRIGGERED/...` | Indirectamente: `TRIGGERED` se clasifica L4 |
+| Options Gamma | snapshots de opciones y spot de Alpaca | `GammaAssessment`, `AnalysisResult(OPTIONS_GAMMA)` | No; publica contexto táctico con TTL |
+| Alert | Long, Swing, Intraday, Dilution y Options Gamma; transiciones Watcher y Opportunity | `LocalAlert`, incluidos L1-L4 | Sí, analíticas: Gamma solo ajusta el score de una alerta ya determinada |
+| Entry Watcher | Long, Swing e Intraday; Dilution y Options Gamma como contexto preventivo | transiciones `ARMED/IN_ZONE/TRIGGERED/...` | Indirectamente: `TRIGGERED` se clasifica L4; Gamma no arma por sí solo |
 | Entry Opportunity | `EntrySignal`, Watcher, barras 1m y análisis vigentes | progreso/cierre y persistencia PostgreSQL | No genera compra; abre, sigue y cierra cada setup/leg de papel |
 | Entry Recovery | Opportunity invalidada, análisis frescos y barras 5m | `EntrySetupAssessment(CORE_RECOVERY)` sin nivel | No; Alert decide L2 con la regla Swing+Intraday vigente |
 | Long Portfolio | Long y tenencias/asignaciones PostgreSQL | `EntrySignal(LONG_PORTFOLIO)` | Sí, familia analítica propia; no L4 |
 | PatreonCaps | Long, Swing, Intraday, barras y cartera PostgreSQL | assessment, transición y `EntrySignal(PATREON_CAPS)` | Sí, familia analítica propia; no L4 |
 | Support Confirmation | barras y tenencias PostgreSQL | assessment/transición | Prealerta `REENTRY ARMED`; no BUY |
 | Elliott Wave | barras daily y tenencias PostgreSQL | assessment | No |
-| Signal Fusion | Long, Swing, Intraday, Dilution, Support, Elliott y PatreonCaps | assessment y `EntrySignal(SIGNAL_FUSION)` | Sí, en su monitor; familia analítica independiente de Alert |
+| Signal Fusion | Long, Swing, Intraday, Dilution, Options Gamma, Support, Elliott y PatreonCaps | assessment y `EntrySignal(SIGNAL_FUSION)` | Sí, en su monitor; Gamma ajusta score sin reemplazar gates |
 | Portfolio Flow | quotes, trades y cartera | `PROTECT`, `EntrySignal(PORTFOLIO_FLOW)` | Sí, observación analítica sin madurez L1-L4 |
 | Market Rotation | historial PostgreSQL | contexto global NATS | No |
 | Peter Lynch | fundamentales/SEC | indicador PostgreSQL | No |

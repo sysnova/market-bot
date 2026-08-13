@@ -32,7 +32,7 @@ selection before starting services:
 uv run marketbot assembly
 ```
 
-The default is `configs/marketbot/7.2.0.yaml`. Each engine entry separates:
+The default is `configs/marketbot/7.6.0.yaml`. Each engine entry separates:
 
 - `implementation`: concrete Python behavior;
 - `strategy`: embedded rules or an exact-version YAML artifact;
@@ -41,7 +41,7 @@ The default is `configs/marketbot/7.2.0.yaml`. Each engine entry separates:
 To deploy another complete, reviewed assembly, create a new immutable definition and select it:
 
 ```powershell
-$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.2.0.yaml"
+$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.6.0.yaml"
 .\scripts\windows\start-market-bot.ps1
 ```
 
@@ -169,6 +169,20 @@ uv run marketbot runtime-plan --runtime-root .runtime --no-bell
 The JSON is derived from the selected MarketBot definition. Do not add a headless engine command or
 startup dependency directly to a platform launcher; add it to the runtime plan and keep only
 platform-specific window or process-control behavior in the script.
+
+Options Gamma runs headless in `7.6.0` and refreshes every 600 seconds by default. It reads only
+Alpaca market data, publishes NATS context, and never submits orders. An options-data failure is
+fail-open and does not block the equity stream. Useful diagnostics:
+
+```powershell
+uv run marketbot engine options-gamma --once
+uv run marketbot engine options-gamma --symbols AAPL,MSFT,NVDA --once
+```
+
+Tune it with `MARKETBOT_OPTIONS_GAMMA_REFRESH_SECONDS`,
+`MARKETBOT_OPTIONS_GAMMA_DAYS_FORWARD`, `MARKETBOT_OPTIONS_GAMMA_STRIKE_RANGE_PERCENT`, and
+`MARKETBOT_OPTIONS_GAMMA_CONCURRENCY`. Set `MARKETBOT_ALPACA_OPTIONS_FEED=opra` only when the Alpaca
+subscription is entitled to that feed; otherwise the adapter uses Alpaca's default options feed.
 
 Useful options:
 

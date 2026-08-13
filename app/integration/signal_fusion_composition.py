@@ -63,6 +63,7 @@ FUSION_ANALYSIS_HORIZONS = (
     AnalysisHorizon.INTRADAY,
     AnalysisHorizon.DILUTION,
     AnalysisHorizon.VOLUME_STRUCTURE,
+    AnalysisHorizon.OPTIONS_GAMMA,
 )
 
 

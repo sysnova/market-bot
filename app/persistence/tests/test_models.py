@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import CheckConstraint, UniqueConstraint
 
 from app.persistence.models import (
-    Base,
     AlertAnalysisStateRecord,
+    Base,
     EngineDecisionStateRecord,
     EntryOpportunityEventRecord,
     EntryOpportunityRecord,

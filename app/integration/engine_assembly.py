@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     )
     from app.long_term_engine import LongTermEngine
     from app.market_rotation_engine import RotationEngine
+    from app.options_gamma_engine import OptionsGammaEngine
     from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsWatch
     from app.peter_lynch_engine import PeterLynchEngine
     from app.portfolio_flow_engine import PortfolioFlowEngineV1
@@ -233,6 +234,9 @@ class MarketBotAssembly:
             "VolumeStructureEngine",
             self.build(EngineSlot.VOLUME_STRUCTURE),
         )
+
+    def build_options_gamma(self) -> OptionsGammaEngine:
+        return cast("OptionsGammaEngine", self.build(EngineSlot.OPTIONS_GAMMA))
 
     def build_signal_fusion(self) -> SignalFusionEngine:
         return cast("SignalFusionEngine", self.build(EngineSlot.SIGNAL_FUSION))
