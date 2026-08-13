@@ -154,17 +154,22 @@ def test_engine_decision_state_identity_keeps_implementation_rollbacks_independe
 @pytest.mark.unit
 def test_alert_state_is_normalized_and_migrated_from_legacy_checkpoint() -> None:
     sql = all_migration_sql()
+    compact_sql = re.sub(r"\s+", " ", sql)
     dbml = DBML.read_text(encoding="utf-8").lower()
 
     assert "alert_analysis_states_identity_key" in sql
     assert "alert_continuation_candidates_identity_key" in sql
     assert "alert_continuation_sessions_identity_key" in sql
-    assert "horizon in ('long_term', 'dilution', 'swing', 'intraday', 'volume_structure')" in sql
+    assert re.search(
+        r"horizon in \(\s*'long_term',\s*'dilution',\s*'swing',\s*'intraday',"
+        r"\s*'volume_structure',\s*'options_gamma'\s*\)",
+        compact_sql,
+    )
     assert "gen_random_uuid" not in sql
     assert "alert_analysis_states_identity_key" in dbml
     assert "alert_continuation_candidates_identity_key" in dbml
     assert "alert_continuation_sessions_identity_key" in dbml
-    assert "long_term | dilution | swing | intraday | volume_structure" in dbml
+    assert "long_term | dilution | swing | intraday | volume_structure | options_gamma" in dbml
 
 
 @pytest.mark.unit

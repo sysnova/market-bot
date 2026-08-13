@@ -123,7 +123,7 @@ Table market_bot.alert_analysis_states {
   engine_name text [not null]
   implementation_version text [not null]
   symbol text [not null]
-  horizon text [not null, note: "LONG_TERM | DILUTION | SWING | INTRADAY | VOLUME_STRUCTURE"]
+  horizon text [not null, note: "LONG_TERM | DILUTION | SWING | INTRADAY | VOLUME_STRUCTURE | OPTIONS_GAMMA"]
   analysis_id uuid [not null]
   payload jsonb [not null]
   updated_at timestamptz [not null, default: `now()`]
