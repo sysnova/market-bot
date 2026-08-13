@@ -53,6 +53,25 @@ def context(contracts: tuple[OptionContractSnapshot, ...]) -> OptionsGammaContex
 
 
 @pytest.mark.unit
+def test_provider_warnings_are_preserved_in_assessment() -> None:
+    base = context(())
+    result = OptionsGammaEngine().evaluate(
+        base.__class__(
+            symbol=base.symbol,
+            spot_price=base.spot_price,
+            spot_as_of=base.spot_as_of,
+            generated_at=base.generated_at,
+            expiration_from=base.expiration_from,
+            expiration_to=base.expiration_to,
+            contracts=base.contracts,
+            provider_warnings=("open_interest_source_unavailable",),
+        )
+    )
+
+    assert "open_interest_source_unavailable" in result.warnings
+
+
+@pytest.mark.unit
 def test_engine_finds_walls_max_pain_and_expected_move() -> None:
     result = OptionsGammaEngine().evaluate(
         context(

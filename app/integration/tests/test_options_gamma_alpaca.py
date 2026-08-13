@@ -3,7 +3,10 @@ from datetime import date
 
 import pytest
 
-from app.integration.options_gamma_alpaca import AlpacaOptionsDataClient
+from app.integration.options_gamma_alpaca import (
+    AlpacaOptionContractsClient,
+    AlpacaOptionsDataClient,
+)
 
 
 class Response:
@@ -55,8 +58,6 @@ async def test_option_chain_adapter_parses_occ_contract_and_snapshot() -> None:
                     },
                     "greeks": {"gamma": 0.08},
                     "impliedVolatility": 0.4,
-                    "openInterest": 1200,
-                    "openInterestDate": "2026-08-11",
                 }
             },
             "next_page_token": None,
@@ -83,10 +84,53 @@ async def test_option_chain_adapter_parses_occ_contract_and_snapshot() -> None:
     assert items[0].expiration_date == date(2026, 8, 14)
     assert str(items[0].strike_price) == "100"
     assert items[0].option_type == "call"
-    assert str(items[0].open_interest) == "1200"
-    assert items[0].open_interest_date == date(2026, 8, 11)
+    assert items[0].open_interest is None
+    assert items[0].open_interest_date is None
     assert transport.calls[0][0].endswith("/v1beta1/options/snapshots/AAPL")
     assert "feed" not in transport.calls[0][1]
+
+    await client.close()
+    assert transport.closed is True
+
+
+@pytest.mark.unit
+async def test_option_contracts_adapter_parses_open_interest_catalog() -> None:
+    transport = Transport(
+        {
+            "option_contracts": [
+                {
+                    "symbol": "AAPL260814C00100000",
+                    "underlying_symbol": "AAPL",
+                    "expiration_date": "2026-08-14",
+                    "strike_price": "100",
+                    "type": "call",
+                    "open_interest": "1200",
+                    "open_interest_date": "2026-08-11",
+                    "status": "active",
+                }
+            ],
+            "next_page_token": None,
+        }
+    )
+    client = AlpacaOptionContractsClient(
+        api_key_id="key",
+        api_secret_key="secret",
+        base_url="https://paper-api.alpaca.markets",
+        transport=transport,
+    )
+
+    items = await client.fetch_open_interest(
+        "AAPL",
+        expiration_from=date(2026, 8, 12),
+        expiration_to=date(2026, 9, 25),
+    )
+
+    assert len(items) == 1
+    assert items[0].symbol == "AAPL260814C00100000"
+    assert items[0].open_interest == 1200
+    assert items[0].open_interest_date == date(2026, 8, 11)
+    assert transport.calls[0][0].endswith("/v2/options/contracts")
+    assert transport.calls[0][1]["underlying_symbols"] == "AAPL"
 
     await client.close()
     assert transport.closed is True
@@ -100,5 +144,16 @@ def test_option_chain_adapter_rejects_non_alpaca_endpoint() -> None:
             api_secret_key="secret",
             base_url="https://example.com",
             feed="indicative",
+            transport=Transport({}),  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.unit
+def test_option_contracts_adapter_rejects_market_data_endpoint() -> None:
+    with pytest.raises(ValueError, match="Options Contracts"):
+        AlpacaOptionContractsClient(
+            api_key_id="key",
+            api_secret_key="secret",
+            base_url="https://data.alpaca.markets",
             transport=Transport({}),  # type: ignore[arg-type]
         )

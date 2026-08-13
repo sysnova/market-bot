@@ -20,6 +20,13 @@ scoring at least 50 and no more than 4% and 2 ATR above the frozen zone. These l
 only the initial `ARMED`; once a qualified watch exists, the existing zone, continuation,
 confirmation, invalidation, and expiry policies remain unchanged.
 
+`EntryWatcherV53` (`5.3.0`) preserves V5.2 initial `ARMED`, `IN_ZONE`, frozen levels, and tracking
+without admitting any new radar candidate. It changes only final confirmation: the first Intraday
+result that already passes every mature, strong, five-minute higher-low, price-efficiency,
+Swing anchored-VWAP, freshness, extension, and live reward/risk gate moves the existing watch to
+`TRIGGERED`. That analysis price becomes the real L4 entry; there is no intermediate `CONFIRMING`
+state and no second three-minute reconfirmation delay.
+
 The Entry Watcher preserves a Long entry thesis across later market evaluations. It freezes
 the original buy zone, invalidation, expected correction, source analysis, and expiry instead
 of recalculating those levels away when price finally pulls back.
@@ -64,6 +71,9 @@ zone. The first mature higher-low reading arms the candidate; a distinct mature 
 configured delay may produce `ENTRY TRIGGERED` with
 `no_retest_higher_low_continuation_confirmed`. The Intraday efficiency cap, extension cap, fresh
 Long/Swing evidence, anchored-VWAP gate, and live reward/risk gate remain mandatory.
+
+V5.3 keeps those safety gates but treats a fully mature first reading as the final confirmation,
+so L4 records the actionable price instead of waiting for a later duplicate analysis.
 
 En V4 esa continuación tampoco puede confirmar sobre un impulso extendido: primero debe volver a
 la ventana eficiente de Intraday y formar el retest/higher low. La primera lectura madura prepara

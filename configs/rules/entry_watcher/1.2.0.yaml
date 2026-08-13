@@ -1,0 +1,17 @@
+rule_id: marketbot.entry_watcher
+version: 1.2.0
+status: active
+behavior:
+  fresh_reconfirmation_delay_minutes: 3
+  trigger_rearm_cooldown_minutes: 30
+  strong_confirmation_required: true
+  five_minute_higher_low_required: true
+  no_retest_higher_low_continuation: true
+  zone_exit_buffer_percent: 0.25
+  initial_arm_min_score: 50
+  initial_arm_max_distance_percent: 4
+  initial_arm_max_distance_atr: 2
+  trigger_on_first_mature_confirmation: true
+measurement:
+  dimensions: [engine_version, strategy_version, watch_status]
+  outcomes: [radar_armed, mature_entry_triggered, invalidated, expired]

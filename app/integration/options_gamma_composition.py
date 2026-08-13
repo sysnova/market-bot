@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -38,7 +38,11 @@ from app.persistence import create_database_engine
 
 from .distributed_composition import connect_nats, write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
-from .options_gamma_alpaca import AlpacaOptionsDataClient
+from .options_gamma_alpaca import (
+    AlpacaOptionContractsClient,
+    AlpacaOptionsDataClient,
+    OptionOpenInterest,
+)
 from .postgres_universe import PostgresUniverseClient, fallback_universe
 from .universe_policy import universe_health_details
 
@@ -59,6 +63,16 @@ class OptionChainProvider(Protocol):
         strike_from: str,
         strike_to: str,
     ) -> tuple[OptionContractSnapshot, ...]: ...
+
+
+class OptionOpenInterestProvider(Protocol):
+    async def fetch_open_interest(
+        self,
+        symbol: str,
+        *,
+        expiration_from: date,
+        expiration_to: date,
+    ) -> tuple[OptionOpenInterest, ...]: ...
 
 
 class GammaEnginePort(Protocol):
@@ -85,6 +99,7 @@ class OptionsGammaRuntime:
         engine: GammaEnginePort,
         stock_provider: StockSnapshotProvider,
         option_provider: OptionChainProvider,
+        open_interest_provider: OptionOpenInterestProvider,
         publisher: GammaPublisher,
         days_forward: int,
         strike_range_percent: Decimal,
@@ -93,6 +108,7 @@ class OptionsGammaRuntime:
         self._engine = engine
         self._stock_provider = stock_provider
         self._option_provider = option_provider
+        self._open_interest_provider = open_interest_provider
         self._publisher = publisher
         self._days_forward = days_forward
         self._strike_range_percent = strike_range_percent
@@ -158,13 +174,30 @@ class OptionsGammaRuntime:
             width = self._strike_range_percent / Decimal("100")
             strike_from = max(Decimal("0.01"), spot * (Decimal("1") - width))
             strike_to = spot * (Decimal("1") + width)
-            raw_contracts = await self._option_provider.fetch_chain(
-                symbol,
-                expiration_from=expiration_from,
-                expiration_to=expiration_to,
-                strike_from=_decimal_text(strike_from),
-                strike_to=_decimal_text(strike_to),
+            chain_result, open_interest_result = await asyncio.gather(
+                self._option_provider.fetch_chain(
+                    symbol,
+                    expiration_from=expiration_from,
+                    expiration_to=expiration_to,
+                    strike_from=_decimal_text(strike_from),
+                    strike_to=_decimal_text(strike_to),
+                ),
+                self._open_interest_provider.fetch_open_interest(
+                    symbol,
+                    expiration_from=expiration_from,
+                    expiration_to=expiration_to,
+                ),
+                return_exceptions=True,
             )
+            if isinstance(chain_result, BaseException):
+                raise chain_result
+            provider_warnings: tuple[str, ...] = ()
+            if isinstance(open_interest_result, BaseException):
+                open_interest = ()
+                provider_warnings = ("open_interest_source_unavailable",)
+            else:
+                open_interest = open_interest_result
+            contracts = _merge_open_interest(chain_result, open_interest)
             context = OptionsGammaContext(
                 symbol=symbol,
                 spot_price=spot,
@@ -172,7 +205,8 @@ class OptionsGammaRuntime:
                 generated_at=now,
                 expiration_from=expiration_from,
                 expiration_to=expiration_to,
-                contracts=raw_contracts,
+                contracts=contracts,
+                provider_warnings=provider_warnings,
             )
             assessment = self._engine.evaluate(context)
             await self._publisher.publish(
@@ -236,6 +270,12 @@ async def run_options_gamma_process(
         feed=settings.alpaca_options_feed,
         transport=HttpxTransport(),
     )
+    open_interest_client = AlpacaOptionContractsClient(
+        api_key_id=api_key,
+        api_secret_key=api_secret,
+        base_url=str(settings.alpaca_options_contracts_base_url),
+        transport=HttpxTransport(),
+    )
     try:
         requested = tuple(
             dict.fromkeys(
@@ -253,6 +293,7 @@ async def run_options_gamma_process(
             engine=engine,
             stock_provider=stock_client,
             option_provider=option_client,
+            open_interest_provider=open_interest_client,
             publisher=bus,
             days_forward=settings.options_gamma_days_forward,
             strike_range_percent=settings.options_gamma_strike_range_percent,
@@ -312,10 +353,36 @@ async def run_options_gamma_process(
             await subscription.unsubscribe()
         await stock_client.close()
         await option_client.close()
+        await open_interest_client.close()
         if bus is not None:
             await bus.close()
         await database.dispose()
     return None
+
+
+def _merge_open_interest(
+    snapshots: tuple[OptionContractSnapshot, ...],
+    open_interest: tuple[OptionOpenInterest, ...],
+) -> tuple[OptionContractSnapshot, ...]:
+    by_symbol = {item.symbol.strip().upper(): item for item in open_interest}
+    return tuple(
+        item
+        if (metadata := by_symbol.get(item.symbol.strip().upper())) is None
+        else replace(
+            item,
+            open_interest=(
+                metadata.open_interest
+                if metadata.open_interest is not None
+                else item.open_interest
+            ),
+            open_interest_date=(
+                metadata.open_interest_date
+                if metadata.open_interest_date is not None
+                else item.open_interest_date
+            ),
+        )
+        for item in snapshots
+    )
 
 
 def _spot_snapshot(

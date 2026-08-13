@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.integration.options_gamma_alpaca import OptionOpenInterest
 from app.integration.options_gamma_composition import OptionsGammaRuntime
 from app.options_gamma_engine import OptionContractSnapshot, OptionsGammaEngine
 
@@ -30,8 +31,8 @@ class OptionProvider:
                 expiration_date=date(2026, 8, 14),
                 strike_price=Decimal("100"),
                 option_type="call",
-                open_interest=Decimal("1000"),
-                open_interest_date=date(2026, 8, 11),
+                open_interest=None,
+                open_interest_date=None,
                 gamma=Decimal("0.08"),
                 implied_volatility=Decimal("0.40"),
                 bid_price=Decimal("3"),
@@ -45,8 +46,8 @@ class OptionProvider:
                 expiration_date=date(2026, 8, 14),
                 strike_price=Decimal("100"),
                 option_type="put",
-                open_interest=Decimal("900"),
-                open_interest_date=date(2026, 8, 11),
+                open_interest=None,
+                open_interest_date=None,
                 gamma=Decimal("0.07"),
                 implied_volatility=Decimal("0.40"),
                 bid_price=Decimal("2.8"),
@@ -55,6 +56,29 @@ class OptionProvider:
                 snapshot_at=NOW,
             ),
         )
+
+
+class OpenInterestProvider:
+    async def fetch_open_interest(
+        self, symbol: str, **_: object
+    ) -> tuple[OptionOpenInterest, ...]:
+        return (
+            OptionOpenInterest(
+                symbol=f"{symbol}260814C00100000",
+                open_interest=Decimal("1000"),
+                open_interest_date=date(2026, 8, 11),
+            ),
+            OptionOpenInterest(
+                symbol=f"{symbol}260814P00100000",
+                open_interest=Decimal("900"),
+                open_interest_date=date(2026, 8, 11),
+            ),
+        )
+
+
+class FailingOpenInterestProvider:
+    async def fetch_open_interest(self, symbol: str, **_: object) -> object:
+        raise RuntimeError(f"open interest unavailable for {symbol}")
 
 
 class Publisher:
@@ -72,6 +96,7 @@ async def test_runtime_publishes_each_healthy_symbol_and_isolates_failures() -> 
         engine=OptionsGammaEngine(),
         stock_provider=StockProvider(),  # type: ignore[arg-type]
         option_provider=OptionProvider(),  # type: ignore[arg-type]
+        open_interest_provider=OpenInterestProvider(),  # type: ignore[arg-type]
         publisher=publisher,  # type: ignore[arg-type]
         days_forward=45,
         strike_range_percent=Decimal("50"),
@@ -88,3 +113,30 @@ async def test_runtime_publishes_each_healthy_symbol_and_isolates_failures() -> 
         "marketbot.v1.options-gamma.assessment.AAPL",
         "marketbot.v1.analysis.result.OPTIONS_GAMMA.AAPL",
     ]
+    assessment = publisher.items[0][1].payload  # type: ignore[union-attr]
+    assert assessment.usable_contract_count == 2
+    assert assessment.open_interest_as_of == date(2026, 8, 11)
+
+
+@pytest.mark.unit
+async def test_runtime_publishes_degraded_assessment_when_oi_catalog_fails() -> None:
+    publisher = Publisher()
+    runtime = OptionsGammaRuntime(
+        engine=OptionsGammaEngine(),
+        stock_provider=StockProvider(),  # type: ignore[arg-type]
+        option_provider=OptionProvider(),  # type: ignore[arg-type]
+        open_interest_provider=FailingOpenInterestProvider(),  # type: ignore[arg-type]
+        publisher=publisher,  # type: ignore[arg-type]
+        days_forward=45,
+        strike_range_percent=Decimal("50"),
+        concurrency=2,
+    )
+    runtime.set_symbols(("AAPL",))
+
+    summary = await runtime.refresh(now=NOW)
+
+    assert summary.assessments_published == 1
+    assert summary.failures == {}
+    assessment = publisher.items[0][1].payload  # type: ignore[union-attr]
+    assert assessment.status == "UNAVAILABLE"
+    assert "open_interest_source_unavailable" in assessment.warnings

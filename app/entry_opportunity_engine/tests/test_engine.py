@@ -255,11 +255,16 @@ async def test_same_ticker_advances_one_opportunity_and_preserves_original_thesi
         EntryMaturityLevel.IN_ZONE,
         EntryMaturityLevel.L4,
     )
+    l4 = next(
+        item for item in active.checkpoints if item.level is EntryMaturityLevel.L4
+    )
+    assert l4.entry_price == Decimal("103")
     assert {item.horizon for item in active.legs} == {
         AnalysisHorizon.LONG_TERM,
         AnalysisHorizon.SWING,
         AnalysisHorizon.INTRADAY,
     }
+    assert all(item.entry_price == Decimal("103") for item in active.legs)
     assert len(store.opportunities) == 1
 
 

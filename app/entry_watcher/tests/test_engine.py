@@ -21,6 +21,7 @@ from app.entry_watcher import (
     EntryWatcherV5,
     EntryWatcherV51,
     EntryWatcherV52,
+    EntryWatcherV53,
     InMemoryEntryWatchStore,
 )
 
@@ -720,6 +721,85 @@ async def test_v4_requires_a_fresh_second_mature_intraday_confirmation() -> None
     assert second is not None
     assert second.status is EntryWatchStatus.TRIGGERED
     assert "fresh_mature_intraday_reconfirmed" in second.reasons
+
+
+@pytest.mark.unit
+async def test_v53_triggers_l4_at_first_mature_confirmation_price() -> None:
+    store = InMemoryEntryWatchStore()
+    seed = EntryWatcherV5(store=store)
+    await seed.ingest(long_watch(price="120"), now=NOW)
+    watcher = EntryWatcherV53(store=store)
+    await watcher.ingest(long_watch(price="120"), now=NOW)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="120",
+            as_of=NOW + timedelta(minutes=1),
+            extra_metrics=(
+                NamedValue(name="anchored_vwap_gate_passed", value=True),
+                NamedValue(name="target_2r", value=Decimal("140")),
+                NamedValue(name="invalidation", value=Decimal("115")),
+            ),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    first_intraday = analysis(
+        AnalysisHorizon.INTRADAY,
+        classification="bullish_breakout",
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        price="120.10",
+        as_of=NOW + timedelta(minutes=2),
+        setup="bullish_breakout",
+        engine_version="4.0.0",
+        extra_metrics=(
+            NamedValue(name="confirmation_gate_passed", value=True),
+            NamedValue(name="mature_confirmation_gate_passed", value=True),
+            NamedValue(name="entry_efficiency_gate_passed", value=True),
+            NamedValue(name="confirmation_quality", value="strong"),
+            NamedValue(name="five_minute_higher_low", value=True),
+            NamedValue(name="entry_trigger_level", value=Decimal("120")),
+            NamedValue(name="atr14", value=Decimal("1")),
+            NamedValue(name="invalidation_level", value=Decimal("115")),
+        ),
+    )
+
+    triggered = await watcher.ingest(first_intraday, now=NOW + timedelta(minutes=2))
+
+    assert triggered is not None
+    assert triggered.status is EntryWatchStatus.TRIGGERED
+    assert triggered.current_price == Decimal("120.10")
+    assert "mature_intraday_entry_confirmed" in triggered.reasons
+    assert "fresh_mature_intraday_reconfirmed" not in triggered.reasons
+
+
+@pytest.mark.unit
+async def test_v53_preserves_v52_initial_armed_policy() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV53(store=store)
+    hpe_like = analysis(
+        AnalysisHorizon.LONG_TERM,
+        classification="extended",
+        verdict=AnalysisVerdict.CAUTION,
+        direction=PatternDirection.BULLISH,
+        price="52.39",
+        score="33.75",
+        zone_low="31.8307",
+        zone_high="34.5986",
+        invalidation="27.5286",
+        extra_metrics=(
+            NamedValue(name="setup_score", value=Decimal("85")),
+            NamedValue(name="trend_template_score", value=Decimal("100")),
+            NamedValue(name="distance_to_buy_zone_atr", value=Decimal("6.1609")),
+        ),
+    ).model_copy(update={"symbol": "HPE"})
+
+    transition = await watcher.ingest(hpe_like, now=NOW)
+    assert transition is None
+    assert await store.load_active("HPE") is None
 
 
 @pytest.mark.unit

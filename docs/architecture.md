@@ -36,13 +36,13 @@ configuration, and logging. It must not become a dumping ground for shared busin
 
 ## Engine assembly
 
-MarketBot has one composition source: `configs/marketbot/7.6.0.yaml`. It declares every engine
+MarketBot has one composition source: `configs/marketbot/7.8.0.yaml`. It declares every engine
 slot, the concrete implementation version, the strategy version and artifact, and its operational
 mode. `app/integration/engine_catalog.py` is the concrete implementation catalog and
 `app/integration/engine_assembly.py` is the stable selector/facade.
 
 ```text
-configs/marketbot/7.6.0.yaml
+configs/marketbot/7.8.0.yaml
   implementation + strategy + mode
                  |
                  v
@@ -138,7 +138,7 @@ Patreon / Long Portfolio / Fusion / Portfolio Flow -------> EntrySignal by famil
                                                                           |
 AnalysisResult + Watcher lifecycle + EntrySignal + 1m bars ---------------+
                                                                           v
-                                                              Entry Opportunity 2.0
+                                                              Entry Opportunity 3.0
                                                               PostgreSQL state + outbox
                                                                           |
                                              leg invalidation ------------+
@@ -179,7 +179,7 @@ Opportunity window. Portfolio Flow shares the screen in a visibly separate manua
 cyan aggressive-buy watches and red `PROTECT` alarms remain `LocalAlert` notifications and never
 become confirmed buys or acquire an L1-L4 label.
 
-Entry Opportunity 2.0 materializes paper-only lifecycles. It orders inputs independently by source,
+Entry Opportunity 3.0 materializes paper-only lifecycles. It orders inputs independently by source,
 tracks separate horizon legs, closes the aggregate when all opened horizons terminate, and bounds
 analysis provenance. Non-material analysis refreshes update the materialized snapshot without
 appending another full historical event. A standalone analytical family may create its own paper

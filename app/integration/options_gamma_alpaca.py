@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import cast
@@ -19,6 +20,25 @@ _OCC_SYMBOL = re.compile(
 
 class AlpacaOptionsDataError(RuntimeError):
     """Raised when Alpaca rejects or malforms an option-chain request."""
+
+
+class AlpacaOptionContractsError(RuntimeError):
+    """Raised when Alpaca rejects or malforms option contract metadata."""
+
+
+@dataclass(frozen=True, slots=True)
+class OptionOpenInterest:
+    """Open-interest fields supplied by the separate Trading API catalog."""
+
+    symbol: str
+    open_interest: Decimal | None
+    open_interest_date: date | None
+
+    def __post_init__(self) -> None:
+        if not self.symbol.strip():
+            raise ValueError("option contract symbol cannot be blank")
+        if self.open_interest is not None and self.open_interest < 0:
+            raise ValueError("option open interest cannot be negative")
 
 
 class AlpacaOptionsDataClient:
@@ -122,6 +142,110 @@ class AlpacaOptionsDataClient:
         return cast("Mapping[str, object]", payload)
 
 
+class AlpacaOptionContractsClient:
+    """Fetch read-only option metadata and OI from Alpaca's contract catalog."""
+
+    def __init__(
+        self,
+        *,
+        api_key_id: str,
+        api_secret_key: str,
+        base_url: str,
+        transport: HttpTransport,
+        max_pages: int = 100,
+    ) -> None:
+        if not api_key_id.strip() or not api_secret_key.strip():
+            raise ValueError("Alpaca credentials cannot be blank")
+        parsed = urlsplit(base_url)
+        if parsed.scheme != "https" or parsed.hostname not in {
+            "api.alpaca.markets",
+            "paper-api.alpaca.markets",
+        }:
+            raise ValueError(
+                "Alpaca option contracts client must use the Options Contracts endpoint"
+            )
+        if max_pages < 1:
+            raise ValueError("max_pages must be positive")
+        self._headers = {
+            "APCA-API-KEY-ID": api_key_id,
+            "APCA-API-SECRET-KEY": api_secret_key,
+        }
+        self._base_url = base_url.rstrip("/")
+        self._transport = transport
+        self._max_pages = max_pages
+
+    async def fetch_open_interest(
+        self,
+        symbol: str,
+        *,
+        expiration_from: date,
+        expiration_to: date,
+    ) -> tuple[OptionOpenInterest, ...]:
+        normalized = symbol.strip().upper()
+        if not normalized:
+            raise ValueError("option-chain symbol cannot be blank")
+        if expiration_to < expiration_from:
+            raise ValueError("option-chain expiration range is invalid")
+        params = {
+            "expiration_date_gte": expiration_from.isoformat(),
+            "expiration_date_lte": expiration_to.isoformat(),
+            "limit": "10000",
+            "status": "active",
+            "underlying_symbols": normalized,
+        }
+        collected: list[OptionOpenInterest] = []
+        for _ in range(self._max_pages):
+            payload = await self._get("/v2/options/contracts", params)
+            raw_contracts = payload.get("option_contracts")
+            if not isinstance(raw_contracts, list):
+                raise AlpacaOptionContractsError(
+                    "Alpaca option contracts response has no contract list"
+                )
+            for raw_contract in cast("list[object]", raw_contracts):
+                if not isinstance(raw_contract, Mapping):
+                    raise AlpacaOptionContractsError(
+                        "Alpaca option contract metadata is malformed"
+                    )
+                item = _open_interest(
+                    cast("Mapping[str, object]", raw_contract),
+                    underlying_symbol=normalized,
+                )
+                if item is not None:
+                    collected.append(item)
+            token = payload.get("next_page_token")
+            if token is None:
+                return tuple(collected)
+            if not isinstance(token, str) or not token:
+                raise AlpacaOptionContractsError(
+                    "Alpaca option contracts pagination token is malformed"
+                )
+            params["page_token"] = token
+        raise AlpacaOptionContractsError(
+            "Alpaca option contracts pagination exceeded max_pages"
+        )
+
+    async def close(self) -> None:
+        await self._transport.close()
+
+    async def _get(self, path: str, params: dict[str, str]) -> Mapping[str, object]:
+        response = await self._transport.get(
+            f"{self._base_url}{path}",
+            headers=self._headers,
+            params=dict(params),
+        )
+        if response.status_code < 200 or response.status_code >= 300:
+            raise AlpacaOptionContractsError(
+                "Alpaca option contracts request failed with HTTP "
+                f"{response.status_code}: {response.text[:300]}"
+            )
+        payload = response.json()
+        if not isinstance(payload, Mapping):
+            raise AlpacaOptionContractsError(
+                "Alpaca option contracts response must be an object"
+            )
+        return cast("Mapping[str, object]", payload)
+
+
 def _snapshot(
     contract_symbol: str,
     underlying_symbol: str,
@@ -165,6 +289,20 @@ def _snapshot(
             latest_trade.get("p") or latest_trade.get("price")
         ),
         snapshot_at=snapshot_at,
+    )
+
+
+def _open_interest(
+    raw: Mapping[str, object], *, underlying_symbol: str
+) -> OptionOpenInterest | None:
+    symbol = raw.get("symbol")
+    underlying = raw.get("underlying_symbol")
+    if not isinstance(symbol, str) or underlying != underlying_symbol:
+        return None
+    return OptionOpenInterest(
+        symbol=symbol.strip().upper(),
+        open_interest=_decimal(raw.get("open_interest")),
+        open_interest_date=_date(raw.get("open_interest_date")),
     )
 
 

@@ -48,7 +48,11 @@ class OptionsGammaEngine:
             and item.gamma > ZERO
         )
         coverage = ZERO if not contracts else Decimal(len(usable)) / Decimal(len(contracts))
-        warnings = _warnings(contracts, usable)
+        warnings = _warnings(
+            contracts,
+            usable,
+            provider_warnings=context.provider_warnings,
+        )
         nearest_dte = min(
             (
                 max(0, (item.expiration_date - context.generated_at.date()).days)
@@ -472,8 +476,10 @@ def _quality(
 def _warnings(
     contracts: tuple[OptionContractSnapshot, ...],
     usable: tuple[OptionContractSnapshot, ...],
+    *,
+    provider_warnings: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
-    output: list[str] = []
+    output = list(provider_warnings)
     if not contracts:
         output.append("empty_chain")
     if not usable:
@@ -484,7 +490,7 @@ def _warnings(
         output.append("missing_gamma")
     if contracts and len(usable) < len(contracts):
         output.append("incomplete_chain")
-    return tuple(output)
+    return tuple(dict.fromkeys(output))
 
 
 def _directional_bias(
@@ -517,6 +523,7 @@ def _context_hash(context: OptionsGammaContext) -> str:
         "symbol": context.symbol.strip().upper(),
         "spot": str(context.spot_price),
         "spot_as_of": context.spot_as_of.isoformat(),
+        "provider_warnings": context.provider_warnings,
         "contracts": [
             (
                 item.symbol,

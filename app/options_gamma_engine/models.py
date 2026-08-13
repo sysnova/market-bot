@@ -51,6 +51,7 @@ class OptionsGammaContext:
     expiration_from: date
     expiration_to: date
     contracts: tuple[OptionContractSnapshot, ...]
+    provider_warnings: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         symbol = self.symbol.strip().upper()
@@ -65,3 +66,7 @@ class OptionsGammaContext:
             raise ValueError("expiration_to cannot precede expiration_from")
         if any(item.underlying_symbol.strip().upper() != symbol for item in self.contracts):
             raise ValueError("all option contracts must belong to the context symbol")
+        if any(not item.strip() for item in self.provider_warnings):
+            raise ValueError("provider warnings cannot be blank")
+        if len(self.provider_warnings) != len(set(self.provider_warnings)):
+            raise ValueError("provider warnings must be unique")

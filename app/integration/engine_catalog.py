@@ -32,6 +32,7 @@ from app.entry_watcher import (
     EntryWatcherV5,
     EntryWatcherV51,
     EntryWatcherV52,
+    EntryWatcherV53,
 )
 from app.entry_watcher.strategy import configure_engine as configure_watcher
 from app.entry_watcher.strategy import validate_strategy as validate_watcher
@@ -64,7 +65,13 @@ from app.signal_fusion_engine import (
     SignalFusionEngineV05,
 )
 from app.support_confirmation_engine import SupportConfirmationEngine
-from app.swing_engine import SwingEngine, SwingEngineV2, SwingEngineV3, SwingEngineV4
+from app.swing_engine import (
+    SwingEngine,
+    SwingEngineV2,
+    SwingEngineV3,
+    SwingEngineV4,
+    SwingEngineV5,
+)
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
 from app.volume_structure_engine import VolumeStructureEngine, VolumeStructureEngineV11
@@ -88,6 +95,7 @@ def default_engine_registry() -> EngineRegistry:
                     "2.0.0": SwingEngineV2,
                     "3.0.0": SwingEngineV3,
                     "4.0.0": SwingEngineV4,
+                    "5.0.0": SwingEngineV5,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,
@@ -113,6 +121,7 @@ def default_engine_registry() -> EngineRegistry:
                     "5.0.0": EntryWatcherV5,
                     "5.1.0": EntryWatcherV51,
                     "5.2.0": EntryWatcherV52,
+                    "5.3.0": EntryWatcherV53,
                 },
                 required_since="0.0.0",
                 configure=configure_watcher,

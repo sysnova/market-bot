@@ -17,6 +17,7 @@ from app.entry_recovery_engine import EntryRecoveryEngineV11
 from app.entry_watcher import (
     EntryWatcherV5,
     EntryWatcherV52,
+    EntryWatcherV53,
     InMemoryEntryWatchStore,
 )
 from app.integration.engine_assembly import (
@@ -42,7 +43,7 @@ from app.options_gamma_engine import OptionsGammaEngine
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.signal_fusion_engine import SignalFusionEngineV05
-from app.swing_engine import SwingEngineV4
+from app.swing_engine import SwingEngineV4, SwingEngineV5
 from app.volume_structure_engine import VolumeStructureEngineV11
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -51,6 +52,8 @@ VOLUME_STRUCTURE_DEFINITION = ROOT / "configs/marketbot/7.3.0.yaml"
 INVALIDATION_DEFINITION = ROOT / "configs/marketbot/7.4.0.yaml"
 LATEST_DEFINITION = ROOT / "configs/marketbot/7.5.0.yaml"
 GAMMA_DEFINITION = ROOT / "configs/marketbot/7.6.0.yaml"
+EARLY_RADAR_DEFINITION = ROOT / "configs/marketbot/7.7.0.yaml"
+STRUCTURAL_SWING_DEFINITION = ROOT / "configs/marketbot/7.8.0.yaml"
 PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 
@@ -126,6 +129,32 @@ def test_gamma_definition_adds_active_producer_and_bounded_consumers() -> None:
     assert isinstance(assembly.build(EngineSlot.OPTIONS_GAMMA), OptionsGammaEngine)
     assert isinstance(assembly.build_alert(), AlertEngineV35)
     assert isinstance(assembly.build_signal_fusion(), SignalFusionEngineV05)
+
+
+def test_early_radar_definition_preserves_gamma_and_activates_watcher_v53() -> None:
+    previous = load_marketbot_definition(GAMMA_DEFINITION)
+    definition = load_marketbot_definition(EARLY_RADAR_DEFINITION)
+    assembly = MarketBotAssembly(definition)
+
+    assert previous.engines[EngineSlot.ENTRY_WATCHER].implementation == "5.2.0"
+    assert definition.version == "7.7.0"
+    assert definition.engines[EngineSlot.OPTIONS_GAMMA].mode is EngineMode.ACTIVE
+    assert isinstance(
+        assembly.build_entry_watcher(store=InMemoryEntryWatchStore()),
+        EntryWatcherV53,
+    )
+
+
+def test_structural_swing_definition_preserves_radar_and_activates_swing_v5() -> None:
+    previous = load_marketbot_definition(EARLY_RADAR_DEFINITION)
+    definition = load_marketbot_definition(STRUCTURAL_SWING_DEFINITION)
+    assembly = MarketBotAssembly(definition)
+
+    assert previous.engines[EngineSlot.SWING].implementation == "4.0.0"
+    assert definition.version == "7.8.0"
+    assert definition.engines[EngineSlot.ENTRY_WATCHER].implementation == "5.3.0"
+    assert isinstance(assembly.build_swing(), SwingEngineV5)
+    assert definition.engines[EngineSlot.SWING].strategy.version == "1.2.0"
 
 
 def test_operational_modes_select_slots_from_the_definition() -> None:

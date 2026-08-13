@@ -32,7 +32,7 @@ selection before starting services:
 uv run marketbot assembly
 ```
 
-The default is `configs/marketbot/7.6.0.yaml`. Each engine entry separates:
+The default is `configs/marketbot/7.8.0.yaml`. Each engine entry separates:
 
 - `implementation`: concrete Python behavior;
 - `strategy`: embedded rules or an exact-version YAML artifact;
@@ -41,7 +41,7 @@ The default is `configs/marketbot/7.6.0.yaml`. Each engine entry separates:
 To deploy another complete, reviewed assembly, create a new immutable definition and select it:
 
 ```powershell
-$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.6.0.yaml"
+$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.8.0.yaml"
 .\scripts\windows\start-market-bot.ps1
 ```
 
@@ -85,10 +85,11 @@ therefore cannot enter L1. A Long buy zone, Swing setup, armed watcher, or other
 remains silent and receives no maturity banner.
 
 L4 describes accumulated evidence, not permission to chase price. Intraday v4 blocks L3 and the
-Entry Watcher path to L4 while the quote is outside its efficient entry window. The first mature
-retest is only a candidate; Entry Watcher requires a different analysis at least three minutes
-later. A triggered symbol cannot be immediately rearmed from a recalculated Long zone for 30
-minutes, so one thesis does not produce duplicate Entry Watcher alarms.
+Entry Watcher path to L4 while the quote is outside its efficient entry window. Entry Watcher 5.3
+preserves V5.2 radar creation and tracking, but a first Intraday result that already passes every
+mature, strong, higher-low, price-efficiency, Swing/AVWAP, freshness, extension, and live R/R gate
+triggers L4 immediately at that result's price. A triggered symbol cannot be immediately rearmed
+from a recalculated Long zone for 30 minutes, so one thesis does not produce duplicate alarms.
 
 PatreonCaps, Long Portfolio, Signal Fusion, and Portfolio Flow publish independent analytical
 families. They never acquire or impersonate an Alert L1-L4 level. Entry Opportunity tracks each

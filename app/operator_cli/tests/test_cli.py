@@ -187,8 +187,9 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.6.0"
-    assert payload["engines"]["entry-watcher"]["implementation"] == "5.2.0"
+    assert payload["version"] == "7.8.0"
+    assert payload["engines"]["swing"]["implementation"] == "5.0.0"
+    assert payload["engines"]["entry-watcher"]["implementation"] == "5.3.0"
     assert payload["engines"]["entry-opportunity"]["implementation"] == "3.0.0"
     assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
     assert payload["engines"]["portfolio-flow"]["strategy"]["version"] == "2.0.0"
@@ -222,7 +223,7 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.6.0"
+    assert payload["definition_version"] == "7.8.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
