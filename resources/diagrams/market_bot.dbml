@@ -184,7 +184,7 @@ Table market_bot.control_events {
 Table market_bot.entry_watches {
   id uuid [pk]
   symbol text [not null]
-  status text [not null, note: "ARMED | IN_ZONE | TRIGGERED | INVALIDATED | EXPIRED"]
+  status text [not null, note: "ARMED | IN_ZONE | EARLY_ENTRY | IMPULSE_EXTENDED | TRIGGERED | POLICY_INELIGIBLE | INVALIDATED | EXPIRED"]
   thesis_version text [not null]
   armed_at timestamptz [not null]
   updated_at timestamptz [not null]
@@ -202,7 +202,7 @@ Table market_bot.entry_watches {
   created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    symbol [unique, name: "entry_watches_one_active_per_symbol_idx", note: "Partial: status in ('ARMED', 'IN_ZONE')"]
+    symbol [unique, name: "entry_watches_one_active_per_symbol_idx", note: "Partial: status in ('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED')"]
     (status, expires_at) [name: "entry_watches_status_expires_at_idx"]
   }
 }
@@ -236,7 +236,7 @@ Table market_bot.entry_opportunities {
   updated_at timestamptz [not null]
   expires_at timestamptz [not null]
   closed_at timestamptz
-  close_reason text
+  close_reason text [note: "POLICY_INELIGIBLE | ORIGINAL_THESIS_INVALIDATED | EXPIRED | UNIVERSE_REMOVED | ALL_HORIZONS_CLOSED"]
   zone_low numeric(28,8) [not null]
   zone_high numeric(28,8) [not null]
   invalidation numeric(28,8) [not null]
