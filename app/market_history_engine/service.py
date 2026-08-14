@@ -122,23 +122,14 @@ class MarketHistoryService:
         persisted = 0
         for requirement in request.requirements:
             coverage = await self._repository.coverage(request.symbols, requirement.timeframe)
-            for batch in _batches(request.symbols, self._batch_size):
-                if _batch_is_fresh(
-                    batch,
-                    coverage,
-                    as_of=request.requested_at,
-                    freshness=self._freshness,
-                    minimum_count=analytical_storage_limit(
-                        requirement.timeframe, requirement.max_bars_per_symbol
-                    ),
-                ):
-                    continue
-                start = _sync_start(
-                    batch,
-                    coverage,
-                    requirement,
-                    as_of=request.requested_at,
-                )
+            for batch, start in _pending_sync_batches(
+                request.symbols,
+                coverage,
+                requirement,
+                as_of=request.requested_at,
+                freshness=self._freshness,
+                batch_size=self._batch_size,
+            ):
                 raw = await self._rest.fetch_bars(
                     batch,
                     timeframe=requirement.timeframe.value,
@@ -183,39 +174,44 @@ class MarketHistoryService:
         return tuple(output)
 
 
-def _sync_start(
+def _symbol_sync_start(
+    coverage: BarCoverage,
+    requirement: MarketHistoryRequirement,
+    *,
+    as_of: datetime,
+) -> datetime:
+    if coverage.count <= 0 or coverage.latest is None:
+        return as_of - requirement.lookback
+    return coverage.latest - _overlap(requirement.timeframe)
+
+
+def _pending_sync_batches(
     symbols: tuple[str, ...],
     coverage: Mapping[str, BarCoverage],
     requirement: MarketHistoryRequirement,
     *,
     as_of: datetime,
-) -> datetime:
-    values = tuple(coverage[symbol] for symbol in symbols)
-    required_count = analytical_storage_limit(
-        requirement.timeframe, requirement.max_bars_per_symbol
-    )
-    if any(item.count < required_count or item.latest is None for item in values):
-        return as_of - requirement.lookback
-    return min(
-        item.latest - _overlap(requirement.timeframe) for item in values if item.latest is not None
-    )
-
-
-def _batch_is_fresh(
-    symbols: tuple[str, ...],
-    coverage: Mapping[str, BarCoverage],
-    *,
-    as_of: datetime,
     freshness: timedelta,
-    minimum_count: int,
-) -> bool:
+    batch_size: int,
+) -> tuple[tuple[tuple[str, ...], datetime], ...]:
     threshold = as_of - freshness
-    return all(
-        item.count >= minimum_count
-        and item.latest is not None
-        and item.downloaded_at is not None
-        and item.downloaded_at >= threshold
-        for item in (coverage[symbol] for symbol in symbols)
+    grouped: dict[datetime, list[str]] = {}
+    normalized = tuple(dict.fromkeys(symbol.strip().upper() for symbol in symbols))
+    for symbol in normalized:
+        item = coverage.get(symbol, BarCoverage(count=0, latest=None))
+        if (
+            item.count > 0
+            and item.latest is not None
+            and item.downloaded_at is not None
+            and item.downloaded_at >= threshold
+        ):
+            continue
+        start = _symbol_sync_start(item, requirement, as_of=as_of)
+        grouped.setdefault(start, []).append(symbol)
+    return tuple(
+        (batch, start)
+        for start, pending_symbols in grouped.items()
+        for batch in _batches(tuple(pending_symbols), batch_size)
     )
 
 

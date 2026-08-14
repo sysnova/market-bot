@@ -110,8 +110,8 @@ async def test_incremental_sync_uses_latest_bar_with_timeframe_overlap() -> None
     rest = FakeRest()
     repository = FakeRepository(
         {
-            "TGT": BarCoverage(count=1500, latest=latest),
-            "ADUR": BarCoverage(count=1500, latest=latest),
+            "TGT": BarCoverage(count=100, latest=latest),
+            "ADUR": BarCoverage(count=80, latest=latest),
         }
     )
     service = MarketHistoryService(
@@ -131,8 +131,8 @@ async def test_fresh_cache_skips_rest_during_engine_startup() -> None:
     rest = FakeRest()
     repository = FakeRepository(
         {
-            "TGT": BarCoverage(count=1500, latest=NOW, downloaded_at=downloaded_at),
-            "ADUR": BarCoverage(count=1500, latest=NOW, downloaded_at=downloaded_at),
+            "TGT": BarCoverage(count=100, latest=NOW, downloaded_at=downloaded_at),
+            "ADUR": BarCoverage(count=80, latest=NOW, downloaded_at=downloaded_at),
         }
     )
     service = MarketHistoryService(
@@ -147,6 +147,60 @@ async def test_fresh_cache_skips_rest_during_engine_startup() -> None:
 
     assert response.persisted_bars == 0
     assert rest.calls == []
+
+
+async def test_missing_symbol_does_not_force_fresh_peer_to_redownload() -> None:
+    rest = FakeRest()
+    repository = FakeRepository(
+        {
+            "TGT": BarCoverage(
+                count=100,
+                latest=NOW,
+                downloaded_at=NOW - timedelta(minutes=10),
+            ),
+        }
+    )
+    service = MarketHistoryService(
+        rest=rest,
+        repository=repository,
+        feed="sip",
+        batch_size=20,
+        freshness=timedelta(hours=1),
+    )
+
+    await service.ensure(request(BarTimeframe.MINUTE_1, timedelta(days=7), 500))
+
+    assert len(rest.calls) == 1
+    assert rest.calls[0]["symbols"] == ("ADUR",)
+    assert rest.calls[0]["start"] == NOW - timedelta(days=7)
+
+
+async def test_symbols_with_different_coverage_fetch_only_their_missing_tail() -> None:
+    tgt_latest = NOW - timedelta(hours=2)
+    rest = FakeRest()
+    repository = FakeRepository(
+        {
+            "TGT": BarCoverage(
+                count=100,
+                latest=tgt_latest,
+                downloaded_at=NOW - timedelta(hours=2),
+            ),
+        }
+    )
+    service = MarketHistoryService(
+        rest=rest,
+        repository=repository,
+        feed="sip",
+        batch_size=20,
+        freshness=timedelta(hours=1),
+    )
+
+    await service.ensure(request(BarTimeframe.MINUTE_1, timedelta(days=7), 500))
+
+    assert len(rest.calls) == 2
+    calls_by_symbol = {call["symbols"]: call for call in rest.calls}
+    assert calls_by_symbol[("TGT",)]["start"] == tgt_latest - timedelta(minutes=2)
+    assert calls_by_symbol[("ADUR",)]["start"] == NOW - timedelta(days=7)
 
 
 async def test_registered_requirements_are_merged_for_hourly_refresh() -> None:
