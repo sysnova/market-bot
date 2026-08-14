@@ -102,8 +102,12 @@ class EntryWatcherV54(EntryWatcherV53):
             return None
         analyses = self._latest.get(active.symbol, {})
         price = self._current_price(analyses) or active.current_price
+        frozen_arm_quality_passed = self._frozen_arm_quality_passed(active)
 
-        if active.status in {EntryWatchStatus.ARMED, EntryWatchStatus.IN_ZONE}:
+        if (
+            active.status in {EntryWatchStatus.ARMED, EntryWatchStatus.IN_ZONE}
+            and frozen_arm_quality_passed
+        ):
             levels = self._early_entry_levels(
                 active, price=price, analyses=analyses, now=now
             )
@@ -127,6 +131,7 @@ class EntryWatcherV54(EntryWatcherV53):
         extension = self._zone_extension_percent(active, price)
         if (
             active.status in {EntryWatchStatus.ARMED, EntryWatchStatus.IN_ZONE}
+            and frozen_arm_quality_passed
             and extension > self._early_max_percent
         ):
             state = self._new_impulse_state(active, price, analyses)
@@ -145,6 +150,8 @@ class EntryWatcherV54(EntryWatcherV53):
             )
 
         if active.status is not EntryWatchStatus.IMPULSE_EXTENDED:
+            return None
+        if not frozen_arm_quality_passed:
             return None
         state = self._updated_impulse_state(active, price)
         snapshot = dict(active.anchor_snapshot)
@@ -255,6 +262,50 @@ class EntryWatcherV54(EntryWatcherV53):
             timedelta(0) <= now - analyses[horizon].as_of <= self._policy.max_ages[horizon]
             for horizon in required
         )
+
+    def _frozen_arm_quality_passed(self, watch: EntryWatch) -> bool:
+        """Apply the modern radar gate to the immutable source snapshot."""
+
+        return not self._active_policy_failure_reasons(watch)
+
+    def _active_policy_failure_reasons(self, watch: EntryWatch) -> tuple[str, ...]:
+        """Explain why the immutable source snapshot fails the current arm gate."""
+
+        snapshot = watch.anchor_snapshot
+        score = _decimal(snapshot.get("score"))
+        if snapshot.get("classification") == "extended":
+            return ("policy_ineligible", "frozen_classification_extended")
+        if score is None:
+            return ("policy_ineligible", "frozen_score_missing")
+        if score < self._initial_arm_min_score:
+            return (
+                "policy_ineligible",
+                f"frozen_score_below_minimum:{score}<{self._initial_arm_min_score}",
+            )
+        if watch.original_price <= watch.zone_high:
+            return ()
+        distance_percent = (
+            (watch.original_price - watch.zone_high) / watch.original_price * HUNDRED
+        )
+        raw_metrics = snapshot.get("metrics")
+        if not isinstance(raw_metrics, dict):
+            return ("policy_ineligible", "frozen_distance_metrics_missing")
+        metrics = cast("dict[str, JsonValue]", raw_metrics)
+        distance_atr = _decimal(metrics.get("distance_to_buy_zone_atr"))
+        failures = ["policy_ineligible"]
+        if distance_percent > self._initial_arm_max_distance_percent:
+            failures.append(
+                "frozen_distance_percent_above_maximum:"
+                f"{_rounded(distance_percent)}>{self._initial_arm_max_distance_percent}"
+            )
+        if distance_atr is None:
+            failures.append("frozen_distance_atr_missing")
+        elif distance_atr > self._initial_arm_max_distance_atr:
+            failures.append(
+                f"frozen_distance_atr_above_maximum:{distance_atr}>"
+                f"{self._initial_arm_max_distance_atr}"
+            )
+        return tuple(failures) if len(failures) > 1 else ()
 
     @staticmethod
     def _zone_extension_percent(watch: EntryWatch, price: Decimal) -> Decimal:

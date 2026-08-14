@@ -381,7 +381,7 @@ class EntryWatchRecord(Base):
     __table_args__ = (
         CheckConstraint(
             "status in ('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED', "
-            "'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            "'TRIGGERED', 'POLICY_INELIGIBLE', 'INVALIDATED', 'EXPIRED')",
             name="status",
         ),
         CheckConstraint("invalidation < zone_low and zone_low <= zone_high", name="level_order"),
@@ -427,13 +427,13 @@ class EntryWatchTransitionRecord(Base):
     __table_args__ = (
         CheckConstraint(
             "status in ('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED', "
-            "'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            "'TRIGGERED', 'POLICY_INELIGIBLE', 'INVALIDATED', 'EXPIRED')",
             name="status",
         ),
         CheckConstraint(
             "previous_status is null or previous_status in "
             "('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED', "
-            "'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            "'TRIGGERED', 'POLICY_INELIGIBLE', 'INVALIDATED', 'EXPIRED')",
             name="previous_status",
         ),
         Index("entry_watch_transitions_watch_occurred_idx", "watch_id", "occurred_at"),

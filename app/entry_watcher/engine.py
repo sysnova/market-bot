@@ -144,6 +144,16 @@ class EntryWatcher:
             return None
 
         current_price = self._current_price(latest) or active.current_price
+        policy_failure_reasons = self._active_policy_failure_reasons(active)
+        if policy_failure_reasons:
+            return await self._change(
+                active,
+                EntryWatchStatus.POLICY_INELIGIBLE,
+                now=now,
+                price=current_price,
+                reasons=policy_failure_reasons,
+                analyses=latest,
+            )
         invalidation_reason = self._invalidation_reason(
             active, result=result, current_price=current_price
         )
@@ -241,6 +251,12 @@ class EntryWatcher:
                 analyses=latest,
             )
         return None
+
+    def _active_policy_failure_reasons(self, watch: EntryWatch) -> tuple[str, ...]:
+        """Return durable-policy failures for an already active watch, if any."""
+
+        del watch
+        return ()
 
     def _reached_target_zone(self, watch: EntryWatch, *, current_price: Decimal) -> bool:
         return watch.invalidation < current_price <= watch.zone_high

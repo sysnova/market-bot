@@ -953,6 +953,60 @@ async def test_v54_tracks_an_extended_impulse_and_enters_its_pullback() -> None:
 
 
 @pytest.mark.unit
+async def test_v54_closes_a_legacy_watch_that_fails_modern_arm_quality() -> None:
+    store = InMemoryEntryWatchStore()
+    legacy = EntryWatcherV2(store=store)
+    armed = await legacy.ingest(
+        analysis(
+            AnalysisHorizon.LONG_TERM,
+            classification="watch_pullback",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            price="107.27",
+            score="41.75",
+            zone_low="84.5092",
+            zone_high="97.4253",
+            invalidation="79.5109",
+            extra_metrics=(
+                NamedValue(
+                    name="distance_to_buy_zone_atr",
+                    value=Decimal("2.9979"),
+                ),
+            ),
+        ),
+        now=NOW,
+    )
+    assert armed is not None
+    assert armed.status is EntryWatchStatus.ARMED
+
+    watcher = EntryWatcherV54(store=store)
+    transition = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="pullback",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            price="111.27",
+            as_of=NOW + timedelta(minutes=1),
+            extra_metrics=(
+                NamedValue(name="anchored_vwap_gate_passed", value=True),
+                NamedValue(name="atr14", value=Decimal("2.8728")),
+            ),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    active = await store.load_active("AAPL")
+    assert transition is not None
+    assert transition.status is EntryWatchStatus.POLICY_INELIGIBLE
+    assert "policy_ineligible" in transition.reasons
+    assert active is None
+    latest = await store.load_latest("AAPL")
+    assert latest is not None
+    assert latest.status is EntryWatchStatus.POLICY_INELIGIBLE
+
+
+@pytest.mark.unit
 async def test_v54_apa_regression_recovers_the_post_impulse_pullback() -> None:
     store = InMemoryEntryWatchStore()
     watcher = EntryWatcherV54(store=store)

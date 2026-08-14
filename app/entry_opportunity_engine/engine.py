@@ -90,7 +90,6 @@ class EntryOpportunityEngine:
                 EntryWatchStatus.ARMED,
                 EntryWatchStatus.IN_ZONE,
                 EntryWatchStatus.EARLY_ENTRY,
-                EntryWatchStatus.IMPULSE_EXTENDED,
                 EntryWatchStatus.TRIGGERED,
             }:
                 return ()
@@ -98,7 +97,6 @@ class EntryOpportunityEngine:
                 EntryWatchStatus.ARMED: EntryMaturityLevel.ARMED,
                 EntryWatchStatus.IN_ZONE: EntryMaturityLevel.IN_ZONE,
                 EntryWatchStatus.EARLY_ENTRY: EntryMaturityLevel.L1,
-                EntryWatchStatus.IMPULSE_EXTENDED: EntryMaturityLevel.ARMED,
                 EntryWatchStatus.TRIGGERED: EntryMaturityLevel.L4,
             }[transition.status]
             opportunity = self._new_opportunity(transition, level=level)
@@ -200,6 +198,28 @@ class EntryOpportunityEngine:
                 closed,
                 occurred_at=transition.occurred_at,
                 reasons=("opportunity_expired", *transition.reasons),
+                event_id=transition.transition_id,
+            )
+            await self._store.save(closed, event)
+            return (event,)
+        if transition.status is EntryWatchStatus.POLICY_INELIGIBLE:
+            closed = self._close_opportunity(
+                active,
+                price=transition.current_price,
+                now=transition.occurred_at,
+                reason=EntryCloseReason.POLICY_INELIGIBLE,
+                leg_status=EntryLegStatus.THESIS_BROKEN,
+            )
+            closed = _with_source_cursor(
+                closed,
+                source=_WATCHER_SOURCE,
+                occurred_at=transition.occurred_at,
+                event_id=transition.transition_id,
+            )
+            event = self._event(
+                closed,
+                occurred_at=transition.occurred_at,
+                reasons=("opportunity_policy_ineligible", *transition.reasons),
                 event_id=transition.transition_id,
             )
             await self._store.save(closed, event)

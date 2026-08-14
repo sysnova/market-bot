@@ -57,6 +57,7 @@ def watch_transition(
                 EntryWatchStatus.EXPIRED: "0195f3a5-9000-7000-8000-000000000085",
                 EntryWatchStatus.EARLY_ENTRY: "0195f3a5-9000-7000-8000-000000000086",
                 EntryWatchStatus.IMPULSE_EXTENDED: "0195f3a5-9000-7000-8000-000000000087",
+                EntryWatchStatus.POLICY_INELIGIBLE: "0195f3a5-9000-7000-8000-000000000088",
             }[status]
         ),
         watch_id=UUID(watch_id),
@@ -157,6 +158,27 @@ async def test_early_watcher_entry_opens_l1_horizon_legs() -> None:
         AnalysisHorizon.INTRADAY,
     }
     assert all(leg.entry_price == Decimal("102") for leg in opened)
+
+
+@pytest.mark.unit
+async def test_extended_impulse_cannot_bootstrap_an_orphan_opportunity() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV3(store=store, id_factory=lambda: OPPORTUNITY_ID)
+
+    events = await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.IMPULSE_EXTENDED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="111.27",
+            reasons=(
+                "entry_window_missed",
+                "impulse_extended_awaiting_pullback",
+            ),
+        )
+    )
+
+    assert events == ()
+    assert await store.load_active("AAPL") is None
 
 
 def alert(
@@ -987,6 +1009,37 @@ async def test_armed_invalidation_closes_checkpoint_without_creating_another_opp
     assert closed.checkpoints[0].gain_loss_percent == Decimal("-10.0000")
     assert closed.close_reason is EntryCloseReason.ORIGINAL_THESIS_INVALIDATED
     assert len(store.opportunities) == 1
+
+
+@pytest.mark.unit
+async def test_policy_ineligible_watch_closes_the_existing_opportunity() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+
+    events = await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.POLICY_INELIGIBLE,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="101",
+            occurred_at=NOW + timedelta(minutes=10),
+            previous=EntryWatchStatus.ARMED,
+            reasons=("policy_ineligible", "frozen_score_below_minimum:41.75<50"),
+        )
+    )
+
+    assert await store.load_active("AAPL") is None
+    closed = await store.load_latest("AAPL")
+    assert closed is not None
+    assert closed.close_reason is EntryCloseReason.POLICY_INELIGIBLE
+    assert closed.checkpoints[0].status.value == "CLOSED"
+    assert events[-1].reasons[0] == "opportunity_policy_ineligible"
 
 
 @pytest.mark.unit

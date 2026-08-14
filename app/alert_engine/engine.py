@@ -81,6 +81,7 @@ class AlertEngine:
             EntryWatchStatus.EARLY_ENTRY: (AlertSeverity.ACTION, Decimal("72")),
             EntryWatchStatus.IMPULSE_EXTENDED: (AlertSeverity.WATCH, Decimal("55")),
             EntryWatchStatus.TRIGGERED: (AlertSeverity.ACTION, Decimal("85")),
+            EntryWatchStatus.POLICY_INELIGIBLE: (AlertSeverity.INFO, Decimal("15")),
             EntryWatchStatus.INVALIDATED: (AlertSeverity.INFO, Decimal("20")),
             EntryWatchStatus.EXPIRED: (AlertSeverity.INFO, Decimal("10")),
         }[transition.status]

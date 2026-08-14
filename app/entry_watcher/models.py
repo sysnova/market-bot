@@ -47,6 +47,7 @@ class EntryWatch(BaseModel):
             raise ValueError("entry watch timestamps are out of order")
         terminal = self.status in {
             EntryWatchStatus.TRIGGERED,
+            EntryWatchStatus.POLICY_INELIGIBLE,
             EntryWatchStatus.INVALIDATED,
             EntryWatchStatus.EXPIRED,
         }
