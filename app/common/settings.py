@@ -42,7 +42,7 @@ class AppSettings(BaseSettings):
     alpaca_adjustment: Literal["raw", "split", "dividend", "all"] = "split"
     alpaca_rest_batch_size: int = Field(default=20, ge=1, le=100)
     market_history_refresh_seconds: int = Field(default=3600, ge=60, le=86400)
-    market_history_request_timeout_seconds: int = Field(default=600, ge=10, le=3600)
+    market_history_request_timeout_seconds: int = Field(default=1800, ge=10, le=3600)
     alpaca_data_base_url: HttpUrl = HttpUrl("https://data.alpaca.markets")
     alpaca_market_data_stream_url: AnyUrl = AnyUrl("wss://stream.data.alpaca.markets/v2")
     alpaca_options_data_base_url: HttpUrl = HttpUrl("https://data.alpaca.markets")

@@ -9,7 +9,7 @@ RUNTIME_ROOT="$PROJECT_ROOT/.runtime"
 SYMBOLS=""
 NO_BELL=0
 DETACH=0
-READY_TIMEOUT=600
+READY_TIMEOUT=1800
 SESSION="marketbot"
 
 usage() {
@@ -21,7 +21,7 @@ Options:
   --runtime-root PATH   Runtime directory (default: .runtime).
   --no-bell             Disable alert bells.
   --detach              Create the tmux runtime without attaching a client.
-  --ready-timeout SEC   Readiness timeout (default: 600).
+  --ready-timeout SEC   Readiness timeout (default: 1800).
   --session NAME        tmux session name (default: marketbot).
   -h, --help            Show this help.
 EOF
@@ -92,6 +92,14 @@ plan_all_ready_paths() {
   (cd "$PROJECT_ROOT" && uv run python -c \
     'import json,sys; plan=json.load(open(sys.argv[1], encoding="utf-8")); sys.stdout.buffer.write(b"".join(item["ready_path"].encode("utf-8") + b"\0" for item in plan["processes"] if item["ready_path"] is not None))' \
     "$PLAN_PATH")
+}
+
+clear_runtime_readiness() {
+  mkdir -p "$STATUS_ROOT"
+  local -a all_ready_paths=()
+  mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
+  ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
+  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 }
 
 run_analysis() {
@@ -201,11 +209,23 @@ run_control() {
     echo
     echo "Stopping every MarketBot process..."
     for pid in "${child_pids[@]}"; do
-      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      kill -TERM "$pid" 2>/dev/null || true
     done
-    sleep 1
+
+    local deadline=$((SECONDS + 8)) running pid
+    while ((SECONDS < deadline)); do
+      running=0
+      for pid in "${child_pids[@]}"; do
+        kill -0 "$pid" 2>/dev/null && running=1
+      done
+      ((running == 0)) && break
+      sleep 0.2
+    done
+
     for pid in "${child_pids[@]}"; do
-      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      kill -KILL "$pid" 2>/dev/null || true
     done
     if [[ -n "${TMUX_PANE:-}" ]]; then
       tmux kill-session -t "$SESSION" 2>/dev/null || true
@@ -236,10 +256,9 @@ run_control() {
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
   write_runtime_plan
-  local -a all_ready_paths=()
-  mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
-  ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
-  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  if [[ "${MARKETBOT_LINUX_READINESS_CLEARED:-0}" != "1" ]]; then
+    clear_runtime_readiness
+  fi
 
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
@@ -339,8 +358,8 @@ launch_tmux() {
     exec tmux attach-session -t "$SESSION"
   fi
 
-  mkdir -p "$STATUS_ROOT"
-  rm -f "$STATUS_ROOT/market-history-v1.ready.json"
+  clear_runtime_readiness
+  export MARKETBOT_LINUX_READINESS_CLEARED=1
   tmux new-session -d -s "$SESSION" -n MarketBot "$control"
   tmux set-window-option -t "$SESSION":0 window-size latest
   tmux set-option -t "$SESSION" pane-border-status top

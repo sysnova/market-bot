@@ -53,6 +53,34 @@ def test_linux_launcher_runs_from_project_and_fails_fast_while_waiting() -> None
     assert "check_children || return 1" in wait_ready
 
 
+def test_linux_launcher_allows_large_history_bootstrap() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "READY_TIMEOUT=1800" in script
+    assert "Readiness timeout (default: 1800)." in script
+
+
+def test_linux_launcher_cleanup_signals_groups_and_direct_children() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    cleanup = script.split("cleanup()", 1)[1].split("start_background()", 1)[0]
+
+    assert 'kill -TERM -- "-$pid"' in cleanup
+    assert 'kill -TERM "$pid"' in cleanup
+    assert 'kill -KILL -- "-$pid"' in cleanup
+    assert 'kill -KILL "$pid"' in cleanup
+    assert '|| kill -TERM "$pid"' not in cleanup
+    assert '|| kill -KILL "$pid"' not in cleanup
+
+
+def test_linux_launcher_clears_readiness_before_starting_monitor_panes() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    launch = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
+
+    assert "clear_runtime_readiness" in script
+    assert launch.index("clear_runtime_readiness") < launch.index("tmux new-session")
+    assert "MARKETBOT_LINUX_READINESS_CLEARED=1" in launch
+
+
 def test_linux_launcher_preserves_arguments_without_shell_reparsing() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
