@@ -85,6 +85,7 @@ def analysis(
     direction: PatternDirection,
     as_of: datetime,
     analysis_id: UUID | None = None,
+    extra_metrics: tuple[NamedValue, ...] = (),
 ) -> AnalysisResult:
     metrics = [NamedValue(name="reference_price", value=Decimal(price))]
     if horizon is AnalysisHorizon.LONG_TERM:
@@ -107,7 +108,7 @@ def analysis(
         score=Decimal("20") if verdict is AnalysisVerdict.AVOID else Decimal("80"),
         confidence=Decimal("0.8"),
         reasons=("fixture",),
-        metrics=tuple(metrics),
+        metrics=(*metrics, *extra_metrics),
         context_hash=HASH,
     )
 
@@ -159,6 +160,109 @@ async def test_early_watcher_entry_opens_l1_horizon_legs() -> None:
         AnalysisHorizon.INTRADAY,
     }
     assert all(leg.entry_price == Decimal("102") for leg in opened)
+
+
+@pytest.mark.unit
+async def test_l2_anchor_replaces_original_zone_only_for_l4_retest() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV3(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    watch_id = "0195f3a5-9000-7000-8000-000000000021"
+    await manager.ingest_transition(
+        watch_transition(EntryWatchStatus.ARMED, watch_id=watch_id, price="98")
+    )
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.EARLY_ENTRY,
+            watch_id=watch_id,
+            price="102",
+            occurred_at=NOW + timedelta(minutes=5),
+            previous=EntryWatchStatus.ARMED,
+            horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        )
+    )
+    l2_signal = entry_signal(
+        EntrySignalFamily.CORE_ENTRY,
+        signal_id="0195f3a5-9000-7000-8000-000000000091",
+        setup_id="aapl-l2",
+        created_at=NOW + timedelta(minutes=10),
+        maturity=EntryMaturityLevel.L2,
+    ).model_copy(
+        update={
+            "entry_price": Decimal("106"),
+            "zone_low": Decimal("104"),
+            "zone_high": Decimal("106"),
+            "invalidation": Decimal("102"),
+        }
+    )
+    await manager.ingest_signal(l2_signal)
+
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.zone_low == Decimal("95")
+    assert active.zone_high == Decimal("100")
+    l2 = next(item for item in active.checkpoints if item.level is EntryMaturityLevel.L2)
+    assert l2.zone_low == Decimal("104")
+    assert l2.zone_high == Decimal("106")
+    assert l2.invalidation == Decimal("102")
+
+    ignored = await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.TRIGGERED,
+            watch_id=watch_id,
+            price="108",
+            occurred_at=NOW + timedelta(minutes=12),
+            previous=EntryWatchStatus.EARLY_ENTRY,
+            horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        )
+    )
+    assert ignored == ()
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.peak_maturity is EntryMaturityLevel.L2
+
+    touch_time = NOW + timedelta(minutes=15)
+    assert await manager.ingest_bar(
+        bar(timestamp=touch_time, close="106", low="103", high="107")
+    ) == ()
+    active = await store.load_active("AAPL")
+    assert active is not None
+    l2 = next(item for item in active.checkpoints if item.level is EntryMaturityLevel.L2)
+    assert l2.retested_at == touch_time
+    assert l2.retest_low == Decimal("104")
+    assert active.peak_maturity is EntryMaturityLevel.L2
+
+    reclaim_time = NOW + timedelta(minutes=20)
+    reclaim = analysis(
+        AnalysisHorizon.INTRADAY,
+        price="107",
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        as_of=reclaim_time,
+        analysis_id=UUID("0195f3a5-9000-7000-8000-000000000093"),
+        extra_metrics=(
+            NamedValue(name="atr14", value=Decimal("2")),
+            NamedValue(name="confirmation_gate_passed", value=True),
+            NamedValue(name="mature_confirmation_gate_passed", value=True),
+            NamedValue(name="entry_efficiency_gate_passed", value=True),
+            NamedValue(name="five_minute_higher_low", value=True),
+            NamedValue(name="entry_trigger_level", value=Decimal("106.5")),
+            NamedValue(name="invalidation_level", value=Decimal("103")),
+            NamedValue(name="objective_level", value=Decimal("115")),
+        ),
+    )
+    events = await manager.ingest_analysis(reclaim, now=reclaim_time)
+
+    assert len(events) == 1
+    assert "l2_zone_reclaim_confirmed" in events[0].reasons
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.peak_maturity is EntryMaturityLevel.L4
+    assert active.status is EntryOpportunityStatus.OPEN
+    assert active.zone_low == Decimal("95")
+    assert active.zone_high == Decimal("100")
+    l4 = next(item for item in active.checkpoints if item.level is EntryMaturityLevel.L4)
+    assert l4.entry_price == Decimal("107")
+    assert l4.invalidation == Decimal("103")
 
 
 @pytest.mark.unit

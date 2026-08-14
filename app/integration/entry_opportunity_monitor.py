@@ -442,6 +442,12 @@ def _format_opportunity(
             f"SETUP {item.setup_id or '-'} "
             f"OUTCOME {item.outcome.value if item.outcome else '-'}"
         )
+        if item.zone_low is not None and item.zone_high is not None:
+            lines.append(
+                f"      L2 ANCHOR {item.zone_low}-{item.zone_high} | "
+                f"RETEST {item.retested_at.strftime('%m-%d %H:%M') if item.retested_at else '-'} "
+                f"LOW {item.retest_low or '-'}"
+            )
     lines.append("  LEGS POR HORIZONTE")
     if not opportunity.legs:
         lines.append("    -")

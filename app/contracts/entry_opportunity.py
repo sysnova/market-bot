@@ -42,6 +42,10 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
     lowest_price: PositiveDecimal
     invalidation: PositiveDecimal
     target: PositiveDecimal | None = None
+    zone_low: PositiveDecimal | None = None
+    zone_high: PositiveDecimal | None = None
+    retested_at: datetime | None = None
+    retest_low: PositiveDecimal | None = None
     status: EntryCheckpointStatus = EntryCheckpointStatus.OPEN
     closed_at: datetime | None = None
     exit_price: PositiveDecimal | None = None
@@ -65,6 +69,16 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
             raise ValueError("closed checkpoint requires outcome and gain/loss")
         if self.lowest_price > self.highest_price:
             raise ValueError("checkpoint price extrema are inverted")
+        if (self.zone_low is None) != (self.zone_high is None):
+            raise ValueError("checkpoint zone requires both low and high")
+        if (
+            self.zone_low is not None
+            and self.zone_high is not None
+            and not self.invalidation < self.zone_low <= self.zone_high
+        ):
+            raise ValueError("checkpoint zone must sit above invalidation")
+        if (self.retested_at is None) != (self.retest_low is None):
+            raise ValueError("checkpoint retest requires timestamp and low")
         return self
 
 

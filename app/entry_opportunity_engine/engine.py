@@ -58,6 +58,7 @@ _TERMINAL_LEGS = {
 }
 _MAX_SOURCE_ANALYSIS_IDS = 32
 _WATCHER_SOURCE = "ENTRY_WATCHER"
+_L2_RETEST_ATR_TOLERANCE = Decimal("0.5")
 
 
 class EntryOpportunityEngine:
@@ -200,6 +201,15 @@ class EntryOpportunityEngine:
         if transition.status is EntryWatchStatus.POLICY_INELIGIBLE:
             return ()
 
+        if (
+            transition.status is EntryWatchStatus.TRIGGERED
+            and _l2_anchor(active) is not None
+            and _rank(active.peak_maturity) < _rank(EntryMaturityLevel.L4)
+        ):
+            # Once L2 defines a fresh confirmation zone, the watcher must not
+            # jump to L4 using the immutable, original ARMED zone.
+            return ()
+
         level = {
             EntryWatchStatus.ARMED: EntryMaturityLevel.ARMED,
             EntryWatchStatus.IN_ZONE: EntryMaturityLevel.IN_ZONE,
@@ -280,6 +290,51 @@ class EntryOpportunityEngine:
                 "source_analysis_ids": sources,
             }
         )
+
+        if result.horizon is AnalysisHorizon.INTRADAY:
+            updated, retested = _record_l2_retest(updated, result=result, price=price, now=now)
+            if retested and _l2_reclaim_confirmed(updated, result=result, price=price):
+                anchor = _l2_anchor(updated)
+                assert anchor is not None
+                invalidation = _metric_decimal(result, "invalidation_level") or anchor.invalidation
+                if invalidation >= price:
+                    invalidation = anchor.invalidation
+                target = _analysis_target(updated.latest_analyses, price) or anchor.target
+                changed = self._advance(
+                    updated,
+                    level=EntryMaturityLevel.L4,
+                    price=price,
+                    now=now,
+                    horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+                    source_analysis_ids=(result.analysis_id,),
+                    checkpoint_target=target,
+                    checkpoint_invalidation=invalidation,
+                    horizon_invalidations={
+                        AnalysisHorizon.SWING: invalidation,
+                        AnalysisHorizon.INTRADAY: invalidation,
+                    },
+                    horizon_targets=(
+                        {
+                            AnalysisHorizon.SWING: target,
+                            AnalysisHorizon.INTRADAY: target,
+                        }
+                        if target is not None
+                        else None
+                    ),
+                )
+                event = self._event(
+                    changed,
+                    occurred_at=now,
+                    reasons=(
+                        "maturity_l4_reached",
+                        "l2_anchor_retested",
+                        "l2_zone_reclaim_confirmed",
+                        "five_minute_higher_low_confirmed",
+                    ),
+                    event_id=result.analysis_id,
+                )
+                await self._store.save(changed, event)
+                return (event,)
         original_breached = price <= active.invalidation
         bearish_failure = result.direction is PatternDirection.BEARISH and result.verdict in {
             AnalysisVerdict.AVOID,
@@ -382,6 +437,12 @@ class EntryOpportunityEngine:
             and target > price
         }
         checkpoint_target = min(horizon_targets.values(), default=None)
+        checkpoint_invalidation = min(horizon_invalidations.values(), default=active.invalidation)
+        checkpoint_zone_low, checkpoint_zone_high = _alert_zone(
+            alert,
+            price=price,
+            invalidation=checkpoint_invalidation,
+        )
         changed = self._advance(
             active,
             level=level,
@@ -390,6 +451,9 @@ class EntryOpportunityEngine:
             horizons=alert.horizons,
             source_analysis_ids=alert.component_analysis_ids,
             checkpoint_target=checkpoint_target,
+            checkpoint_invalidation=checkpoint_invalidation,
+            checkpoint_zone_low=(checkpoint_zone_low if level is EntryMaturityLevel.L2 else None),
+            checkpoint_zone_high=(checkpoint_zone_high if level is EntryMaturityLevel.L2 else None),
             horizon_invalidations=horizon_invalidations,
             horizon_targets=horizon_targets,
         )
@@ -427,6 +491,9 @@ class EntryOpportunityEngine:
             return ()
         checkpoints = tuple(_mark_checkpoint(item, bar) for item in active.checkpoints)
         legs = tuple(_mark_leg(item, bar) for item in active.legs)
+        marked = active.model_copy(update={"checkpoints": checkpoints})
+        marked = _record_l2_bar_retest(marked, bar)
+        checkpoints = marked.checkpoints
         reasons = _leg_close_reasons(active.legs, legs)
 
         if bar.low <= active.invalidation:
@@ -581,6 +648,8 @@ class EntryOpportunityEngine:
         source_analysis_ids: tuple[UUID, ...],
         checkpoint_target: Decimal | None = None,
         checkpoint_invalidation: Decimal | None = None,
+        checkpoint_zone_low: Decimal | None = None,
+        checkpoint_zone_high: Decimal | None = None,
         horizon_invalidations: dict[AnalysisHorizon, Decimal] | None = None,
         horizon_targets: dict[AnalysisHorizon, Decimal] | None = None,
         checkpoint_family: EntrySignalFamily = EntrySignalFamily.CORE_ENTRY,
@@ -607,6 +676,8 @@ class EntryOpportunityEngine:
                     invalidation=checkpoint_invalidation or opportunity.invalidation,
                     reached_at=now,
                     target=checkpoint_target,
+                    zone_low=checkpoint_zone_low,
+                    zone_high=checkpoint_zone_high,
                     signal_family=checkpoint_family,
                     setup_id=checkpoint_setup_id,
                 ),
@@ -677,6 +748,8 @@ class EntryOpportunityEngine:
         invalidation: Decimal,
         reached_at: datetime,
         target: Decimal | None = None,
+        zone_low: Decimal | None = None,
+        zone_high: Decimal | None = None,
         signal_family: EntrySignalFamily = EntrySignalFamily.CORE_ENTRY,
         setup_id: str | None = None,
     ) -> EntryMaturityCheckpoint:
@@ -692,6 +765,8 @@ class EntryOpportunityEngine:
             lowest_price=price,
             invalidation=invalidation,
             target=target,
+            zone_low=zone_low,
+            zone_high=zone_high,
         )
 
     def _open_horizons(
@@ -851,6 +926,12 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
         source_ids = _signal_source_ids(signal)
         if _is_core_signal(signal):
             assert signal.maturity is not None
+            if (
+                signal.maturity is EntryMaturityLevel.L4
+                and _l2_anchor(active) is not None
+                and _rank(active.peak_maturity) < _rank(EntryMaturityLevel.L4)
+            ):
+                return ()
             invalidations = (
                 {horizon: signal.invalidation for horizon in signal.horizons}
                 if signal.invalidation is not None
@@ -866,6 +947,17 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
                 horizons=signal.horizons,
                 source_analysis_ids=source_ids,
                 checkpoint_target=target,
+                checkpoint_invalidation=signal.invalidation,
+                checkpoint_zone_low=(
+                    (signal.zone_low or signal.entry_price)
+                    if signal.maturity is EntryMaturityLevel.L2
+                    else None
+                ),
+                checkpoint_zone_high=(
+                    (signal.zone_high or signal.entry_price)
+                    if signal.maturity is EntryMaturityLevel.L2
+                    else None
+                ),
                 horizon_invalidations=invalidations,
                 horizon_targets=targets,
                 checkpoint_family=signal.family,
@@ -1218,6 +1310,162 @@ def _replace_analysis(
 def _metric_decimal(result: AnalysisResult, name: str) -> Decimal | None:
     value = next((item.value for item in result.metrics if item.name == name), None)
     return _decimal(value)
+
+
+def _metric_value(result: AnalysisResult, name: str) -> object:
+    return next((item.value for item in result.metrics if item.name == name), None)
+
+
+def _l2_anchor(opportunity: EntryOpportunity) -> EntryMaturityCheckpoint | None:
+    return next(
+        (
+            item
+            for item in reversed(opportunity.checkpoints)
+            if item.level is EntryMaturityLevel.L2
+            and item.signal_family is EntrySignalFamily.CORE_ENTRY
+            and item.zone_low is not None
+            and item.zone_high is not None
+        ),
+        None,
+    )
+
+
+def _record_l2_retest(
+    opportunity: EntryOpportunity,
+    *,
+    result: AnalysisResult,
+    price: Decimal,
+    now: datetime,
+) -> tuple[EntryOpportunity, bool]:
+    anchor = _l2_anchor(opportunity)
+    if (
+        anchor is None
+        or anchor.status is not EntryCheckpointStatus.OPEN
+        or anchor.retested_at is not None
+        or _rank(opportunity.peak_maturity) >= _rank(EntryMaturityLevel.L4)
+        or result.as_of <= anchor.reached_at
+    ):
+        return opportunity, anchor is not None and anchor.retested_at is not None
+    assert anchor.zone_low is not None and anchor.zone_high is not None
+    atr = _metric_decimal(result, "atr14") or Decimal("0")
+    tolerance = atr * _L2_RETEST_ATR_TOLERANCE
+    touched = (
+        price > anchor.invalidation
+        and anchor.zone_low - tolerance <= price <= anchor.zone_high + tolerance
+    )
+    if not touched:
+        return opportunity, False
+    return _set_l2_retest(opportunity, anchor=anchor, at=now, low=price), True
+
+
+def _record_l2_bar_retest(opportunity: EntryOpportunity, bar: MarketBar) -> EntryOpportunity:
+    anchor = _l2_anchor(opportunity)
+    if (
+        anchor is None
+        or anchor.status is not EntryCheckpointStatus.OPEN
+        or anchor.retested_at is not None
+        or bar.timestamp <= anchor.reached_at
+        or _rank(opportunity.peak_maturity) >= _rank(EntryMaturityLevel.L4)
+    ):
+        return opportunity
+    assert anchor.zone_low is not None and anchor.zone_high is not None
+    if bar.low <= anchor.invalidation or not (
+        bar.low <= anchor.zone_high and bar.high >= anchor.zone_low
+    ):
+        return opportunity
+    return _set_l2_retest(
+        opportunity,
+        anchor=anchor,
+        at=bar.timestamp,
+        low=max(bar.low, anchor.zone_low),
+    )
+
+
+def _set_l2_retest(
+    opportunity: EntryOpportunity,
+    *,
+    anchor: EntryMaturityCheckpoint,
+    at: datetime,
+    low: Decimal,
+) -> EntryOpportunity:
+    checkpoints = tuple(
+        item.model_copy(update={"retested_at": at, "retest_low": low})
+        if item.checkpoint_id == anchor.checkpoint_id
+        else item
+        for item in opportunity.checkpoints
+    )
+    return opportunity.model_copy(update={"checkpoints": checkpoints})
+
+
+def _l2_reclaim_confirmed(
+    opportunity: EntryOpportunity,
+    *,
+    result: AnalysisResult,
+    price: Decimal,
+) -> bool:
+    anchor = _l2_anchor(opportunity)
+    if (
+        anchor is None
+        or anchor.status is not EntryCheckpointStatus.OPEN
+        or anchor.retested_at is None
+        or anchor.retested_at >= result.as_of
+        or price <= opportunity.invalidation
+        or result.direction is not PatternDirection.BULLISH
+        or result.verdict is not AnalysisVerdict.FAVORABLE
+    ):
+        return False
+    trigger = _metric_decimal(result, "entry_trigger_level")
+    if trigger is None or price < trigger:
+        return False
+    if not all(
+        _metric_value(result, name) is True
+        for name in (
+            "confirmation_gate_passed",
+            "mature_confirmation_gate_passed",
+            "entry_efficiency_gate_passed",
+            "five_minute_higher_low",
+        )
+    ):
+        return False
+    swing = next(
+        (item for item in opportunity.latest_analyses if item.horizon is AnalysisHorizon.SWING),
+        None,
+    )
+    return bool(
+        swing is None
+        or (
+            swing.direction is PatternDirection.BULLISH
+            and swing.verdict is not AnalysisVerdict.AVOID
+            and _metric_value(swing, "structure_broken_confirmed") is not True
+        )
+    )
+
+
+def _analysis_target(analyses: tuple[AnalysisResult, ...], price: Decimal) -> Decimal | None:
+    by_horizon = {item.horizon: item for item in analyses}
+    for horizon in (AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY):
+        result = by_horizon.get(horizon)
+        if result is None:
+            continue
+        for name in ("target_2r", "objective_level", "target"):
+            value = _metric_decimal(result, name)
+            if value is not None and value > price:
+                return value
+    return None
+
+
+def _alert_zone(
+    alert: LocalAlert,
+    *,
+    price: Decimal,
+    invalidation: Decimal,
+) -> tuple[Decimal, Decimal]:
+    values = {item.name: item.value for item in alert.metrics}
+    low = _decimal(values.get("buy_zone_low") or values.get("entry_zone_low"))
+    high = _decimal(values.get("buy_zone_high") or values.get("entry_zone_high"))
+    if low is None or high is None or not invalidation < low <= high:
+        return price, price
+    return low, high
 
 
 def _alert_maturity(alert: LocalAlert) -> EntryMaturityLevel | None:
