@@ -148,19 +148,37 @@ class EntryWatcherV54(EntryWatcherV53):
         tracked = active.model_copy(update={"anchor_snapshot": snapshot})
         await self._store.update_anchor_snapshot(tracked)
         levels = self._pullback_entry_levels(state, price=price, analyses=analyses, now=now)
-        if levels is None:
+        if levels is not None:
+            invalidation, target, reward_risk, zone_low, zone_high = levels
+            return await self._change(
+                tracked,
+                EntryWatchStatus.EARLY_ENTRY,
+                now=now,
+                price=price,
+                reasons=(
+                    "impulse_pullback_reclaimed",
+                    "dynamic_pullback_entry_confirmed",
+                    f"pullback_zone:{zone_low}-{zone_high}",
+                    f"pullback_reward_risk:{reward_risk}",
+                ),
+                analyses=analyses,
+                anchor_updates={_IMPULSE_STATE: {**state, "phase": "EARLY_ENTRY"}},
+                entry_invalidation=invalidation,
+                entry_target=target,
+            )
+        direct_levels = self._early_entry_levels(tracked, price=price, analyses=analyses, now=now)
+        if direct_levels is None:
             return None
-        invalidation, target, reward_risk, zone_low, zone_high = levels
+        invalidation, target, reward_risk = direct_levels
         return await self._change(
             tracked,
             EntryWatchStatus.EARLY_ENTRY,
             now=now,
             price=price,
             reasons=(
-                "impulse_pullback_reclaimed",
-                "dynamic_pullback_entry_confirmed",
-                f"pullback_zone:{zone_low}-{zone_high}",
-                f"pullback_reward_risk:{reward_risk}",
+                "second_leg_extension_confirmed",
+                "initial_l1_buy",
+                f"early_entry_reward_risk:{reward_risk}",
             ),
             analyses=analyses,
             anchor_updates={_IMPULSE_STATE: {**state, "phase": "EARLY_ENTRY"}},
@@ -177,16 +195,6 @@ class EntryWatcherV54(EntryWatcherV53):
         now: datetime,
     ) -> tuple[Decimal, Decimal, Decimal] | None:
         if not self._fresh_core_analyses(analyses, now=now) or not _early_confirmation(analyses):
-            return None
-        extension = max(ZERO, price - watch.zone_high)
-        extension_percent = extension / watch.zone_high * HUNDRED
-        atr = _metric_decimal(analyses, "atr14", AnalysisHorizon.SWING)
-        if (
-            extension_percent > self._early_max_percent
-            or atr is None
-            or atr <= ZERO
-            or extension / atr > self._early_max_atr
-        ):
             return None
         target = _target(analyses, price)
         invalidation = _nearest_invalidation(analyses, price, fallback=watch.invalidation)

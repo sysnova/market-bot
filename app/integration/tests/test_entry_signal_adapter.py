@@ -49,6 +49,37 @@ def test_alert_materializes_watcher_trigger_as_the_canonical_core_l4_signal() ->
     assert transition.transition_id in signal.source_event_ids
 
 
+def test_alert_materializes_early_entry_as_the_initial_core_l1_buy() -> None:
+    transition = EntryWatchTransition(
+        watch_id=new_uuid7(),
+        symbol="APA",
+        previous_status=EntryWatchStatus.IMPULSE_EXTENDED,
+        status=EntryWatchStatus.EARLY_ENTRY,
+        occurred_at=NOW,
+        zone_low=Decimal("30.8566"),
+        zone_high=Decimal("36.9338"),
+        invalidation=Decimal("29.5099"),
+        current_price=Decimal("39.55"),
+        watch_expires_at=NOW + timedelta(days=3),
+        reasons=("early_entry_confirmed", "partial_position_before_full_maturity"),
+        horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        source_analysis_ids=(new_uuid7(),),
+        entry_invalidation=Decimal("38.98"),
+        entry_target=Decimal("41.24"),
+    )
+
+    signal = entry_signal_from_alert_watch(transition)
+
+    assert signal is not None
+    assert signal.family is EntrySignalFamily.CORE_ENTRY
+    assert signal.maturity is EntryMaturityLevel.L1
+    assert signal.entry_price == Decimal("39.55")
+    assert signal.zone_low == Decimal("39.55")
+    assert signal.zone_high == Decimal("39.55")
+    assert signal.invalidation == Decimal("38.98")
+    assert signal.targets == (Decimal("41.24"),)
+
+
 def test_alert_adapter_keeps_core_levels_and_analytical_families_distinct() -> None:
     core = _alert(
         kind=AlertKind.ENTRY_CONFIRMED,

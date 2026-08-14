@@ -943,6 +943,71 @@ async def test_v54_tracks_an_extended_impulse_and_enters_its_pullback() -> None:
 
 
 @pytest.mark.unit
+async def test_v54_confirms_l1_when_second_leg_confirms_after_extension() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV54(store=store)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.LONG_TERM,
+            classification="watch_pullback",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            price="108",
+            score="60",
+            extra_metrics=(NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),),
+        ),
+        now=NOW,
+    )
+    extended = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="115",
+            as_of=NOW + timedelta(minutes=1),
+            extra_metrics=(
+                NamedValue(name="anchored_vwap_gate_passed", value=True),
+                NamedValue(name="target_2r", value=Decimal("130")),
+                NamedValue(name="invalidation", value=Decimal("110")),
+                NamedValue(name="atr14", value=Decimal("4")),
+            ),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    assert extended is not None
+    assert extended.status is EntryWatchStatus.IMPULSE_EXTENDED
+
+    entry = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="bullish_breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="115",
+            as_of=NOW + timedelta(minutes=2),
+            setup="bullish_breakout",
+            extra_metrics=(
+                NamedValue(name="confirmation_gate_passed", value=True),
+                NamedValue(name="entry_efficiency_gate_passed", value=True),
+                NamedValue(name="entry_trigger_level", value=Decimal("114.5")),
+                NamedValue(name="atr14", value=Decimal("1")),
+                NamedValue(name="invalidation_level", value=Decimal("112")),
+            ),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+
+    assert entry is not None
+    assert entry.previous_status is EntryWatchStatus.IMPULSE_EXTENDED
+    assert entry.status is EntryWatchStatus.EARLY_ENTRY
+    assert "second_leg_extension_confirmed" in entry.reasons
+    assert "initial_l1_buy" in entry.reasons
+    assert entry.entry_invalidation == Decimal("112.0000")
+    assert entry.entry_target == Decimal("130.0000")
+
+
+@pytest.mark.unit
 async def test_v54_never_revalidates_an_existing_armed_watch_against_arm_policy() -> None:
     store = InMemoryEntryWatchStore()
     legacy = EntryWatcherV2(store=store)

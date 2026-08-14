@@ -46,22 +46,33 @@ _ANALYTICAL_FAMILIES = {
 
 
 def entry_signal_from_alert_watch(transition: EntryWatchTransition) -> EntrySignal | None:
-    """Materialize Alert's accepted Watcher TRIGGERED decision as core L4."""
+    """Materialize Watcher's accepted initial and fully mature Core entries."""
 
-    if transition.status is not EntryWatchStatus.TRIGGERED:
+    maturity = {
+        EntryWatchStatus.EARLY_ENTRY: EntryMaturityLevel.L1,
+        EntryWatchStatus.TRIGGERED: EntryMaturityLevel.L4,
+    }.get(transition.status)
+    if maturity is None:
         return None
+    invalidation = transition.entry_invalidation or transition.invalidation
+    targets = () if transition.entry_target is None else (transition.entry_target,)
+    if maturity is EntryMaturityLevel.L1:
+        zone_low = zone_high = transition.current_price
+    else:
+        zone_low, zone_high = transition.zone_low, transition.zone_high
     return EntrySignal(
         signal_id=transition.transition_id,
         family=EntrySignalFamily.CORE_ENTRY,
-        maturity=EntryMaturityLevel.L4,
+        maturity=maturity,
         symbol=transition.symbol,
         created_at=transition.occurred_at,
         setup_id=f"watch:{transition.watch_id}",
         entry_price=transition.current_price,
         horizons=transition.horizons,
-        zone_low=transition.zone_low,
-        zone_high=transition.zone_high,
-        invalidation=transition.invalidation,
+        zone_low=zone_low,
+        zone_high=zone_high,
+        invalidation=invalidation,
+        targets=targets,
         policy_id="core-entry",
         policy_version="1.0.0",
         reasons=transition.reasons,
@@ -81,7 +92,7 @@ def entry_signal_from_alert(alert: LocalAlert) -> EntrySignal | None:
     if recovery:
         try:
             level = EntryMaturityLevel(str(metrics["entry_maturity"]))
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             return None
         if level not in {
             EntryMaturityLevel.L1,
