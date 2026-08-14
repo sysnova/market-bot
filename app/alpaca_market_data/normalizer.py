@@ -70,11 +70,9 @@ class AlpacaEventNormalizer:
                 symbol=symbol,
                 feed=self._feed,
                 timeframe=timeframe,
-                is_final=message_type != "u",
+                is_final=message_type not in {"u", "d"},
             )
-            event_type = (
-                MARKET_BAR_UPDATED_EVENT if message_type == "u" else MARKET_BAR_EVENT
-            )
+            event_type = MARKET_BAR_UPDATED_EVENT if message_type == "u" else MARKET_BAR_EVENT
             subject_kind = "bar"
         else:
             payload = {
@@ -247,9 +245,7 @@ def _market_bar(
     )
 
 
-def _optional_snapshot_trade(
-    output: dict[str, object], key: str, value: object
-) -> None:
+def _optional_snapshot_trade(output: dict[str, object], key: str, value: object) -> None:
     raw = _mapping_or_none(value)
     if raw is not None:
         output[key] = {
@@ -259,9 +255,7 @@ def _optional_snapshot_trade(
         }
 
 
-def _optional_snapshot_quote(
-    output: dict[str, object], key: str, value: object
-) -> None:
+def _optional_snapshot_quote(output: dict[str, object], key: str, value: object) -> None:
     raw = _mapping_or_none(value)
     if raw is not None:
         output[key] = {
@@ -368,9 +362,7 @@ def _json_safe(value: object) -> object:
 def _stable_uuid7(occurred_at: datetime, identity: object) -> UUID:
     timestamp_ms = int(occurred_at.timestamp() * 1_000) & ((1 << 48) - 1)
     encoded = json.dumps(_json_safe(identity), sort_keys=True, separators=(",", ":"))
-    random_bits = int.from_bytes(hashlib.sha256(encoded.encode()).digest(), "big") & (
-        (1 << 74) - 1
-    )
+    random_bits = int.from_bytes(hashlib.sha256(encoded.encode()).digest(), "big") & ((1 << 74) - 1)
     value = timestamp_ms << 80
     value |= 0x7 << 76
     value |= ((random_bits >> 62) & 0xFFF) << 64

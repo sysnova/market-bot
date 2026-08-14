@@ -19,6 +19,7 @@ from app.alpaca_market_data import AlpacaEventNormalizer
 from app.alpaca_market_data.rest import AlpacaRestClient
 from app.alpaca_market_data.transports import HttpxTransport
 from app.common.clock import FrozenClock
+from app.common.market_session import is_regular_analytical_bar
 from app.common.settings import AppSettings
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
@@ -157,7 +158,8 @@ async def load_backtest_market_data(
             eligible = [
                 bar
                 for bar in normalized
-                if _available_before_open(bar, source_date=config.source_date)
+                if is_regular_analytical_bar(bar)
+                and _available_before_open(bar, source_date=config.source_date)
             ]
             warmup.extend(eligible[-max_bars:])
 
@@ -275,9 +277,7 @@ async def run_signal_backtest(
     support = SupportConfirmationRuntime(
         engine=assembly.build_support_confirmation(), publisher=bus, clock=clock
     )
-    wave = ElliottWaveRuntime(
-        engine=assembly.build_elliott_wave(), publisher=bus, clock=clock
-    )
+    wave = ElliottWaveRuntime(engine=assembly.build_elliott_wave(), publisher=bus, clock=clock)
     fusion = SignalFusionRuntime(
         engine=assembly.build_signal_fusion(),
         publisher=bus,
@@ -322,12 +322,8 @@ async def run_signal_backtest(
         if envelope.event_type != ENTRY_WATCH_TRANSITION_EVENT:
             return
         transition = _payload(envelope, EntryWatchTransition)
-        await _publish_opportunity_events(
-            bus, await opportunity.ingest_transition(transition)
-        )
-        await dispatcher.dispatch(
-            alert_engine.ingest_entry_watch(transition, now=clock.now())
-        )
+        await _publish_opportunity_events(bus, await opportunity.ingest_transition(transition))
+        await dispatcher.dispatch(alert_engine.ingest_entry_watch(transition, now=clock.now()))
         signal = entry_signal_from_alert_watch(transition)
         if signal is not None:
             await publish_entry_signal(bus, signal, source="alert-backtest")
@@ -373,9 +369,7 @@ async def run_signal_backtest(
         await _subscribe_checked(
             bus, "marketbot.v1.entry-watch.transition.>", handle_watch, handler_errors
         )
-        await _subscribe_checked(
-            bus, "marketbot.v1.entry-signal.>", handle_signal, handler_errors
-        )
+        await _subscribe_checked(bus, "marketbot.v1.entry-signal.>", handle_signal, handler_errors)
         await _subscribe_checked(
             bus,
             "marketbot.v1.entry-opportunity.transition.>",
@@ -429,8 +423,7 @@ async def run_signal_backtest(
             "simulated_date": config.simulated_date.isoformat(),
             "symbols": list(config.symbols),
             "holding_quantities": {
-                symbol: str(quantity)
-                for symbol, quantity in config.holding_quantities.items()
+                symbol: str(quantity) for symbol, quantity in config.holding_quantities.items()
             },
             "cadence_seconds": config.cadence_seconds,
             "bars_replayed": bars_replayed,
@@ -443,12 +436,9 @@ async def run_signal_backtest(
             "volume_structure_results": [
                 item.model_dump(mode="json") for item in volume_structure_results
             ],
-            "fusion_transitions": [
-                item.model_dump(mode="json") for item in fusion_transitions
-            ],
+            "fusion_transitions": [item.model_dump(mode="json") for item in fusion_transitions],
             "opportunities": [
-                item.model_dump(mode="json")
-                for item in opportunity_store.opportunities.values()
+                item.model_dump(mode="json") for item in opportunity_store.opportunities.values()
             ],
             "opportunity_events": [
                 item.model_dump(mode="json") for item in opportunity_store.events
@@ -483,9 +473,7 @@ async def _publish_opportunity_events(
 ) -> None:
     for event in events:
         await bus.publish(
-            entry_opportunity_subject(
-                event.opportunity.status, event.opportunity.symbol
-            ),
+            entry_opportunity_subject(event.opportunity.status, event.opportunity.symbol),
             EventEnvelope(
                 event_type=ENTRY_OPPORTUNITY_EVENT,
                 occurred_at=event.occurred_at,

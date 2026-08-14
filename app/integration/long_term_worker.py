@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Protocol
 from uuid import UUID
 
+from app.common.market_session import is_regular_session
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
@@ -22,6 +23,7 @@ from app.contracts import (
 )
 from app.long_term_engine.models import LongTermContext
 
+from .bar_aggregator import RegularSessionDailyAggregator
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
 from .universe_warmup import UniverseWarmupGate
@@ -51,6 +53,7 @@ class LongTermWorker:
         self._publisher = publisher
         self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=LONG_DAILY_BARS)
+        self._daily_aggregator = RegularSessionDailyAggregator()
         self._universe = UniverseWarmupGate()
 
     def activate_universe(self, symbols: tuple[str, ...]) -> None:
@@ -77,7 +80,10 @@ class LongTermWorker:
         symbols: tuple[str, ...],
     ) -> int:
         for bar in bars:
-            if bar.timeframe in {BarTimeframe.DAY_1, BarTimeframe.WEEK_1}:
+            if bar.timeframe is BarTimeframe.MINUTE_1:
+                if daily := self._daily_aggregator.add(bar):
+                    self._store.add(daily)
+            elif bar.timeframe in {BarTimeframe.DAY_1, BarTimeframe.WEEK_1}:
                 self._store.add(bar)
         return sum([await self._evaluate(symbol) for symbol in _symbols(symbols)])
 
@@ -86,7 +92,9 @@ class LongTermWorker:
             return
         bar = _bar(envelope)
         if bar.timeframe is BarTimeframe.MINUTE_1:
-            if bar.is_final:
+            if bar.is_final and is_regular_session(bar.timestamp):
+                if daily := self._daily_aggregator.add(bar):
+                    self._store.add(daily)
                 await self._evaluate(
                     bar.symbol,
                     (envelope.event_id,),

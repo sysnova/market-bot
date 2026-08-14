@@ -28,9 +28,7 @@ def test_trade_is_normalized_without_float_values_and_has_stable_identity() -> N
     assert first.envelope.event_id == second.envelope.event_id
     assert first.envelope.event_id.version == 7
     assert first.envelope.event_type == "market.trade.received"
-    assert first.envelope.occurred_at == datetime(
-        2026, 7, 24, 14, 30, 1, 123456, tzinfo=UTC
-    )
+    assert first.envelope.occurred_at == datetime(2026, 7, 24, 14, 30, 1, 123456, tzinfo=UTC)
     assert first.envelope.subject == "AAPL"
     assert first.envelope.payload == {
         "conditions": ["@"],
@@ -144,7 +142,7 @@ def test_updated_and_daily_bars_share_the_versioned_bar_subject() -> None:
     assert daily.subject == "marketbot.v1.market.bar.1Day.AAPL"
     assert daily.envelope.event_type == MARKET_BAR_EVENT
     assert isinstance(daily.envelope.payload, MarketBar)
-    assert daily.envelope.payload.is_final is True
+    assert daily.envelope.payload.is_final is False
 
 
 def test_zero_activity_bar_treats_zero_vwap_as_unavailable() -> None:

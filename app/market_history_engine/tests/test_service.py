@@ -110,8 +110,8 @@ async def test_incremental_sync_uses_latest_bar_with_timeframe_overlap() -> None
     rest = FakeRest()
     repository = FakeRepository(
         {
-            "TGT": BarCoverage(count=500, latest=latest),
-            "ADUR": BarCoverage(count=500, latest=latest),
+            "TGT": BarCoverage(count=1500, latest=latest),
+            "ADUR": BarCoverage(count=1500, latest=latest),
         }
     )
     service = MarketHistoryService(
@@ -131,8 +131,8 @@ async def test_fresh_cache_skips_rest_during_engine_startup() -> None:
     rest = FakeRest()
     repository = FakeRepository(
         {
-            "TGT": BarCoverage(count=500, latest=NOW, downloaded_at=downloaded_at),
-            "ADUR": BarCoverage(count=120, latest=NOW, downloaded_at=downloaded_at),
+            "TGT": BarCoverage(count=1500, latest=NOW, downloaded_at=downloaded_at),
+            "ADUR": BarCoverage(count=1500, latest=NOW, downloaded_at=downloaded_at),
         }
     )
     service = MarketHistoryService(
@@ -223,4 +223,4 @@ async def test_retention_keeps_a_safety_margin_over_registered_requirements() ->
     )
     await service.ensure(request(BarTimeframe.MINUTE_1, timedelta(days=7), 500))
 
-    assert service.retention_limits()[BarTimeframe.MINUTE_1] == 750
+    assert service.retention_limits()[BarTimeframe.MINUTE_1] == 1875

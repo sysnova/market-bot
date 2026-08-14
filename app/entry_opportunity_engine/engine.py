@@ -8,6 +8,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from app.common.market_session import is_regular_session
 from app.contracts import (
     AlertKind,
     AnalysisHorizon,
@@ -115,18 +116,12 @@ class EntryOpportunityEngine:
                     checkpoint_target=transition.entry_target,
                     checkpoint_invalidation=transition.entry_invalidation,
                     horizon_invalidations=(
-                        {
-                            horizon: transition.entry_invalidation
-                            for horizon in transition.horizons
-                        }
+                        {horizon: transition.entry_invalidation for horizon in transition.horizons}
                         if transition.entry_invalidation is not None
                         else None
                     ),
                     horizon_targets=(
-                        {
-                            horizon: transition.entry_target
-                            for horizon in transition.horizons
-                        }
+                        {horizon: transition.entry_target for horizon in transition.horizons}
                         if transition.entry_target is not None
                         else None
                     ),
@@ -242,10 +237,7 @@ class EntryOpportunityEngine:
             checkpoint_target=transition.entry_target,
             checkpoint_invalidation=transition.entry_invalidation,
             horizon_invalidations=(
-                {
-                    horizon: transition.entry_invalidation
-                    for horizon in transition.horizons
-                }
+                {horizon: transition.entry_invalidation for horizon in transition.horizons}
                 if transition.entry_invalidation is not None
                 else None
             ),
@@ -264,8 +256,7 @@ class EntryOpportunityEngine:
             event_id=transition.transition_id,
         )
         material = (
-            changed.peak_maturity is not active.peak_maturity
-            or changed.status is not active.status
+            changed.peak_maturity is not active.peak_maturity or changed.status is not active.status
         )
         event = self._event(
             changed,
@@ -299,9 +290,7 @@ class EntryOpportunityEngine:
             return ()
         price = _metric_decimal(result, "reference_price") or active.current_price
         analyses = _replace_analysis(active.latest_analyses, result)
-        sources = _bounded_source_analysis_ids(
-            active.source_analysis_ids, (result.analysis_id,)
-        )
+        sources = _bounded_source_analysis_ids(active.source_analysis_ids, (result.analysis_id,))
         updated = active.model_copy(
             update={
                 "current_price": price,
@@ -312,10 +301,10 @@ class EntryOpportunityEngine:
             }
         )
         original_breached = price <= active.invalidation
-        bearish_failure = (
-            result.direction is PatternDirection.BEARISH
-            and result.verdict in {AnalysisVerdict.AVOID, AnalysisVerdict.CAUTION}
-        )
+        bearish_failure = result.direction is PatternDirection.BEARISH and result.verdict in {
+            AnalysisVerdict.AVOID,
+            AnalysisVerdict.CAUTION,
+        }
         if original_breached or (
             result.horizon is AnalysisHorizon.LONG_TERM
             and (result.verdict is AnalysisVerdict.AVOID or bearish_failure)
@@ -447,7 +436,11 @@ class EntryOpportunityEngine:
     async def ingest_bar(self, bar: MarketBar) -> tuple[EntryOpportunityEvent, ...]:
         """Mark open paper entries and close the Intraday leg at the regular-session close."""
 
-        if not bar.is_final or bar.timeframe is not BarTimeframe.MINUTE_1:
+        if (
+            not bar.is_final
+            or bar.timeframe is not BarTimeframe.MINUTE_1
+            or not is_regular_session(bar.timestamp)
+        ):
             return ()
         active = await self._store.load_active(bar.symbol)
         if active is None or bar.timestamp < active.armed_at:
@@ -457,9 +450,7 @@ class EntryOpportunityEngine:
         reasons = _leg_close_reasons(active.legs, legs)
 
         if bar.low <= active.invalidation:
-            updated = active.model_copy(
-                update={"checkpoints": checkpoints, "legs": legs}
-            )
+            updated = active.model_copy(update={"checkpoints": checkpoints, "legs": legs})
             closed = self._close_opportunity(
                 updated,
                 price=active.invalidation,
@@ -848,17 +839,13 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
 
     engine_version = "2.0.0"
 
-    async def ingest_signal(
-        self, signal: EntrySignal
-    ) -> tuple[EntryOpportunityEvent, ...]:
+    async def ingest_signal(self, signal: EntrySignal) -> tuple[EntryOpportunityEvent, ...]:
         """Apply one decision by stable family/setup, independent of its producer."""
 
         if await self._store.event_seen(signal.signal_id):
             return ()
         active = await self._store.load_active(signal.symbol)
-        existing = (
-            _signal_reference_for_setup(active, signal) if active is not None else None
-        )
+        existing = _signal_reference_for_setup(active, signal) if active is not None else None
         if existing is not None and not _signal_advances_setup(existing, signal):
             return ()
 
@@ -890,11 +877,7 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
                 else {}
             )
             target = _first_actionable_target(signal)
-            targets = (
-                {horizon: target for horizon in signal.horizons}
-                if target is not None
-                else {}
-            )
+            targets = {horizon: target for horizon in signal.horizons} if target is not None else {}
             changed = self._advance(
                 active,
                 level=signal.maturity,
@@ -953,9 +936,7 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
         assert signal.zone_high is not None
         assert signal.invalidation is not None
         analytical = not _is_core_signal(signal)
-        initial_level = (
-            EntryMaturityLevel.ARMED if analytical else signal.maturity
-        )
+        initial_level = EntryMaturityLevel.ARMED if analytical else signal.maturity
         assert initial_level is not None
         target = _first_actionable_target(signal)
         checkpoint = self._new_checkpoint(
@@ -967,20 +948,14 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
             signal_family=signal.family,
             setup_id=signal.setup_id,
         )
-        targets = (
-            {horizon: target for horizon in signal.horizons}
-            if target is not None
-            else {}
-        )
+        targets = {horizon: target for horizon in signal.horizons} if target is not None else {}
         legs = self._open_horizons(
             (),
             horizons=signal.horizons,
             price=signal.entry_price,
             invalidation=signal.invalidation,
             now=signal.created_at,
-            horizon_invalidations={
-                horizon: signal.invalidation for horizon in signal.horizons
-            },
+            horizon_invalidations={horizon: signal.invalidation for horizon in signal.horizons},
             horizon_targets=targets,
         )
         return EntryOpportunity(
@@ -1060,9 +1035,7 @@ def _signal_reference_for_setup(
     )
 
 
-def _signal_advances_setup(
-    existing: EntryOpportunitySignalReference, signal: EntrySignal
-) -> bool:
+def _signal_advances_setup(existing: EntryOpportunitySignalReference, signal: EntrySignal) -> bool:
     if existing.signal_id == signal.signal_id or not _is_core_signal(signal):
         return False
     if existing.maturity is None or signal.maturity is None:
@@ -1184,15 +1157,11 @@ def _legacy_signal_from_alert(alert: LocalAlert) -> EntrySignal | None:
         invalidation=invalidation,
         targets=targets,
         policy_id=(
-            "core-entry"
-            if family is EntrySignalFamily.CORE_ENTRY
-            else family.value.lower()
+            "core-entry" if family is EntrySignalFamily.CORE_ENTRY else family.value.lower()
         ),
         policy_version="1.0.0",
         reasons=alert.reasons,
-        source_event_ids=tuple(
-            dict.fromkeys((alert.alert_id, *alert.component_analysis_ids))
-        ),
+        source_event_ids=tuple(dict.fromkeys((alert.alert_id, *alert.component_analysis_ids))),
     )
 
 
@@ -1345,7 +1314,7 @@ def _decimal(value: object) -> Decimal | None:
         return None
     try:
         parsed = Decimal(str(value))
-    except (ValueError, ArithmeticError):
+    except ValueError, ArithmeticError:
         return None
     return parsed if parsed > 0 else None
 

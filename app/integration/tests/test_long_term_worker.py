@@ -73,7 +73,7 @@ def bar(timeframe: BarTimeframe, timestamp: datetime, close: str = "100") -> Mar
 
 
 @pytest.mark.unit
-async def test_long_worker_owns_history_and_publishes_results() -> None:
+async def test_long_worker_owns_history_and_accepts_explicit_final_daily_bar() -> None:
     publisher = RecordingPublisher()
     analyzer = RecordingAnalyzer()
     worker = LongTermWorker(publisher=publisher, analyzer=analyzer)
@@ -130,17 +130,47 @@ async def test_long_worker_reprices_completed_history_from_live_minutes() -> Non
 
 
 @pytest.mark.unit
+async def test_long_worker_ignores_premarket_live_price() -> None:
+    publisher = RecordingPublisher()
+    analyzer = RecordingAnalyzer()
+    worker = LongTermWorker(publisher=publisher, analyzer=analyzer)
+    daily = bar(BarTimeframe.DAY_1, NOW - timedelta(days=1), "98")
+    weekly = bar(BarTimeframe.WEEK_1, NOW - timedelta(days=7), "95")
+    await worker.bootstrap((daily, weekly), symbols=("HIMS",))
+
+    premarket = bar(
+        BarTimeframe.MINUTE_1,
+        datetime(2026, 7, 28, 12, 0, tzinfo=UTC),
+        "120",
+    )
+    await worker.handle_market_event(
+        EventEnvelope(
+            event_type=MARKET_BAR_EVENT,
+            occurred_at=premarket.timestamp,
+            source="test",
+            subject="HIMS",
+            payload=premarket,
+        )
+    )
+
+    assert len(analyzer.contexts) == 1
+
+
+@pytest.mark.unit
 async def test_long_worker_publishes_added_symbol_only_after_worker_warmup() -> None:
     publisher = RecordingPublisher()
     worker = LongTermWorker(publisher=publisher, analyzer=RecordingAnalyzer())
     worker.activate_universe(())
-    assert await worker.bootstrap(
-        (
-            bar(BarTimeframe.WEEK_1, NOW - timedelta(days=7)),
-            bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
-        ),
-        symbols=("HIMS",),
-    ) == 0
+    assert (
+        await worker.bootstrap(
+            (
+                bar(BarTimeframe.WEEK_1, NOW - timedelta(days=7)),
+                bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+            ),
+            symbols=("HIMS",),
+        )
+        == 0
+    )
 
     count = await worker.handle_universe_changed(
         UniverseChanged(

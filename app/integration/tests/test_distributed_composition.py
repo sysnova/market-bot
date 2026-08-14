@@ -63,10 +63,12 @@ def test_each_engine_requests_only_its_own_historical_context() -> None:
     assert [(item.timeframe, item.max_bars_per_symbol) for item in long] == [
         (BarTimeframe.DAY_1, 260),
         (BarTimeframe.WEEK_1, 220),
+        (BarTimeframe.MINUTE_1, 500),
     ]
     assert [(item.timeframe, item.max_bars_per_symbol) for item in swing] == [
         (BarTimeframe.DAY_1, 120),
         (BarTimeframe.MINUTE_15, 160),
+        (BarTimeframe.MINUTE_1, 500),
     ]
     assert [(item.timeframe, item.max_bars_per_symbol) for item in intraday] == [
         (BarTimeframe.MINUTE_1, 500),
@@ -120,9 +122,7 @@ def test_durable_names_follow_logical_service_and_contract_major() -> None:
     assert _horizon_durable_name(AnalysisHorizon.LONG_TERM, 1) == (
         "marketbot-long-term-market-v1-1"
     )
-    assert _horizon_durable_name(AnalysisHorizon.SWING, 2) == (
-        "marketbot-swing-market-v1-2"
-    )
+    assert _horizon_durable_name(AnalysisHorizon.SWING, 2) == ("marketbot-swing-market-v1-2")
     assert _alert_durable_name("analysis") == "marketbot-alert-analysis-v1"
     assert _alert_durable_name("entry-watch") == "marketbot-alert-entry-watch-v1"
 

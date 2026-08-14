@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.common.clock import Clock, SystemClock
+from app.common.market_session import is_regular_analytical_bar
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ELLIOTT_WAVE_ASSESSMENT_EVENT,
@@ -102,6 +103,7 @@ class ElliottWaveRuntime:
             not bar.is_final
             or bar.symbol not in self._symbols
             or bar.timeframe not in {BarTimeframe.DAY_1, BarTimeframe.HOUR_1}
+            or not is_regular_analytical_bar(bar)
         ):
             return
         self._bars.add(bar)
@@ -137,9 +139,7 @@ class ElliottWaveRuntime:
         )
 
 
-def _stamp_assessment(
-    assessment: WaveAssessment, assessed_at: datetime
-) -> WaveAssessment:
+def _stamp_assessment(assessment: WaveAssessment, assessed_at: datetime) -> WaveAssessment:
     return WaveAssessment.model_validate(
         {
             **assessment.model_dump(mode="python"),

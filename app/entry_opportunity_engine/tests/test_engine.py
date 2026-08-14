@@ -48,7 +48,8 @@ def watch_transition(
     transition_id: UUID | None = None,
 ) -> EntryWatchTransition:
     return EntryWatchTransition(
-        transition_id=transition_id or UUID(
+        transition_id=transition_id
+        or UUID(
             {
                 EntryWatchStatus.ARMED: "0195f3a5-9000-7000-8000-000000000081",
                 EntryWatchStatus.IN_ZONE: "0195f3a5-9000-7000-8000-000000000082",
@@ -312,9 +313,7 @@ async def test_same_ticker_advances_one_opportunity_and_preserves_original_thesi
         EntryMaturityLevel.IN_ZONE,
         EntryMaturityLevel.L4,
     )
-    l4 = next(
-        item for item in active.checkpoints if item.level is EntryMaturityLevel.L4
-    )
+    l4 = next(item for item in active.checkpoints if item.level is EntryMaturityLevel.L4)
     assert l4.entry_price == Decimal("103")
     assert {item.horizon for item in active.legs} == {
         AnalysisHorizon.LONG_TERM,
@@ -454,9 +453,12 @@ async def test_buy_alerts_advance_l1_l2_l3_on_the_same_opportunity() -> None:
     ).target == Decimal("110")
     revision = active.revision
 
-    assert await manager.ingest_alert(
-        alert(EntryMaturityLevel.L3, created_at=NOW + timedelta(minutes=3))
-    ) == ()
+    assert (
+        await manager.ingest_alert(
+            alert(EntryMaturityLevel.L3, created_at=NOW + timedelta(minutes=3))
+        )
+        == ()
+    )
     assert (await store.load_active("AAPL")).revision == revision  # type: ignore[union-attr]
 
 
@@ -511,11 +513,9 @@ async def test_delayed_triggered_is_not_dropped_after_a_newer_bar() -> None:
     assert active.status is EntryOpportunityStatus.OPEN
     assert active.updated_at == latest_bar_at
     assert active.current_price == Decimal("104")
-    assert {
-        leg.entry_price
-        for leg in active.legs
-        if leg.status is EntryLegStatus.OPEN
-    } == {Decimal("103")}
+    assert {leg.entry_price for leg in active.legs if leg.status is EntryLegStatus.OPEN} == {
+        Decimal("103")
+    }
 
 
 @pytest.mark.unit
@@ -542,11 +542,9 @@ async def test_delayed_alert_is_not_dropped_after_a_newer_bar() -> None:
     assert active.status is EntryOpportunityStatus.CONFIRMING
     assert active.updated_at == latest_bar_at
     assert active.current_price == Decimal("104")
-    assert {
-        leg.entry_price
-        for leg in active.legs
-        if leg.status is EntryLegStatus.OPEN
-    } == {Decimal("101")}
+    assert {leg.entry_price for leg in active.legs if leg.status is EntryLegStatus.OPEN} == {
+        Decimal("101")
+    }
 
 
 @pytest.mark.unit
@@ -598,9 +596,7 @@ async def test_bearish_analysis_closes_a_confirming_horizon_leg() -> None:
             price="100",
         )
     )
-    await manager.ingest_alert(
-        alert(EntryMaturityLevel.L1, created_at=NOW + timedelta(minutes=1))
-    )
+    await manager.ingest_alert(alert(EntryMaturityLevel.L1, created_at=NOW + timedelta(minutes=1)))
 
     events = await manager.ingest_analysis(
         analysis(
@@ -633,9 +629,7 @@ async def test_bar_closes_opportunity_when_every_opened_leg_reaches_target() -> 
             price="100",
         )
     )
-    await manager.ingest_alert(
-        alert(EntryMaturityLevel.L1, created_at=NOW + timedelta(minutes=1))
-    )
+    await manager.ingest_alert(alert(EntryMaturityLevel.L1, created_at=NOW + timedelta(minutes=1)))
 
     events = await manager.ingest_bar(
         bar(
@@ -652,9 +646,7 @@ async def test_bar_closes_opportunity_when_every_opened_leg_reaches_target() -> 
     assert closed.status is EntryOpportunityStatus.CLOSED
     assert closed.close_reason is EntryCloseReason.ALL_HORIZONS_CLOSED
     assert all(
-        leg.status is EntryLegStatus.TARGET_HIT
-        for leg in closed.legs
-        if leg.opened_at is not None
+        leg.status is EntryLegStatus.TARGET_HIT for leg in closed.legs if leg.opened_at is not None
     )
     assert len(events) == 1
     assert "long_term_target_hit" in events[0].reasons
@@ -684,17 +676,18 @@ async def test_non_material_analyses_keep_bounded_provenance_without_snapshot_ev
             as_of=NOW + timedelta(minutes=offset),
             analysis_id=UUID(f"0195f3a5-9000-7000-8000-{offset:012d}"),
         )
-        assert await manager.ingest_analysis(
-            latest_result,
-            now=latest_result.as_of,
-        ) == ()
+        assert (
+            await manager.ingest_analysis(
+                latest_result,
+                now=latest_result.as_of,
+            )
+            == ()
+        )
 
     active = await store.load_active("AAPL")
     assert active is not None
     assert len(active.source_analysis_ids) <= 32
-    assert active.source_analysis_ids[0] == UUID(
-        "0195f3a5-9000-7000-8000-000000000011"
-    )
+    assert active.source_analysis_ids[0] == UUID("0195f3a5-9000-7000-8000-000000000011")
     assert len(active.latest_analyses) == 1
     assert active.latest_analyses[0] == latest_result
     assert len(store.events) == 1
@@ -897,14 +890,17 @@ async def test_v2_deduplicates_signals_by_id_and_setup() -> None:
     revision = active.revision
 
     assert await manager.ingest_signal(first) == ()
-    assert await manager.ingest_signal(
-        first.model_copy(
-            update={
-                "signal_id": UUID("0195f3a5-9000-7000-8000-000000000404"),
-                "created_at": NOW + timedelta(minutes=1),
-            }
+    assert (
+        await manager.ingest_signal(
+            first.model_copy(
+                update={
+                    "signal_id": UUID("0195f3a5-9000-7000-8000-000000000404"),
+                    "created_at": NOW + timedelta(minutes=1),
+                }
+            )
         )
-    ) == ()
+        == ()
+    )
     active = await store.load_active("AAPL")
     assert active is not None
     assert active.revision == revision
@@ -979,6 +975,25 @@ async def test_long_invalidation_closes_every_leg_and_audits_gain_loss() -> None
     assert all(item.status is EntryLegStatus.THESIS_BROKEN for item in closed.legs)
     assert all(item.gain_loss_percent is not None for item in closed.legs)
     assert events[-1].opportunity.status is EntryOpportunityStatus.CLOSED
+
+
+@pytest.mark.unit
+async def test_extended_hours_wick_cannot_invalidate_an_opportunity() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await _open(manager)
+
+    events = await manager.ingest_bar(
+        bar(
+            timestamp=datetime(2026, 8, 6, 12, 0, tzinfo=UTC),
+            close="95",
+            low="80",
+            high="105",
+        )
+    )
+
+    assert events == ()
+    assert await store.load_active("AAPL") is not None
 
 
 @pytest.mark.unit

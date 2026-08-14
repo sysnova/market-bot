@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from app.common.market_session import is_regular_session
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
@@ -81,6 +82,9 @@ class IntradayWorker:
         for bar in bars:
             if bar.timeframe is not BarTimeframe.MINUTE_1:
                 continue
+            if not is_regular_session(bar.timestamp):
+                self._aggregator.add(bar)
+                continue
             self._store.add(bar)
             for aggregated in self._aggregator.add(bar):
                 self._store.add(aggregated)
@@ -91,6 +95,11 @@ class IntradayWorker:
             return
         bar = _bar(envelope)
         if bar.timeframe is not BarTimeframe.MINUTE_1:
+            return
+        if not is_regular_session(bar.timestamp):
+            for aggregated in self._aggregator.add(bar):
+                self._store.add(aggregated)
+                await self._evaluate(bar.symbol, (envelope.event_id,))
             return
         self._store.add(bar)
         for aggregated in self._aggregator.add(bar):
@@ -115,9 +124,7 @@ class IntradayWorker:
             return 0
         session_date = minute[-1].timestamp.astimezone(_NEW_YORK).date()
         session_minutes = tuple(
-            item
-            for item in minute
-            if item.timestamp.astimezone(_NEW_YORK).date() == session_date
+            item for item in minute if item.timestamp.astimezone(_NEW_YORK).date() == session_date
         )
         five_minute = self._store.history(
             symbol,

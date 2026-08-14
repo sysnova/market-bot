@@ -9,6 +9,10 @@ from zoneinfo import ZoneInfo
 
 from app.alert_engine import AlertDispatcher, AlertEngine
 from app.common.clock import Clock
+from app.common.market_session import (
+    is_completed_daily_bar,
+    is_regular_analytical_bar,
+)
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     ENTRY_OPPORTUNITY_EVENT,
@@ -29,7 +33,7 @@ from app.intraday_engine import IntradayContext
 from app.long_term_engine import LongTermContext
 from app.swing_engine import SwingContext
 
-from .bar_aggregator import MinuteBarAggregator
+from .bar_aggregator import MinuteBarAggregator, RegularSessionDailyAggregator
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
 
@@ -112,6 +116,7 @@ class AnalysisRuntime:
         self._aggregator = aggregator or MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_5, BarTimeframe.MINUTE_15)
         )
+        self._daily_aggregator = RegularSessionDailyAggregator()
         self._entry_watcher = entry_watcher
         self._entry_opportunity = entry_opportunity
         self._live = False
@@ -131,14 +136,24 @@ class AnalysisRuntime:
             if isinstance(envelope.payload, MarketBar)
             else MarketBar.model_validate(envelope.payload, strict=False)
         )
+        if not is_regular_analytical_bar(bar):
+            if bar.timeframe is BarTimeframe.MINUTE_1:
+                for aggregated in self._aggregator.add(bar):
+                    await self._publish_aggregated(aggregated, envelope.event_id)
+            return
+        if bar.timeframe is BarTimeframe.DAY_1 and not is_completed_daily_bar(
+            bar, as_of=self._clock.now()
+        ):
+            return
         self._store.add(bar)
         if not self._live or not bar.is_final:
             return
         if self._entry_opportunity is not None:
-            await self._dispatch_opportunity_events(
-                await self._entry_opportunity.ingest_bar(bar)
-            )
+            await self._dispatch_opportunity_events(await self._entry_opportunity.ingest_bar(bar))
         if bar.timeframe is BarTimeframe.MINUTE_1:
+            if daily := self._daily_aggregator.add(bar):
+                self._store.add(daily)
+                await self._evaluate_long_term(bar.symbol, (envelope.event_id,))
             for aggregated in self._aggregator.add(bar):
                 await self._publish_aggregated(aggregated, envelope.event_id)
             await self._evaluate_intraday(bar.symbol, (envelope.event_id,))
@@ -192,9 +207,7 @@ class AnalysisRuntime:
                 )
             await self._alert_dispatcher.dispatch(alert)
 
-    async def _dispatch_opportunity_events(
-        self, events: tuple[EntryOpportunityEvent, ...]
-    ) -> None:
+    async def _dispatch_opportunity_events(self, events: tuple[EntryOpportunityEvent, ...]) -> None:
         for event in events:
             await self._publisher.publish(
                 entry_opportunity_subject(
@@ -222,12 +235,8 @@ class AnalysisRuntime:
         symbol: str,
         source_event_ids: tuple[UUID, ...] = (),
     ) -> None:
-        daily = self._store.history(
-            symbol, BarTimeframe.DAY_1, limit=260, final_only=True
-        )
-        weekly = self._store.history(
-            symbol, BarTimeframe.WEEK_1, limit=220, final_only=True
-        )
+        daily = self._store.history(symbol, BarTimeframe.DAY_1, limit=260, final_only=True)
+        weekly = self._store.history(symbol, BarTimeframe.WEEK_1, limit=220, final_only=True)
         if not daily or not weekly:
             return
         as_of = max(daily[-1].timestamp, weekly[-1].timestamp)
@@ -248,12 +257,8 @@ class AnalysisRuntime:
         symbol: str,
         source_event_ids: tuple[UUID, ...] = (),
     ) -> None:
-        daily = self._store.history(
-            symbol, BarTimeframe.DAY_1, limit=120, final_only=True
-        )
-        intraday = self._store.history(
-            symbol, BarTimeframe.MINUTE_15, limit=160, final_only=True
-        )
+        daily = self._store.history(symbol, BarTimeframe.DAY_1, limit=120, final_only=True)
+        intraday = self._store.history(symbol, BarTimeframe.MINUTE_15, limit=160, final_only=True)
         if not daily or not intraday:
             return
         as_of = max(daily[-1].timestamp, intraday[-1].timestamp)
@@ -274,20 +279,14 @@ class AnalysisRuntime:
         symbol: str,
         source_event_ids: tuple[UUID, ...] = (),
     ) -> None:
-        minute = self._store.history(
-            symbol, BarTimeframe.MINUTE_1, limit=500, final_only=True
-        )
+        minute = self._store.history(symbol, BarTimeframe.MINUTE_1, limit=500, final_only=True)
         if not minute:
             return
         session_date = minute[-1].timestamp.astimezone(_NEW_YORK).date()
         session_minutes = tuple(
-            bar
-            for bar in minute
-            if bar.timestamp.astimezone(_NEW_YORK).date() == session_date
+            bar for bar in minute if bar.timestamp.astimezone(_NEW_YORK).date() == session_date
         )
-        five_minute = self._store.history(
-            symbol, BarTimeframe.MINUTE_5, limit=100, final_only=True
-        )
+        five_minute = self._store.history(symbol, BarTimeframe.MINUTE_5, limit=100, final_only=True)
         session_five_minute = tuple(
             bar
             for bar in five_minute

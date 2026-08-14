@@ -121,3 +121,25 @@ async def test_intraday_worker_keeps_unknown_symbol_quiet_until_warmup_completes
     )
 
     assert len(publisher.events) == 1
+
+
+@pytest.mark.unit
+async def test_intraday_worker_ignores_extended_hours_bar() -> None:
+    publisher = RecordingPublisher()
+    analyzer = RecordingAnalyzer()
+    worker = IntradayWorker(publisher=publisher, analyzer=analyzer)
+    await worker.bootstrap((minute(NOW),), symbols=("HIMS",))
+
+    premarket = minute(datetime(2026, 7, 28, 12, 0, tzinfo=UTC), "120")
+    await worker.handle_market_event(
+        EventEnvelope(
+            event_type=MARKET_BAR_EVENT,
+            occurred_at=premarket.timestamp,
+            source="test",
+            subject="HIMS",
+            payload=premarket,
+        )
+    )
+
+    assert len(analyzer.contexts) == 1
+    assert analyzer.contexts[-1].minute_bars[-1].close == Decimal("100")

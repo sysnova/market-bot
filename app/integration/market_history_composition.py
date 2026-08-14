@@ -14,6 +14,11 @@ from app.alpaca_market_data.rest import AlpacaRestClient
 from app.alpaca_market_data.transports import HttpxTransport
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
+from app.common.market_session import (
+    analytical_storage_limit,
+    is_completed_daily_bar,
+    is_regular_analytical_bar,
+)
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     BarTimeframe,
@@ -65,13 +70,28 @@ class MarketHistoryLoader:
         await self._client.ensure(request)
         output: list[MarketBar] = []
         for requirement in requirements:
-            output.extend(
-                await self._repository.load_latest(
-                    request.symbols,
-                    requirement.timeframe,
-                    limit_per_symbol=requirement.max_bars_per_symbol,
+            loaded = await self._repository.load_latest(
+                request.symbols,
+                requirement.timeframe,
+                limit_per_symbol=analytical_storage_limit(
+                    requirement.timeframe, requirement.max_bars_per_symbol
+                ),
+            )
+            eligible = tuple(
+                bar
+                for bar in loaded
+                if is_regular_analytical_bar(bar)
+                and (
+                    bar.timeframe is not BarTimeframe.DAY_1
+                    or is_completed_daily_bar(bar, as_of=as_of)
                 )
             )
+            for symbol in request.symbols:
+                output.extend(
+                    tuple(bar for bar in eligible if bar.symbol == symbol)[
+                        -requirement.max_bars_per_symbol :
+                    ]
+                )
         return tuple(output)
 
 

@@ -7,6 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from app.common.clock import SystemClock
+from app.common.market_session import is_completed_daily_bar
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     MARKET_ROTATION_EVENT,
@@ -90,7 +91,9 @@ async def run_market_rotation_process(
             )
             history = {
                 symbol: tuple(
-                    Bar(item.close, item.volume) for item in bars if item.symbol == symbol
+                    Bar(item.close, item.volume)
+                    for item in bars
+                    if item.symbol == symbol and is_completed_daily_bar(item, as_of=now)
                 )
                 for symbol in symbols
             }

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from app.common.clock import SystemClock
+from app.common.market_session import is_regular_analytical_bar
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
@@ -195,6 +196,8 @@ class PatreonCapsRuntime:
             else MarketBar.model_validate(envelope.payload, strict=False)
         )
         if not bar.is_final:
+            return
+        if not is_regular_analytical_bar(bar):
             return
         generation: int | None = None
         async with self._state_lock:

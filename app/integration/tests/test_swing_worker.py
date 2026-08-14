@@ -108,13 +108,16 @@ async def test_swing_worker_publishes_added_symbol_only_after_worker_warmup() ->
     publisher = RecordingPublisher()
     worker = SwingWorker(publisher=publisher, analyzer=RecordingAnalyzer())
     worker.activate_universe(())
-    assert await worker.bootstrap(
-        (
-            bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
-            bar(BarTimeframe.MINUTE_15, NOW - timedelta(minutes=15)),
-        ),
-        symbols=("HIMS",),
-    ) == 0
+    assert (
+        await worker.bootstrap(
+            (
+                bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+                bar(BarTimeframe.MINUTE_15, NOW - timedelta(minutes=15)),
+            ),
+            symbols=("HIMS",),
+        )
+        == 0
+    )
 
     count = await worker.handle_universe_changed(
         UniverseChanged(
@@ -129,3 +132,35 @@ async def test_swing_worker_publishes_added_symbol_only_after_worker_warmup() ->
 
     assert count == 1
     assert len(publisher.events) == 1
+
+
+@pytest.mark.unit
+async def test_swing_worker_ignores_after_hours_price() -> None:
+    publisher = RecordingPublisher()
+    analyzer = RecordingAnalyzer()
+    worker = SwingWorker(publisher=publisher, analyzer=analyzer)
+    await worker.bootstrap(
+        (
+            bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+            bar(BarTimeframe.MINUTE_15, NOW - timedelta(minutes=15)),
+        ),
+        symbols=("HIMS",),
+    )
+
+    after_hours = bar(
+        BarTimeframe.MINUTE_1,
+        datetime(2026, 7, 28, 21, 0, tzinfo=UTC),
+        "130",
+    )
+    await worker.handle_market_event(
+        EventEnvelope(
+            event_type=MARKET_BAR_EVENT,
+            occurred_at=after_hours.timestamp,
+            source="test",
+            subject="HIMS",
+            payload=after_hours,
+        )
+    )
+
+    assert len(analyzer.contexts) == 1
+    assert analyzer.contexts[-1].price == Decimal("100")

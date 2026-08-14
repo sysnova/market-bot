@@ -123,6 +123,11 @@ def engine_history_requests(horizon: AnalysisHorizon) -> tuple[HistoryRequest, .
                 lookback=timedelta(days=365 * 5),
                 max_bars_per_symbol=220,
             ),
+            HistoryRequest(
+                timeframe=BarTimeframe.MINUTE_1,
+                lookback=timedelta(days=5),
+                max_bars_per_symbol=500,
+            ),
         ),
         AnalysisHorizon.SWING: (
             HistoryRequest(
@@ -132,6 +137,11 @@ def engine_history_requests(horizon: AnalysisHorizon) -> tuple[HistoryRequest, .
                 timeframe=BarTimeframe.MINUTE_15,
                 lookback=timedelta(days=14),
                 max_bars_per_symbol=160,
+            ),
+            HistoryRequest(
+                timeframe=BarTimeframe.MINUTE_1,
+                lookback=timedelta(days=5),
+                max_bars_per_symbol=500,
             ),
         ),
         AnalysisHorizon.INTRADAY: (
@@ -491,8 +501,7 @@ async def run_alert_process(
         }:
             if not await state_store.is_ready():
                 raise RuntimeError(
-                    "alert decision state schema is unavailable; "
-                    "apply the decision-state migration"
+                    "alert decision state schema is unavailable; apply the decision-state migration"
                 )
             restored_state = await state_store.load()
         bus = await _connect_nats(settings)
@@ -541,10 +550,7 @@ async def run_alert_process(
         alert = engine.ingest(result, now=clock.now())
         if alert is not None:
             await dispatcher.dispatch(alert)
-            if (
-                bell
-                and alert.kind is AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION
-            ):
+            if bell and alert.kind is AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION:
                 play_early_intraday_sound(fallback=sys.stdout)
             elif bell and alert.kind is AlertKind.SWING_SETUP:
                 play_swing_setup_watch_sound(fallback=sys.stdout)
@@ -561,10 +567,7 @@ async def run_alert_process(
         )
         alert = engine.ingest_entry_watch(transition, now=clock.now())
         await dispatcher.dispatch(alert)
-        if bell and (
-            "IN_ZONE" in alert.title.upper()
-            or "BREAKAWAY WATCH" in alert.title.upper()
-        ):
+        if bell and ("IN_ZONE" in alert.title.upper() or "BREAKAWAY WATCH" in alert.title.upper()):
             play_entry_zone_watch_sound(fallback=sys.stdout)
         signal = entry_signal_from_alert_watch(transition)
         if signal is not None:
@@ -663,20 +666,15 @@ async def run_alert_process(
             "entry_watch_subject": "marketbot.v1.entry-watch.transition.>",
             "entry_opportunity_subject": "marketbot.v1.entry-opportunity.transition.>",
             "entry_setup_subject": (
-                "marketbot.v1.entry-setup.>"
-                if isinstance(engine, AlertEngineV32)
-                else "disabled"
+                "marketbot.v1.entry-setup.>" if isinstance(engine, AlertEngineV32) else "disabled"
             ),
             "decision_state": (
                 "postgresql"
-                if alert_spec.implementation
-                in {"3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0"}
+                if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0"}
                 else "memory"
             ),
             "decision_checkpoint_interval_seconds": (
-                settings.alert_checkpoint_interval_seconds
-                if stateful_engine is not None
-                else None
+                settings.alert_checkpoint_interval_seconds if stateful_engine is not None else None
             ),
             **universe_health_details("alert"),
         }
@@ -803,7 +801,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             raise RuntimeError(
                 "entry opportunity schema is unavailable; apply "
                 "20260807010000_entry_opportunity_lifecycle.sql"
-        )
+            )
         engine = assembly.build_entry_opportunity(store=store)
         bus = await _connect_nats(settings)
 

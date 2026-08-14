@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from typing import Protocol
 from uuid import UUID
 
+from app.common.market_session import is_regular_analytical_bar, is_regular_session
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
@@ -20,7 +21,7 @@ from app.contracts import (
 )
 from app.swing_engine.models import SwingContext
 
-from .bar_aggregator import MinuteBarAggregator
+from .bar_aggregator import MinuteBarAggregator, RegularSessionDailyAggregator
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
 from .universe_warmup import UniverseWarmupGate
@@ -51,6 +52,7 @@ class SwingWorker:
         self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=SWING_INTRADAY_BARS)
         self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
+        self._daily_aggregator = RegularSessionDailyAggregator()
         self._universe = UniverseWarmupGate()
 
     def activate_universe(self, symbols: tuple[str, ...]) -> None:
@@ -77,7 +79,12 @@ class SwingWorker:
         symbols: tuple[str, ...],
     ) -> int:
         for bar in bars:
-            if bar.timeframe in {BarTimeframe.DAY_1, BarTimeframe.MINUTE_15}:
+            if bar.timeframe is BarTimeframe.MINUTE_1:
+                if daily := self._daily_aggregator.add(bar):
+                    self._store.add(daily)
+            elif bar.timeframe in {BarTimeframe.DAY_1, BarTimeframe.MINUTE_15} and (
+                is_regular_analytical_bar(bar)
+            ):
                 self._store.add(bar)
         return sum([await self._evaluate(symbol) for symbol in _symbols(symbols)])
 
@@ -86,11 +93,20 @@ class SwingWorker:
             return
         bar = _bar(envelope)
         if bar.timeframe is BarTimeframe.MINUTE_1:
+            if not is_regular_session(bar.timestamp):
+                for aggregated in self._aggregator.add(bar):
+                    self._store.add(aggregated)
+                    await self._evaluate(bar.symbol, (envelope.event_id,))
+                return
+            if daily := self._daily_aggregator.add(bar):
+                self._store.add(daily)
             for aggregated in self._aggregator.add(bar):
                 self._store.add(aggregated)
                 await self._evaluate(bar.symbol, (envelope.event_id,))
             return
         if bar.timeframe not in {BarTimeframe.DAY_1, BarTimeframe.MINUTE_15}:
+            return
+        if bar.timeframe is BarTimeframe.MINUTE_15 and not is_regular_session(bar.timestamp):
             return
         self._store.add(bar)
         if bar.is_final:

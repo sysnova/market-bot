@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from app.alpaca_market_data import AlpacaEventNormalizer
 from app.alpaca_market_data.ports import MarketDataRest
+from app.common.market_session import analytical_storage_limit
 from app.contracts import (
     BarTimeframe,
     MarketBar,
@@ -106,7 +107,8 @@ class MarketHistoryService:
         for request in self._registered.values():
             for item in request.requirements:
                 required[item.timeframe] = max(
-                    required.get(item.timeframe, 0), item.max_bars_per_symbol
+                    required.get(item.timeframe, 0),
+                    analytical_storage_limit(item.timeframe, item.max_bars_per_symbol),
                 )
         return {
             timeframe: max(
@@ -126,6 +128,9 @@ class MarketHistoryService:
                     coverage,
                     as_of=request.requested_at,
                     freshness=self._freshness,
+                    minimum_count=analytical_storage_limit(
+                        requirement.timeframe, requirement.max_bars_per_symbol
+                    ),
                 ):
                     continue
                 start = _sync_start(
@@ -160,7 +165,10 @@ class MarketHistoryService:
     ) -> tuple[MarketBar, ...]:
         output: list[MarketBar] = []
         for symbol in batch:
-            records = raw.get(symbol, [])[-requirement.max_bars_per_symbol :]
+            storage_limit = analytical_storage_limit(
+                requirement.timeframe, requirement.max_bars_per_symbol
+            )
+            records = raw.get(symbol, [])[-storage_limit:]
             for record in records:
                 payload = self._normalizer.rest_bar(
                     symbol, requirement.timeframe.value, record
@@ -183,7 +191,10 @@ def _sync_start(
     as_of: datetime,
 ) -> datetime:
     values = tuple(coverage[symbol] for symbol in symbols)
-    if any(item.count < requirement.max_bars_per_symbol or item.latest is None for item in values):
+    required_count = analytical_storage_limit(
+        requirement.timeframe, requirement.max_bars_per_symbol
+    )
+    if any(item.count < required_count or item.latest is None for item in values):
         return as_of - requirement.lookback
     return min(
         item.latest - _overlap(requirement.timeframe) for item in values if item.latest is not None
@@ -196,10 +207,11 @@ def _batch_is_fresh(
     *,
     as_of: datetime,
     freshness: timedelta,
+    minimum_count: int,
 ) -> bool:
     threshold = as_of - freshness
     return all(
-        item.count > 0
+        item.count >= minimum_count
         and item.latest is not None
         and item.downloaded_at is not None
         and item.downloaded_at >= threshold

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.common.clock import Clock, SystemClock
+from app.common.market_session import is_regular_analytical_bar
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     MARKET_BAR_EVENT,
@@ -122,6 +123,8 @@ class SupportConfirmationRuntime:
         )
         if not bar.is_final or bar.symbol not in self._symbols:
             return
+        if not is_regular_analytical_bar(bar):
+            return
         if bar.timeframe not in {
             BarTimeframe.DAY_1,
             BarTimeframe.WEEK_1,
@@ -219,9 +222,7 @@ def _same_observation(previous: SupportAssessment, current: SupportAssessment) -
     )
 
 
-def _stamp_assessment(
-    assessment: SupportAssessment, assessed_at: datetime
-) -> SupportAssessment:
+def _stamp_assessment(assessment: SupportAssessment, assessed_at: datetime) -> SupportAssessment:
     return SupportAssessment.model_validate(
         {
             **assessment.model_dump(mode="python"),
