@@ -173,9 +173,7 @@ async def test_v52_arms_a_quality_pullback_near_the_zone() -> None:
         direction=PatternDirection.BULLISH,
         price="108",
         score="60",
-        extra_metrics=(
-            NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),
-        ),
+        extra_metrics=(NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),),
     )
 
     transition = await watcher.ingest(result, now=NOW)
@@ -815,9 +813,7 @@ async def test_v54_opens_an_early_entry_before_full_maturity() -> None:
             direction=PatternDirection.BULLISH,
             price="108",
             score="60",
-            extra_metrics=(
-                NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),
-            ),
+            extra_metrics=(NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),),
         ),
         now=NOW,
     )
@@ -876,9 +872,7 @@ async def test_v54_tracks_an_extended_impulse_and_enters_its_pullback() -> None:
             direction=PatternDirection.BULLISH,
             price="108",
             score="60",
-            extra_metrics=(
-                NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),
-            ),
+            extra_metrics=(NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),),
         ),
         now=NOW,
     )
@@ -922,9 +916,7 @@ async def test_v54_tracks_an_extended_impulse_and_enters_its_pullback() -> None:
         price="111",
         as_of=NOW + timedelta(minutes=3),
         extra_metrics=(NamedValue(name="atr14", value=Decimal("1")),),
-    ).model_copy(
-        update={"analysis_id": UUID("0195f3a5-9000-7000-8000-000000000015")}
-    )
+    ).model_copy(update={"analysis_id": UUID("0195f3a5-9000-7000-8000-000000000015")})
     assert await watcher.ingest(pullback, now=NOW + timedelta(minutes=3)) is None
 
     reclaim = analysis(
@@ -942,9 +934,7 @@ async def test_v54_tracks_an_extended_impulse_and_enters_its_pullback() -> None:
             NamedValue(name="atr14", value=Decimal("1")),
             NamedValue(name="invalidation_level", value=Decimal("110.75")),
         ),
-    ).model_copy(
-        update={"analysis_id": UUID("0195f3a5-9000-7000-8000-000000000016")}
-    )
+    ).model_copy(update={"analysis_id": UUID("0195f3a5-9000-7000-8000-000000000016")})
     triggered = await watcher.ingest(reclaim, now=NOW + timedelta(minutes=4))
 
     assert triggered is not None
@@ -953,7 +943,7 @@ async def test_v54_tracks_an_extended_impulse_and_enters_its_pullback() -> None:
 
 
 @pytest.mark.unit
-async def test_v54_closes_a_legacy_watch_that_fails_modern_arm_quality() -> None:
+async def test_v54_never_revalidates_an_existing_armed_watch_against_arm_policy() -> None:
     store = InMemoryEntryWatchStore()
     legacy = EntryWatcherV2(store=store)
     armed = await legacy.ingest(
@@ -996,14 +986,12 @@ async def test_v54_closes_a_legacy_watch_that_fails_modern_arm_quality() -> None
         now=NOW + timedelta(minutes=1),
     )
 
-    active = await store.load_active("AAPL")
     assert transition is not None
-    assert transition.status is EntryWatchStatus.POLICY_INELIGIBLE
-    assert "policy_ineligible" in transition.reasons
-    assert active is None
-    latest = await store.load_latest("AAPL")
-    assert latest is not None
-    assert latest.status is EntryWatchStatus.POLICY_INELIGIBLE
+    assert transition.status is EntryWatchStatus.IMPULSE_EXTENDED
+    assert "impulse_extended_awaiting_pullback" in transition.reasons
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.status is EntryWatchStatus.IMPULSE_EXTENDED
 
 
 @pytest.mark.unit
@@ -1020,9 +1008,7 @@ async def test_v54_apa_regression_recovers_the_post_impulse_pullback() -> None:
         zone_low="30.8566",
         zone_high="36.9338",
         invalidation="29.5099",
-        extra_metrics=(
-            NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),
-        ),
+        extra_metrics=(NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),),
     ).model_copy(update={"symbol": "APA"})
     await watcher.ingest(long_result, now=NOW)
     swing = analysis(

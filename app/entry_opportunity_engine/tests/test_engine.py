@@ -1027,7 +1027,7 @@ async def test_armed_invalidation_closes_checkpoint_without_creating_another_opp
 
 
 @pytest.mark.unit
-async def test_policy_ineligible_watch_closes_the_existing_opportunity() -> None:
+async def test_policy_ineligible_watch_cannot_close_an_existing_opportunity() -> None:
     store = InMemoryEntryOpportunityStore()
     manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
     await manager.ingest_transition(
@@ -1049,12 +1049,11 @@ async def test_policy_ineligible_watch_closes_the_existing_opportunity() -> None
         )
     )
 
-    assert await store.load_active("AAPL") is None
-    closed = await store.load_latest("AAPL")
-    assert closed is not None
-    assert closed.close_reason is EntryCloseReason.POLICY_INELIGIBLE
-    assert closed.checkpoints[0].status.value == "CLOSED"
-    assert events[-1].reasons[0] == "opportunity_policy_ineligible"
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.ARMED
+    assert active.checkpoints[0].status.value == "OPEN"
+    assert events == ()
 
 
 @pytest.mark.unit
