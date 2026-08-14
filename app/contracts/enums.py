@@ -146,6 +146,8 @@ class AlertKind(ContractEnum):
 class EntryWatchStatus(ContractEnum):
     ARMED = "ARMED"
     IN_ZONE = "IN_ZONE"
+    EARLY_ENTRY = "EARLY_ENTRY"
+    IMPULSE_EXTENDED = "IMPULSE_EXTENDED"
     TRIGGERED = "TRIGGERED"
     INVALIDATED = "INVALIDATED"
     EXPIRED = "EXPIRED"

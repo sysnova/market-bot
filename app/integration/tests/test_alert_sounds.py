@@ -124,6 +124,7 @@ def test_unconfirmed_candidate_watches_use_single_soft_native_tones(
     ("maturity", "tone", "tone_count"),
     (
         (BuyMaturity.TACTICAL_RECOVERY, "Beep(780, 260)", 1),
+        (BuyMaturity.EARLY_ENTRY, "Beep(900, 280)", 1),
         (BuyMaturity.SWING_CONFIRMED, "Beep(1150, 320)", 2),
         (BuyMaturity.HIGH_CONVICTION, "Beep(1550, 380)", 3),
         (BuyMaturity.FULLY_MATURED, "Beep(1600, 500)", 3),

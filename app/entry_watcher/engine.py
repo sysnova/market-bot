@@ -26,7 +26,12 @@ from .ports import EntryWatchStore
 FOUR_PLACES = Decimal("0.0001")
 TWO_PLACES = Decimal("0.01")
 type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None
-_ACTIVE = {EntryWatchStatus.ARMED, EntryWatchStatus.IN_ZONE}
+_ACTIVE = {
+    EntryWatchStatus.ARMED,
+    EntryWatchStatus.IN_ZONE,
+    EntryWatchStatus.EARLY_ENTRY,
+    EntryWatchStatus.IMPULSE_EXTENDED,
+}
 _ARMABLE_CLASSIFICATIONS = {"buy_zone", "extended", "setup", "watch_pullback"}
 _SWING_CONFIRMATIONS = {"breakout", "pullback"}
 _PRICE_PRIORITY = {
@@ -341,6 +346,8 @@ class EntryWatcher:
         reasons: tuple[str, ...],
         analyses: dict[AnalysisHorizon, AnalysisResult],
         anchor_updates: dict[str, JsonValue] | None = None,
+        entry_invalidation: Decimal | None = None,
+        entry_target: Decimal | None = None,
     ) -> EntryWatchTransition:
         terminal_at = now if status not in _ACTIVE else None
         snapshot = dict(watch.anchor_snapshot)
@@ -365,6 +372,8 @@ class EntryWatcher:
             price=price,
             reasons=reasons,
             analyses=analyses,
+            entry_invalidation=entry_invalidation,
+            entry_target=entry_target,
         )
         await self._store.transition(updated, transition)
         return transition
@@ -379,6 +388,8 @@ class EntryWatcher:
         price: Decimal,
         reasons: tuple[str, ...],
         analyses: dict[AnalysisHorizon, AnalysisResult],
+        entry_invalidation: Decimal | None = None,
+        entry_target: Decimal | None = None,
     ) -> EntryWatchTransition:
         ordered = tuple(horizon for horizon in AnalysisHorizon if horizon in analyses)
         return EntryWatchTransition(
@@ -391,6 +402,8 @@ class EntryWatcher:
             zone_high=watch.zone_high,
             invalidation=watch.invalidation,
             current_price=price,
+            entry_invalidation=entry_invalidation,
+            entry_target=entry_target,
             watch_expires_at=watch.expires_at,
             reasons=reasons,
             horizons=ordered,

@@ -24,6 +24,8 @@ class EntryWatchTransition(StrictFrozenModel):
     zone_high: PositiveDecimal
     invalidation: PositiveDecimal
     current_price: PositiveDecimal
+    entry_invalidation: PositiveDecimal | None = None
+    entry_target: PositiveDecimal | None = None
     watch_expires_at: datetime
     reasons: tuple[NonEmptyStr, ...] = Field(min_length=1)
     horizons: tuple[AnalysisHorizon, ...] = Field(min_length=1)
@@ -37,6 +39,10 @@ class EntryWatchTransition(StrictFrozenModel):
             raise ValueError("source_analysis_ids must contain UUIDv7 values")
         if self.invalidation >= self.zone_low or self.zone_low > self.zone_high:
             raise ValueError("entry watch levels must satisfy invalidation < low <= high")
+        if self.entry_invalidation is not None and self.entry_invalidation >= self.current_price:
+            raise ValueError("entry invalidation must be below current price")
+        if self.entry_target is not None and self.entry_target <= self.current_price:
+            raise ValueError("entry target must be above current price")
         if (
             self.status is not EntryWatchStatus.EXPIRED
             and self.watch_expires_at < self.occurred_at

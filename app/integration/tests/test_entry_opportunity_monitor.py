@@ -176,6 +176,39 @@ def test_dashboard_uses_red_for_a_negative_live_trade_summary() -> None:
 
 
 @pytest.mark.unit
+def test_dashboard_does_not_label_armed_tracking_as_a_purchase() -> None:
+    base = _closed_opportunity()
+    checkpoint = base.checkpoints[0].model_copy(
+        update={
+            "level": EntryMaturityLevel.ARMED,
+            "status": EntryCheckpointStatus.OPEN,
+            "closed_at": None,
+            "exit_price": None,
+            "outcome": None,
+            "gain_loss_percent": None,
+        }
+    )
+    opportunity = base.model_copy(
+        update={
+            "status": EntryOpportunityStatus.ARMED,
+            "current_maturity": EntryMaturityLevel.ARMED,
+            "peak_maturity": EntryMaturityLevel.ARMED,
+            "progress_percent": Decimal("20"),
+            "closed_at": None,
+            "close_reason": None,
+            "checkpoints": (checkpoint,),
+        }
+    )
+    dashboard = OpportunityDashboard(history=25)
+    dashboard.merge(opportunity)
+
+    output = format_opportunity_dashboard(dashboard, refreshed_at=NOW)
+
+    assert "REFERENCIA AAPL" in output
+    assert "COMPRA AAPL | MADUREZ ARMED" not in output
+
+
+@pytest.mark.unit
 def test_dashboard_rejects_an_older_snapshot_of_the_same_opportunity() -> None:
     dashboard = OpportunityDashboard(history=25)
     newest = _closed_opportunity(revision=4)

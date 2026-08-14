@@ -27,6 +27,14 @@ Swing anchored-VWAP, freshness, extension, and live reward/risk gate moves the e
 `TRIGGERED`. That analysis price becomes the real L4 entry; there is no intermediate `CONFIRMING`
 state and no second three-minute reconfirmation delay.
 
+`EntryWatcherV54` (`5.4.0`) adds two price-efficient entry paths without rewriting the frozen Long
+thesis. A bullish, favorable Intraday confirmation can open an `EARLY_ENTRY` L1 while price remains
+within 4% and 1 Swing ATR of the original zone and live reward/risk is at least 1.5. When price has
+already escaped that window, the watch moves to `IMPULSE_EXTENDED`, freezes the impulse origin,
+tracks its rolling peak and pullback low, and derives a 38.2%-61.8% retracement zone. A bullish
+five-minute higher-low reclaim inside that zone opens a new L1 only when reward/risk back to the
+prior peak is at least 2. The mature V5.3 path can still advance the same watch to `TRIGGERED` L4.
+
 The Entry Watcher preserves a Long entry thesis across later market evaluations. It freezes
 the original buy zone, invalidation, expected correction, source analysis, and expiry instead
 of recalculating those levels away when price finally pulls back.

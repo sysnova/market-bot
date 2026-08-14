@@ -367,6 +367,45 @@ def test_in_zone_entry_watch_is_an_explicit_early_entry_watch() -> None:
 
 
 @pytest.mark.unit
+def test_early_entry_alert_exposes_tactical_risk_separately() -> None:
+    transition = EntryWatchTransition(
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000001"),
+        symbol="TEST",
+        previous_status=EntryWatchStatus.IMPULSE_EXTENDED,
+        status=EntryWatchStatus.EARLY_ENTRY,
+        occurred_at=NOW,
+        zone_low=Decimal("30"),
+        zone_high=Decimal("37"),
+        invalidation=Decimal("29"),
+        current_price=Decimal("39.55"),
+        entry_invalidation=Decimal("38.98"),
+        entry_target=Decimal("41.24"),
+        watch_expires_at=NOW + timedelta(weeks=8),
+        reasons=("impulse_pullback_reclaimed",),
+        horizons=(
+            AnalysisHorizon.LONG_TERM,
+            AnalysisHorizon.SWING,
+            AnalysisHorizon.INTRADAY,
+        ),
+        source_analysis_ids=(
+            UUID("0195f3a5-9000-7000-8000-000000000002"),
+        ),
+    )
+
+    alert = AlertEngine().ingest_entry_watch(transition, now=NOW)
+    metrics = {item.name: item.value for item in alert.metrics}
+
+    assert alert.severity is AlertSeverity.ACTION
+    assert "ENTRY EARLY L1" in alert.title
+    assert "structural invalidation 29" in alert.message
+    assert "tactical stop 38.98" in alert.message
+    assert "tactical target 41.24" in alert.message
+    assert metrics["invalidation"] == Decimal("29")
+    assert metrics["entry_invalidation"] == Decimal("38.98")
+    assert metrics["entry_target"] == Decimal("41.24")
+
+
+@pytest.mark.unit
 def test_moderate_breakaway_emits_watch_while_intraday_confirmation_is_pending() -> None:
     transition = EntryWatchTransition(
         watch_id=UUID("0195f3a5-9000-7000-8000-000000000001"),

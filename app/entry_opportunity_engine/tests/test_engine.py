@@ -55,6 +55,8 @@ def watch_transition(
                 EntryWatchStatus.TRIGGERED: "0195f3a5-9000-7000-8000-000000000083",
                 EntryWatchStatus.INVALIDATED: "0195f3a5-9000-7000-8000-000000000084",
                 EntryWatchStatus.EXPIRED: "0195f3a5-9000-7000-8000-000000000085",
+                EntryWatchStatus.EARLY_ENTRY: "0195f3a5-9000-7000-8000-000000000086",
+                EntryWatchStatus.IMPULSE_EXTENDED: "0195f3a5-9000-7000-8000-000000000087",
             }[status]
         ),
         watch_id=UUID(watch_id),
@@ -122,6 +124,39 @@ def bar(*, timestamp: datetime, close: str, low: str = "102", high: str = "105")
         feed="sip",
         is_final=True,
     )
+
+
+@pytest.mark.unit
+async def test_early_watcher_entry_opens_l1_horizon_legs() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV3(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    watch_id = "0195f3a5-9000-7000-8000-000000000021"
+    await manager.ingest_transition(
+        watch_transition(EntryWatchStatus.ARMED, watch_id=watch_id, price="98")
+    )
+
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.EARLY_ENTRY,
+            watch_id=watch_id,
+            price="102",
+            occurred_at=NOW + timedelta(minutes=5),
+            previous=EntryWatchStatus.ARMED,
+            horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+            reasons=("early_entry_confirmed",),
+        )
+    )
+
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.status is EntryOpportunityStatus.CONFIRMING
+    assert active.current_maturity is EntryMaturityLevel.L1
+    opened = tuple(leg for leg in active.legs if leg.status is EntryLegStatus.OPEN)
+    assert {leg.horizon for leg in opened} == {
+        AnalysisHorizon.SWING,
+        AnalysisHorizon.INTRADAY,
+    }
+    assert all(leg.entry_price == Decimal("102") for leg in opened)
 
 
 def alert(

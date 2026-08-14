@@ -78,6 +78,8 @@ class AlertEngine:
         severity, score = {
             EntryWatchStatus.ARMED: (AlertSeverity.INFO, Decimal("40")),
             EntryWatchStatus.IN_ZONE: (AlertSeverity.WATCH, Decimal("65")),
+            EntryWatchStatus.EARLY_ENTRY: (AlertSeverity.ACTION, Decimal("72")),
+            EntryWatchStatus.IMPULSE_EXTENDED: (AlertSeverity.WATCH, Decimal("55")),
             EntryWatchStatus.TRIGGERED: (AlertSeverity.ACTION, Decimal("85")),
             EntryWatchStatus.INVALIDATED: (AlertSeverity.INFO, Decimal("20")),
             EntryWatchStatus.EXPIRED: (AlertSeverity.INFO, Decimal("10")),
@@ -92,6 +94,12 @@ class AlertEngine:
                 "recent zone touch remains valid; moderate continuation is awaiting "
                 "fresh intraday confirmation"
             )
+        elif transition.status is EntryWatchStatus.EARLY_ENTRY:
+            title = f"{transition.symbol} ENTRY EARLY L1"
+            decision = "partial early entry confirmed inside the efficient window"
+        elif transition.status is EntryWatchStatus.IMPULSE_EXTENDED:
+            title = f"{transition.symbol} ENTRY AWAITING PULLBACK"
+            decision = "initial entry window was missed; tracking a dynamic impulse pullback"
         elif transition.status is EntryWatchStatus.IN_ZONE:
             title = f"{transition.symbol} ENTRY IN_ZONE EARLY WATCH"
             decision = "early entry watch; price reached the frozen thesis zone"
@@ -102,6 +110,21 @@ class AlertEngine:
             title = f"{transition.symbol} ENTRY {status}"
             decision = "entry-watch thesis updated"
         fresh = self._fresh_values(transition.symbol, now)
+        tactical_levels = ()
+        tactical_message = ""
+        if transition.entry_invalidation is not None:
+            tactical_levels += (
+                NamedValue(
+                    name="entry_invalidation",
+                    value=transition.entry_invalidation,
+                ),
+            )
+            tactical_message += f"; tactical stop {transition.entry_invalidation}"
+        if transition.entry_target is not None:
+            tactical_levels += (
+                NamedValue(name="entry_target", value=transition.entry_target),
+            )
+            tactical_message += f"; tactical target {transition.entry_target}"
         return LocalAlert(
             symbol=transition.symbol,
             created_at=now,
@@ -111,7 +134,7 @@ class AlertEngine:
             message=(
                 f"{decision}; price {transition.current_price}; original zone "
                 f"{transition.zone_low}-{transition.zone_high}; "
-                f"invalidation {transition.invalidation}"
+                f"structural invalidation {transition.invalidation}{tactical_message}"
             ),
             horizons=transition.horizons,
             component_analysis_ids=transition.source_analysis_ids,
@@ -122,6 +145,7 @@ class AlertEngine:
                 NamedValue(name="buy_zone_high", value=transition.zone_high),
                 NamedValue(name="invalidation", value=transition.invalidation),
                 NamedValue(name="watch_expires_at", value=transition.watch_expires_at),
+                *tactical_levels,
             ),
             score=score,
             reasons=transition.reasons,

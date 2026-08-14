@@ -36,13 +36,13 @@ configuration, and logging. It must not become a dumping ground for shared busin
 
 ## Engine assembly
 
-MarketBot has one composition source: `configs/marketbot/7.8.0.yaml`. It declares every engine
+MarketBot has one composition source: `configs/marketbot/7.9.0.yaml`. It declares every engine
 slot, the concrete implementation version, the strategy version and artifact, and its operational
 mode. `app/integration/engine_catalog.py` is the concrete implementation catalog and
 `app/integration/engine_assembly.py` is the stable selector/facade.
 
 ```text
-configs/marketbot/7.8.0.yaml
+configs/marketbot/7.9.0.yaml
   implementation + strategy + mode
                  |
                  v
@@ -171,6 +171,11 @@ core L4 decision identity, but Alert is its only publisher. Entry Recovery is a 
 versioned evidence engine: it never assigns L1-L4, relaxes, or rewrites the original Watcher
 invalidation. Alert evaluates its recovery assessment and the current Swing+Intraday rule assigns
 L2; changing that quality requires a new Alert rule version.
+
+Watcher 5.4 adds two non-terminal lifecycle states without changing that L4 identity.
+`EARLY_ENTRY` opens a paper L1 leg with its own tactical invalidation and target;
+`IMPULSE_EXTENDED` persists a missed impulse while a dynamic pullback is observed. A later mature
+confirmation may still advance the same frozen thesis to canonical `TRIGGERED` L4.
 
 The `Compras Confirmadas` operator window is a focused projection, not another decision engine. It
 renders only core L1-L4 decisions and final Patreon Caps, Long Portfolio, and Signal Fusion buys

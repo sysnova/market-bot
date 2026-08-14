@@ -380,7 +380,8 @@ class EntryWatchRecord(Base):
     __tablename__ = "entry_watches"
     __table_args__ = (
         CheckConstraint(
-            "status in ('ARMED', 'IN_ZONE', 'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            "status in ('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED', "
+            "'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
             name="status",
         ),
         CheckConstraint("invalidation < zone_low and zone_low <= zone_high", name="level_order"),
@@ -391,7 +392,9 @@ class EntryWatchRecord(Base):
             "entry_watches_one_active_per_symbol_idx",
             "symbol",
             unique=True,
-            postgresql_where=text("status IN ('ARMED', 'IN_ZONE')"),
+            postgresql_where=text(
+                "status IN ('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED')"
+            ),
         ),
         Index("entry_watches_status_expires_at_idx", "status", "expires_at"),
         {"schema": SCHEMA},
@@ -423,12 +426,14 @@ class EntryWatchTransitionRecord(Base):
     __tablename__ = "entry_watch_transitions"
     __table_args__ = (
         CheckConstraint(
-            "status in ('ARMED', 'IN_ZONE', 'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            "status in ('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED', "
+            "'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
             name="status",
         ),
         CheckConstraint(
             "previous_status is null or previous_status in "
-            "('ARMED', 'IN_ZONE', 'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
+            "('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED', "
+            "'TRIGGERED', 'INVALIDATED', 'EXPIRED')",
             name="previous_status",
         ),
         Index("entry_watch_transitions_watch_occurred_idx", "watch_id", "occurred_at"),

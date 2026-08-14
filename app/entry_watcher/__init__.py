@@ -11,6 +11,7 @@ from .v5 import EntryWatcherV5
 from .v51 import EntryWatcherV51
 from .v52 import EntryWatcherV52
 from .v53 import EntryWatcherV53
+from .v54 import EntryWatcherV54
 
 __all__ = [
     "EntryWatch",
@@ -25,5 +26,6 @@ __all__ = [
     "EntryWatcherV51",
     "EntryWatcherV52",
     "EntryWatcherV53",
+    "EntryWatcherV54",
     "InMemoryEntryWatchStore",
 ]

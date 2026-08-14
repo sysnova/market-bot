@@ -17,6 +17,7 @@ class BuyMaturity(StrEnum):
     """Explicit progression from tactical recovery to fully matured evidence."""
 
     TACTICAL_RECOVERY = "L1_TACTICAL_RECOVERY"
+    EARLY_ENTRY = "L1_EARLY_ENTRY"
     SWING_CONFIRMED = "L2_SWING_CONFIRMED"
     HIGH_CONVICTION = "L3_HIGH_CONVICTION"
     FULLY_MATURED = "L4_FULLY_MATURED"
@@ -36,6 +37,11 @@ def buy_maturity(alert: LocalAlert) -> BuyMaturity | None:
         return None
     if alert.kind is AlertKind.HIGH_CONVICTION_BUY:
         return BuyMaturity.HIGH_CONVICTION if _CONVICTION_HORIZONS.issubset(horizons) else None
+    if (
+        alert.kind is AlertKind.ENTRY_WATCH
+        and "ENTRY EARLY L1" in alert.title.upper()
+    ):
+        return BuyMaturity.EARLY_ENTRY
     if (
         alert.kind is AlertKind.ENTRY_WATCH
         and "ENTRY TRIGGERED" in alert.title.upper()

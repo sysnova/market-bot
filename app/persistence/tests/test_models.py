@@ -98,7 +98,7 @@ def test_entry_watch_has_one_active_thesis_per_symbol() -> None:
     assert len(matching) == 1
     assert matching[0].unique is True
     assert str(matching[0].dialect_options["postgresql"]["where"]) == (
-        "status IN ('ARMED', 'IN_ZONE')"
+        "status IN ('ARMED', 'IN_ZONE', 'EARLY_ENTRY', 'IMPULSE_EXTENDED')"
     )
 
 

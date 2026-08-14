@@ -6,7 +6,12 @@ from app.contracts import EntryWatchStatus, EntryWatchTransition
 
 from .models import EntryWatch
 
-_ACTIVE = {EntryWatchStatus.ARMED, EntryWatchStatus.IN_ZONE}
+_ACTIVE = {
+    EntryWatchStatus.ARMED,
+    EntryWatchStatus.IN_ZONE,
+    EntryWatchStatus.EARLY_ENTRY,
+    EntryWatchStatus.IMPULSE_EXTENDED,
+}
 
 
 class InMemoryEntryWatchStore:

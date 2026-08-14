@@ -32,7 +32,7 @@ selection before starting services:
 uv run marketbot assembly
 ```
 
-The default is `configs/marketbot/7.8.0.yaml`. Each engine entry separates:
+The default is `configs/marketbot/7.9.0.yaml`. Each engine entry separates:
 
 - `implementation`: concrete Python behavior;
 - `strategy`: embedded rules or an exact-version YAML artifact;
@@ -41,7 +41,7 @@ The default is `configs/marketbot/7.8.0.yaml`. Each engine entry separates:
 To deploy another complete, reviewed assembly, create a new immutable definition and select it:
 
 ```powershell
-$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.8.0.yaml"
+$env:MARKETBOT_DEFINITION_PATH = "configs/marketbot/7.9.0.yaml"
 .\scripts\windows\start-market-bot.ps1
 ```
 
@@ -90,6 +90,13 @@ preserves V5.2 radar creation and tracking, but a first Intraday result that alr
 mature, strong, higher-low, price-efficiency, Swing/AVWAP, freshness, extension, and live R/R gate
 triggers L4 immediately at that result's price. A triggered symbol cannot be immediately rearmed
 from a recalculated Long zone for 30 minutes, so one thesis does not produce duplicate alarms.
+
+Entry Watcher 5.4 also recognizes an `EARLY_ENTRY` L1 before full maturity when the quote remains
+within 4% and one Swing ATR of the frozen zone, Intraday confirms direction and efficiency, and live
+reward/risk is at least 1.5. If the initial impulse escapes that window, the durable watch becomes
+`IMPULSE_EXTENDED` instead of remaining ambiguously armed. It then tracks the impulse peak and low,
+builds a 38.2%-61.8% retracement zone, and opens a pullback L1 only after a five-minute higher-low
+reclaim with reward/risk of at least 2 back to the prior peak.
 
 PatreonCaps, Long Portfolio, Signal Fusion, and Portfolio Flow publish independent analytical
 families. They never acquire or impersonate an Alert L1-L4 level. Entry Opportunity tracks each

@@ -17,12 +17,14 @@ _HORIZON_LABELS = {
 }
 _BUY_BANNER_STYLES = {
     BuyMaturity.TACTICAL_RECOVERY: "\x1b[1;30;103m",
+    BuyMaturity.EARLY_ENTRY: "\x1b[1;30;103m",
     BuyMaturity.SWING_CONFIRMED: "\x1b[1;97;44m",
     BuyMaturity.HIGH_CONVICTION: "\x1b[1;30;102m",
     BuyMaturity.FULLY_MATURED: "\x1b[1;97;45m",
 }
 _BUY_LABELS = {
     BuyMaturity.TACTICAL_RECOVERY: "TACTICAL RECOVERY",
+    BuyMaturity.EARLY_ENTRY: "EARLY PARTIAL ENTRY",
     BuyMaturity.SWING_CONFIRMED: "SWING CONFIRMED",
     BuyMaturity.HIGH_CONVICTION: "HIGH CONVICTION",
     BuyMaturity.FULLY_MATURED: "FULLY MATURED",

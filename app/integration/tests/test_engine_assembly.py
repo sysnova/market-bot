@@ -18,6 +18,7 @@ from app.entry_watcher import (
     EntryWatcherV5,
     EntryWatcherV52,
     EntryWatcherV53,
+    EntryWatcherV54,
     InMemoryEntryWatchStore,
 )
 from app.integration.engine_assembly import (
@@ -54,6 +55,7 @@ LATEST_DEFINITION = ROOT / "configs/marketbot/7.5.0.yaml"
 GAMMA_DEFINITION = ROOT / "configs/marketbot/7.6.0.yaml"
 EARLY_RADAR_DEFINITION = ROOT / "configs/marketbot/7.7.0.yaml"
 STRUCTURAL_SWING_DEFINITION = ROOT / "configs/marketbot/7.8.0.yaml"
+PULLBACK_ENTRY_DEFINITION = ROOT / "configs/marketbot/7.9.0.yaml"
 PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 
@@ -155,6 +157,20 @@ def test_structural_swing_definition_preserves_radar_and_activates_swing_v5() ->
     assert definition.engines[EngineSlot.ENTRY_WATCHER].implementation == "5.3.0"
     assert isinstance(assembly.build_swing(), SwingEngineV5)
     assert definition.engines[EngineSlot.SWING].strategy.version == "1.2.0"
+
+
+def test_pullback_entry_definition_activates_watcher_v54() -> None:
+    previous = load_marketbot_definition(STRUCTURAL_SWING_DEFINITION)
+    definition = load_marketbot_definition(PULLBACK_ENTRY_DEFINITION)
+    assembly = MarketBotAssembly(definition)
+
+    assert previous.engines[EngineSlot.ENTRY_WATCHER].implementation == "5.3.0"
+    assert definition.version == "7.9.0"
+    assert definition.engines[EngineSlot.ENTRY_WATCHER].strategy.version == "1.3.0"
+    assert isinstance(
+        assembly.build_entry_watcher(store=InMemoryEntryWatchStore()),
+        EntryWatcherV54,
+    )
 
 
 def test_operational_modes_select_slots_from_the_definition() -> None:

@@ -22,6 +22,7 @@ from app.entry_watcher import (
     EntryWatcherV51,
     EntryWatcherV52,
     EntryWatcherV53,
+    EntryWatcherV54,
     InMemoryEntryWatchStore,
 )
 
@@ -800,6 +801,237 @@ async def test_v53_preserves_v52_initial_armed_policy() -> None:
     transition = await watcher.ingest(hpe_like, now=NOW)
     assert transition is None
     assert await store.load_active("HPE") is None
+
+
+@pytest.mark.unit
+async def test_v54_opens_an_early_entry_before_full_maturity() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV54(store=store)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.LONG_TERM,
+            classification="watch_pullback",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            price="108",
+            score="60",
+            extra_metrics=(
+                NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),
+            ),
+        ),
+        now=NOW,
+    )
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="107",
+            as_of=NOW + timedelta(minutes=1),
+            extra_metrics=(
+                NamedValue(name="anchored_vwap_gate_passed", value=True),
+                NamedValue(name="target_2r", value=Decimal("120")),
+                NamedValue(name="invalidation", value=Decimal("103")),
+                NamedValue(name="atr14", value=Decimal("4")),
+            ),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    transition = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="bullish_breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="107",
+            as_of=NOW + timedelta(minutes=2),
+            setup="bullish_breakout",
+            extra_metrics=(
+                NamedValue(name="confirmation_gate_passed", value=True),
+                NamedValue(name="entry_efficiency_gate_passed", value=True),
+                NamedValue(name="mature_confirmation_gate_passed", value=False),
+                NamedValue(name="entry_trigger_level", value=Decimal("106.5")),
+                NamedValue(name="atr14", value=Decimal("1")),
+                NamedValue(name="invalidation_level", value=Decimal("105.5")),
+            ),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+
+    assert transition is not None
+    assert transition.status is EntryWatchStatus.EARLY_ENTRY
+    assert "early_entry_confirmed" in transition.reasons
+
+
+@pytest.mark.unit
+async def test_v54_tracks_an_extended_impulse_and_enters_its_pullback() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV54(store=store)
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.LONG_TERM,
+            classification="watch_pullback",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.BULLISH,
+            price="108",
+            score="60",
+            extra_metrics=(
+                NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),
+            ),
+        ),
+        now=NOW,
+    )
+    extended = await watcher.ingest(
+        analysis(
+            AnalysisHorizon.SWING,
+            classification="breakout",
+            verdict=AnalysisVerdict.FAVORABLE,
+            direction=PatternDirection.BULLISH,
+            price="115",
+            as_of=NOW + timedelta(minutes=1),
+            extra_metrics=(
+                NamedValue(name="anchored_vwap_gate_passed", value=True),
+                NamedValue(name="target_2r", value=Decimal("125")),
+                NamedValue(name="invalidation", value=Decimal("103")),
+                NamedValue(name="atr14", value=Decimal("4")),
+            ),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    await watcher.ingest(
+        analysis(
+            AnalysisHorizon.INTRADAY,
+            classification="neutral",
+            verdict=AnalysisVerdict.WATCH,
+            direction=PatternDirection.NEUTRAL,
+            price="115",
+            as_of=NOW + timedelta(minutes=2),
+            extra_metrics=(NamedValue(name="atr14", value=Decimal("1")),),
+        ),
+        now=NOW + timedelta(minutes=2),
+    )
+    assert extended is not None
+    assert extended.status is EntryWatchStatus.IMPULSE_EXTENDED
+
+    pullback = analysis(
+        AnalysisHorizon.INTRADAY,
+        classification="pullback",
+        verdict=AnalysisVerdict.WATCH,
+        direction=PatternDirection.NEUTRAL,
+        price="111",
+        as_of=NOW + timedelta(minutes=3),
+        extra_metrics=(NamedValue(name="atr14", value=Decimal("1")),),
+    ).model_copy(
+        update={"analysis_id": UUID("0195f3a5-9000-7000-8000-000000000015")}
+    )
+    assert await watcher.ingest(pullback, now=NOW + timedelta(minutes=3)) is None
+
+    reclaim = analysis(
+        AnalysisHorizon.INTRADAY,
+        classification="bullish_reclaim",
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        price="112",
+        as_of=NOW + timedelta(minutes=4),
+        extra_metrics=(
+            NamedValue(name="confirmation_gate_passed", value=True),
+            NamedValue(name="entry_efficiency_gate_passed", value=True),
+            NamedValue(name="five_minute_higher_low", value=True),
+            NamedValue(name="entry_trigger_level", value=Decimal("111.5")),
+            NamedValue(name="atr14", value=Decimal("1")),
+            NamedValue(name="invalidation_level", value=Decimal("110.75")),
+        ),
+    ).model_copy(
+        update={"analysis_id": UUID("0195f3a5-9000-7000-8000-000000000016")}
+    )
+    triggered = await watcher.ingest(reclaim, now=NOW + timedelta(minutes=4))
+
+    assert triggered is not None
+    assert triggered.status is EntryWatchStatus.EARLY_ENTRY
+    assert "impulse_pullback_reclaimed" in triggered.reasons
+
+
+@pytest.mark.unit
+async def test_v54_apa_regression_recovers_the_post_impulse_pullback() -> None:
+    store = InMemoryEntryWatchStore()
+    watcher = EntryWatcherV54(store=store)
+    long_result = analysis(
+        AnalysisHorizon.LONG_TERM,
+        classification="watch_pullback",
+        verdict=AnalysisVerdict.WATCH,
+        direction=PatternDirection.BULLISH,
+        price="37.63",
+        score="60",
+        zone_low="30.8566",
+        zone_high="36.9338",
+        invalidation="29.5099",
+        extra_metrics=(
+            NamedValue(name="distance_to_buy_zone_atr", value=Decimal("0.5")),
+        ),
+    ).model_copy(update={"symbol": "APA"})
+    await watcher.ingest(long_result, now=NOW)
+    swing = analysis(
+        AnalysisHorizon.SWING,
+        classification="breakout",
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        price="41.24",
+        as_of=NOW + timedelta(minutes=1),
+        extra_metrics=(
+            NamedValue(name="anchored_vwap_gate_passed", value=True),
+            NamedValue(name="target_2r", value=Decimal("51.996")),
+            NamedValue(name="invalidation", value=Decimal("34.017")),
+            NamedValue(name="atr14", value=Decimal("1.5875")),
+        ),
+    ).model_copy(update={"symbol": "APA"})
+    extended = await watcher.ingest(swing, now=NOW + timedelta(minutes=1))
+    assert extended is not None
+    assert extended.status is EntryWatchStatus.IMPULSE_EXTENDED
+
+    pullback = analysis(
+        AnalysisHorizon.INTRADAY,
+        classification="pullback",
+        verdict=AnalysisVerdict.WATCH,
+        direction=PatternDirection.NEUTRAL,
+        price="39.08",
+        as_of=NOW + timedelta(minutes=2),
+        extra_metrics=(NamedValue(name="atr14", value=Decimal("0.4")),),
+    ).model_copy(
+        update={
+            "symbol": "APA",
+            "analysis_id": UUID("0195f3a5-9000-7000-8000-000000000017"),
+        }
+    )
+    await watcher.ingest(pullback, now=NOW + timedelta(minutes=2))
+    reclaim = analysis(
+        AnalysisHorizon.INTRADAY,
+        classification="bullish_reclaim",
+        verdict=AnalysisVerdict.FAVORABLE,
+        direction=PatternDirection.BULLISH,
+        price="39.55",
+        as_of=NOW + timedelta(minutes=3),
+        extra_metrics=(
+            NamedValue(name="confirmation_gate_passed", value=True),
+            NamedValue(name="entry_efficiency_gate_passed", value=True),
+            NamedValue(name="five_minute_higher_low", value=True),
+            NamedValue(name="entry_trigger_level", value=Decimal("39.40")),
+            NamedValue(name="atr14", value=Decimal("0.4")),
+            NamedValue(name="invalidation_level", value=Decimal("38.98")),
+        ),
+    ).model_copy(
+        update={
+            "symbol": "APA",
+            "analysis_id": UUID("0195f3a5-9000-7000-8000-000000000018"),
+        }
+    )
+    entry = await watcher.ingest(reclaim, now=NOW + timedelta(minutes=3))
+
+    assert entry is not None
+    assert entry.status is EntryWatchStatus.EARLY_ENTRY
+    assert entry.current_price == Decimal("39.55")
+    assert entry.entry_invalidation == Decimal("38.9800")
+    assert entry.entry_target == Decimal("41.2400")
 
 
 @pytest.mark.unit

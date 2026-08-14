@@ -89,31 +89,60 @@ class EntryOpportunityEngine:
             if transition.status not in {
                 EntryWatchStatus.ARMED,
                 EntryWatchStatus.IN_ZONE,
+                EntryWatchStatus.EARLY_ENTRY,
+                EntryWatchStatus.IMPULSE_EXTENDED,
                 EntryWatchStatus.TRIGGERED,
             }:
                 return ()
             level = {
                 EntryWatchStatus.ARMED: EntryMaturityLevel.ARMED,
                 EntryWatchStatus.IN_ZONE: EntryMaturityLevel.IN_ZONE,
+                EntryWatchStatus.EARLY_ENTRY: EntryMaturityLevel.L1,
+                EntryWatchStatus.IMPULSE_EXTENDED: EntryMaturityLevel.ARMED,
                 EntryWatchStatus.TRIGGERED: EntryMaturityLevel.L4,
             }[transition.status]
             opportunity = self._new_opportunity(transition, level=level)
-            recovered = transition.status is EntryWatchStatus.TRIGGERED
+            recovered = transition.status in {
+                EntryWatchStatus.EARLY_ENTRY,
+                EntryWatchStatus.TRIGGERED,
+            }
             if recovered:
                 opportunity = self._advance(
                     opportunity,
-                    level=EntryMaturityLevel.L4,
+                    level=level,
                     price=transition.current_price,
                     now=transition.occurred_at,
                     horizons=transition.horizons,
                     source_analysis_ids=transition.source_analysis_ids,
+                    checkpoint_target=transition.entry_target,
+                    checkpoint_invalidation=transition.entry_invalidation,
+                    horizon_invalidations=(
+                        {
+                            horizon: transition.entry_invalidation
+                            for horizon in transition.horizons
+                        }
+                        if transition.entry_invalidation is not None
+                        else None
+                    ),
+                    horizon_targets=(
+                        {
+                            horizon: transition.entry_target
+                            for horizon in transition.horizons
+                        }
+                        if transition.entry_target is not None
+                        else None
+                    ),
                 )
             event = self._event(
                 opportunity,
                 occurred_at=transition.occurred_at,
                 reasons=(
                     (
-                        "opportunity_recovered_from_triggered"
+                        (
+                            "opportunity_opened_from_early_entry"
+                            if transition.status is EntryWatchStatus.EARLY_ENTRY
+                            else "opportunity_recovered_from_triggered"
+                        )
                         if recovered
                         else "opportunity_created"
                     ),
@@ -179,6 +208,8 @@ class EntryOpportunityEngine:
         level = {
             EntryWatchStatus.ARMED: EntryMaturityLevel.ARMED,
             EntryWatchStatus.IN_ZONE: EntryMaturityLevel.IN_ZONE,
+            EntryWatchStatus.EARLY_ENTRY: EntryMaturityLevel.L1,
+            EntryWatchStatus.IMPULSE_EXTENDED: EntryMaturityLevel.ARMED,
             EntryWatchStatus.TRIGGERED: EntryMaturityLevel.L4,
         }[transition.status]
         changed = self._advance(
@@ -188,6 +219,21 @@ class EntryOpportunityEngine:
             now=transition.occurred_at,
             horizons=transition.horizons,
             source_analysis_ids=transition.source_analysis_ids,
+            checkpoint_target=transition.entry_target,
+            checkpoint_invalidation=transition.entry_invalidation,
+            horizon_invalidations=(
+                {
+                    horizon: transition.entry_invalidation
+                    for horizon in transition.horizons
+                }
+                if transition.entry_invalidation is not None
+                else None
+            ),
+            horizon_targets=(
+                {horizon: transition.entry_target for horizon in transition.horizons}
+                if transition.entry_target is not None
+                else None
+            ),
             checkpoint_setup_id=f"watch:{transition.watch_id}",
             allow_tracking_regression=self.regress_tracking_maturity,
         )
@@ -543,6 +589,7 @@ class EntryOpportunityEngine:
         horizons: tuple[AnalysisHorizon, ...],
         source_analysis_ids: tuple[UUID, ...],
         checkpoint_target: Decimal | None = None,
+        checkpoint_invalidation: Decimal | None = None,
         horizon_invalidations: dict[AnalysisHorizon, Decimal] | None = None,
         horizon_targets: dict[AnalysisHorizon, Decimal] | None = None,
         checkpoint_family: EntrySignalFamily = EntrySignalFamily.CORE_ENTRY,
@@ -566,7 +613,7 @@ class EntryOpportunityEngine:
                 self._new_checkpoint(
                     level,
                     price=price,
-                    invalidation=opportunity.invalidation,
+                    invalidation=checkpoint_invalidation or opportunity.invalidation,
                     reached_at=now,
                     target=checkpoint_target,
                     signal_family=checkpoint_family,

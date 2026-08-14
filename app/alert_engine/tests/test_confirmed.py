@@ -91,6 +91,25 @@ def test_entry_confirmations_keep_distinct_maturity_levels(alert: LocalAlert) ->
     )
 
 
+def test_early_partial_entry_is_actionable_but_not_a_solid_buy(alert: LocalAlert) -> None:
+    early = alert.model_copy(
+        update={
+            "kind": AlertKind.ENTRY_WATCH,
+            "title": "HIMS ENTRY EARLY L1",
+            "horizons": (
+                AnalysisHorizon.LONG_TERM,
+                AnalysisHorizon.SWING,
+                AnalysisHorizon.INTRADAY,
+            ),
+        }
+    )
+
+    assert buy_maturity(early) is BuyMaturity.EARLY_ENTRY
+    assert is_buy_alert(early)
+    assert is_confirmed_buy(early)
+    assert not is_solid_buy(early)
+
+
 def test_confirmed_buy_rejects_unconfirmed_buy_zone(alert: LocalAlert) -> None:
     assert not is_confirmed_buy(alert.model_copy(update={"kind": AlertKind.LONG_BUY_ZONE}))
 

@@ -435,7 +435,9 @@ class EntryWatchRepository(Repository):
             select(EntryWatchRecord)
             .where(
                 EntryWatchRecord.symbol == symbol.strip().upper(),
-                EntryWatchRecord.status.in_(("ARMED", "IN_ZONE")),
+                EntryWatchRecord.status.in_(
+                    ("ARMED", "IN_ZONE", "EARLY_ENTRY", "IMPULSE_EXTENDED")
+                ),
             )
             .order_by(EntryWatchRecord.armed_at.desc())
             .limit(1)

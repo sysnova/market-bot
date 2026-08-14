@@ -36,6 +36,7 @@ _ENTRY_CLOSE_SCRIPT = (
 )
 _BUY_MATURITY_SCRIPTS = {
     BuyMaturity.TACTICAL_RECOVERY: "[console]::Beep(780, 260)",
+    BuyMaturity.EARLY_ENTRY: "[console]::Beep(900, 280)",
     BuyMaturity.SWING_CONFIRMED: (
         "[console]::Beep(850, 180); Start-Sleep -Milliseconds 90; [console]::Beep(1150, 320)"
     ),

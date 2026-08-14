@@ -491,6 +491,10 @@ def _trade_summary_lines(
 ) -> list[str]:
     lines: list[str] = []
     for checkpoint in opportunity.checkpoints:
+        tracking = checkpoint.level in {
+            EntryMaturityLevel.ARMED,
+            EntryMaturityLevel.IN_ZONE,
+        }
         closed = checkpoint.status is EntryCheckpointStatus.CLOSED
         if closed:
             assert checkpoint.exit_price is not None
@@ -505,11 +509,12 @@ def _trade_summary_lines(
                 checkpoint.entry_price,
                 checkpoint.current_price,
             )
+        summary_label = "REFERENCIA" if tracking else "COMPRA"
+        price_label = "PRECIO" if tracking else "ENTRADA"
         lines.append(
-            "  COMPRA "
-            f"{_styled(opportunity.symbol, _TICKER_STYLE, color)} | "
+            f"  {summary_label} {_styled(opportunity.symbol, _TICKER_STYLE, color)} | "
             f"MADUREZ {checkpoint.level.value} | ESTADO {checkpoint.status.value} | "
-            f"ENTRADA {_styled(str(checkpoint.entry_price), _ENTRY_STYLE, color)} | "
+            f"{price_label} {_styled(str(checkpoint.entry_price), _ENTRY_STYLE, color)} | "
             f"{mark_label} {_styled(str(mark), _EXIT_STYLE, color)} | "
             f"P/L {_styled_percent(performance, color=color)}"
         )
