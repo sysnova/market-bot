@@ -201,14 +201,17 @@ wait_ready() {
 
 run_control() {
   cd "$PROJECT_ROOT"
-  local -a child_pids=()
-  local -a child_names=()
+  # EXIT traps run after Bash has unwound function-local variables. Keep the
+  # child registry in shell scope so cleanup can still terminate every process
+  # group when startup fails.
+  MARKETBOT_CHILD_PIDS=()
+  MARKETBOT_CHILD_NAMES=()
 
   cleanup() {
     trap - EXIT INT TERM
     echo
     echo "Stopping every MarketBot process..."
-    for pid in "${child_pids[@]}"; do
+    for pid in "${MARKETBOT_CHILD_PIDS[@]}"; do
       kill -TERM -- "-$pid" 2>/dev/null || true
       kill -TERM "$pid" 2>/dev/null || true
     done
@@ -216,14 +219,14 @@ run_control() {
     local deadline=$((SECONDS + 8)) running pid
     while ((SECONDS < deadline)); do
       running=0
-      for pid in "${child_pids[@]}"; do
+      for pid in "${MARKETBOT_CHILD_PIDS[@]}"; do
         kill -0 "$pid" 2>/dev/null && running=1
       done
       ((running == 0)) && break
       sleep 0.2
     done
 
-    for pid in "${child_pids[@]}"; do
+    for pid in "${MARKETBOT_CHILD_PIDS[@]}"; do
       kill -KILL -- "-$pid" 2>/dev/null || true
       kill -KILL "$pid" 2>/dev/null || true
     done
@@ -238,17 +241,17 @@ run_control() {
   start_background() {
     local name="$1"; shift
     setsid uv "$@" >"$LOG_ROOT/$name.out.log" 2>"$LOG_ROOT/$name.err.log" &
-    child_pids+=("$!")
-    child_names+=("$name")
+    MARKETBOT_CHILD_PIDS+=("$!")
+    MARKETBOT_CHILD_NAMES+=("$name")
     echo "Started $name (PID $!)"
   }
 
   check_children() {
     local index
-    for index in "${!child_pids[@]}"; do
-      if ! kill -0 "${child_pids[$index]}" 2>/dev/null; then
-        echo "${child_names[$index]} exited unexpectedly." >&2
-        echo "Inspect $LOG_ROOT/${child_names[$index]}.err.log" >&2
+    for index in "${!MARKETBOT_CHILD_PIDS[@]}"; do
+      if ! kill -0 "${MARKETBOT_CHILD_PIDS[$index]}" 2>/dev/null; then
+        echo "${MARKETBOT_CHILD_NAMES[$index]} exited unexpectedly." >&2
+        echo "Inspect $LOG_ROOT/${MARKETBOT_CHILD_NAMES[$index]}.err.log" >&2
         return 1
       fi
     done
@@ -358,6 +361,9 @@ launch_tmux() {
     exec tmux attach-session -t "$SESSION"
   fi
 
+  # A failed control pane can leave detached process groups behind. They keep
+  # exclusive JetStream durables bound and make every later startup fail.
+  "$PROJECT_ROOT/scripts/linux/stop-market-bot.sh" --session "$SESSION"
   clear_runtime_readiness
   export MARKETBOT_LINUX_READINESS_CLEARED=1
   tmux new-session -d -s "$SESSION" -n MarketBot "$control"

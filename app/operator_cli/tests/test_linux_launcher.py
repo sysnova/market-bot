@@ -72,6 +72,26 @@ def test_linux_launcher_cleanup_signals_groups_and_direct_children() -> None:
     assert '|| kill -KILL "$pid"' not in cleanup
 
 
+def test_linux_launcher_keeps_child_registry_alive_for_exit_cleanup() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    control = script.split("run_control()", 1)[1].split("launch_tmux()", 1)[0]
+
+    assert "MARKETBOT_CHILD_PIDS=()" in control
+    assert "MARKETBOT_CHILD_NAMES=()" in control
+    assert 'for pid in "${MARKETBOT_CHILD_PIDS[@]}"' in control
+    assert 'MARKETBOT_CHILD_PIDS+=("$!")' in control
+    assert "local -a child_pids=()" not in control
+
+
+def test_linux_launcher_stops_orphans_before_creating_a_fresh_session() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    launch = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
+
+    stop_orphans = '"$PROJECT_ROOT/scripts/linux/stop-market-bot.sh" --session "$SESSION"'
+    assert stop_orphans in launch
+    assert launch.index(stop_orphans) < launch.index("tmux new-session")
+
+
 def test_linux_launcher_clears_readiness_before_starting_monitor_panes() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     launch = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
