@@ -133,8 +133,8 @@ The PowerShell launcher resolves the repository location automatically. With no 
 starts every engine as an independent process. Three consoles remain visible and are tiled as
 full-width horizontal rows on the primary monitor: supervisor/control at the top, analysis in the
 middle, and confirmed buys at the bottom. Technical processes stay hidden and write individual
-logs. The launcher starts Market History before the analytical engines; only after all consumers
-are ready does it start the Alpaca WebSocket-to-NATS process:
+logs. The launcher starts Market History before Entry Opportunity recovery and the analytical
+engines; only after all consumers are ready does it start the Alpaca WebSocket-to-NATS process:
 
 ```powershell
 .\scripts\windows\start-market-bot.ps1

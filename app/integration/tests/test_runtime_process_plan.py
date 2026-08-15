@@ -52,8 +52,9 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     }
 
     assert positions["outbox-relay"] < positions["alert"]
-    assert positions["alert"] < positions["market-history-v1"]
-    assert positions["entry-recovery"] < positions["market-history-v1"]
+    assert positions["outbox-relay"] < positions["market-history-v1"]
+    assert positions["market-history-v1"] < positions["entry-opportunity"]
+    assert "market-history-v1" in plan.process("entry-opportunity").dependencies
     assert positions["market-history-v1"] < positions["long-portfolio-v1"]
     assert positions["long-portfolio-v1"] < positions["long-term"]
     assert positions["long-term"] < positions["alpaca-market-stream"]

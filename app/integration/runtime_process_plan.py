@@ -174,19 +174,11 @@ def build_runtime_process_plan(
         ),
     )
     for name, slot, arguments in initial_specs:
-        add(name, arguments, slot=slot, dependencies=("outbox-relay",))
+        dependencies = ("outbox-relay",)
+        if slot is EngineSlot.ENTRY_OPPORTUNITY:
+            dependencies += ("market-history-v1",)
+        add(name, arguments, slot=slot, dependencies=dependencies)
 
-    initial_names = tuple(
-        process.name
-        for process in processes
-        if process.engine_slot
-        in {
-            EngineSlot.ALERT,
-            EngineSlot.ENTRY_WATCHER,
-            EngineSlot.ENTRY_OPPORTUNITY,
-            EngineSlot.ENTRY_RECOVERY,
-        }
-    )
     add(
         "market-history-v1",
         (
@@ -197,7 +189,7 @@ def build_runtime_process_plan(
             "--ready-path",
             str(ready("market-history-v1")),
         ),
-        dependencies=initial_names,
+        dependencies=("outbox-relay",),
     )
     add(
         "long-portfolio-v1",
