@@ -26,6 +26,12 @@ temporary compatibility adapter for older in-process callers.
 move `current_maturity` and status from `IN_ZONE` back to `ARMED`. `peak_maturity` remains
 `IN_ZONE`, preserving the highest stage reached, and L1-L4 confirmation never regresses.
 
+Each accepted final one-minute bar advances a persisted `last_market_bar_at` cursor. The
+distributed process subscribes to live bars in buffer mode, forces Market History to reconcile
+the latest REST tail, replays only PostgreSQL bars after that cursor, and then drains buffered live
+bars in timestamp order. This makes restart recovery independent of retained JetStream bar history;
+duplicate or older bars are ignored.
+
 Commands:
 
 ```bash

@@ -489,6 +489,11 @@ class EntryOpportunityEngine:
         active = await self._store.load_active(bar.symbol)
         if active is None or bar.timestamp < active.armed_at:
             return ()
+        if (
+            active.last_market_bar_at is not None
+            and bar.timestamp <= active.last_market_bar_at
+        ):
+            return ()
         checkpoints = tuple(_mark_checkpoint(item, bar) for item in active.checkpoints)
         legs = tuple(_mark_leg(item, bar) for item in active.legs)
         marked = active.model_copy(update={"checkpoints": checkpoints})
@@ -497,7 +502,13 @@ class EntryOpportunityEngine:
         reasons = _leg_close_reasons(active.legs, legs)
 
         if bar.low <= active.invalidation:
-            updated = active.model_copy(update={"checkpoints": checkpoints, "legs": legs})
+            updated = active.model_copy(
+                update={
+                    "checkpoints": checkpoints,
+                    "legs": legs,
+                    "last_market_bar_at": bar.timestamp,
+                }
+            )
             closed = self._close_opportunity(
                 updated,
                 price=active.invalidation,
@@ -532,7 +543,8 @@ class EntryOpportunityEngine:
         updated = active.model_copy(
             update={
                 "current_price": bar.close,
-                "updated_at": bar.timestamp,
+                "updated_at": max(active.updated_at, bar.timestamp),
+                "last_market_bar_at": bar.timestamp,
                 "revision": active.revision + 1,
                 "legs": legs,
                 "checkpoints": checkpoints,

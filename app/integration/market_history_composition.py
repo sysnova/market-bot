@@ -60,12 +60,14 @@ class MarketHistoryLoader:
         symbols: tuple[str, ...],
         requirements: tuple[MarketHistoryRequirement, ...],
         as_of: datetime,
+        force_refresh: bool = False,
     ) -> tuple[MarketBar, ...]:
         request = MarketHistoryRequest(
             engine_id=engine_id,
             symbols=symbols,
             requirements=requirements,
             requested_at=as_of,
+            force_refresh=force_refresh,
         )
         await self._client.ensure(request)
         output: list[MarketBar] = []
@@ -103,6 +105,7 @@ async def load_market_history(
     symbols: tuple[str, ...],
     requirements: tuple[MarketHistoryRequirement, ...],
     as_of: datetime,
+    force_refresh: bool = False,
 ) -> tuple[MarketBar, ...]:
     client = await NatsMarketHistoryClient.connect(
         [settings.nats_url.get_secret_value()],
@@ -117,6 +120,7 @@ async def load_market_history(
             symbols=symbols,
             requirements=requirements,
             as_of=as_of,
+            force_refresh=force_refresh,
         )
     finally:
         await client.close()

@@ -215,6 +215,19 @@ therefore re-download at most that recent gap. PostgreSQL retention is bounded p
 timeframe (currently 750 one-minute, 250 fifteen-minute, 650 hourly, 650 daily, and 500 weekly bars,
 or a larger registered engine requirement plus margin).
 
+Entry Opportunity persists its latest processed one-minute timestamp and, on restart, forces
+Market History to reconcile the missing REST tail before replaying PostgreSQL bars after that
+cursor. Its JetStream subscription is opened first in buffer mode so live bars arriving during
+recovery are merged without a startup gap. Retained JetStream bars are therefore a short-lived
+transport buffer rather than Entry Opportunity's historical recovery source.
+
+Live `marketbot.v1.market.bar.>` messages carry a seven-day per-message JetStream TTL. The parent
+`MARKETBOT` stream retains other versioned events for up to 15 days, so reducing bar storage does
+not shorten analysis, signal, transition, alert, or DLQ retention. Signal backtesting is unaffected:
+it downloads historical OHLCV directly and runs on an in-memory bus without operational NATS.
+The TTL is attached when a bar is published; bars already stored before activation keep the
+stream's former 15-day maximum and age out naturally unless an operator performs a filtered purge.
+
 Before the first run, apply `supabase/migrations/20260802170000_market_bar_cache.sql` to the local
 `postgres-local` database. The directory name is retained for versioned schema compatibility; no
 Supabase service or external database is queried at runtime.

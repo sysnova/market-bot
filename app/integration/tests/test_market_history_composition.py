@@ -86,6 +86,28 @@ async def test_loader_requests_sync_then_reads_each_required_timeframe() -> None
     ]
 
 
+async def test_loader_can_force_a_tail_refresh_before_recovery() -> None:
+    client = FakeClient()
+    loader = MarketHistoryLoader(client=client, repository=FakeRepository())  # type: ignore[arg-type]
+    requirements = (
+        MarketHistoryRequirement(
+            timeframe=BarTimeframe.MINUTE_1,
+            lookback=timedelta(days=1),
+            max_bars_per_symbol=500,
+        ),
+    )
+
+    await loader.ensure_and_load(
+        engine_id="entry-opportunity-recovery",
+        symbols=("TGT",),
+        requirements=requirements,
+        as_of=NOW,
+        force_refresh=True,
+    )
+
+    assert client.requests[0].force_refresh is True  # type: ignore[attr-defined]
+
+
 async def test_loader_overfetches_and_removes_extended_intraday_bars() -> None:
     client = FakeClient()
     repository = FakeRepository(

@@ -587,6 +587,34 @@ async def test_session_close_closes_intraday_leg_but_keeps_swing_and_long_open()
 
 
 @pytest.mark.unit
+async def test_market_bar_cursor_makes_recovery_idempotent() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.ARMED,
+            watch_id="0195f3a5-9000-7000-8000-000000000021",
+            price="100",
+        )
+    )
+    processed_at = NOW + timedelta(minutes=30)
+    await manager.ingest_bar(bar(timestamp=processed_at, close="104"))
+    processed = await store.load_active("AAPL")
+    assert processed is not None
+    assert processed.last_market_bar_at == processed_at
+
+    await manager.ingest_bar(
+        bar(timestamp=processed_at, close="99", low="98", high="105")
+    )
+    await manager.ingest_bar(
+        bar(timestamp=processed_at - timedelta(minutes=1), close="98", low="97", high="104")
+    )
+
+    recovered = await store.load_active("AAPL")
+    assert recovered == processed
+
+
+@pytest.mark.unit
 async def test_delayed_triggered_is_not_dropped_after_a_newer_bar() -> None:
     store = InMemoryEntryOpportunityStore()
     manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)

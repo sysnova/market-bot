@@ -129,6 +129,7 @@ class MarketHistoryService:
                 as_of=request.requested_at,
                 freshness=self._freshness,
                 batch_size=self._batch_size,
+                force_refresh=request.force_refresh,
             ):
                 raw = await self._rest.fetch_bars(
                     batch,
@@ -193,6 +194,7 @@ def _pending_sync_batches(
     as_of: datetime,
     freshness: timedelta,
     batch_size: int,
+    force_refresh: bool = False,
 ) -> tuple[tuple[tuple[str, ...], datetime], ...]:
     threshold = as_of - freshness
     grouped: dict[datetime, list[str]] = {}
@@ -200,7 +202,8 @@ def _pending_sync_batches(
     for symbol in normalized:
         item = coverage.get(symbol, BarCoverage(count=0, latest=None))
         if (
-            item.count > 0
+            not force_refresh
+            and item.count > 0
             and item.latest is not None
             and item.downloaded_at is not None
             and item.downloaded_at >= threshold

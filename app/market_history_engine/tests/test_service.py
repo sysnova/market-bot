@@ -149,6 +149,33 @@ async def test_fresh_cache_skips_rest_during_engine_startup() -> None:
     assert rest.calls == []
 
 
+async def test_forced_recovery_refreshes_the_missing_tail_of_a_fresh_cache() -> None:
+    downloaded_at = NOW - timedelta(minutes=10)
+    latest = NOW - timedelta(minutes=20)
+    rest = FakeRest()
+    repository = FakeRepository(
+        {
+            "TGT": BarCoverage(count=100, latest=latest, downloaded_at=downloaded_at),
+            "ADUR": BarCoverage(count=80, latest=latest, downloaded_at=downloaded_at),
+        }
+    )
+    service = MarketHistoryService(
+        rest=rest,
+        repository=repository,
+        feed="sip",
+        batch_size=20,
+        freshness=timedelta(hours=1),
+    )
+    recovery = request(BarTimeframe.MINUTE_1, timedelta(days=1), 500).model_copy(
+        update={"force_refresh": True}
+    )
+
+    await service.ensure(recovery)
+
+    assert len(rest.calls) == 1
+    assert rest.calls[0]["start"] == latest - timedelta(minutes=2)
+
+
 async def test_missing_symbol_does_not_force_fresh_peer_to_redownload() -> None:
     rest = FakeRest()
     repository = FakeRepository(

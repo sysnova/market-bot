@@ -174,6 +174,7 @@ class EntryOpportunity(StrictFrozenModel):
     original_watch_id: UUID | None = None
     armed_at: datetime
     updated_at: datetime
+    last_market_bar_at: datetime | None = None
     expires_at: datetime
     closed_at: datetime | None = None
     close_reason: EntryCloseReason | None = None

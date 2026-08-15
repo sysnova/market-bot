@@ -40,9 +40,11 @@ class FakeJetStream:
     subscription: FakeSubscription = field(default_factory=lambda: FakeSubscription())
     subscribed: list[tuple[str, str | None, object]] = field(default_factory=list)
     stream_queries: list[str] = field(default_factory=list)
-    streams_added: list[tuple[str, list[str], float]] = field(default_factory=list)
+    streams_added: list[tuple[str, list[str], float, bool]] = field(default_factory=list)
+    streams_updated: list[object] = field(default_factory=list)
     last_messages: dict[str, FakeMessage] = field(default_factory=dict)
     stream_info_error: Exception | None = None
+    allow_msg_ttl: bool = True
 
     async def publish(
         self, subject: str, payload: bytes, *, headers: dict[str, str] | None = None
@@ -71,13 +73,18 @@ class FakeJetStream:
             config=SimpleNamespace(
                 subjects=stream_subjects("marketbot"),
                 max_age=15 * 24 * 60 * 60,
+                allow_msg_ttl=self.allow_msg_ttl,
             )
         )
 
     async def add_stream(
-        self, *, name: str, subjects: list[str], max_age: float
+        self, *, name: str, subjects: list[str], max_age: float, allow_msg_ttl: bool
     ) -> object:
-        self.streams_added.append((name, subjects, max_age))
+        self.streams_added.append((name, subjects, max_age, allow_msg_ttl))
+        return object()
+
+    async def update_stream(self, *, config: object) -> object:
+        self.streams_updated.append(config)
         return object()
 
     async def get_last_msg(self, stream: str, subject: str) -> FakeMessage:
@@ -174,8 +181,34 @@ async def test_connect_creates_stream_only_when_missing(
     bus = await NatsJetStreamEventBus.connect(servers=["nats://localhost:4222"])
 
     assert js.streams_added == [
-        ("MARKETBOT", ["marketbot.v1.>", "marketbot.dlq"], 15 * 24 * 60 * 60)
+        (
+            "MARKETBOT",
+            ["marketbot.v1.>", "marketbot.dlq"],
+            15 * 24 * 60 * 60,
+            True,
+        )
     ]
+    await bus.close()
+
+
+@pytest.mark.unit
+async def test_connect_enables_per_message_ttl_on_existing_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nats
+
+    js = FakeJetStream(allow_msg_ttl=False)
+    client = FakeClient(js)
+
+    async def connect(**_: Any) -> FakeClient:
+        return client
+
+    monkeypatch.setattr(nats, "connect", connect)
+
+    bus = await NatsJetStreamEventBus.connect(servers=["nats://localhost:4222"])
+
+    assert len(js.streams_updated) == 1
+    assert js.streams_updated[0].allow_msg_ttl is True
     await bus.close()
 
 
@@ -205,6 +238,21 @@ async def test_publish_does_not_duplicate_an_already_qualified_prefix(
     await bus.publish("marketbot.v1.market.bar.1Min.AAPL", event)
 
     assert js.published[0][0] == "marketbot.v1.market.bar.1Min.AAPL"
+
+
+@pytest.mark.unit
+async def test_publish_limits_market_bar_retention_to_seven_days(
+    event: EventEnvelope,
+) -> None:
+    js = FakeJetStream()
+    bus = NatsJetStreamEventBus(client=None, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]
+
+    await bus.publish("marketbot.v1.market.bar.1Min.AAPL", event)
+
+    assert js.published[0][2] == {
+        "Nats-Msg-Id": str(event.event_id),
+        "Nats-TTL": "168h",
+    }
 
 
 @pytest.mark.unit

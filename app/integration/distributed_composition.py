@@ -78,6 +78,10 @@ from .alert_sounds import (
     play_swing_setup_watch_sound,
 )
 from .engine_assembly import EngineSlot, MarketBotAssembly
+from .entry_opportunity_bar_recovery import (
+    entry_opportunity_history_requirements,
+    replay_pending_entry_opportunity_bars,
+)
 from .entry_opportunity_store import PostgresEntryOpportunityStore
 from .entry_signal_adapter import entry_signal_from_alert_watch, publish_entry_signal
 from .entry_watch_store import PostgresEntryWatchStore
@@ -804,6 +808,15 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
         engine = assembly.build_entry_opportunity(store=store)
         bus = await _connect_nats(settings)
+        active_opportunities = await store.list_active()
+        recovery_as_of = clock.now()
+        recovery_requirements = entry_opportunity_history_requirements(
+            active_opportunities,
+            as_of=recovery_as_of,
+        )
+        recovery_lock = asyncio.Lock()
+        recovering_bars = True
+        buffered_live_bars: list[MarketBar] = []
 
         async def handle_analysis(envelope: EventEnvelope) -> None:
             if envelope.event_type != ANALYSIS_RESULT_EVENT:
@@ -826,6 +839,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             await engine.ingest_transition(transition)
 
         async def handle_bar(envelope: EventEnvelope) -> None:
+            nonlocal recovering_bars
             if envelope.event_type not in {"market.bar.received", "market.bar.updated"}:
                 return
             bar = (
@@ -835,7 +849,11 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
             if not bar.is_final or bar.timeframe is not BarTimeframe.MINUTE_1:
                 return
-            await engine.ingest_bar(bar)
+            async with recovery_lock:
+                if recovering_bars:
+                    buffered_live_bars.append(bar)
+                    return
+                await engine.ingest_bar(bar)
 
         async def handle_alert(envelope: EventEnvelope) -> None:
             if envelope.event_type != LOCAL_ALERT_EVENT:
@@ -859,10 +877,44 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
             await engine.ingest_signal(signal)
 
+        subscriptions.append(
+            await bus.subscribe(
+                "marketbot.v1.market.bar.1Min.>",
+                handle_bar,
+                options=SubscriptionOptions(
+                    durable_name=f"marketbot-{service}-bars-v1",
+                    replay_all=False,
+                    ack_wait_seconds=60,
+                ),
+            )
+        )
+        recovered_bars = 0
+        if recovery_requirements:
+            historical_bars = await load_market_history(
+                settings,
+                database,
+                engine_id="entry-opportunity-recovery",
+                symbols=tuple(item.symbol for item in active_opportunities),
+                requirements=recovery_requirements,
+                as_of=recovery_as_of,
+                force_refresh=True,
+            )
+            async with recovery_lock:
+                recovered_bars = await replay_pending_entry_opportunity_bars(
+                    engine,
+                    active_opportunities,
+                    (*historical_bars, *buffered_live_bars),
+                )
+                buffered_live_bars.clear()
+                recovering_bars = False
+        else:
+            async with recovery_lock:
+                buffered_live_bars.clear()
+                recovering_bars = False
+
         handlers = [
             ("marketbot.v1.analysis.result.>", handle_analysis, "analysis"),
             ("marketbot.v1.entry-watch.transition.>", handle_transition, "entry-watch"),
-            ("marketbot.v1.market.bar.1Min.>", handle_bar, "bars"),
         ]
         if spec.implementation == "2.0.0":
             handlers.append(("marketbot.v1.entry-signal.>", handle_signal, "entry-signal"))
@@ -906,6 +958,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             "entry_watch_subject": "marketbot.v1.entry-watch.transition.>",
             "maturity_subject": "marketbot.v1.alert.local.>",
             "market_bar_subject": "marketbot.v1.market.bar.1Min.>",
+            "market_bar_recovery": "postgresql",
+            "recovered_market_bars": recovered_bars,
             "output_subject": "marketbot.v1.entry-opportunity.transition.>",
             "persistence": "postgresql",
             "delivery": "transactional-outbox",
