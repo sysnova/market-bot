@@ -10,6 +10,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol, cast
 
 import httpx
@@ -87,7 +88,7 @@ from .entry_signal_adapter import entry_signal_from_alert_watch, publish_entry_s
 from .entry_watch_store import PostgresEntryWatchStore
 from .intraday_worker import IntradayWorker
 from .long_term_worker import LongTermWorker
-from .market_history_composition import load_market_history
+from .market_history_composition import load_market_history, load_market_history_profiled
 from .outbox_relay import OutboxRelay
 from .postgres_universe import (
     PostgresUniverseClient,
@@ -99,6 +100,10 @@ from .universe_events import UniverseEventPublisher
 from .universe_policy import universe_health_details
 
 HistoryRequest = MarketHistoryRequirement
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((perf_counter() - started) * 1000, 3)
 
 
 class HorizonWorker(Protocol):
@@ -192,7 +197,7 @@ async def run_engine_process(
     once: bool = False,
     ready_path: Path | None = None,
 ) -> dict[str, object] | None:
-    """Bootstrap one horizon from REST, then consume only its live NATS subjects."""
+    """Bootstrap one horizon from PostgreSQL, then consume only its live NATS subjects."""
 
     if horizon not in {
         AnalysisHorizon.LONG_TERM,
@@ -209,15 +214,20 @@ async def run_engine_process(
     bus: NatsJetStreamEventBus | None = None
     database: AsyncEngine | None = None
     subscriptions: list[Subscription] = []
+    warmup_started = perf_counter()
     try:
+        universe_started = perf_counter()
         universe = await _resolve_universe(settings, symbols)
+        universe_ms = _elapsed_ms(universe_started)
+        nats_started = perf_counter()
         bus = await _connect_nats(settings)
+        nats_connect_ms = _elapsed_ms(nats_started)
         database = create_database_engine(
             settings.database_url.get_secret_value(),
             require_ssl=settings.environment is Environment.PRODUCTION,
         )
         as_of = clock.now()
-        bars = await load_market_history(
+        history = await load_market_history_profiled(
             settings,
             database,
             engine_id=_service_name(horizon),
@@ -225,11 +235,44 @@ async def run_engine_process(
             requirements=engine_history_requests(horizon),
             as_of=as_of,
         )
+        bars = history.bars
+        history_requirements = [
+            {
+                "timeframe": item.timeframe.value,
+                "repository_rows": item.repository_rows,
+                "selected_rows": item.selected_rows,
+                "repository_read_ms": item.repository_read_ms,
+                "selection_ms": item.selection_ms,
+            }
+            for item in history.requirements
+        ]
+        await logger.ainfo(
+            "distributed_engine_history_loaded",
+            service=_service_name(horizon),
+            symbols=len(universe.symbols),
+            historical_bars=len(bars),
+            ensure_ms=history.ensure_ms,
+            repository_read_ms=history.repository_read_ms,
+            selection_ms=history.selection_ms,
+            total_ms=history.total_ms,
+            requirements=history_requirements,
+        )
         worker = _build_worker(horizon, bus, assembly=assembly)
+        bootstrap_started = perf_counter()
         result_count = await worker.bootstrap(bars, symbols=universe.symbols)
+        bootstrap_ms = _elapsed_ms(bootstrap_started)
+        await logger.ainfo(
+            "distributed_engine_bootstrap_completed",
+            service=_service_name(horizon),
+            symbols=len(universe.symbols),
+            historical_bars=len(bars),
+            initial_results=result_count,
+            bootstrap_ms=bootstrap_ms,
+        )
         worker.activate_universe(universe.symbols)
         current_symbols = set(universe.symbols)
         refresh_lock = asyncio.Lock()
+        subscriptions_started = perf_counter()
         if not once:
             for index, subject in enumerate(engine_live_subjects(horizon), start=1):
                 subscriptions.append(
@@ -304,6 +347,8 @@ async def run_engine_process(
                         ),
                     )
                 )
+        subscriptions_ms = _elapsed_ms(subscriptions_started)
+        warmup_total_ms = _elapsed_ms(warmup_started)
         summary: dict[str, object] = {
             "service": _service_name(horizon),
             "horizon": horizon.value,
@@ -315,6 +360,16 @@ async def run_engine_process(
             "marketbot_definition_version": assembly.definition.version,
             "engine_implementation": assembly.spec(_slot_for_horizon(horizon)).implementation,
             "engine_strategy_version": assembly.spec(_slot_for_horizon(horizon)).strategy.version,
+            "warmup_total_ms": warmup_total_ms,
+            "warmup_universe_ms": universe_ms,
+            "warmup_nats_connect_ms": nats_connect_ms,
+            "warmup_history_ensure_ms": history.ensure_ms,
+            "warmup_history_repository_read_ms": history.repository_read_ms,
+            "warmup_history_selection_ms": history.selection_ms,
+            "warmup_history_total_ms": history.total_ms,
+            "warmup_bootstrap_ms": bootstrap_ms,
+            "warmup_subscriptions_ms": subscriptions_ms,
+            "warmup_history_requirements": history_requirements,
             **universe_health_details(_service_name(horizon)),
         }
         await _publish_health(bus, _service_name(horizon), summary, clock.now())

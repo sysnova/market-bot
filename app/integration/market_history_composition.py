@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -48,6 +50,31 @@ class HistoryRepository(Protocol):
     ) -> tuple[MarketBar, ...]: ...
 
 
+@dataclass(frozen=True)
+class HistoryRequirementProfile:
+    timeframe: BarTimeframe
+    repository_rows: int
+    selected_rows: int
+    repository_read_ms: float
+    selection_ms: float
+
+
+@dataclass(frozen=True)
+class MarketHistoryLoadProfile:
+    bars: tuple[MarketBar, ...]
+    ensure_ms: float
+    requirements: tuple[HistoryRequirementProfile, ...]
+    total_ms: float
+
+    @property
+    def repository_read_ms(self) -> float:
+        return sum(item.repository_read_ms for item in self.requirements)
+
+    @property
+    def selection_ms(self) -> float:
+        return sum(item.selection_ms for item in self.requirements)
+
+
 class MarketHistoryLoader:
     def __init__(self, *, client: HistoryClient, repository: HistoryRepository) -> None:
         self._client = client
@@ -62,6 +89,25 @@ class MarketHistoryLoader:
         as_of: datetime,
         force_refresh: bool = False,
     ) -> tuple[MarketBar, ...]:
+        profile = await self.ensure_and_load_profiled(
+            engine_id=engine_id,
+            symbols=symbols,
+            requirements=requirements,
+            as_of=as_of,
+            force_refresh=force_refresh,
+        )
+        return profile.bars
+
+    async def ensure_and_load_profiled(
+        self,
+        *,
+        engine_id: str,
+        symbols: tuple[str, ...],
+        requirements: tuple[MarketHistoryRequirement, ...],
+        as_of: datetime,
+        force_refresh: bool = False,
+    ) -> MarketHistoryLoadProfile:
+        total_started = perf_counter()
         request = MarketHistoryRequest(
             engine_id=engine_id,
             symbols=symbols,
@@ -69,9 +115,13 @@ class MarketHistoryLoader:
             requested_at=as_of,
             force_refresh=force_refresh,
         )
+        ensure_started = perf_counter()
         await self._client.ensure(request)
+        ensure_ms = _elapsed_ms(ensure_started)
         output: list[MarketBar] = []
+        requirement_profiles: list[HistoryRequirementProfile] = []
         for requirement in requirements:
+            repository_started = perf_counter()
             loaded = await self._repository.load_latest(
                 request.symbols,
                 requirement.timeframe,
@@ -79,6 +129,9 @@ class MarketHistoryLoader:
                     requirement.timeframe, requirement.max_bars_per_symbol
                 ),
             )
+            repository_read_ms = _elapsed_ms(repository_started)
+            selection_started = perf_counter()
+            output_started_at = len(output)
             eligible = tuple(
                 bar
                 for bar in loaded
@@ -94,7 +147,21 @@ class MarketHistoryLoader:
                         -requirement.max_bars_per_symbol :
                     ]
                 )
-        return tuple(output)
+            requirement_profiles.append(
+                HistoryRequirementProfile(
+                    timeframe=requirement.timeframe,
+                    repository_rows=len(loaded),
+                    selected_rows=len(output) - output_started_at,
+                    repository_read_ms=repository_read_ms,
+                    selection_ms=_elapsed_ms(selection_started),
+                )
+            )
+        return MarketHistoryLoadProfile(
+            bars=tuple(output),
+            ensure_ms=ensure_ms,
+            requirements=tuple(requirement_profiles),
+            total_ms=_elapsed_ms(total_started),
+        )
 
 
 async def load_market_history(
@@ -107,6 +174,29 @@ async def load_market_history(
     as_of: datetime,
     force_refresh: bool = False,
 ) -> tuple[MarketBar, ...]:
+    return (
+        await load_market_history_profiled(
+            settings,
+            database,
+            engine_id=engine_id,
+            symbols=symbols,
+            requirements=requirements,
+            as_of=as_of,
+            force_refresh=force_refresh,
+        )
+    ).bars
+
+
+async def load_market_history_profiled(
+    settings: AppSettings,
+    database: AsyncEngine,
+    *,
+    engine_id: str,
+    symbols: tuple[str, ...],
+    requirements: tuple[MarketHistoryRequirement, ...],
+    as_of: datetime,
+    force_refresh: bool = False,
+) -> MarketHistoryLoadProfile:
     client = await NatsMarketHistoryClient.connect(
         [settings.nats_url.get_secret_value()],
         timeout_seconds=settings.market_history_request_timeout_seconds,
@@ -115,7 +205,7 @@ async def load_market_history(
         return await MarketHistoryLoader(
             client=client,
             repository=PostgresMarketBarRepository(database),
-        ).ensure_and_load(
+        ).ensure_and_load_profiled(
             engine_id=engine_id,
             symbols=symbols,
             requirements=requirements,
@@ -124,6 +214,10 @@ async def load_market_history(
         )
     finally:
         await client.close()
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((perf_counter() - started) * 1000, 3)
 
 
 async def run_market_history_process(*, ready_path: Path | None = None) -> None:

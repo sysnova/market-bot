@@ -86,6 +86,46 @@ async def test_loader_requests_sync_then_reads_each_required_timeframe() -> None
     ]
 
 
+async def test_loader_profiles_ensure_database_read_and_selection_without_changing_bars() -> None:
+    client = FakeClient()
+    repository = FakeRepository()
+    loader = MarketHistoryLoader(client=client, repository=repository)  # type: ignore[arg-type]
+    requirements = (
+        MarketHistoryRequirement(
+            timeframe=BarTimeframe.DAY_1,
+            lookback=timedelta(days=400),
+            max_bars_per_symbol=260,
+        ),
+        MarketHistoryRequirement(
+            timeframe=BarTimeframe.WEEK_1,
+            lookback=timedelta(days=365 * 5),
+            max_bars_per_symbol=220,
+        ),
+    )
+
+    profile = await loader.ensure_and_load_profiled(
+        engine_id="long-term-v2",
+        symbols=("TGT",),
+        requirements=requirements,
+        as_of=NOW,
+    )
+
+    assert [item.timeframe for item in profile.bars] == [
+        BarTimeframe.DAY_1,
+        BarTimeframe.WEEK_1,
+    ]
+    assert profile.ensure_ms >= 0
+    assert profile.total_ms >= profile.ensure_ms
+    assert [item.timeframe for item in profile.requirements] == [
+        BarTimeframe.DAY_1,
+        BarTimeframe.WEEK_1,
+    ]
+    assert [item.repository_rows for item in profile.requirements] == [1, 1]
+    assert [item.selected_rows for item in profile.requirements] == [1, 1]
+    assert all(item.repository_read_ms >= 0 for item in profile.requirements)
+    assert all(item.selection_ms >= 0 for item in profile.requirements)
+
+
 async def test_loader_can_force_a_tail_refresh_before_recovery() -> None:
     client = FakeClient()
     loader = MarketHistoryLoader(client=client, repository=FakeRepository())  # type: ignore[arg-type]
