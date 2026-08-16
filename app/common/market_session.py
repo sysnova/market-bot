@@ -15,6 +15,7 @@ _INTRADAY_TIMEFRAMES = {
     BarTimeframe.MINUTE_5,
     BarTimeframe.MINUTE_15,
     BarTimeframe.HOUR_1,
+    BarTimeframe.HOUR_4,
 }
 
 

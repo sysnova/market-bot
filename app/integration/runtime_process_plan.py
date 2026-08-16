@@ -219,6 +219,16 @@ def build_runtime_process_plan(
         ),
         ("swing", EngineSlot.SWING, ("run", "marketbot", "engine", "swing")),
         (
+            "swing-channel-4h",
+            EngineSlot.SWING_CHANNEL_4H,
+            ("run", "marketbot", "engine", "swing-channel-4h"),
+        ),
+        (
+            "4hgeri",
+            EngineSlot.GERI_4H,
+            ("run", "marketbot", "engine", "4hgeri"),
+        ),
+        (
             "intraday",
             EngineSlot.INTRADAY,
             ("run", "marketbot", "engine", "intraday"),
@@ -274,6 +284,8 @@ def build_runtime_process_plan(
         if slot in {
             EngineSlot.LONG_TERM,
             EngineSlot.SWING,
+            EngineSlot.SWING_CHANNEL_4H,
+            EngineSlot.GERI_4H,
             EngineSlot.INTRADAY,
             EngineSlot.VOLUME_STRUCTURE,
             EngineSlot.OPTIONS_GAMMA,

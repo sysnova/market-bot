@@ -7,15 +7,20 @@ from app.contracts import (
     EntryOpportunityStatus,
     EntryWatchStatus,
     PatreonCapsState,
+    SwingChannelMaturity,
     analysis_result_subject,
     elliott_wave_assessment_subject,
     entry_opportunity_subject,
     entry_watch_transition_subject,
+    geri_assessment_subject,
+    geri_transition_subject,
     local_alert_subject,
     market_bar_subject,
     patreon_caps_assessment_subject,
     patreon_caps_transition_subject,
     service_health_subject,
+    swing_channel_assessment_subject,
+    swing_channel_transition_subject,
 )
 
 
@@ -44,6 +49,16 @@ def test_stable_analysis_subjects_are_partitioned_by_kind_and_symbol() -> None:
     )
     assert elliott_wave_assessment_subject("BRK.B") == (
         "marketbot.v1.elliott-wave.assessment.BRK_B"
+    )
+    assert swing_channel_assessment_subject("BRK.B") == (
+        "marketbot.v1.swing-channel-4h.assessment.BRK_B"
+    )
+    assert swing_channel_transition_subject(SwingChannelMaturity.IN_ZONE_4H, "BRK.B") == (
+        "marketbot.v1.swing-channel-4h.transition.IN_ZONE_4H.BRK_B"
+    )
+    assert geri_assessment_subject("BRK.B") == "marketbot.v1.4hgeri.assessment.BRK_B"
+    assert geri_transition_subject("IN_ZONE_4H", "BRK.B") == (
+        "marketbot.v1.4hgeri.transition.IN_ZONE_4H.BRK_B"
     )
 
 

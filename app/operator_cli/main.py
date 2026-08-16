@@ -92,6 +92,13 @@ def _iso_date(value: str, *, option_name: str) -> date:
         ) from error
 
 
+def _backtest_simulated_date(*, source: date, today: date) -> date:
+    candidate = max(today, source + timedelta(days=1))
+    while candidate.weekday() >= 5:
+        candidate += timedelta(days=1)
+    return candidate
+
+
 def _placeholder(name: str, help_text: str) -> typer.Typer:
     group = typer.Typer(name=name, help=help_text, invoke_without_command=True)
 
@@ -253,6 +260,62 @@ def intraday_engine_process(
     """Run the independently configured Intraday process."""
 
     _engine_process("INTRADAY", once=once, symbols=symbols, ready_path=ready_path)
+
+
+@engine.command("swing-channel-4h")
+def swing_channel_4h_engine_process(
+    once: Annotated[bool, typer.Option(help="Analyze the current 4h channel once.")] = False,
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Comma-separated temporary universe; overrides PostgreSQL."),
+    ] = None,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after history and source replay."),
+    ] = Path(".runtime/status/swing-channel-4h-v1.ready.json"),
+) -> None:
+    """Run the independent four-hour Swing channel shadow process."""
+
+    from app.integration.swing_channel_4h_composition import (
+        run_swing_channel_4h_process,
+    )
+
+    summary = _run_async(
+        run_swing_channel_4h_process(
+            ready_path=ready_path,
+            once=once,
+            symbols=tuple(symbols.split(",")) if symbols else None,
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@engine.command("4hgeri")
+def swing_4h_geri_engine_process(
+    once: Annotated[bool, typer.Option(help="Analyze current 4HGERI levels once.")] = False,
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Comma-separated temporary universe; overrides PostgreSQL."),
+    ] = None,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after history and source replay."),
+    ] = Path(".runtime/status/4hgeri-v1.ready.json"),
+) -> None:
+    """Run the independent horizontal-level 4HGERI shadow process."""
+
+    from app.integration.swing_4h_geri_composition import run_swing_4h_geri_process
+
+    summary = _run_async(
+        run_swing_4h_geri_process(
+            ready_path=ready_path,
+            once=once,
+            symbols=tuple(symbols.split(",")) if symbols else None,
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
 @engine.command("rotation")
@@ -562,7 +625,9 @@ def market_backtest_process(
     ],
     simulated_date: Annotated[
         str | None,
-        typer.Option(help="Date exposed to engines; defaults to today in New York."),
+        typer.Option(
+            help="Date exposed to engines; defaults to the next eligible weekday."
+        ),
     ] = None,
     cadence_seconds: Annotated[
         float,
@@ -589,7 +654,10 @@ def market_backtest_process(
     target_date = (
         _iso_date(simulated_date, option_name="--simulated-date")
         if simulated_date is not None
-        else SystemClock().now().astimezone(ZoneInfo("America/New_York")).date()
+        else _backtest_simulated_date(
+            source=parsed_source,
+            today=SystemClock().now().astimezone(ZoneInfo("America/New_York")).date(),
+        )
     )
     try:
         quantity = Decimal(default_quantity)
@@ -845,6 +913,34 @@ def entry_opportunity_monitor(
     )
 
 
+@monitor.command("swing-channel-4h")
+def swing_channel_4h_monitor(
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file for the independent 4h channel view."),
+    ] = Path(".runtime/status/swing-channel-4h-monitor.ready.json"),
+) -> None:
+    """Run the process that shows live four-hour Swing channel maturity signals."""
+
+    from app.integration.swing_channel_4h_monitor import run_swing_channel_4h_monitor
+
+    _run_async(run_swing_channel_4h_monitor(ready_path=ready_path))
+
+
+@monitor.command("4hgeri")
+def swing_4h_geri_monitor(
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file for the independent 4HGERI view."),
+    ] = Path(".runtime/status/4hgeri-monitor.ready.json"),
+) -> None:
+    """Run the process that shows live horizontal-level 4HGERI signals."""
+
+    from app.integration.swing_4h_geri_monitor import run_swing_4h_geri_monitor
+
+    _run_async(run_swing_4h_geri_monitor(ready_path=ready_path))
+
+
 @monitor.command("news")
 def alpaca_news_monitor(
     history: Annotated[
@@ -977,6 +1073,35 @@ def entry_opportunity_report(
 
     report = _run_async(load_entry_opportunity_report(history=history))
     typer.echo(json.dumps(report, indent=2, sort_keys=True))
+
+
+@entry_opportunity.command("audit")
+def entry_opportunity_audit(
+    history: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            max=10000,
+            help="Recent opportunities included in the evidence audit.",
+        ),
+    ] = 5000,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit the audit as machine-readable JSON."),
+    ] = False,
+) -> None:
+    """Explain negative evidence without counting ARMED/IN_ZONE as trades."""
+
+    from app.integration.entry_opportunity_report import (
+        load_entry_opportunity_report,
+        render_entry_opportunity_evidence_audit,
+    )
+
+    audit = _run_async(load_entry_opportunity_report(history=history))["evidence_audit"]
+    if json_output:
+        typer.echo(json.dumps(audit, indent=2, sort_keys=True))
+        return
+    typer.echo(render_entry_opportunity_evidence_audit(audit))
 
 
 @entry_opportunity.command("prune-history")

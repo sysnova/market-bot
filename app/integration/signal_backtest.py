@@ -14,7 +14,7 @@ from typing import Protocol, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from app.alert_engine import AlertDispatcher
+from app.alert_engine import AlertDispatcher, SolidBuyOutcome, evaluate_solid_buy_outcomes
 from app.alpaca_market_data import AlpacaEventNormalizer
 from app.alpaca_market_data.rest import AlpacaRestClient
 from app.alpaca_market_data.transports import HttpxTransport
@@ -27,7 +27,11 @@ from app.contracts import (
     ENTRY_SIGNAL_EVENT,
     ENTRY_WATCH_TRANSITION_EVENT,
     FUSION_TRANSITION_EVENT,
+    GERI_ASSESSMENT_EVENT,
+    GERI_TRANSITION_EVENT,
     MARKET_BAR_EVENT,
+    SWING_CHANNEL_ASSESSMENT_EVENT,
+    SWING_CHANNEL_TRANSITION_EVENT,
     AnalysisHorizon,
     AnalysisResult,
     BarTimeframe,
@@ -37,8 +41,14 @@ from app.contracts import (
     EventEnvelope,
     EventHandler,
     FusionTransition,
+    GeriAssessment,
+    GeriMaturity,
+    GeriTransition,
     LocalAlert,
     MarketBar,
+    SwingChannelAssessment,
+    SwingChannelMaturity,
+    SwingChannelTransition,
     entry_opportunity_subject,
     entry_watch_transition_subject,
     market_bar_subject,
@@ -51,11 +61,14 @@ from app.event_bus import InMemoryEventBus
 from .alert_publisher import AlertEventPublisher
 from .elliott_wave_composition import ElliottWaveRuntime
 from .engine_assembly import MarketBotAssembly
+from .entry_opportunity_report import build_entry_opportunity_report
 from .entry_signal_adapter import entry_signal_from_alert_watch, publish_entry_signal
 from .intraday_worker import IntradayWorker
 from .long_term_worker import LongTermWorker
 from .signal_fusion_composition import FUSION_SOURCE_SUBJECTS, SignalFusionRuntime
 from .support_confirmation_composition import SupportConfirmationRuntime
+from .swing_4h_geri_composition import Swing4HGeriRuntime
+from .swing_channel_4h_composition import SwingChannel4HRuntime
 from .swing_worker import SwingWorker
 from .volume_structure_composition import VolumeStructureRuntime
 
@@ -208,22 +221,24 @@ async def replay_bars_at_cadence(
     cadence_seconds: float,
     handle: Callable[[MarketBar], Awaitable[None]],
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    flush: Callable[[], Awaitable[None]] | None = None,
 ) -> int:
-    """Deliver one timestamp group atomically, then apply the requested cadence."""
+    """Deliver and settle one timestamp group before advancing simulated time."""
 
     ordered = tuple(sorted(bars, key=lambda bar: (bar.timestamp, bar.symbol)))
     count = 0
     previous_timestamp: datetime | None = None
     for bar in ordered:
-        if (
-            previous_timestamp is not None
-            and bar.timestamp != previous_timestamp
-            and cadence_seconds > 0
-        ):
-            await sleep(cadence_seconds)
+        if previous_timestamp is not None and bar.timestamp != previous_timestamp:
+            if flush is not None:
+                await flush()
+            if cadence_seconds > 0:
+                await sleep(cadence_seconds)
         await handle(bar)
         previous_timestamp = bar.timestamp
         count += 1
+    if previous_timestamp is not None and flush is not None:
+        await flush()
     return count
 
 
@@ -288,15 +303,32 @@ async def run_signal_backtest(
         engine=assembly.build_volume_structure(),
         publisher=bus,
     )
+    swing_channel = SwingChannel4HRuntime(
+        engine=assembly.build_swing_channel_4h(),
+        publisher=bus,
+        clock=clock,
+    )
+    geri = Swing4HGeriRuntime(
+        engine=assembly.build_4hgeri(),
+        publisher=bus,
+        clock=clock,
+    )
     signals: list[EntrySignal] = []
+    swing_results: list[AnalysisResult] = []
     volume_structure_results: list[AnalysisResult] = []
     fusion_transitions: list[FusionTransition] = []
+    swing_channel_assessments: list[SwingChannelAssessment] = []
+    swing_channel_transitions: list[SwingChannelTransition] = []
+    geri_assessments: list[GeriAssessment] = []
+    geri_transitions: list[GeriTransition] = []
     handler_errors: list[Exception] = []
 
     async def handle_analysis(envelope: EventEnvelope) -> None:
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
             return
         result = _payload(envelope, AnalysisResult)
+        if result.horizon is AnalysisHorizon.SWING:
+            swing_results.append(result)
         if result.horizon is AnalysisHorizon.VOLUME_STRUCTURE:
             volume_structure_results.append(result)
         await _publish_opportunity_events(
@@ -347,18 +379,31 @@ async def run_signal_backtest(
         if envelope.event_type == FUSION_TRANSITION_EVENT:
             fusion_transitions.append(_payload(envelope, FusionTransition))
 
+    async def collect_swing_channel(envelope: EventEnvelope) -> None:
+        if envelope.event_type == SWING_CHANNEL_ASSESSMENT_EVENT:
+            swing_channel_assessments.append(
+                _payload(envelope, SwingChannelAssessment)
+            )
+        elif envelope.event_type == SWING_CHANNEL_TRANSITION_EVENT:
+            swing_channel_transitions.append(
+                _payload(envelope, SwingChannelTransition)
+            )
+
+    async def collect_geri(envelope: EventEnvelope) -> None:
+        if envelope.event_type == GERI_ASSESSMENT_EVENT:
+            geri_assessments.append(_payload(envelope, GeriAssessment))
+        elif envelope.event_type == GERI_TRANSITION_EVENT:
+            geri_transitions.append(_payload(envelope, GeriTransition))
+
     async def handle_bar(bar: MarketBar) -> None:
         delta = bar.timestamp - clock.now()
         if delta.total_seconds() > 0:
             clock.advance(delta)
-        envelope = EventEnvelope(
-            event_type=MARKET_BAR_EVENT,
-            occurred_at=bar.timestamp,
-            source="market-backtest",
-            subject=bar.symbol,
-            payload=bar,
+        await _ingest_opportunity_then_publish_bar(
+            cast("_OpportunityBarEngine", opportunity),
+            bus,
+            bar,
         )
-        await bus.publish(market_bar_subject(bar.timeframe, bar.symbol), envelope)
 
     try:
         for subject in FUSION_SOURCE_SUBJECTS:
@@ -382,6 +427,66 @@ async def run_signal_backtest(
             collect_fusion,
             handler_errors,
         )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.swing-channel-4h.assessment.>",
+            collect_swing_channel,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.swing-channel-4h.transition.>",
+            collect_swing_channel,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.analysis.result.SWING.>",
+            swing_channel.handle_analysis,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.entry-opportunity.transition.>",
+            swing_channel.handle_opportunity,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.market.bar.1Min.>",
+            swing_channel.handle_market,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.4hgeri.assessment.>",
+            collect_geri,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.4hgeri.transition.>",
+            collect_geri,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.analysis.result.SWING.>",
+            geri.handle_analysis,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.entry-opportunity.transition.>",
+            geri.handle_opportunity,
+            handler_errors,
+        )
+        await _subscribe_checked(
+            bus,
+            "marketbot.v1.market.bar.1Min.>",
+            geri.handle_market,
+            handler_errors,
+        )
         for worker in (long_worker, swing_worker, intraday_worker):
             await _subscribe_checked(
                 bus,
@@ -389,16 +494,11 @@ async def run_signal_backtest(
                 worker.handle_market_event,
                 handler_errors,
             )
-        await _subscribe_checked(
-            bus,
-            "marketbot.v1.market.bar.1Min.>",
-            _opportunity_bar_handler(cast("_OpportunityBarEngine", opportunity), bus),
-            handler_errors,
-        )
-
         await volume_structure.bootstrap(data.warmup_bars, symbols=config.symbols)
         await support.bootstrap(data.warmup_bars, symbols=config.symbols)
         await wave.bootstrap(data.warmup_bars, symbols=config.symbols)
+        await swing_channel.bootstrap(data.warmup_bars, symbols=config.symbols)
+        await geri.bootstrap(data.warmup_bars, symbols=config.symbols)
         await long_worker.bootstrap(data.warmup_bars, symbols=config.symbols)
         await swing_worker.bootstrap(data.warmup_bars, symbols=config.symbols)
         await intraday_worker.bootstrap(data.warmup_bars, symbols=config.symbols)
@@ -408,6 +508,7 @@ async def run_signal_backtest(
             cadence_seconds=config.cadence_seconds,
             handle=handle_bar,
             sleep=sleep,
+            flush=bus.join,
         )
         await _publish_opportunity_events(
             bus,
@@ -416,6 +517,17 @@ async def run_signal_backtest(
         await bus.join()
         if handler_errors:
             raise RuntimeError("backtest event handler failed") from handler_errors[0]
+        opportunities = tuple(opportunity_store.opportunities.values())
+        minute_bars = _minute_bars_by_symbol(data.session_bars)
+        solid_buy_outcomes = evaluate_solid_buy_outcomes(
+            tuple(alert_recorder.alerts),
+            minute_bars,
+        )
+        swing_channel_outcomes = _swing_channel_outcomes(
+            tuple(swing_channel_transitions),
+            minute_bars,
+        )
+        geri_outcomes = _geri_outcomes(tuple(geri_transitions), minute_bars)
         report: dict[str, object] = {
             "mode": "backtest",
             "run_id": config.run_id,
@@ -432,13 +544,40 @@ async def run_signal_backtest(
             "operational_nats_used": False,
             "operational_database_used": False,
             "alerts": [item.model_dump(mode="json") for item in alert_recorder.alerts],
+            "solid_buy_outcomes": [
+                _solid_buy_outcome_payload(item) for item in solid_buy_outcomes
+            ],
             "entry_signals": [item.model_dump(mode="json") for item in signals],
+            "swing_results": [item.model_dump(mode="json") for item in swing_results],
             "volume_structure_results": [
                 item.model_dump(mode="json") for item in volume_structure_results
             ],
             "fusion_transitions": [item.model_dump(mode="json") for item in fusion_transitions],
+            "swing_channel_4h_assessments": [
+                item.model_dump(mode="json") for item in swing_channel_assessments
+            ],
+            "swing_channel_4h_transitions": [
+                item.model_dump(mode="json") for item in swing_channel_transitions
+            ],
+            "swing_channel_4h_outcomes": swing_channel_outcomes,
+            "swing_channel_4h_vs_swing": _swing_channel_comparisons(
+                tuple(swing_channel_assessments)
+            ),
+            "4hgeri_assessments": [
+                item.model_dump(mode="json") for item in geri_assessments
+            ],
+            "4hgeri_transitions": [
+                item.model_dump(mode="json") for item in geri_transitions
+            ],
+            "4hgeri_outcomes": geri_outcomes,
+            "three_swing_model_comparison": _three_swing_model_comparison(
+                tuple(swing_channel_assessments), tuple(geri_assessments)
+            ),
             "opportunities": [
-                item.model_dump(mode="json") for item in opportunity_store.opportunities.values()
+                item.model_dump(mode="json") for item in opportunities
+            ],
+            "opportunity_evidence_audit": build_entry_opportunity_report(opportunities)[
+                "evidence_audit"
             ],
             "opportunity_events": [
                 item.model_dump(mode="json") for item in opportunity_store.events
@@ -456,16 +595,292 @@ async def run_signal_backtest(
             await cast("AlpacaRestClient", rest_client).close()
 
 
-def _opportunity_bar_handler(
-    opportunity: _OpportunityBarEngine, bus: InMemoryEventBus
-) -> Callable[[EventEnvelope], Awaitable[None]]:
-    async def handle(envelope: EventEnvelope) -> None:
-        bar = _payload(envelope, MarketBar)
-        if bar.is_final and bar.timeframe is BarTimeframe.MINUTE_1:
-            events = await opportunity.ingest_bar(bar)
-            await _publish_opportunity_events(bus, events)
+def _minute_bars_by_symbol(
+    bars: tuple[MarketBar, ...],
+) -> dict[str, tuple[MarketBar, ...]]:
+    grouped: dict[str, list[MarketBar]] = {}
+    for bar in bars:
+        if bar.timeframe is BarTimeframe.MINUTE_1:
+            grouped.setdefault(bar.symbol, []).append(bar)
+    return {
+        symbol: tuple(sorted(values, key=lambda item: item.timestamp))
+        for symbol, values in grouped.items()
+    }
 
-    return handle
+
+def _swing_channel_outcomes(
+    transitions: tuple[SwingChannelTransition, ...],
+    bars_by_symbol: Mapping[str, tuple[MarketBar, ...]],
+) -> list[dict[str, object]]:
+    """Measure each actionable 4h reference against later bars in the same replay."""
+
+    actionable = {
+        SwingChannelMaturity.IN_ZONE_4H,
+        SwingChannelMaturity.L2_4H,
+        SwingChannelMaturity.L3,
+        SwingChannelMaturity.L4,
+    }
+    outcomes: list[dict[str, object]] = []
+    for transition in transitions:
+        if transition.maturity not in actionable:
+            continue
+        future = tuple(
+            bar
+            for bar in bars_by_symbol.get(transition.symbol, ())
+            if bar.timestamp >= transition.occurred_at
+        )
+        entry = transition.current_price
+        outcomes.append(
+            {
+                "transition_id": str(transition.transition_id),
+                "symbol": transition.symbol,
+                "maturity": transition.maturity.value,
+                "occurred_at": transition.occurred_at.isoformat(),
+                "entry_price": str(entry),
+                "support": str(transition.support),
+                "invalidation": str(transition.invalidation),
+                "observed_bars": len(future),
+                "mfe_percent": _excursion_percent(future, entry=entry, favorable=True),
+                "mae_percent": _excursion_percent(future, entry=entry, favorable=False),
+                "return_15m": _forward_return(future, entry=entry, minutes=15),
+                "return_30m": _forward_return(future, entry=entry, minutes=30),
+                "return_60m": _forward_return(future, entry=entry, minutes=60),
+                "return_close": (
+                    str(_percent(future[-1].close, entry)) if future else None
+                ),
+            }
+        )
+    return outcomes
+
+
+def _swing_channel_comparisons(
+    assessments: tuple[SwingChannelAssessment, ...],
+) -> list[dict[str, object]]:
+    """Expose how much lower or higher the 4h support is than current Swing's zone."""
+
+    comparisons: list[dict[str, object]] = []
+    for item in assessments:
+        swing_low = item.current_swing_zone_low
+        swing_high = item.current_swing_zone_high
+        swing_center = (
+            (swing_low + swing_high) / Decimal("2")
+            if swing_low is not None and swing_high is not None
+            else None
+        )
+        comparisons.append(
+            {
+                "assessment_id": str(item.assessment_id),
+                "symbol": item.symbol,
+                "maturity": item.maturity.value,
+                "occurred_at": item.occurred_at.isoformat(),
+                "channel_zone_low": str(item.zone_low),
+                "channel_zone_high": str(item.zone_high),
+                "channel_support": str(item.support),
+                "current_swing_zone_low": str(swing_low) if swing_low is not None else None,
+                "current_swing_zone_high": (
+                    str(swing_high) if swing_high is not None else None
+                ),
+                "zones_overlap": item.daily_swing_aligned,
+                "channel_support_vs_swing_center_percent": (
+                    str(_percent(item.support, swing_center))
+                    if swing_center is not None
+                    else None
+                ),
+            }
+        )
+    return comparisons
+
+
+def _geri_outcomes(
+    transitions: tuple[GeriTransition, ...],
+    bars_by_symbol: Mapping[str, tuple[MarketBar, ...]],
+) -> list[dict[str, object]]:
+    actionable = {
+        GeriMaturity.IN_ZONE_4H,
+        GeriMaturity.L2_4H,
+        GeriMaturity.L3,
+        GeriMaturity.L4,
+    }
+    outcomes: list[dict[str, object]] = []
+    for transition in transitions:
+        if transition.maturity not in actionable:
+            continue
+        future = tuple(
+            bar
+            for bar in bars_by_symbol.get(transition.symbol, ())
+            if bar.timestamp >= transition.occurred_at
+        )
+        entry = transition.current_price
+        outcomes.append(
+            {
+                "transition_id": str(transition.transition_id),
+                "symbol": transition.symbol,
+                "maturity": transition.maturity.value,
+                "structural_level": transition.active_level_sequence,
+                "occurred_at": transition.occurred_at.isoformat(),
+                "entry_price": str(entry),
+                "support": str(transition.active_level_price),
+                "invalidation": (
+                    str(transition.invalidation)
+                    if transition.invalidation is not None
+                    else None
+                ),
+                "observed_bars": len(future),
+                "mfe_percent": _excursion_percent(future, entry=entry, favorable=True),
+                "mae_percent": _excursion_percent(future, entry=entry, favorable=False),
+                "return_15m": _forward_return(future, entry=entry, minutes=15),
+                "return_30m": _forward_return(future, entry=entry, minutes=30),
+                "return_60m": _forward_return(future, entry=entry, minutes=60),
+                "return_close": (
+                    str(_percent(future[-1].close, entry)) if future else None
+                ),
+            }
+        )
+    return outcomes
+
+
+def _three_swing_model_comparison(
+    channels: tuple[SwingChannelAssessment, ...],
+    geri_assessments: tuple[GeriAssessment, ...],
+) -> list[dict[str, object]]:
+    """Align 4HGERI support with the latest parallel channel and daily Swing zone."""
+
+    comparisons: list[dict[str, object]] = []
+    for geri in geri_assessments:
+        if geri.zone_low is None or geri.zone_high is None:
+            continue
+        channel = next(
+            (
+                item
+                for item in reversed(channels)
+                if item.symbol == geri.symbol and item.occurred_at <= geri.occurred_at
+            ),
+            None,
+        )
+        swing_low = geri.current_swing_zone_low
+        swing_high = geri.current_swing_zone_high
+        swing_center = (
+            (swing_low + swing_high) / Decimal("2")
+            if swing_low is not None and swing_high is not None
+            else None
+        )
+        comparisons.append(
+            {
+                "symbol": geri.symbol,
+                "occurred_at": geri.occurred_at.isoformat(),
+                "daily_swing_zone": (
+                    [str(swing_low), str(swing_high)]
+                    if swing_low is not None and swing_high is not None
+                    else None
+                ),
+                "parallel_4h_zone": (
+                    [str(channel.zone_low), str(channel.zone_high)]
+                    if channel is not None
+                    else None
+                ),
+                "4hgeri_zone": [str(geri.zone_low), str(geri.zone_high)],
+                "4hgeri_structural_level": geri.active_level_sequence,
+                "4hgeri_vs_daily_swing_center_percent": (
+                    str(_percent(geri.active_level_price, swing_center))
+                    if swing_center is not None
+                    else None
+                ),
+                "4hgeri_vs_parallel_support_percent": (
+                    str(_percent(geri.active_level_price, channel.support))
+                    if channel is not None
+                    else None
+                ),
+            }
+        )
+    return comparisons
+
+
+def _excursion_percent(
+    bars: tuple[MarketBar, ...], *, entry: Decimal, favorable: bool
+) -> str | None:
+    if not bars:
+        return None
+    price = (
+        max(bar.high for bar in bars)
+        if favorable
+        else min(bar.low for bar in bars)
+    )
+    return str(_percent(price, entry))
+
+
+def _forward_return(
+    bars: tuple[MarketBar, ...], *, entry: Decimal, minutes: int
+) -> str | None:
+    if not bars:
+        return None
+    target = bars[0].timestamp + timedelta(minutes=minutes - 1)
+    bar = next((item for item in bars if item.timestamp >= target), None)
+    return str(_percent(bar.close, entry)) if bar is not None else None
+
+
+def _percent(price: Decimal, reference: Decimal) -> Decimal:
+    return ((price / reference) - Decimal("1")) * Decimal("100")
+
+
+def _solid_buy_outcome_payload(outcome: SolidBuyOutcome) -> dict[str, object]:
+    return {
+        "alert_id": str(outcome.alert_id),
+        "symbol": outcome.symbol,
+        "alert_kind": outcome.alert_kind,
+        "occurred_at": outcome.occurred_at.isoformat(),
+        "entry_price": str(outcome.entry_price),
+        "invalidation": str(outcome.invalidation) if outcome.invalidation is not None else None,
+        "target": str(outcome.target) if outcome.target is not None else None,
+        "first_level_hit": outcome.first_level_hit,
+        "mfe_percent": (
+            str(outcome.mfe_percent) if outcome.mfe_percent is not None else None
+        ),
+        "mae_percent": (
+            str(outcome.mae_percent) if outcome.mae_percent is not None else None
+        ),
+        "return_15m": (
+            str(outcome.return_15m) if outcome.return_15m is not None else None
+        ),
+        "return_30m": (
+            str(outcome.return_30m) if outcome.return_30m is not None else None
+        ),
+        "return_60m": (
+            str(outcome.return_60m) if outcome.return_60m is not None else None
+        ),
+        "return_close": (
+            str(outcome.return_close) if outcome.return_close is not None else None
+        ),
+        "evaluated_through": (
+            outcome.evaluated_through.isoformat()
+            if outcome.evaluated_through is not None
+            else None
+        ),
+        "engine_versions": list(outcome.engine_versions),
+        "entry_confirmation_rule_versions": list(
+            outcome.entry_confirmation_rule_versions
+        ),
+    }
+
+
+async def _ingest_opportunity_then_publish_bar(
+    opportunity: _OpportunityBarEngine,
+    bus: InMemoryEventBus,
+    bar: MarketBar,
+) -> None:
+    """Advance paper evidence before analytical fan-out can replace its snapshot."""
+
+    if bar.is_final and bar.timeframe is BarTimeframe.MINUTE_1:
+        await _publish_opportunity_events(bus, await opportunity.ingest_bar(bar))
+    await bus.publish(
+        market_bar_subject(bar.timeframe, bar.symbol),
+        EventEnvelope(
+            event_type=MARKET_BAR_EVENT,
+            occurred_at=bar.timestamp,
+            source="market-backtest",
+            subject=bar.symbol,
+            payload=bar,
+        ),
+    )
 
 
 async def _publish_opportunity_events(

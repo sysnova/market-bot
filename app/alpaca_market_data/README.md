@@ -79,7 +79,11 @@ uv run marketbot market backtest 2026-08-05 `
 `--cadence-seconds` is the real wait between successive market-minute timestamps. Use `0` for an
 immediate run. All symbols sharing a timestamp are delivered together before applying the wait.
 The JSON artifact contains emitted alerts, stable Entry Signals, Signal Fusion transitions and
-the paper opportunity lifecycle for the run.
+the paper opportunity lifecycle for the run. It also includes `solid_buy_outcomes` with 15/30/60
+minute and closing markouts for confirmed buy alerts, plus `opportunity_evidence_audit`, which
+separates ARMED/IN_ZONE tracking references from actionable L1-L4 entries. When
+`--simulated-date` is omitted, the CLI selects the next eligible weekday so weekend execution does
+not turn regular-session evidence into out-of-session bars.
 
 ## Tests
 

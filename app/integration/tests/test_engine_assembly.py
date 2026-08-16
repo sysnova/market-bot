@@ -45,6 +45,8 @@ from app.options_gamma_engine import OptionsGammaEngine
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.signal_fusion_engine import SignalFusionEngineV05
+from app.swing_4h_geri_engine import Swing4HGeriEngine
+from app.swing_channel_4h_engine import SwingChannel4HEngine
 from app.swing_engine import SwingEngineV4, SwingEngineV5
 from app.volume_structure_engine import VolumeStructureEngineV11
 
@@ -61,6 +63,8 @@ PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 NEWS_DEFINITION = ROOT / "configs/marketbot/7.12.0.yaml"
 VISIBLE_NEWS_DEFINITION = ROOT / "configs/marketbot/7.13.0.yaml"
+SWING_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.14.0.yaml"
+GERI_DEFINITION = ROOT / "configs/marketbot/7.15.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -80,6 +84,23 @@ def test_visible_news_definition_keeps_buy_signals_and_marks_risk() -> None:
     assert isinstance(assembly.build_alert(), AlertEngineV37)
 
 
+def test_swing_channel_definition_adds_independent_shadow_engine() -> None:
+    assembly = MarketBotAssembly.from_path(SWING_CHANNEL_DEFINITION)
+
+    assert assembly.definition.version == "7.14.0"
+    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngine)
+    assert assembly.spec(EngineSlot.SWING_CHANNEL_4H).mode is EngineMode.ACTIVE
+
+
+def test_4hgeri_definition_keeps_both_swing_models_and_adds_third_shadow() -> None:
+    assembly = MarketBotAssembly.from_path(GERI_DEFINITION)
+
+    assert assembly.definition.version == "7.15.0"
+    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngine)
+    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngine)
+    assert assembly.spec(EngineSlot.GERI_4H).mode is EngineMode.ACTIVE
+
+
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
     definition = load_marketbot_definition(DEFINITION)
 
@@ -87,6 +108,8 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
         EngineSlot.VOLUME_STRUCTURE,
         EngineSlot.OPTIONS_GAMMA,
         EngineSlot.NEWS_INTELLIGENCE,
+        EngineSlot.SWING_CHANNEL_4H,
+        EngineSlot.GERI_4H,
     }
     assert definition.version == "7.2.0"
     assert all(item.strategy.version for item in definition.engines.values())
@@ -104,6 +127,8 @@ def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
     assert set(definition.engines) == set(EngineSlot) - {
         EngineSlot.OPTIONS_GAMMA,
         EngineSlot.NEWS_INTELLIGENCE,
+        EngineSlot.SWING_CHANNEL_4H,
+        EngineSlot.GERI_4H,
     }
     assert definition.version == "7.3.0"
     assert definition.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"

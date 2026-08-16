@@ -7,9 +7,19 @@ from pathlib import Path
 import pytest
 
 from app.common.settings import AppSettings
-from app.contracts import BarTimeframe, MarketBar
+from app.contracts import (
+    BarTimeframe,
+    MarketBar,
+    SwingChannelMaturity,
+    SwingChannelTransition,
+    market_bar_subject,
+    new_uuid7,
+)
+from app.event_bus import InMemoryEventBus
 from app.integration.signal_backtest import (
     SignalBacktestConfig,
+    _ingest_opportunity_then_publish_bar,
+    _swing_channel_outcomes,
     load_backtest_market_data,
     replay_bars_at_cadence,
     run_signal_backtest,
@@ -100,10 +110,39 @@ def test_config_rejects_invalid_cadence(cadence: float, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_backtest_marks_opportunity_before_fanning_out_the_same_bar() -> None:
+    calls: list[str] = []
+
+    class RecordingOpportunity:
+        async def ingest_bar(self, bar: MarketBar) -> tuple[object, ...]:
+            calls.append(f"opportunity:{bar.symbol}")
+            return ()
+
+    bus = InMemoryEventBus(retain_history=False, synchronous_delivery=True)
+
+    async def record_market_bar(envelope: object) -> None:
+        calls.append("market")
+
+    await bus.subscribe(market_bar_subject(BarTimeframe.MINUTE_1, "AAPL"), record_market_bar)
+    try:
+        await _ingest_opportunity_then_publish_bar(
+            RecordingOpportunity(),  # type: ignore[arg-type]
+            bus,
+            _bar("AAPL", 30),
+        )
+        await bus.join()
+    finally:
+        await bus.close()
+
+    assert calls == ["opportunity:AAPL", "market"]
+
+
+@pytest.mark.asyncio
 async def test_cadence_waits_once_between_market_timestamps_not_between_symbols() -> None:
     bars = (_bar("AAPL", 30), _bar("MSFT", 30), _bar("AAPL", 31))
     handled: list[MarketBar] = []
     sleeps: list[float] = []
+    flushes: list[int] = []
 
     async def handle(bar: MarketBar) -> None:
         handled.append(bar)
@@ -111,15 +150,57 @@ async def test_cadence_waits_once_between_market_timestamps_not_between_symbols(
     async def sleep(delay: float) -> None:
         sleeps.append(delay)
 
+    async def flush() -> None:
+        flushes.append(len(handled))
+
     await replay_bars_at_cadence(
         bars,
         cadence_seconds=0.25,
         handle=handle,
         sleep=sleep,
+        flush=flush,
     )
 
     assert handled == list(bars)
     assert sleeps == [0.25]
+    assert flushes == [2, 3]
+
+
+def test_swing_channel_outcomes_measure_each_maturity_from_its_own_reference() -> None:
+    occurred_at = datetime(2026, 8, 10, 13, 30, tzinfo=UTC)
+    transition = SwingChannelTransition(
+        assessment_id=new_uuid7(),
+        symbol="AAPL",
+        occurred_at=occurred_at,
+        engine_version="1.0.0",
+        maturity=SwingChannelMaturity.IN_ZONE_4H,
+        current_price=Decimal("100"),
+        support=Decimal("100"),
+        zone_low=Decimal("99"),
+        zone_high=Decimal("101"),
+        invalidation=Decimal("98"),
+        reasons=("projected_support_touched",),
+        context_hash=f"sha256:{'a' * 64}",
+    )
+    bars = tuple(
+        _bar("AAPL", 30 + index).model_copy(
+            update={
+                "timestamp": occurred_at + timedelta(minutes=index),
+                "high": Decimal("103"),
+                "low": Decimal("98"),
+                "close": Decimal("102") if index >= 14 else Decimal("101"),
+            }
+        )
+        for index in range(20)
+    )
+
+    outcomes = _swing_channel_outcomes((transition,), {"AAPL": bars})
+
+    assert outcomes[0]["maturity"] == "IN_ZONE_4H"
+    assert outcomes[0]["mfe_percent"] == "3.00"
+    assert outcomes[0]["mae_percent"] == "-2.00"
+    assert outcomes[0]["return_15m"] == "2.00"
+    assert outcomes[0]["return_30m"] is None
 
 
 @pytest.mark.asyncio
@@ -234,4 +315,16 @@ async def test_full_backtest_stays_in_memory_and_writes_a_local_artifact(
     assert report["operational_nats_used"] is False
     assert report["operational_database_used"] is False
     assert report["fusion_transitions"]
+    assert "swing_channel_4h_transitions" in report
+    assert "swing_channel_4h_outcomes" in report
+    assert "swing_channel_4h_vs_swing" in report
+    assert "swing_results" in report
+    assert "4hgeri_assessments" in report
+    assert "4hgeri_transitions" in report
+    assert "4hgeri_outcomes" in report
+    assert "three_swing_model_comparison" in report
+    assert report["solid_buy_outcomes"] == []
+    evidence = report["opportunity_evidence_audit"]
+    assert isinstance(evidence, dict)
+    assert evidence["sample"]["opportunities"] == len(report["opportunities"])
     assert json.loads(output.read_text(encoding="utf-8"))["run_id"] == "synthetic"

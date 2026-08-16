@@ -18,6 +18,8 @@ _SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 class EngineSlot(StrEnum):
     LONG_TERM = "long-term"
     SWING = "swing"
+    SWING_CHANNEL_4H = "swing-channel-4h"
+    GERI_4H = "4hgeri"
     INTRADAY = "intraday"
     ENTRY_WATCHER = "entry-watcher"
     ENTRY_OPPORTUNITY = "entry-opportunity"

@@ -89,6 +89,7 @@ class BarTimeframe(ContractEnum):
     MINUTE_5 = "5Min"
     MINUTE_15 = "15Min"
     HOUR_1 = "1Hour"
+    HOUR_4 = "4Hour"
     DAY_1 = "1Day"
     WEEK_1 = "1Week"
 
@@ -101,6 +102,36 @@ class AnalysisHorizon(ContractEnum):
     VOLUME_STRUCTURE = "VOLUME_STRUCTURE"
     OPTIONS_GAMMA = "OPTIONS_GAMMA"
     NEWS = "NEWS"
+
+
+class SwingChannelMaturity(ContractEnum):
+    """Independent 4h channel maturity; it never replaces core L1-L4 state."""
+
+    ARMED = "ARMED"
+    IN_ZONE_4H = "IN_ZONE_4H"
+    L2_4H = "L2_4H"
+    L3 = "L3"
+    L4 = "L4"
+    INVALIDATED = "INVALIDATED"
+
+
+class GeriLevelKind(ContractEnum):
+    """Alternating horizontal structural level used by the 4HGERI model."""
+
+    SUPPORT = "SUPPORT"
+    RESISTANCE = "RESISTANCE"
+
+
+class GeriMaturity(ContractEnum):
+    """Independent 4HGERI lifecycle; core Opportunity maturity is unchanged."""
+
+    BUILDING = "BUILDING"
+    ARMED = "ARMED"
+    IN_ZONE_4H = "IN_ZONE_4H"
+    L2_4H = "L2_4H"
+    L3 = "L3"
+    L4 = "L4"
+    INVALIDATED = "INVALIDATED"
 
 
 class AnalysisVerdict(ContractEnum):

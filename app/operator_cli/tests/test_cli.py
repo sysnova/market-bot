@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from app.operator_cli.main import _run_async, app
+from app.operator_cli.main import _backtest_simulated_date, _run_async, app
 
 runner = CliRunner()
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -79,6 +79,8 @@ def test_distributed_process_commands_are_explicit() -> None:
     for command in (
         ("engine", "long"),
         ("engine", "swing"),
+        ("engine", "swing-channel-4h"),
+        ("engine", "4hgeri"),
         ("engine", "intraday"),
         ("market", "stream"),
         ("market", "backtest"),
@@ -92,6 +94,8 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("alerts", "patreon-caps"),
         ("monitor", "patreon-caps"),
         ("monitor", "entry-opportunity"),
+        ("monitor", "swing-channel-4h"),
+        ("monitor", "4hgeri"),
     ):
         result = runner.invoke(app, [*command, "--help"])
 
@@ -138,6 +142,15 @@ def test_market_backtest_parses_isolated_run_configuration() -> None:
         "events_published": 780,
         "mode": "backtest",
     }
+
+
+def test_backtest_default_simulated_date_skips_weekends_and_follows_source() -> None:
+    assert _backtest_simulated_date(
+        source=date(2026, 8, 14), today=date(2026, 8, 16)
+    ) == date(2026, 8, 17)
+    assert _backtest_simulated_date(
+        source=date(2026, 8, 17), today=date(2026, 8, 17)
+    ) == date(2026, 8, 18)
 
 
 def test_live_help_exposes_analysis_only_operation() -> None:
@@ -187,8 +200,10 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.13.0"
+    assert payload["version"] == "7.15.0"
     assert payload["engines"]["swing"]["implementation"] == "5.0.0"
+    assert payload["engines"]["swing-channel-4h"]["implementation"] == "1.0.0"
+    assert payload["engines"]["4hgeri"]["implementation"] == "1.0.0"
     assert payload["engines"]["entry-watcher"]["implementation"] == "5.4.0"
     assert payload["engines"]["entry-opportunity"]["implementation"] == "3.0.0"
     assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
@@ -227,12 +242,17 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.13.0"
+    assert payload["definition_version"] == "7.15.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
     assert processes["confirmed-buy-monitor"]["dependencies"] == ["alert"]
     assert processes["long-term"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
+    assert processes["swing-channel-4h"]["arguments"][-2:] == [
+        "--symbols",
+        "HIMS,ZETA",
+    ]
+    assert processes["4hgeri"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
 
 
 def test_single_dash_analyzer_alias_passes_the_received_ticker() -> None:
@@ -372,6 +392,68 @@ def test_entry_opportunity_history_cleanup_defaults_to_dry_run() -> None:
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["applied"] is False
+
+
+def test_entry_opportunity_audit_defaults_to_human_output() -> None:
+    report = {
+        "evidence_audit": {
+            "sample": {
+                "opportunities": 1,
+                "checkpoints": 1,
+                "tracking_references": 1,
+                "actionable_entries": 0,
+                "open_checkpoints": 1,
+                "closed_checkpoints": 0,
+            },
+            "snapshot": {
+                "tracking": {
+                    "observed": 1,
+                    "positive": 0,
+                    "negative": 1,
+                    "breakeven": 0,
+                    "average_percent": "-1.0000",
+                    "median_percent": "-1.0000",
+                },
+                "actionable": {
+                    "observed": 0,
+                    "positive": 0,
+                    "negative": 0,
+                    "breakeven": 0,
+                    "average_percent": None,
+                    "median_percent": None,
+                },
+            },
+            "fixed_horizons": {
+                role: {
+                    horizon: {
+                        "observed": 0,
+                        "positive": 0,
+                        "negative": 0,
+                        "average_percent": None,
+                    }
+                    for horizon in ("15m", "30m", "60m", "close")
+                }
+                for role in ("tracking", "actionable")
+            },
+            "negative_evidence": [],
+            "pullback_entry_improvement": [],
+            "limitations": ["muestra abierta"],
+        }
+    }
+
+    async def fake_load(*, history: int) -> dict[str, object]:
+        assert history == 5000
+        return report
+
+    with patch(
+        "app.integration.entry_opportunity_report.load_entry_opportunity_report",
+        new=fake_load,
+    ):
+        result = runner.invoke(app, ["entry-opportunity", "audit"])
+
+    assert result.exit_code == 0
+    assert "REFERENCIAS (NO SON COMPRAS)" in result.stdout
+    assert "ENTRADAS ACCIONABLES L1-L4" in result.stdout
 
 
 def test_placeholder_groups_are_honest_about_availability() -> None:

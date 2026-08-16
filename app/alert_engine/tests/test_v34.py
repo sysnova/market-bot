@@ -58,6 +58,7 @@ def _volume_structure() -> AnalysisResult:
             NamedValue(name="evidence_boost", value=Decimal("10")),
             NamedValue(name="reclaim_trigger", value=Decimal("126.30")),
             NamedValue(name="invalidation", value=Decimal("119.80")),
+            NamedValue(name="evidence_window", value=["weekly", "daily"]),
         ),
         context_hash=HASH,
     )

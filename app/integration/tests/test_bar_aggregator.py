@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.contracts import BarTimeframe, MarketBar
-from app.integration.bar_aggregator import MinuteBarAggregator
+from app.integration.bar_aggregator import MinuteBarAggregator, RegularSessionFourHourAggregator
 
 START = datetime(2026, 7, 24, 13, 30, tzinfo=UTC)
 
@@ -99,3 +99,25 @@ def test_aggregator_excludes_extended_hours_and_flushes_the_rth_close() -> None:
         )
         == ()
     )
+
+
+def test_four_hour_aggregator_uses_0930_et_anchor_and_flushes_short_final_segment() -> None:
+    aggregator = RegularSessionFourHourAggregator()
+    start = datetime(2026, 8, 14, 13, 30, tzinfo=UTC)
+    emitted: list[MarketBar] = []
+    for index in range(26):
+        source = minute_bar(index, close=str(100 + index)).model_copy(
+            update={
+                "timeframe": BarTimeframe.MINUTE_15,
+                "timestamp": start + timedelta(minutes=15 * index),
+            }
+        )
+        emitted.extend(aggregator.add(source))
+
+    assert len(emitted) == 2
+    assert emitted[0].timeframe is BarTimeframe.HOUR_4
+    assert emitted[0].timestamp == start
+    assert emitted[0].open == Decimal("99.9")
+    assert emitted[0].close == Decimal("115")
+    assert emitted[1].timestamp == start + timedelta(hours=4)
+    assert emitted[1].close == Decimal("125")

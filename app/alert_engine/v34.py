@@ -100,7 +100,10 @@ class AlertEngineV34(AlertEngineV33):
         effective = min(HUNDRED, alert.score + boost).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
-        embedded = tuple(dict.fromkeys((*alert.component_analyses, volume)))
+        embedded_by_id = {
+            item.analysis_id: item for item in (*alert.component_analyses, volume)
+        }
+        embedded = tuple(embedded_by_id.values())
         return alert.model_copy(
             update={
                 "horizons": tuple(dict.fromkeys((*alert.horizons, volume.horizon))),

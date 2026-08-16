@@ -45,6 +45,23 @@ def test_linux_launcher_adds_independent_alpaca_news_window() -> None:
     assert "ALPACA NEWS" in script
 
 
+def test_linux_launcher_adds_independent_four_hour_engine_windows() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "run marketbot monitor swing-channel-4h" in script
+    assert "run marketbot monitor 4hgeri" in script
+    assert "--role swing-channel-4h" in script
+    assert "--role 4hgeri" in script
+    assert 'wait_ready "$STATUS_ROOT/swing-channel-4h.ready.json"' in script
+    assert 'wait_ready "$STATUS_ROOT/4hgeri.ready.json"' in script
+    assert '"$STATUS_ROOT/swing-channel-4h-monitor.ready.json"' in script
+    assert '"$STATUS_ROOT/4hgeri-monitor.ready.json"' in script
+    assert '-n Swing4H "$swing_channel_4h"' in script
+    assert '-n 4HGERI "$geri_4h"' in script
+    assert "SWING CHANNEL 4H — CANAL PARALELO" in script
+    assert "4HGERI — NIVELES HORIZONTALES" in script
+
+
 def test_linux_launcher_inherits_stock_analyzer_openai_key_without_sourcing_env() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
@@ -179,6 +196,8 @@ def test_analytical_tmux_roles_are_read_only_monitors() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
     for start, end in (
+        ("run_swing_channel_4h()", "run_4hgeri()"),
+        ("run_4hgeri()", "run_patreon_caps_analysis()"),
         ("run_patreon_caps_analysis()", "run_patreon_caps_alerts()"),
         ("run_elliott_wave()", "run_support_confirmation()"),
         ("run_support_confirmation()", "run_signal_fusion_analysis()"),
@@ -200,6 +219,8 @@ def test_market_stream_is_gated_only_by_headless_engine_readiness() -> None:
     for monitor in (
         "confirmed-buy-monitor",
         "entry-opportunity-monitor",
+        "swing-channel-4h-monitor",
+        "4hgeri-monitor",
         "patreon-caps-analysis",
         "elliott-wave-analysis",
         "support-confirmation-analysis",

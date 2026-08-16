@@ -358,6 +358,8 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "long-portfolio-v1",
         "long-term",
         "swing",
+        "swing-channel-4h",
+        "4hgeri",
         "intraday",
         "market-rotation-v1",
         "portfolio-flow-v1",

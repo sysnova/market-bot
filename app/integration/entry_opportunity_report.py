@@ -10,6 +10,7 @@ from app.common.settings import AppSettings, Environment
 from app.contracts import (
     AnalysisHorizon,
     EntryCheckpointStatus,
+    EntryMaturityCheckpoint,
     EntryMaturityLevel,
     EntryOpportunity,
     EntryOpportunityStatus,
@@ -24,6 +25,16 @@ _MATURE_LEVELS = (
     EntryMaturityLevel.L2,
     EntryMaturityLevel.L3,
     EntryMaturityLevel.L4,
+)
+_TRACKING_LEVELS = (
+    EntryMaturityLevel.ARMED,
+    EntryMaturityLevel.IN_ZONE,
+)
+_FIXED_HORIZONS = (
+    ("15m", "return_15m"),
+    ("30m", "return_30m"),
+    ("60m", "return_60m"),
+    ("close", "return_close"),
 )
 
 
@@ -65,7 +76,313 @@ def build_entry_opportunity_report(
         "maturity_outcomes": _maturity_outcomes(opportunities),
         "signal_family_outcomes": _signal_family_outcomes(opportunities),
         "horizon_outcomes": _horizon_outcomes(opportunities),
+        "evidence_audit": _evidence_audit(opportunities),
     }
+
+
+def render_entry_opportunity_evidence_audit(audit: dict[str, Any]) -> str:
+    """Render the statistical audit without presenting references as trades."""
+
+    sample = audit["sample"]
+    tracking = audit["snapshot"]["tracking"]
+    actionable = audit["snapshot"]["actionable"]
+    lines = [
+        "AUDITORIA DE EVIDENCIA DE ENTRY OPPORTUNITY",
+        (
+            f"Muestra: {sample['opportunities']} opportunities | "
+            f"{sample['checkpoints']} checkpoints | "
+            f"{sample['closed_checkpoints']} cerrados"
+        ),
+        "",
+        "REFERENCIAS (NO SON COMPRAS)",
+        _human_snapshot_line(tracking),
+        "",
+        "ENTRADAS ACCIONABLES L1-L4",
+        _human_snapshot_line(actionable),
+        "",
+        "RETORNOS FIJOS OBSERVADOS",
+    ]
+    for role, label in (("tracking", "Referencias"), ("actionable", "L1-L4")):
+        pieces: list[str] = []
+        for horizon, _ in _FIXED_HORIZONS:
+            stats = audit["fixed_horizons"][role][horizon]
+            pieces.append(
+                f"{horizon}: n={stats['observed']} +{stats['positive']} "
+                f"-{stats['negative']} prom={stats['average_percent'] or '-'}%"
+            )
+        lines.append(f"{label}: " + " | ".join(pieces))
+
+    lines.extend(("", "EVIDENCIA CON P/L NEGATIVO"))
+    if not audit["negative_evidence"]:
+        lines.append("Sin checkpoints negativos en la marca actual/final.")
+    for item in audit["negative_evidence"]:
+        classes = ", ".join(str(value) for value in item["classifications"])
+        lines.append(
+            f"{item['symbol']} {item['level']} [{item['role']}] "
+            f"{item['snapshot_return_percent']}% | MFE {item['mfe_percent']}% "
+            f"MAE {item['mae_percent']}% | {classes}"
+        )
+
+    if audit["pullback_entry_improvement"]:
+        lines.extend(("", "MEJORA DE REFERENCIA ARMED -> IN_ZONE"))
+        for item in audit["pullback_entry_improvement"]:
+            advantage = item["snapshot_advantage_percent"]
+            advantage_text = (
+                f"{advantage} pp"
+                if advantage is not None
+                else "no comparable (marcas de distinto momento)"
+            )
+            lines.append(
+                f"{item['symbol']}: precio {item['armed_reference_price']} -> "
+                f"{item['in_zone_reference_price']} | mejora de entrada "
+                f"{item['entry_price_improvement_percent']}% | ventaja de P/L "
+                f"{advantage_text}"
+            )
+
+    lines.extend(("", "LIMITACIONES"))
+    lines.extend(f"- {item}" for item in audit["limitations"])
+    return "\n".join(lines)
+
+
+def _evidence_audit(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, Any]:
+    checkpoints = tuple(
+        (opportunity, checkpoint)
+        for opportunity in opportunities
+        for checkpoint in opportunity.checkpoints
+    )
+    tracking = tuple(
+        pair for pair in checkpoints if pair[1].level in _TRACKING_LEVELS
+    )
+    actionable = tuple(
+        pair for pair in checkpoints if pair[1].level in _MATURE_LEVELS
+    )
+    negative: list[dict[str, Any]] = []
+    for opportunity, checkpoint in checkpoints:
+        snapshot_return = _checkpoint_snapshot_return(checkpoint)
+        if snapshot_return >= 0:
+            continue
+        observed = tuple(
+            value
+            for _, field in _FIXED_HORIZONS
+            if (value := getattr(checkpoint, field)) is not None
+        )
+        classifications: list[str] = []
+        if checkpoint.status is EntryCheckpointStatus.OPEN:
+            classifications.append("OPEN_RIGHT_CENSORED")
+        if checkpoint.mfe_percent > 0:
+            classifications.append("GAVE_BACK_POSITIVE_EXCURSION")
+        if observed and all(value < 0 for value in observed):
+            classifications.append("NEGATIVE_AT_ALL_OBSERVED_HORIZONS")
+        elif _recovered_after_negative(observed):
+            classifications.append(
+                "TEMPORARY_RECOVERY_GAVE_BACK"
+                if observed[-1] < 0
+                else "RECOVERED_AT_A_LATER_HORIZON"
+            )
+        negative.append(
+            {
+                "symbol": opportunity.symbol,
+                "level": checkpoint.level.value,
+                "role": _checkpoint_role(checkpoint),
+                "status": checkpoint.status.value,
+                "snapshot_return_percent": _decimal_text(snapshot_return),
+                "mfe_percent": _decimal_text(checkpoint.mfe_percent),
+                "mae_percent": _decimal_text(checkpoint.mae_percent),
+                "observed_fixed_horizons": len(observed),
+                "fixed_returns": {
+                    label: (
+                        _decimal_text(value)
+                        if (value := getattr(checkpoint, field)) is not None
+                        else None
+                    )
+                    for label, field in _FIXED_HORIZONS
+                },
+                "classifications": classifications,
+            }
+        )
+
+    limitations = [
+        "ARMED e IN_ZONE son referencias de maduración; no deben contarse como trades.",
+        "Los checkpoints OPEN están censurados: su P/L puede cambiar y no es un resultado final.",
+    ]
+    if len(checkpoints) < 30:
+        limitations.append(
+            "La muestra tiene menos de 30 checkpoints; las tasas son exploratorias."
+        )
+    if not actionable:
+        limitations.append(
+            "Todavía no hay entradas L1-L4; no puede estimarse la tasa de acierto de compras."
+        )
+    if not any(
+        checkpoint.status is EntryCheckpointStatus.CLOSED
+        for _, checkpoint in checkpoints
+    ):
+        limitations.append(
+            "No hay checkpoints cerrados; aún no existe una distribución de resultados finales."
+        )
+
+    return {
+        "sample": {
+            "opportunities": len(opportunities),
+            "checkpoints": len(checkpoints),
+            "tracking_references": len(tracking),
+            "actionable_entries": len(actionable),
+            "open_checkpoints": sum(
+                checkpoint.status is EntryCheckpointStatus.OPEN
+                for _, checkpoint in checkpoints
+            ),
+            "closed_checkpoints": sum(
+                checkpoint.status is EntryCheckpointStatus.CLOSED
+                for _, checkpoint in checkpoints
+            ),
+        },
+        "snapshot": {
+            "tracking": _snapshot_stats(tracking),
+            "actionable": _snapshot_stats(actionable),
+        },
+        "fixed_horizons": {
+            "tracking": _fixed_horizon_stats(tracking),
+            "actionable": _fixed_horizon_stats(actionable),
+        },
+        "negative_evidence": sorted(
+            negative,
+            key=lambda item: Decimal(item["snapshot_return_percent"]),
+        ),
+        "pullback_entry_improvement": _pullback_entry_improvement(opportunities),
+        "limitations": limitations,
+    }
+
+
+def _snapshot_stats(
+    pairs: tuple[tuple[EntryOpportunity, EntryMaturityCheckpoint], ...],
+) -> dict[str, Any]:
+    values = tuple(_checkpoint_snapshot_return(checkpoint) for _, checkpoint in pairs)
+    positive = sum(value > 0 for value in values)
+    negative = sum(value < 0 for value in values)
+    return {
+        "observed": len(values),
+        "positive": positive,
+        "negative": negative,
+        "breakeven": len(values) - positive - negative,
+        "positive_rate_percent": _average_rate(positive, len(values)),
+        "average_percent": _average(values),
+        "median_percent": _median(values),
+        "average_mfe_percent": _average(
+            tuple(checkpoint.mfe_percent for _, checkpoint in pairs)
+        ),
+        "average_mae_percent": _average(
+            tuple(checkpoint.mae_percent for _, checkpoint in pairs)
+        ),
+    }
+
+
+def _fixed_horizon_stats(
+    pairs: tuple[tuple[EntryOpportunity, EntryMaturityCheckpoint], ...],
+) -> dict[str, Any]:
+    result: dict[str, dict[str, Any]] = {}
+    for label, field in _FIXED_HORIZONS:
+        values = tuple(
+            value
+            for _, checkpoint in pairs
+            if (value := getattr(checkpoint, field)) is not None
+        )
+        positive = sum(value > 0 for value in values)
+        negative = sum(value < 0 for value in values)
+        result[label] = {
+            "observed": len(values),
+            "positive": positive,
+            "negative": negative,
+            "breakeven": len(values) - positive - negative,
+            "positive_rate_percent": _average_rate(positive, len(values)),
+            "average_percent": _average(values),
+            "median_percent": _median(values),
+        }
+    return result
+
+
+def _pullback_entry_improvement(
+    opportunities: tuple[EntryOpportunity, ...],
+) -> list[dict[str, Any]]:
+    comparisons: list[dict[str, Any]] = []
+    for opportunity in opportunities:
+        armed = next(
+            (
+                checkpoint
+                for checkpoint in opportunity.checkpoints
+                if checkpoint.level is EntryMaturityLevel.ARMED
+                and checkpoint.signal_family is EntrySignalFamily.CORE_ENTRY
+            ),
+            None,
+        )
+        in_zone = next(
+            (
+                checkpoint
+                for checkpoint in opportunity.checkpoints
+                if checkpoint.level is EntryMaturityLevel.IN_ZONE
+                and checkpoint.signal_family is EntrySignalFamily.CORE_ENTRY
+            ),
+            None,
+        )
+        if armed is None or in_zone is None:
+            continue
+        improvement = (armed.entry_price - in_zone.entry_price) / armed.entry_price * 100
+        marks_comparable = armed.current_price == in_zone.current_price
+        advantage = (
+            _checkpoint_snapshot_return(in_zone) - _checkpoint_snapshot_return(armed)
+            if marks_comparable
+            else None
+        )
+        comparisons.append(
+            {
+                "symbol": opportunity.symbol,
+                "armed_reference_price": str(armed.entry_price),
+                "in_zone_reference_price": str(in_zone.entry_price),
+                "entry_price_improvement_percent": _decimal_text(improvement),
+                "snapshot_advantage_percent": (
+                    _decimal_text(advantage) if advantage is not None else None
+                ),
+                "marks_comparable": marks_comparable,
+            }
+        )
+    return sorted(comparisons, key=lambda item: item["symbol"])
+
+
+def _checkpoint_snapshot_return(checkpoint: EntryMaturityCheckpoint) -> Decimal:
+    if checkpoint.status is EntryCheckpointStatus.CLOSED:
+        assert checkpoint.gain_loss_percent is not None
+        return checkpoint.gain_loss_percent
+    return (checkpoint.current_price / checkpoint.entry_price - Decimal("1")) * Decimal(
+        "100"
+    )
+
+
+def _checkpoint_role(checkpoint: EntryMaturityCheckpoint) -> str:
+    if checkpoint.level in _TRACKING_LEVELS:
+        return "TRACKING_REFERENCE"
+    return "ACTIONABLE_ENTRY"
+
+
+def _recovered_after_negative(values: tuple[Decimal, ...]) -> bool:
+    negative_seen = False
+    for value in values:
+        if value < 0:
+            negative_seen = True
+        elif value > 0 and negative_seen:
+            return True
+    return False
+
+
+def _human_snapshot_line(stats: dict[str, Any]) -> str:
+    return (
+        f"n={stats['observed']} | positivas={stats['positive']} | "
+        f"negativas={stats['negative']} | neutras={stats['breakeven']} | "
+        f"promedio={stats['average_percent'] or '-'}% | "
+        f"mediana={stats['median_percent'] or '-'}%"
+    )
+
+
+def _decimal_text(value: Decimal) -> str:
+    return str(value.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
 
 
 def _open_trade(opportunity: EntryOpportunity) -> dict[str, Any]:
@@ -221,6 +538,18 @@ def _average(values: tuple[Decimal, ...]) -> str | None:
             Decimal("0.0001"), rounding=ROUND_HALF_UP
         )
     )
+
+
+def _median(values: tuple[Decimal, ...]) -> str | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        value = ordered[midpoint]
+    else:
+        value = (ordered[midpoint - 1] + ordered[midpoint]) / Decimal("2")
+    return _decimal_text(value)
 
 
 def _average_rate(numerator: int, denominator: int) -> str | None:

@@ -99,6 +99,16 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   identidad ni version del engine productor. Solo referencias core llevan `maturity`; Patreon
   Caps, Long Portfolio, Signal Fusion y Portfolio Flow conservan `maturity=None`.
 
+- Swing Channel 4H publica `SwingChannelAssessment` y `SwingChannelTransition` en subjects
+  `marketbot.v1.swing-channel-4h.*`. Su maduracion `ARMED -> IN_ZONE_4H -> L2_4H -> L3/L4`
+  es un carril comparativo independiente: no ocupa `AnalysisHorizon.SWING` ni modifica por si
+  sola las Opportunities core. Las barras `4Hour` son agregados RTH anclados a 09:30 ET; el
+  segundo segmento de cada rueda termina a las 16:00 ET para no mezclar sesiones.
+
+- 4HGERI publica `GeriAssessment` y `GeriTransition` en subjects `marketbot.v1.4hgeri.*`.
+  Mantiene niveles horizontales alternados SUPPORT/RESISTANCE; cada nivel nuevo queda
+  confirmado solamente cuando un cierre 4h atraviesa el anterior.
+
 ## Invariantes comprobadas
 
 Cada `PipelineStep` fija `rule_id` y `rule_version` SemVer exactos; bindings y scoring

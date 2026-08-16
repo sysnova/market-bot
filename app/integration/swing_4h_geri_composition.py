@@ -1,0 +1,395 @@
+"""Independent runtime for horizontal-level 4HGERI observations."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Iterable
+from datetime import datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+from typing import Protocol
+
+from app.common.clock import Clock, SystemClock
+from app.common.market_session import is_regular_session
+from app.common.settings import AppSettings, Environment
+from app.contracts import (
+    ANALYSIS_RESULT_EVENT,
+    ENTRY_OPPORTUNITY_EVENT,
+    GERI_ASSESSMENT_EVENT,
+    GERI_TRANSITION_EVENT,
+    MARKET_BAR_EVENT,
+    MARKET_BAR_UPDATED_EVENT,
+    AnalysisHorizon,
+    AnalysisResult,
+    BarTimeframe,
+    EntryMaturityLevel,
+    EntryOpportunityEvent,
+    EventEnvelope,
+    GeriAssessment,
+    GeriTransition,
+    MarketBar,
+    Subscription,
+    SubscriptionOptions,
+    geri_assessment_subject,
+    geri_transition_subject,
+)
+from app.event_bus import NatsJetStreamEventBus
+from app.persistence import create_database_engine
+from app.swing_4h_geri_engine import Swing4HGeriContext
+
+from .bar_aggregator import MinuteBarAggregator, RegularSessionFourHourAggregator
+from .distributed_composition import HistoryRequest, connect_nats, write_ready
+from .engine_assembly import EngineSlot, MarketBotAssembly
+from .market_bar_store import MarketBarStore
+from .market_history_composition import load_market_history
+from .postgres_universe import PostgresUniverseClient
+from .universe_policy import universe_health_details
+
+GERI_HISTORY_REQUESTS = (
+    HistoryRequest(
+        timeframe=BarTimeframe.MINUTE_15,
+        lookback=timedelta(days=35),
+        max_bars_per_symbol=600,
+    ),
+)
+
+
+class GeriEngine(Protocol):
+    def analyze(self, context: Swing4HGeriContext) -> GeriAssessment: ...
+
+
+class GeriPublisher(Protocol):
+    async def publish(self, subject: str, envelope: EventEnvelope) -> None: ...
+
+
+class Swing4HGeriRuntime:
+    """Aggregate RTH bars and publish only the independent 4HGERI stream."""
+
+    def __init__(
+        self,
+        *,
+        engine: GeriEngine,
+        publisher: GeriPublisher,
+        clock: Clock | None = None,
+    ) -> None:
+        self._engine = engine
+        self._publisher = publisher
+        self._clock = clock or SystemClock()
+        self._bars = MarketBarStore(capacity_per_series=80)
+        self._minute = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
+        self._four_hour = RegularSessionFourHourAggregator()
+        self._symbols: set[str] = set()
+        self._prices: dict[str, Decimal] = {}
+        self._daily_swing: dict[str, AnalysisResult] = {}
+        self._existing_maturity: dict[str, EntryMaturityLevel] = {}
+        self._opportunity_at: dict[str, datetime] = {}
+        self._latest: dict[str, GeriAssessment] = {}
+
+    async def restore_assessment(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != GERI_ASSESSMENT_EVENT:
+            return
+        item = (
+            envelope.payload
+            if isinstance(envelope.payload, GeriAssessment)
+            else GeriAssessment.model_validate(envelope.payload, strict=False)
+        )
+        previous = self._latest.get(item.symbol)
+        if previous is None or item.occurred_at >= previous.occurred_at:
+            self._latest[item.symbol] = item
+
+    async def bootstrap(
+        self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]
+    ) -> int:
+        self._symbols = {item.strip().upper() for item in symbols if item.strip()}
+        for bar in sorted(bars, key=lambda item: (item.timestamp, item.symbol)):
+            if bar.symbol not in self._symbols or not bar.is_final:
+                continue
+            if bar.timeframe is BarTimeframe.HOUR_4:
+                self._bars.add(bar)
+                self._prices[bar.symbol] = bar.close
+            elif bar.timeframe is BarTimeframe.MINUTE_15 and is_regular_session(bar.timestamp):
+                self._prices[bar.symbol] = bar.close
+                for aggregated in self._four_hour.add(bar):
+                    self._bars.add(aggregated)
+        published = 0
+        for symbol in sorted(self._symbols):
+            published += int(await self.evaluate(symbol))
+        return published
+
+    async def handle_market(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type not in {MARKET_BAR_EVENT, MARKET_BAR_UPDATED_EVENT}:
+            return
+        bar = (
+            envelope.payload
+            if isinstance(envelope.payload, MarketBar)
+            else MarketBar.model_validate(envelope.payload, strict=False)
+        )
+        if bar.symbol not in self._symbols or not bar.is_final:
+            return
+        if bar.timeframe is BarTimeframe.HOUR_4:
+            self._bars.add(bar)
+            self._prices[bar.symbol] = bar.close
+            await self.evaluate(bar.symbol)
+            return
+        if bar.timeframe is BarTimeframe.MINUTE_15:
+            if is_regular_session(bar.timestamp):
+                await self._accept_fifteen(bar)
+            return
+        if bar.timeframe is not BarTimeframe.MINUTE_1:
+            return
+        aggregated = self._minute.add(bar)
+        if is_regular_session(bar.timestamp):
+            self._prices[bar.symbol] = bar.close
+            for fifteen in aggregated:
+                await self._accept_fifteen(fifteen, evaluate=False)
+            await self.evaluate(bar.symbol, current_price=bar.close)
+            return
+        for fifteen in aggregated:
+            await self._accept_fifteen(fifteen)
+
+    async def handle_analysis(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != ANALYSIS_RESULT_EVENT:
+            return
+        result = (
+            envelope.payload
+            if isinstance(envelope.payload, AnalysisResult)
+            else AnalysisResult.model_validate(envelope.payload, strict=False)
+        )
+        if result.horizon is not AnalysisHorizon.SWING or result.symbol not in self._symbols:
+            return
+        previous = self._daily_swing.get(result.symbol)
+        if previous is not None and result.as_of < previous.as_of:
+            return
+        self._daily_swing[result.symbol] = result
+        await self.evaluate(result.symbol)
+
+    async def handle_opportunity(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != ENTRY_OPPORTUNITY_EVENT:
+            return
+        event = (
+            envelope.payload
+            if isinstance(envelope.payload, EntryOpportunityEvent)
+            else EntryOpportunityEvent.model_validate(envelope.payload, strict=False)
+        )
+        opportunity = event.opportunity
+        if opportunity.symbol not in self._symbols:
+            return
+        previous_at = self._opportunity_at.get(opportunity.symbol)
+        if previous_at is not None and event.occurred_at < previous_at:
+            return
+        self._opportunity_at[opportunity.symbol] = event.occurred_at
+        self._existing_maturity[opportunity.symbol] = opportunity.current_maturity
+        await self.evaluate(opportunity.symbol)
+
+    async def evaluate(self, symbol: str, *, current_price: Decimal | None = None) -> bool:
+        normalized = symbol.strip().upper()
+        bars = self._bars.history(
+            normalized, BarTimeframe.HOUR_4, limit=60, final_only=True
+        )
+        value = current_price if current_price is not None else self._prices.get(normalized)
+        if value is None or not bars:
+            return False
+        try:
+            assessment = self._engine.analyze(
+                Swing4HGeriContext(
+                    symbol=normalized,
+                    bars=bars,
+                    current_price=value,
+                    daily_swing=self._daily_swing.get(normalized),
+                    existing_maturity=self._existing_maturity.get(normalized),
+                )
+            )
+        except ValueError:
+            return False
+        assessment = assessment.model_copy(update={"assessed_at": self._clock.now()})
+        previous = self._latest.get(normalized)
+        if previous is not None and _same_observation(previous, assessment):
+            return False
+        self._latest[normalized] = assessment
+        await self._publish_assessment(assessment)
+        if previous is None or _material_transition(previous, assessment):
+            await self._publish_transition(assessment, previous)
+        return True
+
+    async def _accept_fifteen(self, bar: MarketBar, *, evaluate: bool = True) -> None:
+        self._prices[bar.symbol] = bar.close
+        for aggregated in self._four_hour.add(bar):
+            self._bars.add(aggregated)
+        if evaluate:
+            await self.evaluate(bar.symbol, current_price=bar.close)
+
+    async def _publish_assessment(self, item: GeriAssessment) -> None:
+        await self._publisher.publish(
+            geri_assessment_subject(item.symbol),
+            EventEnvelope(
+                event_type=GERI_ASSESSMENT_EVENT,
+                occurred_at=item.assessed_at or item.occurred_at,
+                source="4hgeri-v1",
+                subject=item.symbol,
+                payload=item,
+            ),
+        )
+
+    async def _publish_transition(
+        self, item: GeriAssessment, previous: GeriAssessment | None
+    ) -> None:
+        transition = GeriTransition(
+            assessment_id=item.assessment_id,
+            symbol=item.symbol,
+            occurred_at=item.assessed_at or item.occurred_at,
+            engine_version=item.engine_version,
+            previous_maturity=previous.maturity if previous is not None else None,
+            maturity=item.maturity,
+            active_level_sequence=item.active_level_sequence,
+            active_level_kind=item.active_level_kind,
+            active_level_price=item.active_level_price,
+            current_price=item.current_price,
+            zone_low=item.zone_low,
+            zone_high=item.zone_high,
+            invalidation=item.invalidation,
+            reasons=item.reasons,
+            context_hash=item.context_hash,
+        )
+        await self._publisher.publish(
+            geri_transition_subject(transition.maturity, transition.symbol),
+            EventEnvelope(
+                event_type=GERI_TRANSITION_EVENT,
+                occurred_at=transition.occurred_at,
+                source="4hgeri-v1",
+                subject=transition.symbol,
+                payload=transition,
+            ),
+        )
+
+
+def _same_observation(previous: GeriAssessment, current: GeriAssessment) -> bool:
+    return (
+        previous.maturity is current.maturity
+        and previous.active_level_sequence == current.active_level_sequence
+        and previous.active_level_kind is current.active_level_kind
+        and previous.active_level_price == current.active_level_price
+        and previous.zone_low == current.zone_low
+        and previous.zone_high == current.zone_high
+        and previous.daily_swing_aligned is current.daily_swing_aligned
+        and previous.existing_maturity_aligned is current.existing_maturity_aligned
+    )
+
+
+def _material_transition(previous: GeriAssessment, current: GeriAssessment) -> bool:
+    return (
+        previous.maturity is not current.maturity
+        or previous.active_level_sequence != current.active_level_sequence
+        or previous.active_level_kind is not current.active_level_kind
+    )
+
+
+async def run_swing_4h_geri_process(
+    *,
+    ready_path: Path | None = None,
+    once: bool = False,
+    symbols: tuple[str, ...] | None = None,
+) -> dict[str, object] | None:
+    """Bootstrap from PostgreSQL and publish the separate 4HGERI shadow stream."""
+
+    settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
+    database = create_database_engine(
+        settings.database_url.get_secret_value(),
+        require_ssl=settings.environment is Environment.PRODUCTION,
+    )
+    bus: NatsJetStreamEventBus | None = None
+    subscriptions: list[Subscription] = []
+    try:
+        if symbols is None:
+            universe = await PostgresUniverseClient(database).get_universe()
+            selected = universe.symbols
+            universe_source = universe.source
+        else:
+            selected = tuple(
+                dict.fromkeys(item.strip().upper() for item in symbols if item.strip())
+            )
+            if not selected:
+                raise ValueError("4HGERI requires at least one symbol")
+            universe_source = "operator-override"
+        bus = await connect_nats(settings)
+        runtime = Swing4HGeriRuntime(engine=assembly.build_4hgeri(), publisher=bus)
+        replay_specs = (
+            (
+                "marketbot.v1.4hgeri.assessment.>",
+                runtime.restore_assessment,
+                "marketbot-4hgeri-restore-v1",
+            ),
+            (
+                "marketbot.v1.analysis.result.SWING.>",
+                runtime.handle_analysis,
+                "marketbot-4hgeri-swing-v1",
+            ),
+            (
+                "marketbot.v1.entry-opportunity.transition.>",
+                runtime.handle_opportunity,
+                "marketbot-4hgeri-opportunity-v1",
+            ),
+        )
+        for subject, handler, durable in replay_specs:
+            subscription = await bus.subscribe(
+                subject,
+                handler,
+                options=SubscriptionOptions(
+                    durable_name=durable,
+                    replay_latest_per_subject=True,
+                    ack_wait_seconds=60,
+                ),
+            )
+            subscriptions.append(subscription)
+            await bus.wait_until_caught_up(subscription, timeout_seconds=60)
+        bars = await load_market_history(
+            settings,
+            database,
+            engine_id="4hgeri-v1",
+            symbols=selected,
+            requirements=GERI_HISTORY_REQUESTS,
+            as_of=SystemClock().now(),
+        )
+        published = await runtime.bootstrap(bars, symbols=selected)
+        historical_bars = len(bars)
+        del bars
+        summary: dict[str, object] = {
+            **universe_health_details("4hgeri"),
+            "service": "4hgeri-v1",
+            "engine_version": assembly.spec(EngineSlot.GERI_4H).implementation,
+            "engine_strategy_version": assembly.spec(
+                EngineSlot.GERI_4H
+            ).strategy.version,
+            "marketbot_definition_version": assembly.definition.version,
+            "mode": "SHADOW",
+            "symbols": len(selected),
+            "universe_source": universe_source,
+            "historical_bars": historical_bars,
+            "assessments_published": published,
+            "bar_source": "15Min_RTH_aggregated_09:30_ET",
+            "feeds_core_opportunities": False,
+            "places_orders": False,
+        }
+        if once:
+            return summary
+        subscriptions.append(
+            await bus.subscribe(
+                "marketbot.v1.market.bar.1Min.>",
+                runtime.handle_market,
+                options=SubscriptionOptions(
+                    durable_name="marketbot-4hgeri-market-v1",
+                    replay_all=False,
+                    ack_wait_seconds=60,
+                ),
+            )
+        )
+        if ready_path is not None:
+            write_ready(ready_path, summary)
+        await asyncio.Event().wait()
+    finally:
+        for subscription in subscriptions:
+            await subscription.unsubscribe()
+        if bus is not None:
+            await bus.close()
+        await database.dispose()
+    return None

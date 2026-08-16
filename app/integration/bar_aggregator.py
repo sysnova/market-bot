@@ -97,12 +97,45 @@ class RegularSessionDailyAggregator:
         return _aggregate(values, BarTimeframe.DAY_1, timestamp)
 
 
+class RegularSessionFourHourAggregator:
+    """Build 09:30-13:30 and 13:30-16:00 RTH channel bars from completed 15m bars."""
+
+    def __init__(self) -> None:
+        self._pending: dict[tuple[str, datetime], list[MarketBar]] = {}
+
+    def add(self, bar: MarketBar) -> tuple[MarketBar, ...]:
+        if bar.timeframe is not BarTimeframe.MINUTE_15:
+            raise ValueError("four-hour aggregation input must use 15Min timeframe")
+        if not bar.is_final or not is_regular_session(bar.timestamp):
+            return ()
+        local = bar.timestamp.astimezone(_NEW_YORK)
+        segment_start, expected = _four_hour_segment(local)
+        start = datetime.combine(local.date(), segment_start, _NEW_YORK).astimezone(UTC)
+        key = (bar.symbol, start)
+        pending = self._pending.setdefault(key, [])
+        if pending and bar.timestamp <= pending[-1].timestamp:
+            return ()
+        pending.append(bar)
+        if len(pending) < expected:
+            return ()
+        values = self._pending.pop(key)
+        if len(values) != expected:
+            return ()
+        return (_aggregate(values, BarTimeframe.HOUR_4, start),)
+
+
 def _bucket_start(timestamp: datetime, minutes: int) -> datetime:
     return timestamp.replace(
         minute=(timestamp.minute // minutes) * minutes,
         second=0,
         microsecond=0,
     )
+
+
+def _four_hour_segment(local: datetime) -> tuple[time, int]:
+    if local.time() < time(13, 30):
+        return time(9, 30), 16
+    return time(13, 30), 10
 
 
 def _aggregate(

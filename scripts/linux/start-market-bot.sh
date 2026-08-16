@@ -121,7 +121,7 @@ clear_runtime_readiness() {
   local -a all_ready_paths=()
   mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
   ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
-  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,news-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 }
 
 exec_marketbot() {
@@ -166,6 +166,20 @@ run_long_portfolio_monitor() {
   ((NO_BELL)) && args+=(--no-bell)
   cd "$PROJECT_ROOT"
   exec_marketbot "${args[@]}"
+}
+
+run_swing_channel_4h() {
+  cd "$PROJECT_ROOT"
+  wait_ready "$STATUS_ROOT/swing-channel-4h.ready.json"
+  exec_marketbot run marketbot monitor swing-channel-4h \
+    --ready-path "$STATUS_ROOT/swing-channel-4h-monitor.ready.json"
+}
+
+run_4hgeri() {
+  cd "$PROJECT_ROOT"
+  wait_ready "$STATUS_ROOT/4hgeri.ready.json"
+  exec_marketbot run marketbot monitor 4hgeri \
+    --ready-path "$STATUS_ROOT/4hgeri-monitor.ready.json"
 }
 
 run_patreon_caps_analysis() {
@@ -352,13 +366,15 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed opportunities long_portfolio news patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
+  local control analysis confirmed opportunities long_portfolio news swing_channel_4h geri_4h patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
   printf -v opportunities '%q ' "${base[@]}" --role opportunities
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
   printf -v news '%q ' "${base[@]}" --role news
+  printf -v swing_channel_4h '%q ' "${base[@]}" --role swing-channel-4h
+  printf -v geri_4h '%q ' "${base[@]}" --role 4hgeri
   printf -v patreon_analysis '%q ' "${base[@]}" --role patreon-analysis
   printf -v patreon_alerts '%q ' "${base[@]}" --role patreon-alerts
   printf -v elliott_wave '%q ' "${base[@]}" --role elliott-wave
@@ -401,6 +417,18 @@ launch_tmux() {
       tmux new-window -d -t "$SESSION" -n News "$news"
       tmux set-window-option -t "$SESSION":News remain-on-exit on
       tmux select-pane -t "$SESSION":News.0 -T 'ALPACA NEWS — TENENCIAS DESTACADAS'
+    fi
+    if engine_is_active swing-channel-4h && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Swing4H'; then
+      tmux new-window -d -t "$SESSION" -n Swing4H "$swing_channel_4h"
+      tmux set-window-option -t "$SESSION":Swing4H remain-on-exit on
+      tmux select-pane -t "$SESSION":Swing4H.0 -T 'SWING CHANNEL 4H — CANAL PARALELO'
+    fi
+    if engine_is_active 4hgeri && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq '4HGERI'; then
+      tmux new-window -d -t "$SESSION" -n 4HGERI "$geri_4h"
+      tmux set-window-option -t "$SESSION":4HGERI remain-on-exit on
+      tmux select-pane -t "$SESSION":4HGERI.0 -T '4HGERI — NIVELES HORIZONTALES'
     fi
     tmux select-layout -t "$SESSION":MarketBot even-vertical 2>/dev/null || true
     if engine_is_active patreon-caps && \
@@ -469,6 +497,16 @@ launch_tmux() {
   tmux new-window -d -t "$SESSION" -n News "$news"
   tmux set-window-option -t "$SESSION":News remain-on-exit on
   tmux select-pane -t "$SESSION":News.0 -T 'ALPACA NEWS — TENENCIAS DESTACADAS'
+  if engine_is_active swing-channel-4h; then
+    tmux new-window -d -t "$SESSION" -n Swing4H "$swing_channel_4h"
+    tmux set-window-option -t "$SESSION":Swing4H remain-on-exit on
+    tmux select-pane -t "$SESSION":Swing4H.0 -T 'SWING CHANNEL 4H — CANAL PARALELO'
+  fi
+  if engine_is_active 4hgeri; then
+    tmux new-window -d -t "$SESSION" -n 4HGERI "$geri_4h"
+    tmux set-window-option -t "$SESSION":4HGERI remain-on-exit on
+    tmux select-pane -t "$SESSION":4HGERI.0 -T '4HGERI — NIVELES HORIZONTALES'
+  fi
   if engine_is_active patreon-caps; then
     tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
     tmux set-window-option -t "$SESSION":PatreonCaps remain-on-exit on
@@ -506,6 +544,8 @@ case "$ROLE" in
   opportunities) run_opportunities ;;
   long-portfolio) run_long_portfolio_monitor ;;
   news) run_news ;;
+  swing-channel-4h) run_swing_channel_4h ;;
+  4hgeri) run_4hgeri ;;
   patreon-analysis) run_patreon_caps_analysis ;;
   patreon-alerts) run_patreon_caps_alerts ;;
   elliott-wave) run_elliott_wave ;;
