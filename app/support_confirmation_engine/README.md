@@ -14,5 +14,5 @@ events after out-of-sample validation.
 
 The runtime publishes the latest assessment at
 `marketbot.v1.support-confirmation.assessment.<SYMBOL>` and append-only state changes at
-`marketbot.v1.support-confirmation.transition.<STATE>.<SYMBOL>`. JetStream is the 15-day state and
+`marketbot.v1.support-confirmation.transition.<STATE>.<SYMBOL>`. JetStream is the 7-day state and
 replay boundary; the engine does not write text files or query the watchlist.

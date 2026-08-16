@@ -319,7 +319,7 @@ async def run_signal_fusion_process(
             "universe_source": holdings.source,
             "symbols": list(selected_symbols),
             "assessments_published": published,
-            "persistence": "nats-jetstream-15d",
+            "persistence": "nats-jetstream-7d",
             "patreon_is_independent_vote": False,
             "execution_enabled": False,
         }

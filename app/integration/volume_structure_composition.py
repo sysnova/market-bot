@@ -212,7 +212,7 @@ async def run_volume_structure_process(
             "universe_source": universe.source,
             "symbols": list(universe.symbols),
             "assessments_published": published,
-            "persistence": "nats-jetstream-15d",
+            "persistence": "nats-jetstream-7d",
             "execution_enabled": False,
         }
         if once:

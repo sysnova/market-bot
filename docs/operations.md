@@ -221,12 +221,26 @@ cursor. Its JetStream subscription is opened first in buffer mode so live bars a
 recovery are merged without a startup gap. Retained JetStream bars are therefore a short-lived
 transport buffer rather than Entry Opportunity's historical recovery source.
 
-Live `marketbot.v1.market.bar.>` messages carry a seven-day per-message JetStream TTL. The parent
-`MARKETBOT` stream retains other versioned events for up to 15 days, so reducing bar storage does
-not shorten analysis, signal, transition, alert, or DLQ retention. Signal backtesting is unaffected:
-it downloads historical OHLCV directly and runs on an in-memory bus without operational NATS.
-The TTL is attached when a bar is published; bars already stored before activation keep the
-stream's former 15-day maximum and age out naturally unless an operator performs a filtered purge.
+The complete `MARKETBOT` JetStream stream retains seven days of events, including live
+`marketbot.v1.market.bar.>` messages, analyses, signals, transitions, alerts, and the DLQ. The limit
+is configured at stream level and publications do not carry per-message TTL metadata. Signal
+backtesting is unaffected: it downloads historical OHLCV directly and runs on an in-memory bus
+without operational NATS. Existing streams are migrated automatically when an event-bus process
+connects. NATS cannot disable per-message TTL after it has once been enabled on an existing stream;
+the flag may remain true there, but new publications do not use it. Purge the legacy retained market
+bars and restart NATS once after deploying this migration so the former TTL index is released from
+memory.
+
+With MarketBot stopped, preview and apply the subject-scoped cleanup before restarting NATS:
+
+```bash
+.venv-linux/bin/marketbot nats purge-market-bars
+.venv-linux/bin/marketbot nats purge-market-bars --apply
+docker restart marketbot-nats
+```
+
+The cleanup command affects only `marketbot.v1.market.bar.>`; PostgreSQL history and all other
+JetStream subjects remain intact.
 
 Before the first run, apply `supabase/migrations/20260802170000_market_bar_cache.sql` to the local
 `postgres-local` database. The directory name is retained for versioned schema compatibility; no
@@ -601,7 +615,7 @@ El engine `elliott-wave@0.1.0` corre en paralelo y no altera Long, Swing, Intrad
 PatreonCaps. Su universo se obtiene exclusivamente de `stock.customer_holding` en PostgreSQL local,
 filtrando posiciones activas con cantidad positiva; la watchlist no se incorpora. Publica un
 `WaveAssessment` por tenencia en `marketbot.v1.elliott-wave.assessment.<SYMBOL>`, retenido por
-JetStream durante 15 dias.
+JetStream durante 7 dias.
 
 El launcher agrega una tercera ventana hermana llamada `ElliottWave`, con un panel que muestra la
 hipotesis, score, confianza, zona, trigger, invalidacion y objetivos:
@@ -635,7 +649,7 @@ alarma, de modo que reiniciar el panel no hace sonar estados viejos. `--no-bell`
 sin interrumpir la publicacion NATS. Esta prealerta no equivale a una compra: `BUY_CONFIRMED` sigue
 reservado para Signal Fusion cuando tambien pasan Long, timing, ejecucion, SEC, cartera y R/R.
 
-JetStream conserva assessments y transiciones durante la retencion general de 15 dias y permite
+JetStream conserva assessments y transiciones durante la retencion general de 7 dias y permite
 restaurar el ultimo estado al reiniciar. No alimenta PatreonCaps, ElliottWave ni Alert en esta
 fase de prueba, y no emite ordenes o alertas de compra.
 

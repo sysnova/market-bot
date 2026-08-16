@@ -15,8 +15,7 @@ from .codec import decode_envelope, encode_envelope
 from .protocols import EventHandler, Subscription, SubscriptionOptions
 from .subjects import validate_publish_subject, validate_subscription_subject
 
-STREAM_MAX_AGE_SECONDS = 15 * 24 * 60 * 60
-MARKET_BAR_TTL_HEADER = "168h"
+STREAM_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 JETSTREAM_API_TIMEOUT_SECONDS = 30.0
 
 
@@ -170,18 +169,16 @@ class NatsJetStreamEventBus:
             if (
                 config.subjects != desired_subjects
                 or config.max_age != STREAM_MAX_AGE_SECONDS
-                or config.allow_msg_ttl is not True
             ):
                 config.subjects = desired_subjects
                 config.max_age = STREAM_MAX_AGE_SECONDS
-                config.allow_msg_ttl = True
                 await typed_jetstream.update_stream(config=config)
         except NotFoundError:
             await typed_jetstream.add_stream(
                 name=stream,
                 subjects=desired_subjects,
                 max_age=STREAM_MAX_AGE_SECONDS,
-                allow_msg_ttl=True,
+                allow_msg_ttl=False,
             )
         return cls(
             client=cast(_NatsClient, client),
@@ -220,10 +217,11 @@ class NatsJetStreamEventBus:
                 raise RuntimeError("Core NATS client is unavailable")
             await self._client.publish(qualified, payload)
             return
-        headers = {"Nats-Msg-Id": str(envelope.event_id)}
-        if qualified.startswith(f"{self._prefix}.v1.market.bar."):
-            headers["Nats-TTL"] = MARKET_BAR_TTL_HEADER
-        await self._jetstream.publish(qualified, payload, headers=headers)
+        await self._jetstream.publish(
+            qualified,
+            payload,
+            headers={"Nats-Msg-Id": str(envelope.event_id)},
+        )
 
     async def subscribe(
         self,

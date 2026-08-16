@@ -293,7 +293,7 @@ async def run_support_confirmation_process(
             "universe_source": holdings.source,
             "symbols": list(selected_symbols),
             "assessments_published": published,
-            "persistence": "nats-jetstream-15d",
+            "persistence": "nats-jetstream-7d",
             "feeds_patreon_caps": False,
         }
         if once:

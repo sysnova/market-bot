@@ -35,12 +35,12 @@ When omitted, the NATS adapter creates a unique durable consumer for the
 subscription lifetime. In-memory history is process-local and disappears on
 restart.
 
-The `MARKETBOT` stream keeps ordinary versioned events for at most 15 days.
-Market-bar publications under `<prefix>.v1.market.bar.>` carry a per-message
-`Nats-TTL: 168h` header, so their retention is limited to seven days without
-shortening the availability of analyses, signals, transitions, alerts, or the
-DLQ. Connecting the adapter enables JetStream per-message TTL support on both
-new and existing streams.
+The `MARKETBOT` stream keeps all versioned events, including market bars, for
+at most seven days. The limit is configured once on the stream; publications
+do not carry per-message TTL metadata. Connecting the adapter migrates new and
+existing streams to that retention policy. New streams disable per-message TTL;
+NATS does not allow that capability to be disabled on a stream once enabled,
+but legacy streams no longer receive messages that use it.
 
 ## Tests
 

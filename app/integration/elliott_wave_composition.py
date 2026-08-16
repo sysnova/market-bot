@@ -196,7 +196,7 @@ async def run_elliott_wave_process(
             "universe_source": holdings.source,
             "symbols": list(selected_symbols),
             "assessments_published": published,
-            "persistence": "nats-jetstream-15d",
+            "persistence": "nats-jetstream-7d",
         }
         if once:
             return summary

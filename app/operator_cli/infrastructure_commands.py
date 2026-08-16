@@ -24,6 +24,7 @@ def register_infrastructure_commands(app: typer.Typer) -> None:
     connector.command("subscribe")(subscribe_external_connector)
     connector.command("reset")(reset_external_connector)
     nats_admin.command("cleanup-consumers")(cleanup_nats_consumers)
+    nats_admin.command("purge-market-bars")(purge_nats_market_bars)
 
 
 def list_connector_engines() -> None:
@@ -206,3 +207,28 @@ def cleanup_nats_consumers(
             sort_keys=True,
         )
     )
+
+
+def purge_nats_market_bars(
+    apply: Annotated[
+        bool,
+        typer.Option("--apply/--dry-run", help="Purge retained bars; defaults to preview only."),
+    ] = False,
+    stream: Annotated[str, typer.Option(help="JetStream stream to inspect.")] = "MARKETBOT",
+    prefix: Annotated[str, typer.Option(help="NATS subject prefix.")] = "marketbot",
+) -> None:
+    """Remove only retained live bars after historical recovery moved to PostgreSQL."""
+
+    from app.common.settings import AppSettings
+    from app.event_bus.stream_maintenance import run_market_bar_purge
+
+    settings = AppSettings()
+    summary = run_async(
+        run_market_bar_purge(
+            nats_url=settings.nats_url.get_secret_value(),
+            stream=stream,
+            prefix=prefix,
+            apply=apply,
+        )
+    )
+    typer.echo(json.dumps(summary.as_dict(), indent=2, sort_keys=True))

@@ -327,7 +327,7 @@ async def run_options_gamma_process(
             "refresh_seconds": settings.options_gamma_refresh_seconds,
             "assessments_published": first.assessments_published,
             "failures": first.failures,
-            "persistence": "nats-jetstream-15d-with-payload-ttl",
+            "persistence": "nats-jetstream-7d",
             "execution_enabled": False,
         }
         if once:

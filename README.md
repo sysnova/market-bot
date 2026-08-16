@@ -123,8 +123,8 @@ stores the shared cache in local PostgreSQL, and refreshes registered requiremen
 On restart, an engine requests only its missing interval over NATS Core and then reads PostgreSQL;
 historical bars do not enter JetStream. Weekly bars are treated as complete only after the market
 week closes. The WebSocket process never writes bars to PostgreSQL: it publishes live updates only
-through NATS. Those live bar messages expire from JetStream after seven days; other versioned
-events retain the stream's 15-day maximum.
+through NATS. The complete JetStream event stream, including live bars, retains seven days of
+messages. Historical recovery continues to use PostgreSQL rather than replaying retained bars.
 
 Alert v3.3 consumes stable `AnalysisResult`, Watcher transition, and setup-assessment contracts from
 NATS and emits named `LONG_BUY_ZONE`,
