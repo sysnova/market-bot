@@ -26,6 +26,9 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     assert "signal-fusion-v0" in names
     assert "volume-structure-v1" in names
     assert "options-gamma-v1" in names
+    assert "patreon-caps-v1" not in names
+    assert "elliott-wave-v0" not in names
+    assert "support-confirmation-v0" not in names
     assert "dilution-sec" not in names
     assert "peter-lynch" not in names
 
