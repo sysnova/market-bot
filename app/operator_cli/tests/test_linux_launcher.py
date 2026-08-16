@@ -16,6 +16,7 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     assert 'start_background "$name" "${process_arguments[@]}"' in script
     assert "run marketbot alerts long-portfolio" in script
     assert "--role long-portfolio" in script
+    assert "-n Portfolio2026" in script
     assert "LONG PORTFOLIO 2026" in script
     assert '"$STATUS_ROOT/long-portfolio-monitor.ready.json"' in script
     assert "remain-on-exit on" in script
@@ -32,6 +33,40 @@ def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
     assert "-n Opportunities" in script
     assert "ENTRY OPPORTUNITIES" in script
     assert "list-windows" in script
+
+
+def test_linux_launcher_keeps_only_control_and_confirmed_buys_in_main_window() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    fresh_session = script.split('tmux new-session -d -s "$SESSION"', 1)[1].split(
+        "if engine_is_active patreon-caps", 1
+    )[0]
+    main_window = fresh_session.split("if engine_is_active entry-opportunity", 1)[0]
+
+    assert main_window.count("tmux split-window") == 1
+    assert '"$confirmed"' in main_window
+    assert '"$analysis"' not in main_window
+    assert '"$long_portfolio"' not in main_window
+    assert 'select-layout -t "$SESSION":0 even-vertical' in main_window
+    assert 'tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"' in (
+        fresh_session
+    )
+    assert 'tmux new-window -d -t "$SESSION" -n Portfolio2026 "$long_portfolio"' in (
+        fresh_session
+    )
+    assert 'tmux new-window -d -t "$SESSION" -n Analysis "$analysis"' in fresh_session
+    assert fresh_session.index("-n Opportunities") < fresh_session.index("-n Portfolio2026")
+    assert fresh_session.index("-n Portfolio2026") < fresh_session.index("-n Analysis")
+
+
+def test_linux_launcher_migrates_legacy_monitor_panes_when_reattaching() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    reused_session = script.split('if tmux has-session -t "$SESSION"', 1)[1].split(
+        "((DETACH)) && return", 1
+    )[0]
+
+    assert 'tmux break-pane -d -s "$portfolio_pane" -n Portfolio2026' in reused_session
+    assert 'tmux break-pane -d -s "$analysis_pane" -n Analysis' in reused_session
+    assert 'select-layout -t "$SESSION":MarketBot even-vertical' in reused_session
 
 
 def test_linux_launcher_uses_canonical_batches_and_readiness_paths() -> None:

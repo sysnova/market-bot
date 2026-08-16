@@ -345,6 +345,31 @@ launch_tmux() {
       tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
       tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
     fi
+    if engine_is_active long-portfolio && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Portfolio2026'; then
+      local portfolio_pane
+      portfolio_pane="$(tmux list-panes -t "$SESSION":MarketBot -F '#{pane_id}|#{pane_title}' 2>/dev/null | awk -F'|' '$2 == "LONG PORTFOLIO 2026" { print $1; exit }')"
+      if [[ -n "$portfolio_pane" ]]; then
+        tmux break-pane -d -s "$portfolio_pane" -n Portfolio2026
+      else
+        tmux new-window -d -t "$SESSION" -n Portfolio2026 "$long_portfolio"
+      fi
+      tmux set-window-option -t "$SESSION":Portfolio2026 remain-on-exit on
+      tmux select-pane -t "$SESSION":Portfolio2026.0 -T 'LONG PORTFOLIO 2026'
+    fi
+    if engine_is_active alert && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Analysis'; then
+      local analysis_pane
+      analysis_pane="$(tmux list-panes -t "$SESSION":MarketBot -F '#{pane_id}|#{pane_title}' 2>/dev/null | awk -F'|' '$2 == "ANÁLISIS" { print $1; exit }')"
+      if [[ -n "$analysis_pane" ]]; then
+        tmux break-pane -d -s "$analysis_pane" -n Analysis
+      else
+        tmux new-window -d -t "$SESSION" -n Analysis "$analysis"
+      fi
+      tmux set-window-option -t "$SESSION":Analysis remain-on-exit on
+      tmux select-pane -t "$SESSION":Analysis.0 -T 'ANÁLISIS'
+    fi
+    tmux select-layout -t "$SESSION":MarketBot even-vertical 2>/dev/null || true
     if engine_is_active patreon-caps && \
       ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'PatreonCaps'; then
       tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
@@ -389,20 +414,24 @@ launch_tmux() {
   tmux select-pane -t "$SESSION":0.0 -T 'MARKETBOT CONTROL — Ctrl+C stops all'
   local pane_id
   if engine_is_active alert; then
-    pane_id="$(tmux split-window -v -P -F '#{pane_id}' -t "$SESSION":0 "$analysis")"
-    tmux select-pane -t "$pane_id" -T 'ANÁLISIS'
     pane_id="$(tmux split-window -v -P -F '#{pane_id}' -t "$SESSION":0 "$confirmed")"
     tmux select-pane -t "$pane_id" -T 'COMPRAS CONFIRMADAS'
+    tmux select-layout -t "$SESSION":0 even-vertical
   fi
-  if engine_is_active long-portfolio; then
-    pane_id="$(tmux split-window -v -P -F '#{pane_id}' -t "$SESSION":0 "$long_portfolio")"
-    tmux select-pane -t "$pane_id" -T 'LONG PORTFOLIO 2026'
-  fi
-  tmux select-layout -t "$SESSION":0 tiled
   if engine_is_active entry-opportunity; then
     tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
     tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
     tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
+  fi
+  if engine_is_active long-portfolio; then
+    tmux new-window -d -t "$SESSION" -n Portfolio2026 "$long_portfolio"
+    tmux set-window-option -t "$SESSION":Portfolio2026 remain-on-exit on
+    tmux select-pane -t "$SESSION":Portfolio2026.0 -T 'LONG PORTFOLIO 2026'
+  fi
+  if engine_is_active alert; then
+    tmux new-window -d -t "$SESSION" -n Analysis "$analysis"
+    tmux set-window-option -t "$SESSION":Analysis remain-on-exit on
+    tmux select-pane -t "$SESSION":Analysis.0 -T 'ANÁLISIS'
   fi
   if engine_is_active patreon-caps; then
     tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"

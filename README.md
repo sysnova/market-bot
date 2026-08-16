@@ -229,15 +229,17 @@ and durable consumers.
 See [architecture](docs/architecture.md), [engine interconnection map](docs/engine-interconnection-map.md),
 [development](docs/development.md), and [operations](docs/operations.md) for repository-wide guidance.
 
-On Ubuntu Desktop, install `tmux` and start the four-pane process monitor with:
+On Ubuntu Desktop or WSL, install `tmux` and start the process monitor with:
 
 ```shell
 sudo apt install tmux
 ./scripts/linux/start-market-bot.sh
 ```
 
-The fourth pane, `LONG PORTFOLIO 2026`, loads persisted alerts from local PostgreSQL
-and follows new allocation-aware LONG entries. The control pane also owns the
+The main `MarketBot` window has only two horizontal panes: lifecycle control on top and confirmed
+buys below. `Analysis`, `Opportunities`, and `Portfolio2026` are independent sibling windows so
+each monitor can use the full terminal. `Portfolio2026` loads persisted alerts from local
+PostgreSQL and follows new allocation-aware LONG entries. The control pane still owns the
 `long-portfolio-v1` engine, so `Ctrl+C` stops it together with the rest of MarketBot.
 
 The same launcher also creates sibling `PatreonCaps`, `ElliottWave`, and
@@ -249,8 +251,9 @@ reaction and structural-reversal scores separate. A new structural confirmation 
 structural confirmation (`S`), and every remaining cross-engine gate. Its lower pane shows only
 current analytical `BUY_CONFIRMED` decisions; no broker execution is enabled.
 
-The top pane controls lifecycle, the middle pane displays analyses, and the bottom pane displays
-confirmed purchases. Pressing `Ctrl+C` in the control pane stops all MarketBot processes.
+Use `Ctrl+B` followed by the window number, or select a window directly with
+`tmux select-window -t marketbot:Analysis`, `marketbot:Opportunities`, or
+`marketbot:Portfolio2026`. Pressing `Ctrl+C` in the control pane stops all MarketBot processes.
 # Market Rotation local
 
 MarketBot incluye un proceso independiente que reutiliza los perfiles sectoriales migrados en

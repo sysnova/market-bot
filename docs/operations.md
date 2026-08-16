@@ -594,7 +594,16 @@ unicamente para `PATREON_CAPS_BUY`. En WSL, las confirmaciones `CONFIRMED_V`, `C
 
 ## Entry Opportunities — seguimiento paper
 
-El launcher de Ubuntu/WSL crea la ventana independiente `Opportunities`. La vista carga desde
+El launcher de Ubuntu/WSL mantiene solamente control y compras confirmadas en la ventana principal
+`MarketBot`. Los monitores generales usan ventanas independientes de ancho completo:
+
+```bash
+tmux select-window -t marketbot:Analysis
+tmux select-window -t marketbot:Opportunities
+tmux select-window -t marketbot:Portfolio2026
+```
+
+La ventana `Opportunities` carga desde
 PostgreSQL todas las oportunidades activas y el historial reciente; luego se redibuja inmediatamente
 con cada evento de `marketbot.v1.entry-opportunity.transition.>`. Como las barras de un minuto pueden
 actualizar precios sin producir un evento material, tambien relee PostgreSQL cada 30 segundos.
