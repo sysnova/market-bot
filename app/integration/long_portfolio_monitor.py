@@ -209,13 +209,10 @@ async def _print_progress_snapshot(
             for item in policy.allocations
         )
     )
+    print(f"\nPORTFOLIO 2026 — progreso LONG — {now:%Y-%m-%d %H:%M} UTC", flush=True)
     print(
-        f"\nLONG PORTFOLIO PROGRESS — {now:%Y-%m-%d %H:%M} UTC — AGE+10 LONG GATES+SES+CD+ALLOC",
-        flush=True,
-    )
-    print(
-        "GATES V=veredicto D=direccion SC=score C=confianza Z=buy-zone "
-        "SET=setup ENT=entrada TR=trend REG=regimen RF=riesgo",
+        "Cada ticker requiere 14 condiciones. CUMPLE muestra lo aprobado; "
+        "FALTA explica qué bloquea la alerta.",
         flush=True,
     )
     for allocation, envelope in zip(policy.allocations, envelopes, strict=True):
@@ -311,37 +308,159 @@ def _progress_item(
 def _format_progress_line(item: _ProgressItem) -> str:
     if not item.validation_gates:
         return (
-            f"{item.symbol:<6} [{'-' * _PROGRESS_GATE_COUNT}] 0/{_PROGRESS_GATE_COUNT} "
-            f"SES {item.qualified_sessions}/{item.minimum_sessions} | "
-            f"DATA={item.age_detail}"
+            f"{item.symbol:<6} SIN ANÁLISIS LONG "
+            f"[{'-' * _PROGRESS_GATE_COUNT}] 0/{_PROGRESS_GATE_COUNT}\n"
+            "       CUMPLE: ninguna condición verificable todavía\n"
+            f"       FALTA: {_human_age_detail(item.age_detail, passed=False)}"
         )
-    sessions_ok = item.qualified_sessions >= item.minimum_sessions
-    statuses = (
-        item.age_ok,
-        *(gate.passed for gate in item.validation_gates),
-        sessions_ok,
-        item.cooldown_ok,
-        item.allocation_ok,
-    )
-    passed = sum(statuses)
+    checks = _human_progress_checks(item)
+    passed = sum(check_passed for check_passed, _ in checks)
     bar = "#" * passed + "-" * (_PROGRESS_GATE_COUNT - passed)
-    failures: list[str] = []
-    if not item.age_ok:
-        failures.append(f"AGE={item.age_detail}")
-    failures.extend(
-        f"{gate.code}={gate.detail}" for gate in item.validation_gates if not gate.passed
-    )
-    if not sessions_ok:
-        failures.append(f"SES={item.qualified_sessions}/{item.minimum_sessions}")
-    if not item.cooldown_ok:
-        failures.append(f"CD={item.cooldown_detail}")
-    if not item.allocation_ok:
-        failures.append(f"ALLOC={item.allocation_detail}")
-    suffix = "READY" if not failures else "FAIL " + "; ".join(failures)
+    fulfilled = [description for check_passed, description in checks if check_passed]
+    missing = [description for check_passed, description in checks if not check_passed]
+    if not missing:
+        status = "LISTO PARA ALERTA"
+    elif not item.allocation_ok and item.allocation_detail.startswith("USD 0"):
+        status = "OBJETIVO CUBIERTO"
+    elif not item.cooldown_ok:
+        status = "EN COOLDOWN"
+    else:
+        status = "ESPERANDO CONDICIONES"
     return (
-        f"{item.symbol:<6} [{bar}] {passed}/{_PROGRESS_GATE_COUNT} "
-        f"SES {item.qualified_sessions}/{item.minimum_sessions} | {suffix}"
+        f"{item.symbol:<6} {status} [{bar}] {passed}/{_PROGRESS_GATE_COUNT}\n"
+        f"       CUMPLE: {'; '.join(fulfilled) if fulfilled else 'ninguna todavía'}\n"
+        f"       FALTA: {'; '.join(missing) if missing else 'ninguna; todo está cumplido'}"
     )
+
+
+def _human_progress_checks(item: _ProgressItem) -> tuple[tuple[bool, str], ...]:
+    sessions_ok = item.qualified_sessions >= item.minimum_sessions
+    return (
+        (item.age_ok, _human_age_detail(item.age_detail, passed=item.age_ok)),
+        *((gate.passed, _human_gate_detail(gate)) for gate in item.validation_gates),
+        (
+            sessions_ok,
+            f"confirmaciones {item.qualified_sessions}/{item.minimum_sessions} sesiones",
+        ),
+        (item.cooldown_ok, _human_cooldown_detail(item)),
+        (item.allocation_ok, _human_allocation_detail(item)),
+    )
+
+
+def _human_gate_detail(gate: LongPortfolioValidationGate) -> str:
+    if gate.code == "V":
+        actual = gate.detail.split("!=", maxsplit=1)[0]
+        description = f"veredicto {_human_token(actual)}"
+        return description if gate.passed else f"{description} (requiere favorable)"
+    if gate.code == "D":
+        actual = gate.detail.split("!=", maxsplit=1)[0]
+        description = f"dirección {_human_token(actual)}"
+        return description if gate.passed else f"{description} (requiere alcista)"
+    if gate.code == "SC":
+        return _human_minimum_detail("score general", gate.detail)
+    if gate.code == "C":
+        return _human_minimum_detail("confianza", gate.detail, percentage=True)
+    if gate.code == "Z":
+        actual = gate.detail.split("!=", maxsplit=1)[0]
+        if gate.passed:
+            return "precio dentro de la zona de compra"
+        return f"precio {_human_token(actual)} (requiere zona de compra)"
+    if gate.code == "SET":
+        return _human_minimum_detail("calidad del setup", gate.detail)
+    if gate.code == "ENT":
+        return _human_minimum_detail("calidad de entrada", gate.detail)
+    if gate.code == "TR":
+        return _human_minimum_detail("tendencia estructural", gate.detail)
+    if gate.code == "REG":
+        if gate.passed:
+            return "régimen de mercado permitido"
+        actual = gate.detail.removesuffix(" not_allowed")
+        return f"régimen {_human_token(actual)} no permitido"
+    if gate.code == "RF":
+        if gate.passed:
+            return "sin riesgos semanales bloqueantes"
+        risks = ", ".join(_human_token(value) for value in gate.detail.split(","))
+        return f"riesgo semanal: {risks}"
+    return f"{gate.code}: {_human_token(gate.detail)}"
+
+
+def _human_minimum_detail(label: str, detail: str, *, percentage: bool = False) -> str:
+    if "<" not in detail:
+        return f"{label} {_human_number(detail, percentage=percentage)}"
+    actual, minimum = detail.split("<", maxsplit=1)
+    return (
+        f"{label} {_human_number(actual, percentage=percentage)} "
+        f"(mínimo {_human_number(minimum, percentage=percentage)})"
+    )
+
+
+def _human_number(value: str, *, percentage: bool) -> str:
+    if not percentage:
+        return value
+    try:
+        percent = Decimal(value) * Decimal("100")
+    except ArithmeticError:
+        return value
+    rendered = format(percent, "f")
+    if "." in rendered:
+        rendered = rendered.rstrip("0").rstrip(".")
+    return f"{rendered}%"
+
+
+def _human_age_detail(detail: str, *, passed: bool) -> str:
+    if detail == "no_long_result":
+        return "todavía no existe un análisis LONG para este ticker"
+    if detail == "future_result":
+        return "el análisis tiene una fecha futura y no puede utilizarse"
+    if detail.startswith("stale_"):
+        return f"análisis vencido ({detail.removeprefix('stale_')})"
+    if passed and "<=" in detail:
+        age, maximum = detail.split("<=", maxsplit=1)
+        return f"análisis vigente ({age}; máximo {maximum})"
+    return f"vigencia del análisis: {_human_token(detail)}"
+
+
+def _human_cooldown_detail(item: _ProgressItem) -> str:
+    if item.cooldown_ok:
+        return "sin espera por cooldown"
+    remaining = item.cooldown_detail.removesuffix(" remaining")
+    return f"cooldown activo ({remaining} restante)"
+
+
+def _human_allocation_detail(item: _ProgressItem) -> str:
+    detail = item.allocation_detail
+    if detail.startswith("USD ") and detail.endswith(" remaining"):
+        amount = detail.removesuffix(" remaining")
+        if item.allocation_ok:
+            return f"cupo disponible {amount}"
+        return "sin cupo; el objetivo de cartera ya está cubierto"
+    if detail == "missing_price_or_allocation":
+        return "no se pudo calcular el cupo por falta de precio o asignación"
+    if detail == "unknown_without_price":
+        return "no se pudo calcular el cupo porque todavía no hay precio"
+    return f"cupo de cartera: {_human_token(detail)}"
+
+
+def _human_token(value: str) -> str:
+    translations = {
+        "FAVORABLE": "favorable",
+        "WATCH": "en observación",
+        "CAUTION": "con precaución",
+        "BULLISH": "alcista",
+        "BEARISH": "bajista",
+        "NEUTRAL": "neutral",
+        "buy_zone": "en zona de compra",
+        "watch_pullback": "esperando el retroceso",
+        "below_weekly_200w": "debajo de la media de 200 semanas",
+        "weekly_structure_broken": "estructura semanal rota",
+        "weekly_distribution": "distribución semanal",
+        "weekly_rsi_hot": "RSI semanal sobrecomprado",
+        "extended_from_30w": "extendido respecto de la media de 30 semanas",
+        "extended_from_50w": "extendido respecto de la media de 50 semanas",
+        "clean_uptrend": "tendencia alcista ordenada",
+        "volatile_uptrend": "tendencia alcista volátil",
+    }
+    return translations.get(value, value.replace("_", " ").lower())
 
 
 def _progress_decimal(value: object) -> Decimal | None:
