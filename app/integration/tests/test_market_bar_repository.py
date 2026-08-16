@@ -112,6 +112,31 @@ async def test_repository_reports_coverage_and_loads_latest_market_bars() -> Non
     assert bars == (bar(),)
 
 
+async def test_repository_filters_regular_session_before_per_symbol_limit() -> None:
+    connection = FakeConnection([FakeResult([])])
+    repository = PostgresMarketBarRepository(FakeEngine(connection))  # type: ignore[arg-type]
+
+    await repository.load_latest(
+        ("TGT", "ADUR"),
+        BarTimeframe.MINUTE_1,
+        limit_per_symbol=500,
+        regular_session_only=True,
+    )
+
+    statement, parameters = connection.calls[0]
+    sql = str(statement)
+    session_filter = sql.index("timestamp at time zone 'America/New_York'")
+    row_limit = sql.index("row_number() over")
+    assert session_filter < row_limit
+    assert "order by array_position(:symbols, symbol), timestamp" in sql
+    assert parameters == {
+        "symbols": ["TGT", "ADUR"],
+        "timeframe": "1Min",
+        "limit_per_symbol": 500,
+        "regular_session_only": True,
+    }
+
+
 async def test_repository_prunes_through_bounded_database_function() -> None:
     connection = FakeConnection([])
     repository = PostgresMarketBarRepository(FakeEngine(connection))  # type: ignore[arg-type]

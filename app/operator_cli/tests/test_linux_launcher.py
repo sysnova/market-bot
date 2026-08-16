@@ -109,6 +109,18 @@ def test_linux_launcher_preserves_arguments_without_shell_reparsing() -> None:
     assert "eval " not in script
 
 
+def test_linux_launcher_executes_marketbot_without_resident_uv_wrappers() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    start_background = script.split("start_background()", 1)[1].split(
+        "check_children()", 1
+    )[0]
+
+    assert 'MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"' in script
+    assert 'setsid "$MARKETBOT_EXECUTABLE" "${@:3}"' in start_background
+    assert "setsid uv \"$@\"" not in start_background
+    assert "exec_marketbot" in script
+
+
 def test_analytical_tmux_roles_are_read_only_monitors() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 

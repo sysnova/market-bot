@@ -40,7 +40,13 @@ def is_regular_session(value: datetime) -> bool:
 def is_regular_analytical_bar(bar: MarketBar) -> bool:
     """Allow structural bars, but require RTH for every intraday timeframe."""
 
-    return bar.timeframe not in _INTRADAY_TIMEFRAMES or is_regular_session(bar.timestamp)
+    return not requires_regular_session(bar.timeframe) or is_regular_session(bar.timestamp)
+
+
+def requires_regular_session(timeframe: BarTimeframe) -> bool:
+    """Return whether analytical history for a timeframe must be restricted to RTH."""
+
+    return timeframe in _INTRADAY_TIMEFRAMES
 
 
 def analytical_storage_limit(timeframe: BarTimeframe, analytical_limit: int) -> int:

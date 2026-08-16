@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
+MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
 ROLE="launcher"
 RUNTIME_ROOT="$PROJECT_ROOT/.runtime"
@@ -102,6 +103,15 @@ clear_runtime_readiness() {
   rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 }
 
+exec_marketbot() {
+  if (($# < 2)) || [[ "$1" != "run" || "$2" != "marketbot" ]]; then
+    echo "Invalid MarketBot command: $*" >&2
+    exit 2
+  fi
+  shift 2
+  exec "$MARKETBOT_EXECUTABLE" "$@"
+}
+
 run_analysis() {
   cd "$PROJECT_ROOT"
   wait_ready "$STATUS_ROOT/alert.ready.json"
@@ -114,12 +124,12 @@ run_confirmed() {
     --ready-path "$STATUS_ROOT/confirmed-buy-monitor.ready.json")
   ((NO_BELL)) && args+=(--no-bell)
   cd "$PROJECT_ROOT"
-  exec uv "${args[@]}"
+  exec_marketbot "${args[@]}"
 }
 
 run_opportunities() {
   cd "$PROJECT_ROOT"
-  exec uv run marketbot monitor entry-opportunity \
+  exec_marketbot run marketbot monitor entry-opportunity \
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
 }
 
@@ -128,13 +138,13 @@ run_long_portfolio_monitor() {
     --ready-path "$STATUS_ROOT/long-portfolio-monitor.ready.json")
   ((NO_BELL)) && args+=(--no-bell)
   cd "$PROJECT_ROOT"
-  exec uv "${args[@]}"
+  exec_marketbot "${args[@]}"
 }
 
 run_patreon_caps_analysis() {
   cd "$PROJECT_ROOT"
   wait_ready "$STATUS_ROOT/patreon-caps-v1.ready.json"
-  exec uv run marketbot monitor patreon-caps \
+  exec_marketbot run marketbot monitor patreon-caps \
     --ready-path "$STATUS_ROOT/patreon-caps-analysis.ready.json"
 }
 
@@ -143,13 +153,13 @@ run_patreon_caps_alerts() {
     --ready-path "$STATUS_ROOT/patreon-caps-alerts.ready.json")
   ((NO_BELL)) && args+=(--no-bell)
   cd "$PROJECT_ROOT"
-  exec uv "${args[@]}"
+  exec_marketbot "${args[@]}"
 }
 
 run_elliott_wave() {
   cd "$PROJECT_ROOT"
   wait_ready "$STATUS_ROOT/elliott-wave-v0.ready.json"
-  exec uv run marketbot monitor elliott-wave \
+  exec_marketbot run marketbot monitor elliott-wave \
     --ready-path "$STATUS_ROOT/elliott-wave-analysis.ready.json"
 }
 
@@ -159,13 +169,13 @@ run_support_confirmation() {
   local monitor_args=(run marketbot monitor support-confirmation \
     --ready-path "$STATUS_ROOT/support-confirmation-analysis.ready.json")
   ((NO_BELL)) && monitor_args+=(--no-bell)
-  exec uv "${monitor_args[@]}"
+  exec_marketbot "${monitor_args[@]}"
 }
 
 run_signal_fusion_analysis() {
   cd "$PROJECT_ROOT"
   wait_ready "$STATUS_ROOT/signal-fusion-v0.ready.json"
-  exec uv run marketbot monitor signal-fusion --mode analysis --no-bell \
+  exec_marketbot run marketbot monitor signal-fusion --mode analysis --no-bell \
     --ready-path "$STATUS_ROOT/signal-fusion-analysis.ready.json"
 }
 
@@ -176,7 +186,7 @@ run_signal_fusion_buys() {
   local args=(run marketbot monitor signal-fusion --mode buys \
     --ready-path "$STATUS_ROOT/signal-fusion-buys.ready.json")
   ((NO_BELL)) && args+=(--no-bell)
-  exec uv "${args[@]}"
+  exec_marketbot "${args[@]}"
 }
 
 wait_ready() {
@@ -240,7 +250,12 @@ run_control() {
 
   start_background() {
     local name="$1"; shift
-    setsid uv "$@" >"$LOG_ROOT/$name.out.log" 2>"$LOG_ROOT/$name.err.log" &
+    if (($# < 2)) || [[ "$1" != "run" || "$2" != "marketbot" ]]; then
+      echo "Invalid MarketBot process command for $name: $*" >&2
+      return 2
+    fi
+    setsid "$MARKETBOT_EXECUTABLE" "${@:3}" \
+      >"$LOG_ROOT/$name.out.log" 2>"$LOG_ROOT/$name.err.log" &
     MARKETBOT_CHILD_PIDS+=("$!")
     MARKETBOT_CHILD_NAMES+=("$name")
     echo "Started $name (PID $!)"

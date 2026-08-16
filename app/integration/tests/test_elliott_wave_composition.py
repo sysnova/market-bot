@@ -65,7 +65,7 @@ def test_tmux_launcher_has_a_sibling_elliott_wave_window() -> None:
     role = launcher.split("run_elliott_wave()", 1)[1].split(
         "run_support_confirmation()", 1
     )[0]
-    assert "uv run marketbot monitor elliott-wave" in role
+    assert "exec_marketbot run marketbot monitor elliott-wave" in role
     assert "marketbot engine elliott-wave" not in role
 
 

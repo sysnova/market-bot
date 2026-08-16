@@ -100,6 +100,7 @@ class PostgresMarketBarRepository:
         timeframe: BarTimeframe,
         *,
         limit_per_symbol: int,
+        regular_session_only: bool = False,
     ) -> tuple[MarketBar, ...]:
         if limit_per_symbol < 1:
             raise ValueError("limit_per_symbol must be positive")
@@ -109,24 +110,43 @@ class PostgresMarketBarRepository:
                 await connection.execute(
                     text(
                         """
-                        select symbol, timeframe, timestamp, open, high, low, close,
-                               volume, trade_count, vwap, source, feed, is_final
-                        from (
-                          select market_bars.*,
+                        with filtered as (
+                          select symbol, timeframe, timestamp, open, high, low, close,
+                                 volume, trade_count, vwap, source, feed, is_final
+                          from market_bot.market_bars
+                          where symbol = any(:symbols) and timeframe = :timeframe
+                            and (
+                              not :regular_session_only
+                              or (
+                                extract(
+                                  isodow from timestamp at time zone 'America/New_York'
+                                ) between 1 and 5
+                                and (timestamp at time zone 'America/New_York')::time
+                                    >= time '09:30:00'
+                                and (timestamp at time zone 'America/New_York')::time
+                                    < time '16:00:00'
+                              )
+                            )
+                        ),
+                        ranked as (
+                          select filtered.*,
                                  row_number() over (
                                    partition by symbol, timeframe order by timestamp desc
                                  ) as row_number
-                          from market_bot.market_bars
-                          where symbol = any(:symbols) and timeframe = :timeframe
-                        ) latest
+                          from filtered
+                        )
+                        select symbol, timeframe, timestamp, open, high, low, close,
+                               volume, trade_count, vwap, source, feed, is_final
+                        from ranked
                         where row_number <= :limit_per_symbol
-                        order by symbol, timestamp
+                        order by array_position(:symbols, symbol), timestamp
                         """
                     ),
                     {
                         "symbols": list(normalized),
                         "timeframe": timeframe.value,
                         "limit_per_symbol": limit_per_symbol,
+                        "regular_session_only": regular_session_only,
                     },
                 )
             ).all()

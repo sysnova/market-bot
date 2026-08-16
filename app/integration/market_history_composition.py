@@ -17,9 +17,9 @@ from app.alpaca_market_data.transports import HttpxTransport
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
 from app.common.market_session import (
-    analytical_storage_limit,
     is_completed_daily_bar,
     is_regular_analytical_bar,
+    requires_regular_session,
 )
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
@@ -47,6 +47,7 @@ class HistoryRepository(Protocol):
         timeframe: BarTimeframe,
         *,
         limit_per_symbol: int,
+        regular_session_only: bool = False,
     ) -> tuple[MarketBar, ...]: ...
 
 
@@ -125,9 +126,8 @@ class MarketHistoryLoader:
             loaded = await self._repository.load_latest(
                 request.symbols,
                 requirement.timeframe,
-                limit_per_symbol=analytical_storage_limit(
-                    requirement.timeframe, requirement.max_bars_per_symbol
-                ),
+                limit_per_symbol=requirement.max_bars_per_symbol,
+                regular_session_only=requires_regular_session(requirement.timeframe),
             )
             repository_read_ms = _elapsed_ms(repository_started)
             selection_started = perf_counter()
@@ -141,12 +141,7 @@ class MarketHistoryLoader:
                     or is_completed_daily_bar(bar, as_of=as_of)
                 )
             )
-            for symbol in request.symbols:
-                output.extend(
-                    tuple(bar for bar in eligible if bar.symbol == symbol)[
-                        -requirement.max_bars_per_symbol :
-                    ]
-                )
+            output.extend(eligible)
             requirement_profiles.append(
                 HistoryRequirementProfile(
                     timeframe=requirement.timeframe,

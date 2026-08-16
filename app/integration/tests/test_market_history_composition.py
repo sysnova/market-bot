@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from app.common.market_session import is_regular_analytical_bar
 from app.contracts import BarTimeframe, MarketBar, MarketHistoryRequirement
 from app.integration.market_history_composition import MarketHistoryLoader
 
@@ -34,7 +35,7 @@ class FakeClient:
 
 class FakeRepository:
     def __init__(self, bars: tuple[MarketBar, ...] | None = None) -> None:
-        self.calls: list[tuple[tuple[str, ...], BarTimeframe, int]] = []
+        self.calls: list[tuple[tuple[str, ...], BarTimeframe, int, bool]] = []
         self.bars = bars
 
     async def load_latest(
@@ -43,10 +44,23 @@ class FakeRepository:
         timeframe: BarTimeframe,
         *,
         limit_per_symbol: int,
+        regular_session_only: bool = False,
     ) -> tuple[MarketBar, ...]:
-        self.calls.append((symbols, timeframe, limit_per_symbol))
+        self.calls.append((symbols, timeframe, limit_per_symbol, regular_session_only))
         if self.bars is not None:
-            return tuple(item for item in self.bars if item.timeframe is timeframe)
+            matching = tuple(item for item in self.bars if item.timeframe is timeframe)
+            eligible = (
+                tuple(item for item in matching if is_regular_analytical_bar(item))
+                if regular_session_only
+                else matching
+            )
+            return tuple(
+                item
+                for symbol in symbols
+                for item in tuple(bar for bar in eligible if bar.symbol == symbol)[
+                    -limit_per_symbol:
+                ]
+            )
         return (bar(timeframe),)
 
 
@@ -77,8 +91,8 @@ async def test_loader_requests_sync_then_reads_each_required_timeframe() -> None
     assert len(client.requests) == 1
     assert client.requests[0].engine_id == "long-term-v2"  # type: ignore[attr-defined]
     assert repository.calls == [
-        (("TGT",), BarTimeframe.DAY_1, 260),
-        (("TGT",), BarTimeframe.WEEK_1, 220),
+        (("TGT",), BarTimeframe.DAY_1, 260, False),
+        (("TGT",), BarTimeframe.WEEK_1, 220, False),
     ]
     assert [item.timeframe for item in bars] == [
         BarTimeframe.DAY_1,
@@ -148,7 +162,7 @@ async def test_loader_can_force_a_tail_refresh_before_recovery() -> None:
     assert client.requests[0].force_refresh is True  # type: ignore[attr-defined]
 
 
-async def test_loader_overfetches_and_removes_extended_intraday_bars() -> None:
+async def test_loader_pushes_intraday_session_filter_and_limit_into_repository() -> None:
     client = FakeClient()
     repository = FakeRepository(
         (
@@ -173,7 +187,7 @@ async def test_loader_overfetches_and_removes_extended_intraday_bars() -> None:
         as_of=NOW,
     )
 
-    assert repository.calls == [(("TGT",), BarTimeframe.MINUTE_1, 3)]
+    assert repository.calls == [(("TGT",), BarTimeframe.MINUTE_1, 1, True)]
     assert [item.timestamp for item in bars] == [datetime(2026, 7, 31, 14, 1, tzinfo=UTC)]
 
 

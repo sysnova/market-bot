@@ -236,6 +236,11 @@ async def run_engine_process(
             as_of=as_of,
         )
         bars = history.bars
+        historical_bar_count = len(bars)
+        history_ensure_ms = history.ensure_ms
+        history_repository_read_ms = history.repository_read_ms
+        history_selection_ms = history.selection_ms
+        history_total_ms = history.total_ms
         history_requirements = [
             {
                 "timeframe": item.timeframe.value,
@@ -250,7 +255,7 @@ async def run_engine_process(
             "distributed_engine_history_loaded",
             service=_service_name(horizon),
             symbols=len(universe.symbols),
-            historical_bars=len(bars),
+            historical_bars=historical_bar_count,
             ensure_ms=history.ensure_ms,
             repository_read_ms=history.repository_read_ms,
             selection_ms=history.selection_ms,
@@ -265,10 +270,14 @@ async def run_engine_process(
             "distributed_engine_bootstrap_completed",
             service=_service_name(horizon),
             symbols=len(universe.symbols),
-            historical_bars=len(bars),
+            historical_bars=historical_bar_count,
             initial_results=result_count,
             bootstrap_ms=bootstrap_ms,
         )
+        # The workers copy only their bounded live state during bootstrap. Do not
+        # keep the much larger PostgreSQL transfer tuple alive while the service waits.
+        del bars
+        del history
         worker.activate_universe(universe.symbols)
         current_symbols = set(universe.symbols)
         refresh_lock = asyncio.Lock()
@@ -353,7 +362,7 @@ async def run_engine_process(
             "service": _service_name(horizon),
             "horizon": horizon.value,
             "symbols": len(universe.symbols),
-            "historical_bars": len(bars),
+            "historical_bars": historical_bar_count,
             "initial_results": result_count,
             "universe_source": universe.source,
             "live_subjects": list(engine_live_subjects(horizon)),
@@ -363,10 +372,10 @@ async def run_engine_process(
             "warmup_total_ms": warmup_total_ms,
             "warmup_universe_ms": universe_ms,
             "warmup_nats_connect_ms": nats_connect_ms,
-            "warmup_history_ensure_ms": history.ensure_ms,
-            "warmup_history_repository_read_ms": history.repository_read_ms,
-            "warmup_history_selection_ms": history.selection_ms,
-            "warmup_history_total_ms": history.total_ms,
+            "warmup_history_ensure_ms": history_ensure_ms,
+            "warmup_history_repository_read_ms": history_repository_read_ms,
+            "warmup_history_selection_ms": history_selection_ms,
+            "warmup_history_total_ms": history_total_ms,
             "warmup_bootstrap_ms": bootstrap_ms,
             "warmup_subscriptions_ms": subscriptions_ms,
             "warmup_history_requirements": history_requirements,
