@@ -13,7 +13,11 @@ from app.contracts import (
     NamedValue,
     PatternDirection,
 )
-from app.swing_4h_geri_engine import Swing4HGeriContext, Swing4HGeriEngine
+from app.swing_4h_geri_engine import (
+    Swing4HGeriContext,
+    Swing4HGeriEngine,
+    Swing4HGeriEngineV11,
+)
 
 START = datetime(2026, 7, 20, 13, 30, tzinfo=UTC)
 
@@ -155,3 +159,56 @@ def test_breaking_active_support_creates_next_resistance_instead_of_killing_stru
     assert result.levels[-1].kind is GeriLevelKind.RESISTANCE
     assert result.maturity is GeriMaturity.BUILDING
     assert result.zone_low is None
+
+
+def test_v11_keeps_the_active_level_chain_when_the_history_window_moves() -> None:
+    engine = Swing4HGeriEngineV11()
+    history = level_three_bars()
+    active = engine.analyze(
+        Swing4HGeriContext(
+            symbol="AAPL", bars=history, current_price=history[-1].close
+        )
+    )
+    next_bar = bar(9, low="100", high="109", close="108")
+
+    updated = engine.analyze(
+        Swing4HGeriContext(
+            symbol="AAPL",
+            bars=(*history[1:], next_bar),
+            current_price=next_bar.close,
+            active_structure=active,
+        )
+    )
+
+    assert updated.levels == active.levels
+    assert updated.active_level_sequence == active.active_level_sequence
+    assert updated.active_level_kind is active.active_level_kind
+    assert updated.active_level_price == active.active_level_price
+
+
+def test_v11_appends_one_level_only_after_a_completed_break() -> None:
+    engine = Swing4HGeriEngineV11()
+    history = level_three_bars()
+    active = engine.analyze(
+        Swing4HGeriContext(
+            symbol="AAPL", bars=history, current_price=history[-1].close
+        )
+    )
+    breaking_bar = bar(9, low="89", high="94", close="90")
+
+    updated = engine.analyze(
+        Swing4HGeriContext(
+            symbol="AAPL",
+            bars=(*history, breaking_bar),
+            current_price=breaking_bar.close,
+            active_structure=active,
+        )
+    )
+
+    assert updated.levels[:-1] == (
+        *active.levels[:-1],
+        active.levels[-1].model_copy(update={"broken_at": breaking_bar.timestamp}),
+    )
+    assert updated.levels[-1].sequence == active.active_level_sequence + 1
+    assert updated.levels[-1].kind is GeriLevelKind.RESISTANCE
+    assert updated.levels[-1].price == Decimal("112")

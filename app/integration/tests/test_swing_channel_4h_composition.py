@@ -5,6 +5,7 @@ import pytest
 
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
+    MARKET_BAR_EVENT,
     SWING_CHANNEL_ASSESSMENT_EVENT,
     SWING_CHANNEL_TRANSITION_EVENT,
     AnalysisHorizon,
@@ -18,7 +19,7 @@ from app.contracts import (
     SwingChannelMaturity,
 )
 from app.integration.swing_channel_4h_composition import SwingChannel4HRuntime
-from app.swing_channel_4h_engine import SwingChannel4HEngine
+from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 
 START = datetime(2026, 7, 20, 13, 30, tzinfo=UTC)
 
@@ -123,3 +124,51 @@ async def test_runtime_deduplicates_unchanged_observation() -> None:
     await runtime.evaluate("AAPL", current_price=bars()[-1].close + Decimal("0.25"))
 
     assert len(publisher.events) == count
+
+
+@pytest.mark.asyncio
+async def test_v11_runtime_projects_the_published_channel_on_the_next_bar() -> None:
+    publisher = Publisher()
+    runtime = SwingChannel4HRuntime(
+        engine=SwingChannel4HEngineV11(), publisher=publisher
+    )
+    history = bars()
+
+    await runtime.bootstrap(history, symbols=("AAPL",))
+    armed = next(
+        event.payload
+        for _, event in reversed(publisher.events)
+        if event.event_type == SWING_CHANNEL_ASSESSMENT_EVENT
+    )
+    next_bar = MarketBar(
+        symbol="AAPL",
+        timeframe=BarTimeframe.HOUR_4,
+        timestamp=history[-1].timestamp + timedelta(hours=4),
+        open=Decimal("108"),
+        high=Decimal("112"),
+        low=Decimal("107"),
+        close=Decimal("111"),
+        volume=Decimal("1000"),
+        source="test",
+        feed="sip",
+        is_final=True,
+    )
+    await runtime.handle_market(
+        EventEnvelope(
+            event_type=MARKET_BAR_EVENT,
+            occurred_at=next_bar.timestamp,
+            source="test",
+            subject="AAPL",
+            payload=next_bar,
+        )
+    )
+    projected = next(
+        event.payload
+        for _, event in reversed(publisher.events)
+        if event.event_type == SWING_CHANNEL_ASSESSMENT_EVENT
+    )
+
+    assert projected.pivot_a_at == armed.pivot_a_at
+    assert projected.pivot_b_at == armed.pivot_b_at
+    assert projected.pivot_c_at == armed.pivot_c_at
+    assert projected.support == armed.support + armed.slope_per_bar

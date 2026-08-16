@@ -4,6 +4,12 @@ Shadow engine that derives an ascending support channel from two confirmed risin
 a parallel line through the subsequent high. It consumes completed regular-session four-hour bars
 and publishes its own maturity without replacing the daily `SWING` analysis.
 
+Version `1.1.0` pins the selected A/B/C geometry when the channel becomes active. New completed
+bars project the same slope, width, support zone, and invalidation distance instead of selecting a
+different pivot pair from the rolling history. A replacement geometry may be selected only after
+the pinned channel is genuinely `INVALIDATED`; candidate replacements must also pass minimum
+containment and ATR-width quality gates.
+
 Maturity:
 
 - `ARMED`: a valid ascending channel exists.

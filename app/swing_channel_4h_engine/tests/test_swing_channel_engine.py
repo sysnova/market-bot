@@ -12,7 +12,11 @@ from app.contracts import (
     PatternDirection,
     SwingChannelMaturity,
 )
-from app.swing_channel_4h_engine import SwingChannel4HContext, SwingChannel4HEngine
+from app.swing_channel_4h_engine import (
+    SwingChannel4HContext,
+    SwingChannel4HEngine,
+    SwingChannel4HEngineV11,
+)
 
 START = datetime(2026, 7, 20, 13, 30, tzinfo=UTC)
 
@@ -148,3 +152,53 @@ def test_engine_promotes_alignment_to_l3_and_existing_confirmation_to_l4() -> No
     assert l3.daily_swing_aligned is True
     assert l4.maturity is SwingChannelMaturity.L4
     assert l4.existing_maturity_aligned is True
+
+
+def test_v11_keeps_the_armed_geometry_when_a_new_bar_arrives() -> None:
+    bars = channel_bars()
+    engine = SwingChannel4HEngineV11()
+    armed = engine.analyze(
+        SwingChannel4HContext(symbol="AAPL", bars=bars, current_price=Decimal("108"))
+    )
+    projected_support = armed.support + armed.slope_per_bar
+    next_bar = bar(10, low="103", high="110", close="105")
+
+    updated = engine.analyze(
+        SwingChannel4HContext(
+            symbol="AAPL",
+            bars=(*bars, next_bar),
+            current_price=projected_support,
+            active_channel=armed,
+        )
+    )
+
+    assert updated.pivot_a_at == armed.pivot_a_at
+    assert updated.pivot_b_at == armed.pivot_b_at
+    assert updated.pivot_c_at == armed.pivot_c_at
+    assert updated.slope_per_bar == armed.slope_per_bar
+    assert updated.width == armed.width
+    assert updated.support == projected_support
+    assert updated.maturity is SwingChannelMaturity.IN_ZONE_4H
+
+
+def test_v11_does_not_reuse_an_invalidated_channel() -> None:
+    bars = channel_bars()
+    engine = SwingChannel4HEngineV11()
+    armed = engine.analyze(
+        SwingChannel4HContext(symbol="AAPL", bars=bars, current_price=Decimal("108"))
+    )
+    invalidated = armed.model_copy(
+        update={"maturity": SwingChannelMaturity.INVALIDATED}
+    )
+
+    rebuilt = engine.analyze(
+        SwingChannel4HContext(
+            symbol="AAPL",
+            bars=bars,
+            current_price=Decimal("108"),
+            active_channel=invalidated,
+        )
+    )
+
+    assert rebuilt.context_hash == armed.context_hash
+    assert rebuilt.maturity is SwingChannelMaturity.ARMED

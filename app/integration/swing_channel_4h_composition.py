@@ -198,6 +198,7 @@ class SwingChannel4HRuntime:
                     current_price=value,
                     daily_swing=self._daily_swing.get(normalized),
                     existing_maturity=self._existing_maturity.get(normalized),
+                    active_channel=self._latest.get(normalized),
                 )
             )
         except ValueError:
@@ -267,7 +268,8 @@ def _same_observation(
     previous: SwingChannelAssessment, current: SwingChannelAssessment
 ) -> bool:
     return (
-        previous.maturity is current.maturity
+        previous.engine_version == current.engine_version
+        and previous.maturity is current.maturity
         and previous.support == current.support
         and previous.zone_low == current.zone_low
         and previous.zone_high == current.zone_high

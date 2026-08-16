@@ -69,8 +69,8 @@ from app.signal_fusion_engine import (
     SignalFusionEngineV05,
 )
 from app.support_confirmation_engine import SupportConfirmationEngine
-from app.swing_4h_geri_engine import Swing4HGeriEngine
-from app.swing_channel_4h_engine import SwingChannel4HEngine
+from app.swing_4h_geri_engine import Swing4HGeriEngine, Swing4HGeriEngineV11
+from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 from app.swing_engine import (
     SwingEngine,
     SwingEngineV2,
@@ -108,11 +108,17 @@ def default_engine_registry() -> EngineRegistry:
                 validate_strategy=validate_swing,
             ),
             EngineSlot.SWING_CHANNEL_4H: simple(
-                implementations={"1.0.0": SwingChannel4HEngine},
+                implementations={
+                    "1.0.0": SwingChannel4HEngine,
+                    "1.1.0": SwingChannel4HEngineV11,
+                },
                 required_since="7.14.0",
             ),
             EngineSlot.GERI_4H: simple(
-                implementations={"1.0.0": Swing4HGeriEngine},
+                implementations={
+                    "1.0.0": Swing4HGeriEngine,
+                    "1.1.0": Swing4HGeriEngineV11,
+                },
                 required_since="7.15.0",
             ),
             EngineSlot.INTRADAY: EngineRegistration(

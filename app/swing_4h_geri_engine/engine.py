@@ -76,8 +76,19 @@ class Swing4HGeriEngine:
         if context.current_price <= ZERO:
             raise ValueError("current price must be positive")
 
-        atr14 = _atr(bars)
         levels = self._levels(bars)
+        return self._assessment(context, symbol=symbol, bars=bars, levels=levels)
+
+    def _assessment(
+        self,
+        context: Swing4HGeriContext,
+        *,
+        symbol: str,
+        bars: tuple[MarketBar, ...],
+        levels: tuple[GeriStructuralLevel, ...],
+        tracking_extreme: tuple[Decimal, datetime] | None = None,
+    ) -> GeriAssessment:
+        atr14 = _atr(bars)
         active = levels[-1]
         breakout_buffer = atr14 * self._breakout_atr
         daily_low, daily_high = _daily_swing_zone(context.daily_swing)
@@ -152,6 +163,19 @@ class Swing4HGeriEngine:
                 NamedValue(name="breakout_atr", value=self._breakout_atr),
                 NamedValue(name="structure", value="alternating_horizontal_levels"),
                 NamedValue(name="rth_anchor", value="09:30_America/New_York"),
+                *(
+                    (
+                        NamedValue(
+                            name="tracking_extreme_price",
+                            value=_rounded(tracking_extreme[0]),
+                        ),
+                        NamedValue(
+                            name="tracking_extreme_at", value=tracking_extreme[1]
+                        ),
+                    )
+                    if tracking_extreme is not None
+                    else ()
+                ),
             ),
             context_hash=_context_hash(bars, context.current_price, context.daily_swing),
         )
@@ -206,6 +230,94 @@ class Swing4HGeriEngine:
         return tuple(levels)
 
 
+class Swing4HGeriEngineV11(Swing4HGeriEngine):
+    """Extend the published level chain instead of rebuilding it from a rolling window."""
+
+    engine_version = "1.1.0"
+
+    def analyze(self, context: Swing4HGeriContext) -> GeriAssessment:
+        active_structure = context.active_structure
+        if active_structure is None:
+            initial = super().analyze(context)
+            bars = tuple(
+                bar for bar in context.bars[-self._lookback :] if bar.is_final
+            )
+            extreme = _tracking_extreme(
+                bars,
+                initial.levels[-1],
+                through=initial.occurred_at,
+            )
+            return self._assessment(
+                context,
+                symbol=context.symbol.strip().upper(),
+                bars=bars,
+                levels=initial.levels,
+                tracking_extreme=extreme,
+            )
+
+        symbol = context.symbol.strip().upper()
+        bars = tuple(bar for bar in context.bars[-self._lookback :] if bar.is_final)
+        if len(bars) < self._minimum_bars:
+            raise ValueError("4HGERI requires more completed bars")
+        if any(bar.symbol != symbol for bar in bars):
+            raise ValueError("4HGERI bars must belong to the requested symbol")
+        if any(bar.timeframe is not BarTimeframe.HOUR_4 for bar in bars):
+            raise ValueError("4HGERI requires 4Hour bars")
+        if any(current.timestamp <= previous.timestamp for previous, current in pairwise(bars)):
+            raise ValueError("4HGERI bars must be strictly chronological")
+        if context.current_price <= ZERO:
+            raise ValueError("current price must be positive")
+        if active_structure.symbol != symbol:
+            raise ValueError("active 4HGERI structure must belong to the requested symbol")
+
+        levels = list(active_structure.levels)
+        extreme = _assessment_tracking_extreme(active_structure)
+        if extreme is None:
+            extreme = _tracking_extreme(
+                bars,
+                levels[-1],
+                through=active_structure.occurred_at,
+            )
+        for index, current in enumerate(bars):
+            if current.timestamp <= active_structure.occurred_at:
+                continue
+            active = levels[-1]
+            causal_atr = _atr(bars[: index + 1])
+            buffer = causal_atr * self._breakout_atr
+            broken = (
+                current.close < active.price - buffer
+                if active.kind is GeriLevelKind.SUPPORT
+                else current.close > active.price + buffer
+            )
+            if broken:
+                levels[-1] = active.model_copy(update={"broken_at": current.timestamp})
+                next_kind = (
+                    GeriLevelKind.RESISTANCE
+                    if active.kind is GeriLevelKind.SUPPORT
+                    else GeriLevelKind.SUPPORT
+                )
+                levels.append(
+                    GeriStructuralLevel(
+                        sequence=len(levels) + 1,
+                        kind=next_kind,
+                        price=_rounded(extreme[0]),
+                        source_at=extreme[1],
+                        confirmed_at=current.timestamp,
+                    )
+                )
+                extreme = _bar_extreme(current, next_kind)
+                continue
+            extreme = _updated_extreme(extreme, current, active.kind)
+
+        return self._assessment(
+            context,
+            symbol=symbol,
+            bars=bars,
+            levels=tuple(levels),
+            tracking_extreme=extreme,
+        )
+
+
 def _first_pivot_low(bars: tuple[MarketBar, ...], radius: int) -> int:
     for index in range(radius, len(bars) - radius):
         neighbors = (*bars[index - radius : index], *bars[index + 1 : index + radius + 1])
@@ -213,6 +325,56 @@ def _first_pivot_low(bars: tuple[MarketBar, ...], radius: int) -> int:
         if all(low <= bar.low for bar in neighbors) and any(low < bar.low for bar in neighbors):
             return index
     raise ValueError("4HGERI has no confirmed initial pivot low")
+
+
+def _assessment_tracking_extreme(
+    assessment: GeriAssessment,
+) -> tuple[Decimal, datetime] | None:
+    metrics = {item.name: item.value for item in assessment.metrics}
+    price = metrics.get("tracking_extreme_price")
+    occurred_at = metrics.get("tracking_extreme_at")
+    if isinstance(price, Decimal) and isinstance(occurred_at, datetime):
+        return price, occurred_at
+    return None
+
+
+def _tracking_extreme(
+    bars: tuple[MarketBar, ...],
+    active: GeriStructuralLevel,
+    *,
+    through: datetime,
+) -> tuple[Decimal, datetime]:
+    segment = tuple(
+        bar
+        for bar in bars
+        if active.confirmed_at <= bar.timestamp <= through
+    )
+    if not segment:
+        return active.price, active.source_at
+    if active.kind is GeriLevelKind.SUPPORT:
+        extreme = max(segment, key=lambda bar: (bar.high, bar.timestamp))
+        return extreme.high, extreme.timestamp
+    extreme = min(segment, key=lambda bar: (bar.low, bar.timestamp))
+    return extreme.low, extreme.timestamp
+
+
+def _bar_extreme(bar: MarketBar, kind: GeriLevelKind) -> tuple[Decimal, datetime]:
+    return (
+        (bar.high, bar.timestamp)
+        if kind is GeriLevelKind.SUPPORT
+        else (bar.low, bar.timestamp)
+    )
+
+
+def _updated_extreme(
+    current: tuple[Decimal, datetime],
+    bar: MarketBar,
+    kind: GeriLevelKind,
+) -> tuple[Decimal, datetime]:
+    candidate = _bar_extreme(bar, kind)
+    if kind is GeriLevelKind.SUPPORT:
+        return max((current, candidate), key=lambda item: (item[0], item[1]))
+    return min((current, candidate), key=lambda item: (item[0], item[1]))
 
 
 def _bounce_confirmed(

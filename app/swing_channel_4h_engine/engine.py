@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
@@ -190,6 +191,229 @@ class SwingChannel4HEngine:
         return _Geometry(a=a, b=b, c=c, slope=slope, width=width)
 
 
+class SwingChannel4HEngineV11(SwingChannel4HEngine):
+    """Preserve an armed channel until its own projected support is breached."""
+
+    engine_version = "1.1.0"
+
+    def __init__(
+        self,
+        *,
+        pivot_radius: int = 1,
+        minimum_bars: int = 8,
+        channel_lookback_bars: int = 60,
+        zone_atr: Decimal = Decimal("0.25"),
+        invalidation_atr: Decimal = Decimal("0.50"),
+        minimum_containment: Decimal = Decimal("0.50"),
+        minimum_width_atr: Decimal = Decimal("0.25"),
+    ) -> None:
+        super().__init__(
+            pivot_radius=pivot_radius,
+            minimum_bars=minimum_bars,
+            channel_lookback_bars=channel_lookback_bars,
+            zone_atr=zone_atr,
+            invalidation_atr=invalidation_atr,
+        )
+        if not ZERO < minimum_containment <= Decimal("1"):
+            raise ValueError("minimum containment must be inside (0, 1]")
+        if minimum_width_atr <= ZERO:
+            raise ValueError("minimum channel width ATR must be positive")
+        self._minimum_containment = minimum_containment
+        self._minimum_width_atr = minimum_width_atr
+
+    def analyze(self, context: SwingChannel4HContext) -> SwingChannelAssessment:
+        active = context.active_channel
+        if active is not None and active.maturity is not SwingChannelMaturity.INVALIDATED:
+            return self._analyze_active(context, active)
+        result = super().analyze(context)
+        if result.containment_ratio < self._minimum_containment:
+            raise ValueError("ascending channel containment is too low")
+        if result.width_atr < self._minimum_width_atr:
+            raise ValueError("ascending channel width is too narrow")
+        return result
+
+    def _geometry(self, bars: tuple[MarketBar, ...]) -> _Geometry:
+        lows = _pivot_lows(bars, self._pivot_radius)
+        atr14 = _atr(bars)
+        tolerance = atr14 * Decimal("0.25")
+        candidates: list[tuple[Decimal, int, int, Decimal, _Geometry]] = []
+        for a in lows[:-1]:
+            if len(bars) - a < self._minimum_bars:
+                continue
+            for b in lows:
+                if b <= a or b >= len(bars) - 1 or bars[b].low <= bars[a].low:
+                    continue
+                c = max(range(b + 1, len(bars)), key=lambda index: bars[index].high)
+                slope = (bars[b].low - bars[a].low) / Decimal(b - a)
+                width = bars[c].high - (
+                    bars[a].low + slope * Decimal(c - a)
+                )
+                if slope <= ZERO or width <= ZERO:
+                    continue
+                geometry = _Geometry(a=a, b=b, c=c, slope=slope, width=width)
+                containment = _containment(bars, geometry, tolerance)
+                width_atr = width / atr14
+                if containment < self._minimum_containment:
+                    continue
+                if width_atr < self._minimum_width_atr:
+                    continue
+                touches = len(
+                    _support_touches(
+                        bars,
+                        geometry,
+                        start=b,
+                        padding=atr14 * self._zone_atr,
+                        invalidation_padding=atr14 * self._invalidation_atr,
+                    )
+                )
+                candidates.append(
+                    (containment, touches, len(bars) - a, -slope, geometry)
+                )
+        if not candidates:
+            raise ValueError("no quality ascending channel geometry")
+        return max(candidates, key=lambda item: item[:-1])[-1]
+
+    def _analyze_active(
+        self,
+        context: SwingChannel4HContext,
+        active: SwingChannelAssessment,
+    ) -> SwingChannelAssessment:
+        symbol = context.symbol.strip().upper()
+        bars = tuple(bar for bar in context.bars[-self._lookback :] if bar.is_final)
+        if len(bars) < self._minimum_bars:
+            raise ValueError("Swing Channel 4H requires more completed bars")
+        if any(bar.symbol != symbol for bar in bars):
+            raise ValueError("channel bars must belong to the requested symbol")
+        if any(bar.timeframe is not BarTimeframe.HOUR_4 for bar in bars):
+            raise ValueError("Swing Channel 4H requires 4Hour bars")
+        if any(current.timestamp <= previous.timestamp for previous, current in pairwise(bars)):
+            raise ValueError("channel bars must be strictly chronological")
+        if context.current_price <= ZERO:
+            raise ValueError("current price must be positive")
+        if active.symbol != symbol:
+            raise ValueError("active channel must belong to the requested symbol")
+
+        completed_steps = sum(bar.timestamp > active.occurred_at for bar in bars)
+        support = active.support + active.slope_per_bar * Decimal(completed_steps)
+        resistance = support + active.width
+        middle = support + active.width / Decimal("2")
+        zone_padding = (active.zone_high - active.zone_low) / Decimal("2")
+        invalidation_padding = active.support - active.invalidation
+        zone_low = max(Decimal("0.0001"), support - zone_padding)
+        zone_high = support + zone_padding
+        invalidation = max(Decimal("0.0001"), support - invalidation_padding)
+        atr14 = _atr(bars)
+        current_index = len(bars) - 1
+
+        def projected_line(index: int) -> Decimal:
+            return support + active.slope_per_bar * Decimal(index - current_index)
+
+        start = next(
+            (
+                index
+                for index, bar in enumerate(bars)
+                if bar.timestamp >= active.pivot_b_at
+            ),
+            0,
+        )
+        touch_indices = tuple(
+            index
+            for index in range(start, len(bars))
+            if bars[index].low <= projected_line(index) + zone_padding
+            and bars[index].high >= projected_line(index) - zone_padding
+            and bars[index].close >= projected_line(index) - invalidation_padding
+        )
+        bounce = _projected_bounce_confirmed(
+            bars, touch_indices, projected_line=projected_line
+        )
+        daily_low, daily_high = _daily_swing_zone(context.daily_swing)
+        daily_aligned = _daily_swing_aligned(
+            context.daily_swing,
+            channel_low=zone_low,
+            channel_high=zone_high,
+            swing_low=daily_low,
+            swing_high=daily_high,
+        )
+        existing_aligned = context.existing_maturity in {
+            EntryMaturityLevel.L3,
+            EntryMaturityLevel.L4,
+        }
+        maturity = _maturity(
+            price=context.current_price,
+            zone_low=zone_low,
+            zone_high=zone_high,
+            invalidation=invalidation,
+            bounce=bounce,
+            daily_aligned=daily_aligned,
+            existing_aligned=existing_aligned,
+        )
+        sample_start = next(
+            (
+                index
+                for index, bar in enumerate(bars)
+                if bar.timestamp >= active.pivot_a_at
+            ),
+            0,
+        )
+        sample_indices = range(sample_start, len(bars))
+        inside = sum(
+            bars[index].low >= projected_line(index) - atr14 * Decimal("0.25")
+            and bars[index].high
+            <= projected_line(index) + active.width + atr14 * Decimal("0.25")
+            for index in sample_indices
+        )
+        sample_size = len(bars) - sample_start
+        containment = Decimal(inside) / Decimal(sample_size)
+        distance = (context.current_price - support) / atr14
+        reasons = _reasons(maturity, daily_aligned, existing_aligned)
+        return SwingChannelAssessment(
+            symbol=symbol,
+            occurred_at=bars[-1].timestamp,
+            engine_version=self.engine_version,
+            maturity=maturity,
+            current_price=_rounded(context.current_price),
+            pivot_a_at=active.pivot_a_at,
+            pivot_a_price=active.pivot_a_price,
+            pivot_b_at=active.pivot_b_at,
+            pivot_b_price=active.pivot_b_price,
+            pivot_c_at=active.pivot_c_at,
+            pivot_c_price=active.pivot_c_price,
+            support=_rounded(support),
+            middle=_rounded(middle),
+            resistance=_rounded(resistance),
+            zone_low=_rounded(zone_low),
+            zone_high=_rounded(zone_high),
+            invalidation=_rounded(invalidation),
+            slope_per_bar=active.slope_per_bar,
+            width=active.width,
+            width_atr=_rounded(active.width / atr14),
+            distance_to_support_atr=_rounded(distance),
+            containment_ratio=_rounded(containment),
+            support_touch_count=len(touch_indices),
+            touch_low=(
+                _rounded(bars[touch_indices[-1]].low) if touch_indices else None
+            ),
+            bounce_confirmed=bounce,
+            daily_swing_aligned=daily_aligned,
+            existing_maturity_aligned=existing_aligned,
+            current_swing_zone_low=(
+                _rounded(daily_low) if daily_low is not None else None
+            ),
+            current_swing_zone_high=(
+                _rounded(daily_high) if daily_high is not None else None
+            ),
+            reasons=reasons,
+            metrics=(
+                NamedValue(name="atr14_4h", value=_rounded(atr14)),
+                NamedValue(name="channel_source", value="pinned_active_channel"),
+                NamedValue(name="rth_anchor", value="09:30_America/New_York"),
+            ),
+            context_hash=_context_hash(
+                bars, context.current_price, context.daily_swing
+            ),
+        )
+
+
 def _pivot_lows(bars: tuple[MarketBar, ...], radius: int) -> tuple[int, ...]:
     result: list[int] = []
     for index in range(radius, len(bars) - radius):
@@ -235,6 +459,27 @@ def _bounce_confirmed(
         and current.close > current.open
         and current.close > touched.close
         and current.close > _line(geometry, bars, latest)
+    )
+
+
+def _projected_bounce_confirmed(
+    bars: tuple[MarketBar, ...],
+    touches: tuple[int, ...],
+    *,
+    projected_line: Callable[[int], Decimal],
+) -> bool:
+    latest = len(bars) - 1
+    prior = latest - 1
+    if prior not in touches:
+        return False
+    current = bars[latest]
+    touched = bars[prior]
+    support = projected_line(latest)
+    return (
+        current.low > touched.low
+        and current.close > current.open
+        and current.close > touched.close
+        and current.close > support
     )
 
 

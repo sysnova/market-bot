@@ -197,6 +197,7 @@ class Swing4HGeriRuntime:
                     current_price=value,
                     daily_swing=self._daily_swing.get(normalized),
                     existing_maturity=self._existing_maturity.get(normalized),
+                    active_structure=self._latest.get(normalized),
                 )
             )
         except ValueError:
@@ -264,7 +265,8 @@ class Swing4HGeriRuntime:
 
 def _same_observation(previous: GeriAssessment, current: GeriAssessment) -> bool:
     return (
-        previous.maturity is current.maturity
+        previous.engine_version == current.engine_version
+        and previous.maturity is current.maturity
         and previous.active_level_sequence == current.active_level_sequence
         and previous.active_level_kind is current.active_level_kind
         and previous.active_level_price == current.active_level_price
