@@ -601,6 +601,7 @@ El launcher de Ubuntu/WSL mantiene solamente control y compras confirmadas en la
 tmux select-window -t marketbot:Analysis
 tmux select-window -t marketbot:Opportunities
 tmux select-window -t marketbot:Portfolio2026
+tmux select-window -t marketbot:News
 ```
 
 La ventana `Opportunities` carga desde
@@ -612,6 +613,40 @@ actualizar precios sin producir un evento material, tambien relee PostgreSQL cad
 tmux select-window -t marketbot:Opportunities
 uv run marketbot monitor entry-opportunity --history 100 --refresh-seconds 30
 ```
+
+La ventana `News` consulta el endpoint REST de noticias de Alpaca una vez por hora. Su universo es
+la union dinamica de la watchlist activa, el portfolio `PORT_YTD` y las tenencias positivas de
+PostgreSQL. Carga las noticias de las ultimas 24 horas al iniciar, elimina duplicados y resalta en
+amarillo cualquier articulo que involucre al menos un ticker actualmente en tenencia:
+
+```bash
+tmux select-window -t marketbot:News
+uv run marketbot monitor news --history 100 --lookback-hours 24 --refresh-seconds 3600
+```
+
+El panel no llama al LLM. El proceso headless `news-intelligence-v1` consulta independientemente
+cada 300 segundos, limita el ciclo inicial a 100 articulos y persiste el hash y la clasificacion en
+`market_bot.news_intelligence_results` para no volver a pagar por el mismo contenido. Se habilita
+con `MARKETBOT_OPENAI_API_KEY`; el modelo por defecto queda fijado en
+`gpt-5.4-nano-2026-03-17`. Sin clave, su readiness indica `DEGRADED` y el resto de MarketBot arranca
+normalmente.
+
+Al reiniciar, el proceso recupera desde PostgreSQL el ultimo `AnalysisResult.NEWS` no vencido por
+ticker y lo republica. El grafo de arranque espera primero el readiness de Alert, Entry Watcher y
+Entry Opportunity, por lo que NATS queda como transporte con retencion de siete dias y no como la
+fuente exclusiva de recuperacion.
+
+En el layout WSL estándar, el launcher reutiliza en memoria `OPENAI_API_KEY` desde
+`../stock-analyzer/apps/alert-runner/.env` cuando `MARKETBOT_OPENAI_API_KEY` no fue definida. No
+ejecuta ni importa el archivo completo y no copia el secreto al repositorio de MarketBot. La ruta
+puede cambiarse con `MARKETBOT_STOCK_ANALYZER_ENV`.
+
+La salida estructurada se proyecta de forma deterministica a `AnalysisResult.NEWS`. Una noticia
+positiva no genera compra por si sola. Una noticia bajista `HIGH` o `CRITICAL`, vigente y con
+confianza minima de 0.65, emite `NEWS_RISK`. Las nuevas señales L1-L4 no se bloquean: se publican
+con la noticia adjunta y el banner de compra rojo hasta su vencimiento. Es control analitico y nunca
+una orden automatica. Antes de activar el proceso en una base existente, aplique las
+migraciones para crear el ledger y ampliar el horizonte persistido de Alert.
 
 Cada oportunidad muestra estado, madurez actual y maxima, progreso, revision, precio original y
 actual, zona, invalidacion, expiracion, motivo de cierre y ultimo evento observado. Debajo separa:

@@ -24,6 +24,7 @@ _FINAL_ANALYTICAL_LABELS = {
     EntrySignalFamily.SIGNAL_FUSION: "SIGNAL FUSION CONFIRMED",
 }
 _ANALYTICAL_STYLE = "\x1b[1;97;45m"
+_NEWS_RISK_STYLE = "\x1b[1;97;41m"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,10 @@ def project_confirmed_signal(
             return None
         style = _ANALYTICAL_STYLE
 
+    news_risk = "news_risk_active:red_alert" in signal.reasons
+    if news_risk:
+        style = _NEWS_RISK_STYLE
+        label = f"{label} | NEWS RISK"
     banner = f"{signal.symbol} | {label} | PX ${signal.entry_price}"
     if color:
         banner = f"{style} {banner} {_RESET_STYLE}"

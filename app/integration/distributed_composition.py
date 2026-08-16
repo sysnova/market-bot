@@ -21,6 +21,8 @@ from app.alert_engine import (
     AlertDispatcher,
     AlertEngineV31,
     AlertEngineV32,
+    AlertEngineV36,
+    AlertEngineV37,
     ConsoleAlertSink,
     NdjsonAlertSink,
 )
@@ -566,6 +568,8 @@ async def run_alert_process(
             "3.3.0",
             "3.4.0",
             "3.5.0",
+            "3.6.0",
+            "3.7.0",
         }:
             if not await state_store.is_ready():
                 raise RuntimeError(
@@ -638,7 +642,12 @@ async def run_alert_process(
         if bell and ("IN_ZONE" in alert.title.upper() or "BREAKAWAY WATCH" in alert.title.upper()):
             play_entry_zone_watch_sound(fallback=sys.stdout)
         signal = entry_signal_from_alert_watch(transition)
-        if signal is not None:
+        if signal is not None and isinstance(engine, AlertEngineV37):
+            signal = engine.annotate_entry_signal(signal, now=clock.now())
+        if signal is not None and not (
+            isinstance(engine, AlertEngineV36)
+            and engine.news_blocks_entry(transition.symbol, now=clock.now())
+        ):
             await publish_entry_signal(bus, signal, source="alert")
 
     async def handle_entry_opportunity(envelope: EventEnvelope) -> None:
@@ -738,7 +747,9 @@ async def run_alert_process(
             ),
             "decision_state": (
                 "postgresql"
-                if alert_spec.implementation in {"3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0"}
+                if alert_spec.implementation in {
+                    "3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0"
+                }
                 else "memory"
             ),
             "decision_checkpoint_interval_seconds": (

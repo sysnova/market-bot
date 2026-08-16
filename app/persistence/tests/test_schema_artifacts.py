@@ -24,6 +24,7 @@ TABLES = {
     "long_portfolio_alerts",
     "long_portfolio_states",
     "market_bars",
+    "news_intelligence_results",
     "outbox_events",
     "patreon_caps_transitions",
     "patreon_caps_watches",
@@ -162,14 +163,17 @@ def test_alert_state_is_normalized_and_migrated_from_legacy_checkpoint() -> None
     assert "alert_continuation_sessions_identity_key" in sql
     assert re.search(
         r"horizon in \(\s*'long_term',\s*'dilution',\s*'swing',\s*'intraday',"
-        r"\s*'volume_structure',\s*'options_gamma'\s*\)",
+        r"\s*'volume_structure',\s*'options_gamma',\s*'news'\s*\)",
         compact_sql,
     )
     assert "gen_random_uuid" not in sql
     assert "alert_analysis_states_identity_key" in dbml
     assert "alert_continuation_candidates_identity_key" in dbml
     assert "alert_continuation_sessions_identity_key" in dbml
-    assert "long_term | dilution | swing | intraday | volume_structure | options_gamma" in dbml
+    assert (
+        "long_term | dilution | swing | intraday | volume_structure | options_gamma | news"
+        in dbml
+    )
 
 
 @pytest.mark.unit
@@ -220,3 +224,21 @@ def test_long_portfolio_state_is_compact_and_updateable() -> None:
         sql,
     )
     assert "grant delete on market_bot.long_portfolio_states" not in sql
+
+
+@pytest.mark.unit
+def test_news_intelligence_ledger_supports_deduplication_and_bootstrap() -> None:
+    sql = all_migration_sql()
+
+    assert "primary key (provider, article_id)" in sql
+    assert re.search(
+        r"create index news_intelligence_results_updated_idx\s+"
+        r"on market_bot\.news_intelligence_results \(article_updated_at, article_id\)",
+        sql,
+    )
+    assert re.search(
+        r"grant select, insert, update on market_bot\.news_intelligence_results\s+"
+        r"to market_bot_runtime",
+        sql,
+    )
+    assert "grant delete on market_bot.news_intelligence_results" not in sql

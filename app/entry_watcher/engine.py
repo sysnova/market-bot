@@ -35,6 +35,7 @@ _ACTIVE = {
 _ARMABLE_CLASSIFICATIONS = {"buy_zone", "extended", "setup", "watch_pullback"}
 _SWING_CONFIRMATIONS = {"breakout", "pullback"}
 _PRICE_PRIORITY = {
+    AnalysisHorizon.NEWS: -3,
     AnalysisHorizon.OPTIONS_GAMMA: -2,
     AnalysisHorizon.VOLUME_STRUCTURE: -1,
     AnalysisHorizon.LONG_TERM: 0,
@@ -46,6 +47,7 @@ _PRICE_PRIORITY = {
 
 def _default_max_ages() -> dict[AnalysisHorizon, timedelta]:
     return {
+        AnalysisHorizon.NEWS: timedelta(days=7),
         AnalysisHorizon.OPTIONS_GAMMA: timedelta(minutes=60),
         AnalysisHorizon.VOLUME_STRUCTURE: timedelta(days=14),
         AnalysisHorizon.LONG_TERM: timedelta(days=7),

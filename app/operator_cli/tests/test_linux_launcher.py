@@ -35,6 +35,25 @@ def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
     assert "list-windows" in script
 
 
+def test_linux_launcher_adds_independent_alpaca_news_window() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "run marketbot monitor news" in script
+    assert "--role news" in script
+    assert "news-monitor.ready.json" in script
+    assert '-n News "$news"' in script
+    assert "ALPACA NEWS" in script
+
+
+def test_linux_launcher_inherits_stock_analyzer_openai_key_without_sourcing_env() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "load_shared_openai_key" in script
+    assert "stock-analyzer/apps/alert-runner/.env" in script
+    assert 'export MARKETBOT_OPENAI_API_KEY="$value"' in script
+    assert "source \"$STOCK_ANALYZER_ENV\"" not in script
+
+
 def test_linux_launcher_keeps_only_control_and_confirmed_buys_in_main_window() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     fresh_session = script.split('tmux new-session -d -s "$SESSION"', 1)[1].split(

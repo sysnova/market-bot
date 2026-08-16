@@ -14,6 +14,7 @@ from app.persistence.models import (
     EntryOpportunityEventRecord,
     EntryOpportunityRecord,
     EntryWatchRecord,
+    NewsIntelligenceResultRecord,
     RuleVersion,
     Run,
     RunStrategy,
@@ -35,6 +36,7 @@ EXPECTED_TABLES = {
     "long_portfolio_alerts",
     "long_portfolio_states",
     "market_bars",
+    "news_intelligence_results",
     "outbox_events",
     "patreon_caps_transitions",
     "patreon_caps_watches",
@@ -152,6 +154,21 @@ def test_engine_decision_state_has_one_checkpoint_per_implementation() -> None:
 
 
 @pytest.mark.unit
+def test_news_intelligence_bootstrap_has_an_ordered_lookup_index() -> None:
+    matching = [
+        index
+        for index in NewsIntelligenceResultRecord.__table__.indexes
+        if index.name == "news_intelligence_results_updated_idx"
+    ]
+
+    assert len(matching) == 1
+    assert [column.name for column in matching[0].columns] == [
+        "article_updated_at",
+        "article_id",
+    ]
+
+
+@pytest.mark.unit
 def test_alert_analysis_state_accepts_all_analysis_horizons() -> None:
     matching = [
         constraint
@@ -166,6 +183,8 @@ def test_alert_analysis_state_accepts_all_analysis_horizons() -> None:
     assert "SWING" in str(matching[0].sqltext)
     assert "INTRADAY" in str(matching[0].sqltext)
     assert "VOLUME_STRUCTURE" in str(matching[0].sqltext)
+    assert "OPTIONS_GAMMA" in str(matching[0].sqltext)
+    assert "NEWS" in str(matching[0].sqltext)
 
 
 @pytest.mark.unit

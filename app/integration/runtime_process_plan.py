@@ -263,6 +263,11 @@ def build_runtime_process_plan(
             EngineSlot.SIGNAL_FUSION,
             ("run", "marketbot", "engine", "signal-fusion"),
         ),
+        (
+            "news-intelligence-v1",
+            EngineSlot.NEWS_INTELLIGENCE,
+            ("run", "marketbot", "engine", "news-intelligence"),
+        ),
     )
     for name, slot, command in analytical_specs:
         arguments = (*command, "--ready-path", str(ready(name)))
@@ -274,7 +279,12 @@ def build_runtime_process_plan(
             EngineSlot.OPTIONS_GAMMA,
         }:
             arguments += symbol_arguments
-        add(name, arguments, slot=slot, dependencies=analytical_dependencies)
+        dependencies = (
+            ("alert", "entry-watcher", "entry-opportunity")
+            if slot is EngineSlot.NEWS_INTELLIGENCE
+            else analytical_dependencies
+        )
+        add(name, arguments, slot=slot, dependencies=dependencies)
 
     add(
         "confirmed-buy-monitor",

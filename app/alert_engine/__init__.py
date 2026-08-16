@@ -15,6 +15,8 @@ from .v32 import AlertEngineV32
 from .v33 import AlertEngineV33
 from .v34 import AlertEngineV34
 from .v35 import AlertEngineV35
+from .v36 import AlertEngineV36
+from .v37 import AlertEngineV37
 
 __all__ = [
     "AlertDecisionStateStore",
@@ -28,6 +30,8 @@ __all__ = [
     "AlertEngineV33",
     "AlertEngineV34",
     "AlertEngineV35",
+    "AlertEngineV36",
+    "AlertEngineV37",
     "AlertPolicy",
     "AlertPublisher",
     "AlertSink",

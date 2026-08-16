@@ -14,6 +14,9 @@ _HORIZON_LABELS = {
     AnalysisHorizon.SWING: "SWING",
     AnalysisHorizon.INTRADAY: "INTRADAY",
     AnalysisHorizon.DILUTION: "SEC",
+    AnalysisHorizon.VOLUME_STRUCTURE: "VOLUME",
+    AnalysisHorizon.OPTIONS_GAMMA: "GAMMA",
+    AnalysisHorizon.NEWS: "NEWS",
 }
 _BUY_BANNER_STYLES = {
     BuyMaturity.TACTICAL_RECOVERY: "\x1b[1;30;103m",
@@ -30,6 +33,7 @@ _BUY_LABELS = {
     BuyMaturity.FULLY_MATURED: "FULLY MATURED",
 }
 _PROTECT_BANNER_STYLE = "\x1b[1;97;41m"
+_NEWS_RISK_BUY_BANNER_STYLE = "\x1b[1;97;41m"
 _FLOW_BUY_BANNER_STYLE = "\x1b[1;30;103m"
 # Clear inherited reverse/background attributes before applying foreground color.
 _EARLY_INTRADAY_BANNER_STYLE = "\x1b[0;27;49;1;93m"
@@ -94,8 +98,13 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
     banner_result = _buy_banner(alert, analyses)
     if banner_result is not None:
         maturity, buy_banner = banner_result
+        style = (
+            _NEWS_RISK_BUY_BANNER_STYLE
+            if _metrics(alert).get("news_risk_active") is True
+            else _BUY_BANNER_STYLES[maturity]
+        )
         lines.append(
-            f"{_BUY_BANNER_STYLES[maturity]} {buy_banner} {_RESET_STYLE}" if color else buy_banner
+            f"{style} {buy_banner} {_RESET_STYLE}" if color else buy_banner
         )
     lines.extend(
         [

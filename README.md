@@ -237,10 +237,20 @@ sudo apt install tmux
 ```
 
 The main `MarketBot` window has only two horizontal panes: lifecycle control on top and confirmed
-buys below. `Analysis`, `Opportunities`, and `Portfolio2026` are independent sibling windows so
-each monitor can use the full terminal. `Portfolio2026` loads persisted alerts from local
+buys below. `Analysis`, `Opportunities`, `Portfolio2026`, and `News` are independent sibling windows
+so each monitor can use the full terminal. `News` polls Alpaca's read-only news endpoint for the
+combined PostgreSQL watchlist, `PORT_YTD` portfolio, and positive holdings; articles involving a
+holding are marked `★ TENENCIA` in yellow. `Portfolio2026` loads persisted alerts from local
 PostgreSQL and follows new allocation-aware LONG entries. The control pane still owns the
 `long-portfolio-v1` engine, so `Ctrl+C` stops it together with the rest of MarketBot.
+
+`news-intelligence-v1` is independent from that hourly panel. Every five minutes it deduplicates
+Alpaca articles in PostgreSQL, classifies unseen text with the pinned
+`gpt-5.4-nano-2026-03-17` structured-output model, and publishes `AnalysisResult.NEWS`. Bullish news
+is context only. Fresh high-confidence bearish material news emits `NEWS_RISK`; new L1-L4 signals
+remain enabled but their buy banners are rendered red until the risk expires. It never submits a
+buy or sell order. If
+`MARKETBOT_OPENAI_API_KEY` is absent, the process reports `DEGRADED` without blocking startup.
 
 The same launcher also creates sibling `PatreonCaps`, `ElliottWave`, and
 `SupportConfirmation` windows. Support Confirmation is a holdings-only analytical view and keeps its
@@ -252,8 +262,9 @@ structural confirmation (`S`), and every remaining cross-engine gate. Its lower 
 current analytical `BUY_CONFIRMED` decisions; no broker execution is enabled.
 
 Use `Ctrl+B` followed by the window number, or select a window directly with
-`tmux select-window -t marketbot:Analysis`, `marketbot:Opportunities`, or
-`marketbot:Portfolio2026`. Pressing `Ctrl+C` in the control pane stops all MarketBot processes.
+`tmux select-window -t marketbot:Analysis`, `marketbot:Opportunities`,
+`marketbot:Portfolio2026`, or `marketbot:News`. Pressing `Ctrl+C` in the control pane stops all
+MarketBot processes.
 # Market Rotation local
 
 MarketBot incluye un proceso independiente que reutiliza los perfiles sectoriales migrados en

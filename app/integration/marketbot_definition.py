@@ -34,6 +34,7 @@ class EngineSlot(StrEnum):
     SIGNAL_FUSION = "signal-fusion"
     DILUTION_SEC = "dilution-sec"
     PETER_LYNCH = "peter-lynch"
+    NEWS_INTELLIGENCE = "news-intelligence"
 
 
 class StrategyKind(StrEnum):

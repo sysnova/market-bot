@@ -123,7 +123,7 @@ Table market_bot.alert_analysis_states {
   engine_name text [not null]
   implementation_version text [not null]
   symbol text [not null]
-  horizon text [not null, note: "LONG_TERM | DILUTION | SWING | INTRADAY | VOLUME_STRUCTURE | OPTIONS_GAMMA"]
+  horizon text [not null, note: "LONG_TERM | DILUTION | SWING | INTRADAY | VOLUME_STRUCTURE | OPTIONS_GAMMA | NEWS"]
   analysis_id uuid [not null]
   payload jsonb [not null]
   updated_at timestamptz [not null, default: `now()`]
@@ -376,6 +376,23 @@ Table market_bot.patreon_caps_transitions {
   indexes {
     (symbol, occurred_at) [name: "patreon_caps_transitions_symbol_occurred_idx"]
     (watch_id, occurred_at) [name: "patreon_caps_transitions_watch_occurred_idx"]
+  }
+}
+
+Table market_bot.news_intelligence_results {
+  provider text [not null]
+  article_id bigint [not null]
+  content_hash text [not null]
+  article_updated_at timestamptz [not null]
+  assessed_at timestamptz [not null]
+  model text [not null]
+  prompt_version text [not null]
+  assessment jsonb [not null]
+  analysis_results jsonb [not null]
+
+  indexes {
+    (provider, article_id) [pk]
+    (article_updated_at, article_id) [name: "news_intelligence_results_updated_idx"]
   }
 }
 

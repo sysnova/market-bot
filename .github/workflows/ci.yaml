@@ -15,7 +15,7 @@ jobs:
     name: Quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Enforce immutable released definitions and rule artifacts
@@ -48,7 +48,7 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.14"
@@ -56,8 +56,55 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest -m "not integration"
 
+  postgres-schema:
+    name: PostgreSQL schema
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: marketbot
+          POSTGRES_USER: marketbot
+          POSTGRES_PASSWORD: marketbot
+        options: >-
+          --health-cmd "pg_isready -U marketbot -d marketbot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v6
+      - name: Bootstrap private-schema compatibility roles
+        env:
+          PGPASSWORD: marketbot
+        run: |
+          psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 <<'SQL'
+          create role postgres nologin;
+          create role anon nologin;
+          create role authenticated nologin;
+          create role service_role nologin;
+          SQL
+      - name: Apply PostgreSQL migrations in order
+        env:
+          PGPASSWORD: marketbot
+        run: |
+          for migration in supabase/migrations/*.sql; do
+            psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 \
+              -f "$migration"
+          done
+      - name: Verify PostgreSQL schema and runtime permissions
+        env:
+          PGPASSWORD: marketbot
+        run: |
+          for check in supabase/tests/*.sql; do
+            psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 \
+              -f "$check"
+          done
+
   integration:
     name: Integration tests
+    needs: [quality, unit, postgres-schema]
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -79,7 +126,7 @@ jobs:
       NATS_URL: nats://localhost:4222
       MARKETBOT_DATABASE_URL: postgresql://marketbot:marketbot@localhost:5432/marketbot
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.14"
@@ -98,7 +145,7 @@ jobs:
           done
           docker logs marketbot-nats
           exit 1
-      - name: Bootstrap Supabase-compatible roles
+      - name: Bootstrap private-schema compatibility roles
         env:
           PGPASSWORD: marketbot
         run: |
@@ -108,7 +155,7 @@ jobs:
           create role authenticated nologin;
           create role service_role nologin;
           SQL
-      - name: Apply and verify foundation migration
+      - name: Apply and verify PostgreSQL migrations
         env:
           PGPASSWORD: marketbot
         run: |
@@ -116,8 +163,10 @@ jobs:
             psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 \
               -f "$migration"
           done
-          psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 \
-            -f supabase/tests/market_bot_foundation_checks.sql
+          for check in supabase/tests/*.sql; do
+            psql -h localhost -U marketbot -d marketbot -v ON_ERROR_STOP=1 \
+              -f "$check"
+          done
       - name: Run integration tests when present
         shell: bash
         run: |

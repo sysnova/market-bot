@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.alert_engine import AlertEngineV33, AlertEngineV35
+from app.alert_engine import AlertEngineV33, AlertEngineV35, AlertEngineV36, AlertEngineV37
 from app.common.settings import AppSettings
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
@@ -40,6 +40,7 @@ from app.integration.marketbot_definition import (
 from app.intraday_engine import IntradayEngineV3, IntradayEngineV4
 from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, PortfolioAllocation
 from app.long_term_engine import LongTermEngineV2
+from app.news_intelligence_engine import NewsIntelligenceEngine
 from app.options_gamma_engine import OptionsGammaEngine
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
@@ -58,6 +59,25 @@ STRUCTURAL_SWING_DEFINITION = ROOT / "configs/marketbot/7.8.0.yaml"
 PULLBACK_ENTRY_DEFINITION = ROOT / "configs/marketbot/7.9.0.yaml"
 PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
+NEWS_DEFINITION = ROOT / "configs/marketbot/7.12.0.yaml"
+VISIBLE_NEWS_DEFINITION = ROOT / "configs/marketbot/7.13.0.yaml"
+
+
+def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
+    assembly = MarketBotAssembly.from_path(NEWS_DEFINITION)
+
+    assert assembly.definition.version == "7.12.0"
+    assert isinstance(
+        assembly.build(EngineSlot.NEWS_INTELLIGENCE), NewsIntelligenceEngine
+    )
+    assert isinstance(assembly.build_alert(), AlertEngineV36)
+
+
+def test_visible_news_definition_keeps_buy_signals_and_marks_risk() -> None:
+    assembly = MarketBotAssembly.from_path(VISIBLE_NEWS_DEFINITION)
+
+    assert assembly.definition.version == "7.13.0"
+    assert isinstance(assembly.build_alert(), AlertEngineV37)
 
 
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
@@ -66,6 +86,7 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
     assert set(definition.engines) == set(EngineSlot) - {
         EngineSlot.VOLUME_STRUCTURE,
         EngineSlot.OPTIONS_GAMMA,
+        EngineSlot.NEWS_INTELLIGENCE,
     }
     assert definition.version == "7.2.0"
     assert all(item.strategy.version for item in definition.engines.values())
@@ -80,7 +101,10 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
 def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
     definition = load_marketbot_definition(VOLUME_STRUCTURE_DEFINITION)
 
-    assert set(definition.engines) == set(EngineSlot) - {EngineSlot.OPTIONS_GAMMA}
+    assert set(definition.engines) == set(EngineSlot) - {
+        EngineSlot.OPTIONS_GAMMA,
+        EngineSlot.NEWS_INTELLIGENCE,
+    }
     assert definition.version == "7.3.0"
     assert definition.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"
     assert definition.engines[EngineSlot.ALERT].implementation == "3.4.0"

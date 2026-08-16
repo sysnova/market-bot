@@ -266,11 +266,34 @@ class EngineDecisionStateRecord(Base):
     )
 
 
+class NewsIntelligenceResultRecord(Base):
+    __tablename__ = "news_intelligence_results"
+    __table_args__ = (
+        Index(
+            "news_intelligence_results_updated_idx",
+            "article_updated_at",
+            "article_id",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    provider: Mapped[str] = mapped_column(Text, primary_key=True)
+    article_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    article_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(Text, nullable=False)
+    assessment: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    analysis_results: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+
+
 class AlertAnalysisStateRecord(Base):
     __tablename__ = "alert_analysis_states"
     __table_args__ = (
         CheckConstraint(
-            "horizon in ('LONG_TERM', 'DILUTION', 'SWING', 'INTRADAY', 'VOLUME_STRUCTURE')",
+            "horizon in ('LONG_TERM', 'DILUTION', 'SWING', 'INTRADAY', "
+            "'VOLUME_STRUCTURE', 'OPTIONS_GAMMA', 'NEWS')",
             name="horizon",
         ),
         UniqueConstraint(

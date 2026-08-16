@@ -100,6 +100,7 @@ class AnalysisHorizon(ContractEnum):
     INTRADAY = "INTRADAY"
     VOLUME_STRUCTURE = "VOLUME_STRUCTURE"
     OPTIONS_GAMMA = "OPTIONS_GAMMA"
+    NEWS = "NEWS"
 
 
 class AnalysisVerdict(ContractEnum):
@@ -141,6 +142,7 @@ class AlertKind(ContractEnum):
     PATREON_CAPS_BUY = "PATREON_CAPS_BUY"
     PATREON_CAPS_INVALIDATED = "PATREON_CAPS_INVALIDATED"
     OBV_BULLISH_DIVERGENCE = "OBV_BULLISH_DIVERGENCE"
+    NEWS_RISK = "NEWS_RISK"
 
 
 class EntryWatchStatus(ContractEnum):

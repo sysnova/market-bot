@@ -12,6 +12,27 @@ NO_BELL=0
 DETACH=0
 READY_TIMEOUT=1800
 SESSION="marketbot"
+STOCK_ANALYZER_ENV="${MARKETBOT_STOCK_ANALYZER_ENV:-$PROJECT_ROOT/../stock-analyzer/apps/alert-runner/.env}"
+
+load_shared_openai_key() {
+  [[ -z "${MARKETBOT_OPENAI_API_KEY:-}" && -f "$STOCK_ANALYZER_ENV" ]] || return 0
+  local line value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^[[:space:]]*OPENAI_API_KEY[[:space:]]*=(.*)$ ]]; then
+      value="${BASH_REMATCH[1]%$'\r'}"
+      value="${value#\"}"
+      value="${value%\"}"
+      value="${value#\'}"
+      value="${value%\'}"
+      if [[ -n "$value" ]]; then
+        export MARKETBOT_OPENAI_API_KEY="$value"
+      fi
+      return 0
+    fi
+  done < "$STOCK_ANALYZER_ENV"
+}
+
+load_shared_openai_key
 
 usage() {
   cat <<'EOF'
@@ -100,7 +121,7 @@ clear_runtime_readiness() {
   local -a all_ready_paths=()
   mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
   ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
-  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,news-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 }
 
 exec_marketbot() {
@@ -131,6 +152,12 @@ run_opportunities() {
   cd "$PROJECT_ROOT"
   exec_marketbot run marketbot monitor entry-opportunity \
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
+}
+
+run_news() {
+  cd "$PROJECT_ROOT"
+  exec_marketbot run marketbot monitor news \
+    --ready-path "$STATUS_ROOT/news-monitor.ready.json"
 }
 
 run_long_portfolio_monitor() {
@@ -325,12 +352,13 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed opportunities long_portfolio patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
+  local control analysis confirmed opportunities long_portfolio news patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
   printf -v opportunities '%q ' "${base[@]}" --role opportunities
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
+  printf -v news '%q ' "${base[@]}" --role news
   printf -v patreon_analysis '%q ' "${base[@]}" --role patreon-analysis
   printf -v patreon_alerts '%q ' "${base[@]}" --role patreon-alerts
   printf -v elliott_wave '%q ' "${base[@]}" --role elliott-wave
@@ -368,6 +396,11 @@ launch_tmux() {
       fi
       tmux set-window-option -t "$SESSION":Analysis remain-on-exit on
       tmux select-pane -t "$SESSION":Analysis.0 -T 'ANÁLISIS'
+    fi
+    if ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'News'; then
+      tmux new-window -d -t "$SESSION" -n News "$news"
+      tmux set-window-option -t "$SESSION":News remain-on-exit on
+      tmux select-pane -t "$SESSION":News.0 -T 'ALPACA NEWS — TENENCIAS DESTACADAS'
     fi
     tmux select-layout -t "$SESSION":MarketBot even-vertical 2>/dev/null || true
     if engine_is_active patreon-caps && \
@@ -433,6 +466,9 @@ launch_tmux() {
     tmux set-window-option -t "$SESSION":Analysis remain-on-exit on
     tmux select-pane -t "$SESSION":Analysis.0 -T 'ANÁLISIS'
   fi
+  tmux new-window -d -t "$SESSION" -n News "$news"
+  tmux set-window-option -t "$SESSION":News remain-on-exit on
+  tmux select-pane -t "$SESSION":News.0 -T 'ALPACA NEWS — TENENCIAS DESTACADAS'
   if engine_is_active patreon-caps; then
     tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
     tmux set-window-option -t "$SESSION":PatreonCaps remain-on-exit on
@@ -469,6 +505,7 @@ case "$ROLE" in
   confirmed) run_confirmed ;;
   opportunities) run_opportunities ;;
   long-portfolio) run_long_portfolio_monitor ;;
+  news) run_news ;;
   patreon-analysis) run_patreon_caps_analysis ;;
   patreon-alerts) run_patreon_caps_alerts ;;
   elliott-wave) run_elliott_wave ;;

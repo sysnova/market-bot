@@ -103,3 +103,15 @@ def test_final_analytical_families_are_confirmed_without_fake_l4(
 
 def test_portfolio_flow_entry_signal_remains_a_manual_local_alert() -> None:
     assert project_confirmed_signal(signal(EntrySignalFamily.PORTFOLIO_FLOW), color=False) is None
+
+
+def test_news_risk_keeps_confirmation_and_paints_banner_red() -> None:
+    risky = signal(
+        EntrySignalFamily.CORE_ENTRY, maturity=EntryMaturityLevel.L4
+    ).model_copy(update={"reasons": ("confirmed", "news_risk_active:red_alert")})
+
+    projection = project_confirmed_signal(risky, color=True)
+
+    assert projection is not None
+    assert "NEWS RISK" in projection.text
+    assert "\x1b[1;97;41m" in projection.text

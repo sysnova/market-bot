@@ -316,6 +316,28 @@ def portfolio_flow_process(
     _run_async(run_portfolio_flow_process(ready_path=ready_path))
 
 
+@engine.command("news-intelligence")
+def news_intelligence_process(
+    once: Annotated[
+        bool, typer.Option(help="Classify the current unseen-news window once and exit.")
+    ] = False,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file for the independent news engine.")
+    ] = Path(".runtime/status/news-intelligence-v1.ready.json"),
+) -> None:
+    """Classify Alpaca news with a low-cost LLM and publish NEWS analysis context."""
+
+    from app.integration.news_intelligence_composition import (
+        run_news_intelligence_process,
+    )
+
+    summary = _run_async(
+        run_news_intelligence_process(ready_path=ready_path, once=once)
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 @engine.command("long-portfolio")
 def long_portfolio_process(
     config_path: Annotated[
@@ -818,6 +840,39 @@ def entry_opportunity_monitor(
         run_entry_opportunity_monitor(
             ready_path=ready_path,
             history=history,
+            refresh_interval=timedelta(seconds=refresh_seconds),
+        )
+    )
+
+
+@monitor.command("news")
+def alpaca_news_monitor(
+    history: Annotated[
+        int,
+        typer.Option(min=1, max=1000, help="Recent Alpaca articles shown on startup."),
+    ] = 100,
+    lookback_hours: Annotated[
+        int,
+        typer.Option(min=1, max=168, help="Hours of news requested on startup."),
+    ] = 24,
+    refresh_seconds: Annotated[
+        int,
+        typer.Option(min=5, max=3600, help="Seconds between Alpaca news requests."),
+    ] = 3600,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after PostgreSQL and Alpaca respond."),
+    ] = Path(".runtime/status/news-monitor.ready.json"),
+) -> None:
+    """Show Alpaca news for watchlist, portfolio, and positive holdings."""
+
+    from app.integration.news_monitor import run_news_monitor
+
+    _run_async(
+        run_news_monitor(
+            ready_path=ready_path,
+            history=history,
+            lookback=timedelta(hours=lookback_hours),
             refresh_interval=timedelta(seconds=refresh_seconds),
         )
     )
