@@ -40,7 +40,11 @@ at most seven days. The limit is configured once on the stream; publications
 do not carry per-message TTL metadata. Connecting the adapter migrates new and
 existing streams to that retention policy. New streams disable per-message TTL;
 NATS does not allow that capability to be disabled on a stream once enabled,
-but legacy streams no longer receive messages that use it.
+but legacy streams no longer receive messages that use it. A legacy stream with
+`allow_msg_ttl=true` must be deleted and recreated during a maintenance window
+to remove the irreversible capability and its in-memory TTL state. That
+operation discards retained JetStream messages and consumer positions; it does
+not affect PostgreSQL history or persisted Opportunities.
 
 ## Tests
 

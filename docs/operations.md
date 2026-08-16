@@ -227,20 +227,24 @@ is configured at stream level and publications do not carry per-message TTL meta
 backtesting is unaffected: it downloads historical OHLCV directly and runs on an in-memory bus
 without operational NATS. Existing streams are migrated automatically when an event-bus process
 connects. NATS cannot disable per-message TTL after it has once been enabled on an existing stream;
-the flag may remain true there, but new publications do not use it. Purge the legacy retained market
-bars and restart NATS once after deploying this migration so the former TTL index is released from
-memory.
+the flag may remain true there, but new publications do not use it. Removing the irreversible TTL
+capability requires a maintenance window in which every MarketBot process is stopped and the
+`MARKETBOT` stream is deleted and recreated. This discards retained JetStream messages and durable
+consumer positions, while PostgreSQL history, Opportunities, and other database state remain
+intact. The first event-bus connection recreates the stream with seven-day retention and
+`allow_msg_ttl=false`; restart NATS afterward to release the legacy heap before starting MarketBot.
 
-With MarketBot stopped, preview and apply the subject-scoped cleanup before restarting NATS:
+For routine bar cleanup that does not recreate the stream, preview and apply the subject-scoped
+command with MarketBot stopped:
 
 ```bash
 .venv-linux/bin/marketbot nats purge-market-bars
 .venv-linux/bin/marketbot nats purge-market-bars --apply
-docker restart marketbot-nats
 ```
 
 The cleanup command affects only `marketbot.v1.market.bar.>`; PostgreSQL history and all other
-JetStream subjects remain intact.
+JetStream subjects remain intact. It does not disable `allow_msg_ttl` on a legacy stream and is not
+a substitute for recreating that stream.
 
 Before the first run, apply `supabase/migrations/20260802170000_market_bar_cache.sql` to the local
 `postgres-local` database. The directory name is retained for versioned schema compatibility; no
