@@ -12,8 +12,11 @@ from .v2 import SwingEngineV1, SwingEngineV2
 from .v3 import SwingEngineV3
 from .v4 import SwingEngineV4
 from .v5 import SwingEngineV5
+from .v6 import FailedBreakoutAssessment, FailedBreakoutState, SwingEngineV6
 
 __all__ = [
+    "FailedBreakoutAssessment",
+    "FailedBreakoutState",
     "SwingAnalysis",
     "SwingClassification",
     "SwingContext",
@@ -23,6 +26,7 @@ __all__ = [
     "SwingEngineV3",
     "SwingEngineV4",
     "SwingEngineV5",
+    "SwingEngineV6",
     "SwingIndicators",
     "SwingLevels",
 ]

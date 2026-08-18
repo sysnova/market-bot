@@ -47,7 +47,7 @@ from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngine
 from app.signal_fusion_engine import SignalFusionEngineV05
 from app.swing_4h_geri_engine import Swing4HGeriEngine, Swing4HGeriEngineV11
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
-from app.swing_engine import SwingEngineV4, SwingEngineV5
+from app.swing_engine import SwingEngineV4, SwingEngineV5, SwingEngineV6
 from app.volume_structure_engine import VolumeStructureEngineV11
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -67,6 +67,7 @@ SWING_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.14.0.yaml"
 GERI_DEFINITION = ROOT / "configs/marketbot/7.15.0.yaml"
 PINNED_SWING_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.16.0.yaml"
 PINNED_GERI_DEFINITION = ROOT / "configs/marketbot/7.17.0.yaml"
+FAILED_BREAKOUT_FSM_DEFINITION = ROOT / "configs/marketbot/7.18.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -117,6 +118,23 @@ def test_pinned_geri_definition_preserves_the_active_level_chain() -> None:
     assert assembly.definition.version == "7.17.0"
     assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV11)
     assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV11)
+
+
+def test_failed_breakout_fsm_definition_activates_swing_v6_without_mutating_v5() -> None:
+    previous = MarketBotAssembly.from_path(PINNED_GERI_DEFINITION)
+    assembly = MarketBotAssembly.from_path(FAILED_BREAKOUT_FSM_DEFINITION)
+
+    assert isinstance(previous.build_swing(), SwingEngineV5)
+    assert assembly.definition.version == "7.18.0"
+    assert isinstance(assembly.build_swing(), SwingEngineV6)
+    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV11)
+    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV11)
+    assert assembly.spec(EngineSlot.SWING).strategy.version == "2.0.0"
+    swing = assembly.build_swing()
+    assert swing._failed_breakout_failure_window_days == 5
+    assert swing._failed_breakout_maximum_age_days == 60
+    assert swing._failed_breakout_structural_reset_lookback_days == 20
+    assert swing._failed_breakout_reset_atr_multiple == Decimal("5")
 
 
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:

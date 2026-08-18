@@ -2,11 +2,12 @@
 
 ## Versiones
 
-La composicion activa usa `SwingEngineV5`. La invalidacion tactica parte del minimo real de las
+La composicion activa usa `SwingEngineV6`. La invalidacion tactica parte del minimo real de las
 ultimas diez ruedas y nunca usa un AVWAP como soporte automatico. La resistencia operativa usa
 cierres diarios; el maximo de mecha se publica por separado como `liquidity_high`. Un breakout que
-vuelve bajo el nivel roto dentro de cinco ruedas queda bloqueado con `failed_breakout=true` hasta
-que un cierre lo recupere. V1-V4 permanecen disponibles para replay y rollback.
+vuelve bajo el nivel roto dentro de cinco ruedas entra en una maquina de estados auditable. El veto
+termina por recuperacion, destruccion estructural, distancia de cinco ATR historicos, expiracion de
+sesenta ruedas o confirmacion de una base nueva. V1-V5 permanecen disponibles para replay y rollback.
 
 - `SwingEngineV1` / `SwingEngine`: reglas `1.1.1` originales.
 - `SwingEngineV2`: clasifica regimen con ADX y percentil de ATR, construye una zona alrededor del
@@ -15,6 +16,9 @@ que un cierre lo recupere. V1-V4 permanecen disponibles para replay y rollback.
 - `SwingEngineV4`: exige al menos `1.5R` hasta resistencia.
 - `SwingEngineV5`: separa soporte estructural, resistencia por cierres y mechas de liquidez; tambien
   bloquea falsos breakouts pendientes de recuperacion.
+- `SwingEngineV6`: conserva los gates de V5 y agrega el ciclo `ACTIVE`,
+  `NEW_BREAKOUT_PENDING`, `RECOVERED`, `STRUCTURE_INVALIDATED`,
+  `VOLATILITY_INVALIDATED`, `EXPIRED` y `SUPERSEDED`.
 
 V2 solo marca estructura rota cuando el precio esta al menos `1.5 ATR` bajo SMA50, la pendiente de
 SMA20 es negativa, ADX confirma tendencia y `-DI > +DI`. Una correccion normal puede continuar como

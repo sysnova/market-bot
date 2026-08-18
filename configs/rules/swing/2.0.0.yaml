@@ -1,0 +1,20 @@
+rule_id: marketbot.swing
+version: 2.0.0
+status: active
+behavior:
+  anchored_vwap_gate: true
+  minimum_reward_risk_to_resistance: 1.5
+  structural_support_lookback_days: 10
+  resistance_lookback_days: 20
+  failed_breakout_failure_window_days: 5
+  failed_breakout_maximum_age_days: 60
+  failed_breakout_structural_reset_lookback_days: 20
+  failed_breakout_reset_atr_multiple: 5
+measurement:
+  dimensions:
+    - engine_version
+    - strategy_version
+    - entry_timing
+    - failed_breakout_state
+    - failed_breakout_reset_reason
+  outcomes: [first_level_hit, mfe_percent, mae_percent]
