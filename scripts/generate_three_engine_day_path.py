@@ -48,6 +48,148 @@ class Panel:
     fill: str
 
 
+@dataclass(frozen=True)
+class _AssessmentBundle:
+    swing: dict[str, object] | None = None
+    channel: dict[str, object] | None = None
+    geri: dict[str, object] | None = None
+    divergence: dict[str, object] | None = None
+    gamma: dict[str, object] | None = None
+
+
+def _merge_assessments(
+    original: _AssessmentBundle, refreshed: _AssessmentBundle
+) -> _AssessmentBundle:
+    """Prefer a refreshed payload without discarding useful cached context."""
+
+    return _AssessmentBundle(
+        swing=refreshed.swing or original.swing,
+        channel=refreshed.channel or original.channel,
+        geri=refreshed.geri or original.geri,
+        divergence=refreshed.divergence or original.divergence,
+        gamma=refreshed.gamma or original.gamma,
+    )
+
+
+def _extract_swing_from_analyzer(
+    report: Mapping[str, object], symbol: str
+) -> dict[str, object] | None:
+    """Extract the canonical Swing payload returned directly by analyzer core."""
+
+    engines = report.get("engines")
+    if not isinstance(engines, list):
+        return None
+    normalized = symbol.strip().upper()
+    for engine_value in cast(list[object], engines):
+        if not isinstance(engine_value, dict):
+            continue
+        engine = cast(dict[str, object], engine_value)
+        if engine.get("engine") != "core":
+            continue
+        result_value = engine.get("result")
+        if not isinstance(result_value, dict):
+            continue
+        result = cast(dict[str, object], result_value)
+        analyses_value = result.get("analyses")
+        if not isinstance(analyses_value, list):
+            continue
+        for analysis_value in cast(list[object], analyses_value):
+            if not isinstance(analysis_value, dict):
+                continue
+            analysis = cast(dict[str, object], analysis_value)
+            if (
+                str(analysis.get("symbol", "")).upper() == normalized
+                and analysis.get("horizon") == AnalysisHorizon.SWING.value
+            ):
+                return analysis
+    return None
+
+
+def _online_analyzer_error(report: Mapping[str, object], symbol: str) -> str:
+    engines = report.get("engines")
+    if isinstance(engines, list):
+        for engine_value in cast(list[object], engines):
+            if isinstance(engine_value, dict):
+                engine = cast(dict[str, object], engine_value)
+                if engine.get("engine") != "core":
+                    continue
+                status = str(engine.get("status", "UNKNOWN"))
+                detail = engine.get("error") or engine.get("error_type")
+                suffix = f": {detail}" if detail else ""
+                return f"online analyzer core {status}{suffix}"
+    return f"online analyzer returned no Swing assessment for {symbol}"
+
+
+async def _fetch_assessments(settings: AppSettings, symbol: str) -> _AssessmentBundle:
+    async def fetch_assessment(
+        bus: NatsJetStreamEventBus, subject: str
+    ) -> dict[str, object] | None:
+        envelope = await bus.get_last(subject)
+        if envelope is None:
+            return None
+        return _as_mapping(envelope.payload)
+
+    bus = await NatsJetStreamEventBus.connect(servers=[settings.nats_url.get_secret_value()])
+    try:
+        return _AssessmentBundle(
+            swing=await fetch_assessment(
+                bus, analysis_result_subject(AnalysisHorizon.SWING, symbol)
+            ),
+            channel=await fetch_assessment(bus, swing_channel_assessment_subject(symbol)),
+            geri=await fetch_assessment(bus, geri_assessment_subject(symbol)),
+            divergence=await fetch_assessment(
+                bus,
+                analysis_result_subject(AnalysisHorizon.VOLUME_STRUCTURE, symbol),
+            ),
+            gamma=await fetch_assessment(bus, options_gamma_assessment_subject(symbol)),
+        )
+    finally:
+        await bus.close()
+
+
+async def _run_online_analyzer(symbol: str, runtime_root: Path) -> dict[str, object]:
+    from app.integration.symbol_analysis_composition import run_market_analyzer
+
+    return await run_market_analyzer(
+        symbol=symbol,
+        timeout_seconds=30.0,
+        runtime_root=runtime_root,
+        mirror_to_nats=True,
+    )
+
+
+async def _resolve_assessments(
+    settings: AppSettings, symbol: str, runtime_root: Path
+) -> _AssessmentBundle:
+    try:
+        cached = await _fetch_assessments(settings, symbol)
+    except Exception:
+        cached = _AssessmentBundle()
+    if cached.swing is not None:
+        return cached
+
+    report = await _run_online_analyzer(symbol, runtime_root)
+    swing = _extract_swing_from_analyzer(report, symbol)
+    if swing is None:
+        raise RuntimeError(_online_analyzer_error(report, symbol))
+
+    # Re-read after the analyzer publishes, so any active downstream assessment
+    # consumers can contribute fresh 4H/context payloads. The direct core result
+    # remains authoritative and also works when NATS is unavailable.
+    try:
+        refreshed = await _fetch_assessments(settings, symbol)
+    except Exception:
+        refreshed = _AssessmentBundle()
+    merged = _merge_assessments(cached, refreshed)
+    return _AssessmentBundle(
+        swing=swing,
+        channel=merged.channel,
+        geri=merged.geri,
+        divergence=merged.divergence,
+        gamma=merged.gamma,
+    )
+
+
 def _as_mapping(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return cast(dict[str, object], value)
@@ -1167,6 +1309,7 @@ def _build_template(title: str, data: Mapping[str, object]) -> str:
 
 
 async def build_html(symbol: str, output_dir: Path) -> Path:
+    symbol = symbol.strip().upper()
     settings = AppSettings()
     now = datetime.now(UTC)
     start = _session_open_utc(now)
@@ -1177,32 +1320,18 @@ async def build_html(symbol: str, output_dir: Path) -> Path:
     if not sampled:
         raise RuntimeError(f"no intraday bars returned for {symbol}")
 
-    async def fetch_assessment(
-        bus: NatsJetStreamEventBus, subject: str
-    ) -> dict[str, object] | None:
-        envelope = await bus.get_last(subject)
-        if envelope is None:
-            return None
-        return _as_mapping(envelope.payload)
-
-    bus = await NatsJetStreamEventBus.connect(servers=[settings.nats_url.get_secret_value()])
-    try:
-        swing = await fetch_assessment(
-            bus, analysis_result_subject(AnalysisHorizon.SWING, symbol)
-        )
-        channel = await fetch_assessment(bus, swing_channel_assessment_subject(symbol))
-        geri = await fetch_assessment(bus, geri_assessment_subject(symbol))
-        divergence = await fetch_assessment(
-            bus, analysis_result_subject(AnalysisHorizon.VOLUME_STRUCTURE, symbol)
-        )
-        gamma = await fetch_assessment(bus, options_gamma_assessment_subject(symbol))
-    finally:
-        await bus.close()
-
-    if swing is None:
-        raise RuntimeError(
-            f"missing live assessment for subject {analysis_result_subject(AnalysisHorizon.SWING, symbol)}"
-        )
+    assessments = await _resolve_assessments(
+        settings,
+        symbol,
+        Path(__file__).resolve().parents[1] / ".runtime",
+    )
+    swing = assessments.swing
+    channel = assessments.channel
+    geri = assessments.geri
+    divergence = assessments.divergence
+    gamma = assessments.gamma
+    if swing is None:  # Defensive: _resolve_assessments guarantees this invariant.
+        raise RuntimeError(f"online analyzer returned no Swing assessment for {symbol}")
 
     latest_trade_value = snapshot.get("latestTrade")
     latest_trade = (

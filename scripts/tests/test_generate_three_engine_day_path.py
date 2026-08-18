@@ -1,11 +1,79 @@
 # pyright: reportPrivateUsage=false
 
+from pathlib import Path
+
+import pytest
+
+import scripts.generate_three_engine_day_path as generator
 from scripts.generate_three_engine_day_path import (
     DAILY_SESSIONS,
+    _AssessmentBundle,
     _build_template,
     _divergence_indicator,
+    _extract_swing_from_analyzer,
     _gamma_indicator,
+    _resolve_assessments,
 )
+
+
+def _analyzer_report(symbol: str = "SUZ") -> dict[str, object]:
+    return {
+        "symbol": symbol,
+        "engines": [
+            {
+                "engine": "core",
+                "status": "COMPLETED",
+                "result": {
+                    "analyses": [
+                        {
+                            "symbol": symbol,
+                            "horizon": "SWING",
+                            "verdict": "WATCH",
+                            "metrics": [],
+                        }
+                    ]
+                },
+            }
+        ],
+    }
+
+
+def test_extracts_swing_from_online_analyzer_core_result() -> None:
+    swing = _extract_swing_from_analyzer(_analyzer_report("SUZ"), "suz")
+
+    assert swing is not None
+    assert swing["symbol"] == "SUZ"
+    assert swing["horizon"] == "SWING"
+
+
+@pytest.mark.asyncio
+async def test_missing_cached_swing_runs_online_analyzer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetches = 0
+
+    async def fake_fetch(_settings: object, _symbol: str) -> _AssessmentBundle:
+        nonlocal fetches
+        fetches += 1
+        return _AssessmentBundle()
+
+    async def fake_analyzer(symbol: str, runtime_root: Path) -> dict[str, object]:
+        assert symbol == "SUZ"
+        assert runtime_root == Path(".runtime")
+        return _analyzer_report(symbol)
+
+    monkeypatch.setattr(generator, "_fetch_assessments", fake_fetch)
+    monkeypatch.setattr(generator, "_run_online_analyzer", fake_analyzer)
+
+    assessments = await _resolve_assessments(
+        object(),  # type: ignore[arg-type]
+        "SUZ",
+        Path(".runtime"),
+    )
+
+    assert fetches == 2
+    assert assessments.swing is not None
+    assert assessments.swing["symbol"] == "SUZ"
 
 
 def test_divergence_indicator_preserves_engine_evidence() -> None:
