@@ -28,6 +28,8 @@ _COLORS = {
     GeriMaturity.L2_4H: "\033[36m",
     GeriMaturity.L3: "\033[32m",
     GeriMaturity.L4: "\033[1;32m",
+    GeriMaturity.EXTENDED: "\033[35m",
+    GeriMaturity.RECLAIM_REQUIRED: "\033[33m",
     GeriMaturity.INVALIDATED: "\033[31m",
 }
 
@@ -73,7 +75,7 @@ async def run_swing_4h_geri_monitor(
                 },
             )
         print(
-            "4HGERI - niveles horizontales alternados - esperando NATS...",
+            "4HGERI - MONITOR MANUAL - NO COMPRA / NO OPPORTUNITY - esperando NATS...",
             file=output,
             flush=True,
         )
@@ -85,26 +87,46 @@ async def run_swing_4h_geri_monitor(
 
 def _format_assessment(item: GeriAssessment, *, color: bool) -> str:
     levels = " -> ".join(
-        f"N{level.sequence} {level.kind.value} {level.price}"
-        for level in item.levels[-5:]
+        f"N{level.sequence} {level.kind.value} {level.price}" for level in item.levels[-5:]
     )
     active = (
-        "esperando ruptura alcista"
-        if item.active_level_kind is GeriLevelKind.RESISTANCE
-        else "soporte activo para pullback"
+        f"nivel activo para pullback {item.trade_side.value}"
+        if item.standalone_swing
+        else (
+            "esperando ruptura alcista"
+            if item.active_level_kind is GeriLevelKind.RESISTANCE
+            else "soporte activo para pullback"
+        )
     )
     zone = (
         f"zona {item.zone_low}-{item.zone_high} | invalida {item.invalidation}"
         if item.zone_low is not None
-        else "sin zona long mientras la resistencia siga activa"
+        else "sin zona operable mientras se construye la estructura"
+    )
+    stage = {
+        GeriMaturity.BUILDING: "G0 BUILDING",
+        GeriMaturity.ARMED: "G0 ARMED",
+        GeriMaturity.IN_ZONE_4H: "G1 IN_ZONE",
+        GeriMaturity.L2_4H: "G2 FAST",
+        GeriMaturity.L3: "G3 4H CONFIRMED",
+        GeriMaturity.L4: "G4 CONTINUATION",
+        GeriMaturity.EXTENDED: "EXTENDED",
+        GeriMaturity.RECLAIM_REQUIRED: "RECLAIM REQUIRED",
+        GeriMaturity.INVALIDATED: "INVALIDATED",
+    }[item.maturity]
+    heading = (
+        f"4HGERI v{item.engine_version} | {stage} | {item.trade_side.value}"
+        if item.standalone_swing
+        else f"4HGERI {item.maturity.value}"
     )
     body = (
-        f"{item.symbol} | 4HGERI {item.maturity.value} | N{item.active_level_sequence} "
+        f"{item.symbol} | {heading} | N{item.active_level_sequence} "
         f"{item.active_level_kind.value} {item.active_level_price} | {active}\n"
         f"  Precio {item.current_price} | {zone} | ruptura {item.breakout_buffer} ATR-px\n"
         f"  Estructura: {levels}\n"
-        f"  Confirmaciones: rebote {'SI' if item.bounce_confirmed else 'NO'} | "
-        f"Swing diario {'SI' if item.daily_swing_aligned else 'NO'} | "
-        f"Opportunity L3/L4 {'SI' if item.existing_maturity_aligned else 'NO'}"
+        f"  Confirmaciones: 15m {'SI' if item.fast_confirmation else 'NO'} | "
+        f"4H {'SI' if item.four_hour_confirmation else 'NO'} | "
+        f"continuacion {'SI' if item.continuation_confirmation else 'NO'}\n"
+        "  SALIDA: MONITOR MANUAL | NO COMPRA | NO OPPORTUNITY"
     )
     return f"{_COLORS[item.maturity]}{body}{_RESET}" if color else body

@@ -21,7 +21,7 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.entry_watcher_enabled is True
     assert settings.entry_watch_ttl_days == 56
     assert settings.alert_checkpoint_interval_seconds == 30
-    assert settings.definition_path == Path("configs/marketbot/7.18.0.yaml")
+    assert settings.definition_path == Path("configs/marketbot/7.19.0.yaml")
     assert settings.news_intelligence_model == "gpt-5.4-nano-2026-03-17"
     assert settings.news_intelligence_refresh_seconds == 300
     assert settings.openai_configured is False
@@ -73,9 +73,7 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.options_gamma_days_forward == 45
     assert settings.options_gamma_strike_range_percent == Decimal("50")
     assert settings.options_gamma_concurrency == 4
-    assert str(settings.alpaca_options_contracts_base_url) == (
-        "https://paper-api.alpaca.markets/"
-    )
+    assert str(settings.alpaca_options_contracts_base_url) == ("https://paper-api.alpaca.markets/")
     assert settings.peter_lynch_analysis_ttl_days == 90
     assert settings.alpaca_execution_enabled is False
     serialized = json.dumps(settings.redacted())

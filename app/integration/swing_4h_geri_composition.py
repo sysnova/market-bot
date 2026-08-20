@@ -73,6 +73,7 @@ class Swing4HGeriRuntime:
         clock: Clock | None = None,
     ) -> None:
         self._engine = engine
+        self._standalone = getattr(engine, "engine_version", "") == "1.2.0"
         self._publisher = publisher
         self._clock = clock or SystemClock()
         self._bars = MarketBarStore(capacity_per_series=80)
@@ -97,9 +98,7 @@ class Swing4HGeriRuntime:
         if previous is None or item.occurred_at >= previous.occurred_at:
             self._latest[item.symbol] = item
 
-    async def bootstrap(
-        self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]
-    ) -> int:
+    async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {item.strip().upper() for item in symbols if item.strip()}
         for bar in sorted(bars, key=lambda item: (item.timestamp, item.symbol)):
             if bar.symbol not in self._symbols or not bar.is_final:
@@ -108,6 +107,7 @@ class Swing4HGeriRuntime:
                 self._bars.add(bar)
                 self._prices[bar.symbol] = bar.close
             elif bar.timeframe is BarTimeframe.MINUTE_15 and is_regular_session(bar.timestamp):
+                self._bars.add(bar)
                 self._prices[bar.symbol] = bar.close
                 for aggregated in self._four_hour.add(bar):
                     self._bars.add(aggregated)
@@ -148,6 +148,8 @@ class Swing4HGeriRuntime:
             await self._accept_fifteen(fifteen)
 
     async def handle_analysis(self, envelope: EventEnvelope) -> None:
+        if self._standalone:
+            return
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
             return
         result = (
@@ -164,6 +166,8 @@ class Swing4HGeriRuntime:
         await self.evaluate(result.symbol)
 
     async def handle_opportunity(self, envelope: EventEnvelope) -> None:
+        if self._standalone:
+            return
         if envelope.event_type != ENTRY_OPPORTUNITY_EVENT:
             return
         event = (
@@ -183,9 +187,7 @@ class Swing4HGeriRuntime:
 
     async def evaluate(self, symbol: str, *, current_price: Decimal | None = None) -> bool:
         normalized = symbol.strip().upper()
-        bars = self._bars.history(
-            normalized, BarTimeframe.HOUR_4, limit=60, final_only=True
-        )
+        bars = self._bars.history(normalized, BarTimeframe.HOUR_4, limit=60, final_only=True)
         value = current_price if current_price is not None else self._prices.get(normalized)
         if value is None or not bars:
             return False
@@ -195,6 +197,12 @@ class Swing4HGeriRuntime:
                     symbol=normalized,
                     bars=bars,
                     current_price=value,
+                    confirmation_bars=self._bars.history(
+                        normalized,
+                        BarTimeframe.MINUTE_15,
+                        limit=32,
+                        final_only=True,
+                    ),
                     daily_swing=self._daily_swing.get(normalized),
                     existing_maturity=self._existing_maturity.get(normalized),
                     active_structure=self._latest.get(normalized),
@@ -213,6 +221,7 @@ class Swing4HGeriRuntime:
         return True
 
     async def _accept_fifteen(self, bar: MarketBar, *, evaluate: bool = True) -> None:
+        self._bars.add(bar)
         self._prices[bar.symbol] = bar.close
         for aggregated in self._four_hour.add(bar):
             self._bars.add(aggregated)
@@ -248,6 +257,8 @@ class Swing4HGeriRuntime:
             zone_low=item.zone_low,
             zone_high=item.zone_high,
             invalidation=item.invalidation,
+            trade_side=item.trade_side,
+            standalone_swing=item.standalone_swing,
             reasons=item.reasons,
             context_hash=item.context_hash,
         )
@@ -274,6 +285,10 @@ def _same_observation(previous: GeriAssessment, current: GeriAssessment) -> bool
         and previous.zone_high == current.zone_high
         and previous.daily_swing_aligned is current.daily_swing_aligned
         and previous.existing_maturity_aligned is current.existing_maturity_aligned
+        and previous.trade_side is current.trade_side
+        and previous.fast_confirmation is current.fast_confirmation
+        and previous.four_hour_confirmation is current.four_hour_confirmation
+        and previous.continuation_confirmation is current.continuation_confirmation
     )
 
 
@@ -282,6 +297,7 @@ def _material_transition(previous: GeriAssessment, current: GeriAssessment) -> b
         previous.maturity is not current.maturity
         or previous.active_level_sequence != current.active_level_sequence
         or previous.active_level_kind is not current.active_level_kind
+        or previous.trade_side is not current.trade_side
     )
 
 
@@ -315,23 +331,27 @@ async def run_swing_4h_geri_process(
             universe_source = "operator-override"
         bus = await connect_nats(settings)
         runtime = Swing4HGeriRuntime(engine=assembly.build_4hgeri(), publisher=bus)
+        engine_version = assembly.spec(EngineSlot.GERI_4H).implementation
         replay_specs = (
             (
                 "marketbot.v1.4hgeri.assessment.>",
                 runtime.restore_assessment,
                 "marketbot-4hgeri-restore-v1",
             ),
-            (
-                "marketbot.v1.analysis.result.SWING.>",
-                runtime.handle_analysis,
-                "marketbot-4hgeri-swing-v1",
-            ),
-            (
-                "marketbot.v1.entry-opportunity.transition.>",
-                runtime.handle_opportunity,
-                "marketbot-4hgeri-opportunity-v1",
-            ),
         )
+        if engine_version != "1.2.0":
+            replay_specs += (
+                (
+                    "marketbot.v1.analysis.result.SWING.>",
+                    runtime.handle_analysis,
+                    "marketbot-4hgeri-swing-v1",
+                ),
+                (
+                    "marketbot.v1.entry-opportunity.transition.>",
+                    runtime.handle_opportunity,
+                    "marketbot-4hgeri-opportunity-v1",
+                ),
+            )
         for subject, handler, durable in replay_specs:
             subscription = await bus.subscribe(
                 subject,
@@ -358,18 +378,18 @@ async def run_swing_4h_geri_process(
         summary: dict[str, object] = {
             **universe_health_details("4hgeri"),
             "service": "4hgeri-v1",
-            "engine_version": assembly.spec(EngineSlot.GERI_4H).implementation,
-            "engine_strategy_version": assembly.spec(
-                EngineSlot.GERI_4H
-            ).strategy.version,
+            "engine_version": engine_version,
+            "engine_strategy_version": assembly.spec(EngineSlot.GERI_4H).strategy.version,
             "marketbot_definition_version": assembly.definition.version,
             "mode": "SHADOW",
+            "monitoring": "TMUX_MANUAL_ONLY",
             "symbols": len(selected),
             "universe_source": universe_source,
             "historical_bars": historical_bars,
             "assessments_published": published,
             "bar_source": "15Min_RTH_aggregated_09:30_ET",
             "feeds_core_opportunities": False,
+            "emits_buy_signals": False,
             "places_orders": False,
         }
         if once:

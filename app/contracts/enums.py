@@ -131,6 +131,8 @@ class GeriMaturity(ContractEnum):
     L2_4H = "L2_4H"
     L3 = "L3"
     L4 = "L4"
+    EXTENDED = "EXTENDED"
+    RECLAIM_REQUIRED = "RECLAIM_REQUIRED"
     INVALIDATED = "INVALIDATED"
 
 

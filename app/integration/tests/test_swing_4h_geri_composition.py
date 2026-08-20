@@ -13,7 +13,11 @@ from app.contracts import (
     MarketBar,
 )
 from app.integration.swing_4h_geri_composition import Swing4HGeriRuntime
-from app.swing_4h_geri_engine import Swing4HGeriEngine, Swing4HGeriEngineV11
+from app.swing_4h_geri_engine import (
+    Swing4HGeriEngine,
+    Swing4HGeriEngineV11,
+    Swing4HGeriEngineV12,
+)
 
 START = datetime(2026, 7, 20, 13, 30, tzinfo=UTC)
 
@@ -86,9 +90,7 @@ async def test_runtime_deduplicates_price_noise_inside_same_armed_state() -> Non
 @pytest.mark.asyncio
 async def test_v11_runtime_extends_the_published_level_chain() -> None:
     publisher = Publisher()
-    runtime = Swing4HGeriRuntime(
-        engine=Swing4HGeriEngineV11(), publisher=publisher
-    )
+    runtime = Swing4HGeriRuntime(engine=Swing4HGeriEngineV11(), publisher=publisher)
     history = bars()
     await runtime.bootstrap(history, symbols=("AAPL",))
     active = publisher.events[0][1].payload
@@ -123,3 +125,22 @@ async def test_v11_runtime_extends_the_published_level_chain() -> None:
 
     assert projected.levels == active.levels
     assert projected.active_level_sequence == active.active_level_sequence
+
+
+@pytest.mark.asyncio
+async def test_v12_runtime_publishes_manual_assessments_without_buy_or_opportunity() -> None:
+    publisher = Publisher()
+    runtime = Swing4HGeriRuntime(engine=Swing4HGeriEngineV12(), publisher=publisher)
+
+    assert await runtime.bootstrap(bars(), symbols=("AAPL",)) == 1
+
+    assert {event.event_type for _, event in publisher.events} == {
+        GERI_ASSESSMENT_EVENT,
+        GERI_TRANSITION_EVENT,
+    }
+    assessment = publisher.events[0][1].payload
+    transition = publisher.events[1][1].payload
+    assert assessment.engine_version == "1.2.0"
+    assert assessment.standalone_swing is True
+    assert "manual_monitor_only" in assessment.reasons
+    assert transition.standalone_swing is True

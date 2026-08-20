@@ -21,6 +21,7 @@ from app.contracts import (
     MarketBar,
     NamedValue,
     PatternDirection,
+    TradeSide,
 )
 
 from .models import Swing4HGeriContext
@@ -153,9 +154,7 @@ class Swing4HGeriEngine:
             daily_swing_aligned=daily_aligned,
             existing_maturity_aligned=existing_aligned,
             current_swing_zone_low=_rounded(daily_low) if daily_low is not None else None,
-            current_swing_zone_high=(
-                _rounded(daily_high) if daily_high is not None else None
-            ),
+            current_swing_zone_high=(_rounded(daily_high) if daily_high is not None else None),
             reasons=_reasons(maturity, active, daily_aligned, existing_aligned),
             metrics=(
                 NamedValue(name="atr14_4h", value=_rounded(atr14)),
@@ -169,9 +168,7 @@ class Swing4HGeriEngine:
                             name="tracking_extreme_price",
                             value=_rounded(tracking_extreme[0]),
                         ),
-                        NamedValue(
-                            name="tracking_extreme_at", value=tracking_extreme[1]
-                        ),
+                        NamedValue(name="tracking_extreme_at", value=tracking_extreme[1]),
                     )
                     if tracking_extreme is not None
                     else ()
@@ -239,9 +236,7 @@ class Swing4HGeriEngineV11(Swing4HGeriEngine):
         active_structure = context.active_structure
         if active_structure is None:
             initial = super().analyze(context)
-            bars = tuple(
-                bar for bar in context.bars[-self._lookback :] if bar.is_final
-            )
+            bars = tuple(bar for bar in context.bars[-self._lookback :] if bar.is_final)
             extreme = _tracking_extreme(
                 bars,
                 initial.levels[-1],
@@ -318,6 +313,314 @@ class Swing4HGeriEngineV11(Swing4HGeriEngine):
         )
 
 
+class Swing4HGeriEngineV12(Swing4HGeriEngine):
+    """Standalone mirrored Swing model for manual G0-G4 monitoring only."""
+
+    engine_version = "1.2.0"
+
+    def __init__(
+        self,
+        *,
+        pivot_radius: int = 1,
+        minimum_bars: int = 8,
+        lookback_bars: int = 60,
+        breakout_atr: Decimal = Decimal("0.10"),
+        zone_atr: Decimal = Decimal("0.25"),
+        invalidation_atr: Decimal = Decimal("0.50"),
+        maximum_extension_atr: Decimal = Decimal("1.50"),
+    ) -> None:
+        super().__init__(
+            pivot_radius=pivot_radius,
+            minimum_bars=minimum_bars,
+            lookback_bars=lookback_bars,
+            breakout_atr=breakout_atr,
+            zone_atr=zone_atr,
+            invalidation_atr=invalidation_atr,
+        )
+        if maximum_extension_atr <= ZERO:
+            raise ValueError("maximum extension ATR must be positive")
+        self._maximum_extension_atr = maximum_extension_atr
+
+    def analyze(self, context: Swing4HGeriContext) -> GeriAssessment:
+        symbol = context.symbol.strip().upper()
+        bars = tuple(bar for bar in context.bars[-self._lookback :] if bar.is_final)
+        _validate_bars(symbol, bars, minimum_bars=self._minimum_bars)
+        if context.current_price <= ZERO:
+            raise ValueError("current price must be positive")
+        confirmations = tuple(bar for bar in context.confirmation_bars if bar.is_final)
+        if any(bar.symbol != symbol for bar in confirmations):
+            raise ValueError("4HGERI confirmation bars must belong to the symbol")
+        if any(bar.timeframe is not BarTimeframe.MINUTE_15 for bar in confirmations):
+            raise ValueError("4HGERI fast confirmation requires 15Min bars")
+        if any(
+            current.timestamp <= previous.timestamp for previous, current in pairwise(confirmations)
+        ):
+            raise ValueError("4HGERI confirmation bars must be chronological")
+
+        active_structure = context.active_structure
+        if (
+            active_structure is not None
+            and active_structure.engine_version == self.engine_version
+            and active_structure.standalone_swing
+        ):
+            if active_structure.symbol != symbol:
+                raise ValueError("active 4HGERI structure must belong to the symbol")
+            levels, tracking_extreme = self._extend_active_levels(
+                bars,
+                active_structure,
+            )
+            return self._standalone_assessment(
+                context,
+                symbol=symbol,
+                bars=bars,
+                confirmation_bars=confirmations,
+                levels=levels,
+                side=active_structure.trade_side,
+                tracking_extreme=tracking_extreme,
+            )
+
+        candidates: list[tuple[TradeSide, tuple[GeriStructuralLevel, ...]]] = []
+        for side, seed_kind in (
+            (TradeSide.LONG, GeriLevelKind.SUPPORT),
+            (TradeSide.SHORT, GeriLevelKind.RESISTANCE),
+        ):
+            try:
+                candidates.append((side, self._levels_from_seed(bars, seed_kind)))
+            except ValueError:
+                continue
+        if not candidates:
+            raise ValueError("4HGERI has no confirmed initial pivot")
+        side, levels = max(candidates, key=_candidate_priority)
+        tracking_extreme = _tracking_extreme(
+            bars,
+            levels[-1],
+            through=bars[-1].timestamp,
+        )
+        return self._standalone_assessment(
+            context,
+            symbol=symbol,
+            bars=bars,
+            confirmation_bars=confirmations,
+            levels=levels,
+            side=side,
+            tracking_extreme=tracking_extreme,
+        )
+
+    def _extend_active_levels(
+        self,
+        bars: tuple[MarketBar, ...],
+        active_structure: GeriAssessment,
+    ) -> tuple[tuple[GeriStructuralLevel, ...], tuple[Decimal, datetime]]:
+        levels = list(active_structure.levels)
+        extreme = _assessment_tracking_extreme(active_structure)
+        if extreme is None:
+            extreme = _tracking_extreme(
+                bars,
+                levels[-1],
+                through=active_structure.occurred_at,
+            )
+        for index, current in enumerate(bars):
+            if current.timestamp <= active_structure.occurred_at:
+                continue
+            active = levels[-1]
+            buffer = _atr(bars[: index + 1]) * self._breakout_atr
+            broken = (
+                current.close < active.price - buffer
+                if active.kind is GeriLevelKind.SUPPORT
+                else current.close > active.price + buffer
+            )
+            if broken:
+                levels[-1] = active.model_copy(update={"broken_at": current.timestamp})
+                next_kind = (
+                    GeriLevelKind.RESISTANCE
+                    if active.kind is GeriLevelKind.SUPPORT
+                    else GeriLevelKind.SUPPORT
+                )
+                levels.append(
+                    GeriStructuralLevel(
+                        sequence=len(levels) + 1,
+                        kind=next_kind,
+                        price=_rounded(extreme[0]),
+                        source_at=extreme[1],
+                        confirmed_at=current.timestamp,
+                    )
+                )
+                extreme = _bar_extreme(current, next_kind)
+                continue
+            extreme = _updated_extreme(extreme, current, active.kind)
+        return tuple(levels), extreme
+
+    def _levels_from_seed(
+        self,
+        bars: tuple[MarketBar, ...],
+        seed_kind: GeriLevelKind,
+    ) -> tuple[GeriStructuralLevel, ...]:
+        seed = (
+            _first_pivot_low(bars, self._pivot_radius)
+            if seed_kind is GeriLevelKind.SUPPORT
+            else _first_pivot_high(bars, self._pivot_radius)
+        )
+        confirmed_index = seed + self._pivot_radius
+        seed_price = bars[seed].low if seed_kind is GeriLevelKind.SUPPORT else bars[seed].high
+        levels: list[GeriStructuralLevel] = [
+            GeriStructuralLevel(
+                sequence=1,
+                kind=seed_kind,
+                price=_rounded(seed_price),
+                source_at=bars[seed].timestamp,
+                confirmed_at=bars[confirmed_index].timestamp,
+            )
+        ]
+        tracking_start = confirmed_index
+        for index in range(confirmed_index + 1, len(bars)):
+            active = levels[-1]
+            current = bars[index]
+            buffer = _atr(bars[: index + 1]) * self._breakout_atr
+            broken = (
+                current.close < active.price - buffer
+                if active.kind is GeriLevelKind.SUPPORT
+                else current.close > active.price + buffer
+            )
+            if not broken:
+                continue
+            segment = bars[tracking_start:index]
+            if not segment:
+                continue
+            levels[-1] = active.model_copy(update={"broken_at": current.timestamp})
+            if active.kind is GeriLevelKind.SUPPORT:
+                extreme = max(segment, key=lambda bar: (bar.high, bar.timestamp))
+                next_kind = GeriLevelKind.RESISTANCE
+                next_price = extreme.high
+            else:
+                extreme = min(segment, key=lambda bar: (bar.low, bar.timestamp))
+                next_kind = GeriLevelKind.SUPPORT
+                next_price = extreme.low
+            levels.append(
+                GeriStructuralLevel(
+                    sequence=len(levels) + 1,
+                    kind=next_kind,
+                    price=_rounded(next_price),
+                    source_at=extreme.timestamp,
+                    confirmed_at=current.timestamp,
+                )
+            )
+            tracking_start = index
+        return tuple(levels)
+
+    def _standalone_assessment(
+        self,
+        context: Swing4HGeriContext,
+        *,
+        symbol: str,
+        bars: tuple[MarketBar, ...],
+        confirmation_bars: tuple[MarketBar, ...],
+        levels: tuple[GeriStructuralLevel, ...],
+        side: TradeSide,
+        tracking_extreme: tuple[Decimal, datetime],
+    ) -> GeriAssessment:
+        active = levels[-1]
+        atr14 = _atr(bars)
+        expected_kind = (
+            GeriLevelKind.SUPPORT if side is TradeSide.LONG else GeriLevelKind.RESISTANCE
+        )
+        actionable = len(levels) >= 3 and active.kind is expected_kind
+        zone_low: Decimal | None = None
+        zone_high: Decimal | None = None
+        invalidation: Decimal | None = None
+        fast = False
+        four_hour = False
+        continuation = False
+        if actionable:
+            padding = atr14 * self._zone_atr
+            zone_low = max(Decimal("0.0001"), active.price - padding)
+            zone_high = active.price + padding
+            invalidation = (
+                max(
+                    Decimal("0.0001"),
+                    active.price - atr14 * self._invalidation_atr,
+                )
+                if side is TradeSide.LONG
+                else active.price + atr14 * self._invalidation_atr
+            )
+            fast = _fast_rejection_confirmed(
+                confirmation_bars,
+                side=side,
+                level=active.price,
+                zone_low=zone_low,
+                zone_high=zone_high,
+                confirmed_at=active.confirmed_at,
+            )
+            four_hour = _four_hour_reaction_confirmed(
+                bars,
+                side=side,
+                level=active.price,
+                zone_low=zone_low,
+                zone_high=zone_high,
+                confirmed_at=active.confirmed_at,
+            )
+            continuation = _continuation_confirmed(
+                confirmation_bars,
+                side=side,
+                four_hour_confirmed=four_hour,
+            )
+        maturity = _standalone_maturity(
+            actionable=actionable,
+            side=side,
+            price=context.current_price,
+            active_price=active.price,
+            atr14=atr14,
+            maximum_extension_atr=self._maximum_extension_atr,
+            zone_low=zone_low,
+            zone_high=zone_high,
+            invalidation=invalidation,
+            fast=fast,
+            four_hour=four_hour,
+            continuation=continuation,
+        )
+        return GeriAssessment(
+            symbol=symbol,
+            occurred_at=bars[-1].timestamp,
+            engine_version=self.engine_version,
+            maturity=maturity,
+            current_price=_rounded(context.current_price),
+            levels=levels,
+            active_level_sequence=active.sequence,
+            active_level_kind=active.kind,
+            active_level_price=active.price,
+            atr14=_rounded(atr14),
+            breakout_buffer=_rounded(atr14 * self._breakout_atr),
+            zone_low=_rounded(zone_low) if zone_low is not None else None,
+            zone_high=_rounded(zone_high) if zone_high is not None else None,
+            invalidation=_rounded(invalidation) if invalidation is not None else None,
+            bounce_confirmed=fast or four_hour,
+            trade_side=side,
+            standalone_swing=True,
+            fast_confirmation=fast,
+            four_hour_confirmation=four_hour,
+            continuation_confirmation=continuation,
+            reasons=_standalone_reasons(maturity, active, side),
+            metrics=(
+                NamedValue(name="atr14_4h", value=_rounded(atr14)),
+                NamedValue(name="break_confirmation", value="completed_4h_close"),
+                NamedValue(name="structure", value="mirrored_alternating_levels"),
+                NamedValue(name="entry_lifecycle", value="manual_g0_g4"),
+                NamedValue(name="emits_opportunities", value=False),
+                NamedValue(name="places_orders", value=False),
+                NamedValue(
+                    name="tracking_extreme_price",
+                    value=_rounded(tracking_extreme[0]),
+                ),
+                NamedValue(name="tracking_extreme_at", value=tracking_extreme[1]),
+            ),
+            context_hash=_context_hash(
+                bars,
+                context.current_price,
+                None,
+                confirmation_bars=confirmation_bars,
+            ),
+        )
+
+
 def _first_pivot_low(bars: tuple[MarketBar, ...], radius: int) -> int:
     for index in range(radius, len(bars) - radius):
         neighbors = (*bars[index - radius : index], *bars[index + 1 : index + radius + 1])
@@ -325,6 +628,193 @@ def _first_pivot_low(bars: tuple[MarketBar, ...], radius: int) -> int:
         if all(low <= bar.low for bar in neighbors) and any(low < bar.low for bar in neighbors):
             return index
     raise ValueError("4HGERI has no confirmed initial pivot low")
+
+
+def _first_pivot_high(bars: tuple[MarketBar, ...], radius: int) -> int:
+    for index in range(radius, len(bars) - radius):
+        neighbors = (*bars[index - radius : index], *bars[index + 1 : index + radius + 1])
+        high = bars[index].high
+        if all(high >= bar.high for bar in neighbors) and any(high > bar.high for bar in neighbors):
+            return index
+    raise ValueError("4HGERI has no confirmed initial pivot high")
+
+
+def _validate_bars(
+    symbol: str,
+    bars: tuple[MarketBar, ...],
+    *,
+    minimum_bars: int,
+) -> None:
+    if len(bars) < minimum_bars:
+        raise ValueError("4HGERI requires more completed bars")
+    if any(bar.symbol != symbol for bar in bars):
+        raise ValueError("4HGERI bars must belong to the requested symbol")
+    if any(bar.timeframe is not BarTimeframe.HOUR_4 for bar in bars):
+        raise ValueError("4HGERI requires 4Hour bars")
+    if any(current.timestamp <= previous.timestamp for previous, current in pairwise(bars)):
+        raise ValueError("4HGERI bars must be strictly chronological")
+
+
+def _candidate_priority(
+    candidate: tuple[TradeSide, tuple[GeriStructuralLevel, ...]],
+) -> tuple[bool, datetime, int]:
+    side, levels = candidate
+    if not levels:
+        raise ValueError("4HGERI candidate cannot be empty")
+    latest = max(levels, key=lambda level: level.sequence)
+    expected = GeriLevelKind.SUPPORT if side is TradeSide.LONG else GeriLevelKind.RESISTANCE
+    actionable = len(levels) >= 3 and latest.kind is expected
+    return actionable, latest.confirmed_at, len(levels)
+
+
+def _fast_rejection_confirmed(
+    bars: tuple[MarketBar, ...],
+    *,
+    side: TradeSide,
+    level: Decimal,
+    zone_low: Decimal,
+    zone_high: Decimal,
+    confirmed_at: datetime,
+) -> bool:
+    if len(bars) < 2:
+        return False
+    touched, current = bars[-2:]
+    if touched.timestamp < confirmed_at:
+        return False
+    touched_zone = touched.low <= zone_high and touched.high >= zone_low
+    if side is TradeSide.LONG:
+        return bool(
+            touched_zone
+            and current.low > touched.low
+            and current.close > current.open
+            and current.close > touched.close
+            and current.close > level
+        )
+    return bool(
+        touched_zone
+        and current.high < touched.high
+        and current.close < current.open
+        and current.close < touched.close
+        and current.close < level
+    )
+
+
+def _four_hour_reaction_confirmed(
+    bars: tuple[MarketBar, ...],
+    *,
+    side: TradeSide,
+    level: Decimal,
+    zone_low: Decimal,
+    zone_high: Decimal,
+    confirmed_at: datetime,
+) -> bool:
+    reactions = tuple(bar for bar in bars if bar.timestamp >= confirmed_at)
+    if len(reactions) < 2:
+        return False
+    touched, current = reactions[-2:]
+    touched_zone = touched.low <= zone_high and touched.high >= zone_low
+    if side is TradeSide.LONG:
+        return bool(
+            touched_zone
+            and current.low > touched.low
+            and current.close > touched.high
+            and current.close > level
+        )
+    return bool(
+        touched_zone
+        and current.high < touched.high
+        and current.close < touched.low
+        and current.close < level
+    )
+
+
+def _continuation_confirmed(
+    bars: tuple[MarketBar, ...],
+    *,
+    side: TradeSide,
+    four_hour_confirmed: bool,
+) -> bool:
+    if not four_hour_confirmed or len(bars) < 3:
+        return False
+    breakout, retest, current = bars[-3:]
+    if side is TradeSide.LONG:
+        return bool(
+            breakout.close > breakout.open
+            and retest.low <= breakout.high
+            and current.close > breakout.high
+        )
+    return bool(
+        breakout.close < breakout.open
+        and retest.high >= breakout.low
+        and current.close < breakout.low
+    )
+
+
+def _standalone_maturity(
+    *,
+    actionable: bool,
+    side: TradeSide,
+    price: Decimal,
+    active_price: Decimal,
+    atr14: Decimal,
+    maximum_extension_atr: Decimal,
+    zone_low: Decimal | None,
+    zone_high: Decimal | None,
+    invalidation: Decimal | None,
+    fast: bool,
+    four_hour: bool,
+    continuation: bool,
+) -> GeriMaturity:
+    if not actionable:
+        return GeriMaturity.BUILDING
+    assert zone_low is not None and zone_high is not None and invalidation is not None
+    if side is TradeSide.LONG:
+        if price <= invalidation:
+            return GeriMaturity.INVALIDATED
+        if price < zone_low:
+            return GeriMaturity.RECLAIM_REQUIRED
+        extension = price - active_price
+    else:
+        if price >= invalidation:
+            return GeriMaturity.INVALIDATED
+        if price > zone_high:
+            return GeriMaturity.RECLAIM_REQUIRED
+        extension = active_price - price
+    if extension > atr14 * maximum_extension_atr:
+        return GeriMaturity.EXTENDED
+    if continuation:
+        return GeriMaturity.L4
+    if four_hour:
+        return GeriMaturity.L3
+    if fast:
+        return GeriMaturity.L2_4H
+    if zone_low <= price <= zone_high:
+        return GeriMaturity.IN_ZONE_4H
+    return GeriMaturity.ARMED
+
+
+def _standalone_reasons(
+    maturity: GeriMaturity,
+    active: GeriStructuralLevel,
+    side: TradeSide,
+) -> tuple[str, ...]:
+    stage = {
+        GeriMaturity.BUILDING: "g0_structure_building",
+        GeriMaturity.ARMED: "g0_level_armed",
+        GeriMaturity.IN_ZONE_4H: "g1_price_in_level_zone",
+        GeriMaturity.L2_4H: "g2_fast_rejection_confirmed",
+        GeriMaturity.L3: "g3_completed_4h_reaction",
+        GeriMaturity.L4: "g4_breakout_retest_continuation",
+        GeriMaturity.EXTENDED: "impulse_extended_awaiting_pullback",
+        GeriMaturity.RECLAIM_REQUIRED: "broken_level_reclaim_required",
+        GeriMaturity.INVALIDATED: "level_invalidation_breached",
+    }[maturity]
+    return (
+        "manual_monitor_only",
+        stage,
+        f"trade_side:{side.value}",
+        f"active_level:{active.sequence}:{active.kind.value}",
+    )
 
 
 def _assessment_tracking_extreme(
@@ -344,11 +834,7 @@ def _tracking_extreme(
     *,
     through: datetime,
 ) -> tuple[Decimal, datetime]:
-    segment = tuple(
-        bar
-        for bar in bars
-        if active.confirmed_at <= bar.timestamp <= through
-    )
+    segment = tuple(bar for bar in bars if active.confirmed_at <= bar.timestamp <= through)
     if not segment:
         return active.price, active.source_at
     if active.kind is GeriLevelKind.SUPPORT:
@@ -359,11 +845,7 @@ def _tracking_extreme(
 
 
 def _bar_extreme(bar: MarketBar, kind: GeriLevelKind) -> tuple[Decimal, datetime]:
-    return (
-        (bar.high, bar.timestamp)
-        if kind is GeriLevelKind.SUPPORT
-        else (bar.low, bar.timestamp)
-    )
+    return (bar.high, bar.timestamp) if kind is GeriLevelKind.SUPPORT else (bar.low, bar.timestamp)
 
 
 def _updated_extreme(
@@ -503,7 +985,11 @@ def _atr(bars: tuple[MarketBar, ...], period: int = 14) -> Decimal:
 
 
 def _context_hash(
-    bars: tuple[MarketBar, ...], price: Decimal, daily_swing: AnalysisResult | None
+    bars: tuple[MarketBar, ...],
+    price: Decimal,
+    daily_swing: AnalysisResult | None,
+    *,
+    confirmation_bars: tuple[MarketBar, ...] = (),
 ) -> str:
     payload = {
         "bars": [
@@ -518,6 +1004,16 @@ def _context_hash(
         ],
         "price": str(price),
         "daily_swing": str(daily_swing.analysis_id) if daily_swing is not None else None,
+        "confirmation_bars": [
+            [
+                bar.timestamp.isoformat(),
+                str(bar.open),
+                str(bar.high),
+                str(bar.low),
+                str(bar.close),
+            ]
+            for bar in confirmation_bars
+        ],
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()

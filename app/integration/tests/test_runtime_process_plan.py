@@ -46,7 +46,7 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
 
     geri = plan.process("4hgeri")
     assert geri.arguments[-2:] == ("--symbols", "HIMS,ZETA")
-    assert geri.dependencies == ("market-history-v1", "long-portfolio-v1")
+    assert geri.dependencies == ("market-history-v1",)
 
     confirmed = plan.process("confirmed-buy-monitor")
     assert confirmed.operator_monitor is True
@@ -59,11 +59,7 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     plan = build_runtime_process_plan(assembly.definition, runtime_root=Path(".runtime"))
 
     batches = startup_batches(plan.headless_processes)
-    positions = {
-        name: index
-        for index, batch in enumerate(batches)
-        for name in batch
-    }
+    positions = {name: index for index, batch in enumerate(batches) for name in batch}
 
     assert positions["outbox-relay"] < positions["alert"]
     assert positions["outbox-relay"] < positions["market-history-v1"]

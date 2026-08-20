@@ -16,7 +16,7 @@ from ._base import (
     StrictFrozenModel,
     new_uuid7,
 )
-from .enums import GeriLevelKind, GeriMaturity
+from .enums import GeriLevelKind, GeriMaturity, TradeSide
 from .rules import NamedValue
 
 
@@ -61,6 +61,11 @@ class GeriAssessment(StrictFrozenModel):
     bounce_confirmed: bool = False
     daily_swing_aligned: bool = False
     existing_maturity_aligned: bool = False
+    trade_side: TradeSide = TradeSide.LONG
+    standalone_swing: bool = False
+    fast_confirmation: bool = False
+    four_hour_confirmation: bool = False
+    continuation_confirmation: bool = False
     current_swing_zone_low: PositiveDecimal | None = None
     current_swing_zone_high: PositiveDecimal | None = None
     reasons: tuple[NonEmptyStr, ...] = Field(min_length=1)
@@ -88,6 +93,9 @@ class GeriAssessment(StrictFrozenModel):
             or self.active_level_price != active.price
         ):
             raise ValueError("active 4HGERI fields must match the latest level")
+        if self.standalone_swing:
+            self._validate_standalone(active)
+            return self
         zone = (self.zone_low, self.zone_high, self.invalidation)
         if active.kind is GeriLevelKind.RESISTANCE:
             if any(value is not None for value in zone):
@@ -102,21 +110,64 @@ class GeriAssessment(StrictFrozenModel):
             assert self.invalidation is not None
             if not self.invalidation < self.zone_low <= active.price <= self.zone_high:
                 raise ValueError("4HGERI support zone levels are out of order")
-        if self.maturity in {
-            GeriMaturity.L2_4H,
-            GeriMaturity.L3,
-            GeriMaturity.L4,
-        } and not self.bounce_confirmed:
-            raise ValueError("4HGERI L2 or later requires a confirmed bounce")
-        if self.maturity in {GeriMaturity.L3, GeriMaturity.L4} and not (
-            self.daily_swing_aligned
+        if (
+            self.maturity
+            in {
+                GeriMaturity.L2_4H,
+                GeriMaturity.L3,
+                GeriMaturity.L4,
+            }
+            and not self.bounce_confirmed
         ):
+            raise ValueError("4HGERI L2 or later requires a confirmed bounce")
+        if self.maturity in {GeriMaturity.L3, GeriMaturity.L4} and not (self.daily_swing_aligned):
             raise ValueError("4HGERI L3 or L4 requires daily Swing alignment")
         if self.maturity is GeriMaturity.L4 and not self.existing_maturity_aligned:
             raise ValueError("4HGERI L4 requires existing L3/L4 alignment")
         if (self.current_swing_zone_low is None) != (self.current_swing_zone_high is None):
             raise ValueError("current Swing zone must be complete")
         return self
+
+    def _validate_standalone(self, active: GeriStructuralLevel) -> None:
+        zone = (self.zone_low, self.zone_high, self.invalidation)
+        if self.maturity is GeriMaturity.BUILDING:
+            if any(value is not None for value in zone):
+                raise ValueError("building standalone structure cannot expose a zone")
+            return
+        if any(value is None for value in zone):
+            raise ValueError("actionable standalone structure requires a complete zone")
+        assert self.zone_low is not None
+        assert self.zone_high is not None
+        assert self.invalidation is not None
+        if not self.zone_low <= active.price <= self.zone_high:
+            raise ValueError("standalone zone must contain the active level")
+        if self.trade_side is TradeSide.LONG:
+            if active.kind is not GeriLevelKind.SUPPORT:
+                raise ValueError("standalone long requires active support")
+            if self.invalidation >= self.zone_low:
+                raise ValueError("standalone long invalidation must be below the zone")
+        else:
+            if active.kind is not GeriLevelKind.RESISTANCE:
+                raise ValueError("standalone short requires active resistance")
+            if self.invalidation <= self.zone_high:
+                raise ValueError("standalone short invalidation must be above the zone")
+        if (
+            self.maturity
+            in {
+                GeriMaturity.L2_4H,
+                GeriMaturity.L3,
+                GeriMaturity.L4,
+            }
+            and not self.fast_confirmation
+            and not self.four_hour_confirmation
+        ):
+            raise ValueError("standalone G2 or later requires a reaction confirmation")
+        if self.maturity in {GeriMaturity.L3, GeriMaturity.L4} and not (
+            self.four_hour_confirmation
+        ):
+            raise ValueError("standalone G3 or G4 requires a completed 4H confirmation")
+        if self.maturity is GeriMaturity.L4 and not self.continuation_confirmation:
+            raise ValueError("standalone G4 requires continuation confirmation")
 
 
 class GeriTransition(StrictFrozenModel):
@@ -136,6 +187,8 @@ class GeriTransition(StrictFrozenModel):
     zone_low: PositiveDecimal | None = None
     zone_high: PositiveDecimal | None = None
     invalidation: PositiveDecimal | None = None
+    trade_side: TradeSide = TradeSide.LONG
+    standalone_swing: bool = False
     reasons: tuple[NonEmptyStr, ...] = Field(min_length=1)
     context_hash: Sha256
 
@@ -143,12 +196,27 @@ class GeriTransition(StrictFrozenModel):
     def validate_transition(self) -> GeriTransition:
         if self.transition_id.version != 7 or self.assessment_id.version != 7:
             raise ValueError("transition_id and assessment_id must be UUIDv7")
+        if self.standalone_swing:
+            if self.maturity is GeriMaturity.BUILDING:
+                if any(
+                    value is not None
+                    for value in (self.zone_low, self.zone_high, self.invalidation)
+                ):
+                    raise ValueError("building standalone transition cannot expose a zone")
+                return self
+            if self.zone_low is None or self.zone_high is None or self.invalidation is None:
+                raise ValueError("standalone transition requires entry levels")
+            expected = (
+                GeriLevelKind.SUPPORT
+                if self.trade_side is TradeSide.LONG
+                else GeriLevelKind.RESISTANCE
+            )
+            if self.active_level_kind is not expected:
+                raise ValueError("standalone transition side and active level disagree")
+            return self
         if self.active_level_kind is GeriLevelKind.SUPPORT:
             if self.zone_low is None or self.zone_high is None or self.invalidation is None:
                 raise ValueError("support transition requires long entry levels")
-        elif any(
-            value is not None
-            for value in (self.zone_low, self.zone_high, self.invalidation)
-        ):
+        elif any(value is not None for value in (self.zone_low, self.zone_high, self.invalidation)):
             raise ValueError("resistance transition cannot expose long entry levels")
         return self

@@ -291,11 +291,12 @@ def build_runtime_process_plan(
             EngineSlot.OPTIONS_GAMMA,
         }:
             arguments += symbol_arguments
-        dependencies = (
-            ("alert", "entry-watcher", "entry-opportunity")
-            if slot is EngineSlot.NEWS_INTELLIGENCE
-            else analytical_dependencies
-        )
+        if slot is EngineSlot.NEWS_INTELLIGENCE:
+            dependencies = ("alert", "entry-watcher", "entry-opportunity")
+        elif slot is EngineSlot.GERI_4H and definition.engines[slot].implementation == "1.2.0":
+            dependencies = ("market-history-v1",)
+        else:
+            dependencies = analytical_dependencies
         add(name, arguments, slot=slot, dependencies=dependencies)
 
     add(
@@ -318,8 +319,7 @@ def build_runtime_process_plan(
     stream_dependencies = tuple(
         process.name
         for process in processes
-        if not process.operator_monitor
-        and process.engine_slot is not EngineSlot.OPTIONS_GAMMA
+        if not process.operator_monitor and process.engine_slot is not EngineSlot.OPTIONS_GAMMA
     )
     add(
         "alpaca-market-stream",
@@ -350,18 +350,14 @@ def startup_batches(
     for process in processes:
         missing = set(process.dependencies) - set(by_name)
         if missing:
-            raise ValueError(
-                f"missing process dependency for {process.name}: {sorted(missing)}"
-            )
+            raise ValueError(f"missing process dependency for {process.name}: {sorted(missing)}")
 
     remaining = dict(by_name)
     completed: set[str] = set()
     batches: list[tuple[str, ...]] = []
     while remaining:
         batch = tuple(
-            name
-            for name, process in remaining.items()
-            if set(process.dependencies) <= completed
+            name for name, process in remaining.items() if set(process.dependencies) <= completed
         )
         if not batch:
             raise ValueError(f"runtime process dependency cycle: {sorted(remaining)}")

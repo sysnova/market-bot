@@ -69,7 +69,11 @@ from app.signal_fusion_engine import (
     SignalFusionEngineV05,
 )
 from app.support_confirmation_engine import SupportConfirmationEngine
-from app.swing_4h_geri_engine import Swing4HGeriEngine, Swing4HGeriEngineV11
+from app.swing_4h_geri_engine import (
+    Swing4HGeriEngine,
+    Swing4HGeriEngineV11,
+    Swing4HGeriEngineV12,
+)
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 from app.swing_engine import (
     SwingEngine,
@@ -120,6 +124,7 @@ def default_engine_registry() -> EngineRegistry:
                 implementations={
                     "1.0.0": Swing4HGeriEngine,
                     "1.1.0": Swing4HGeriEngineV11,
+                    "1.2.0": Swing4HGeriEngineV12,
                 },
                 required_since="7.15.0",
             ),
@@ -183,9 +188,7 @@ def default_engine_registry() -> EngineRegistry:
                 configure=configure_alert,
                 validate_strategy=validate_alert,
             ),
-            EngineSlot.MARKET_ROTATION: simple(
-                implementations={"1.0.0": RotationEngine}
-            ),
+            EngineSlot.MARKET_ROTATION: simple(implementations={"1.0.0": RotationEngine}),
             EngineSlot.PORTFOLIO_FLOW: EngineRegistration(
                 implementations={
                     "1.0.0": PortfolioFlowEngineV1,
@@ -209,9 +212,7 @@ def default_engine_registry() -> EngineRegistry:
                 validate_strategy=validate_patreon_caps,
                 strategy_resolver=resolve_patreon_caps,
             ),
-            EngineSlot.ELLIOTT_WAVE: simple(
-                implementations={"0.1.0": ElliottWaveEngine}
-            ),
+            EngineSlot.ELLIOTT_WAVE: simple(implementations={"0.1.0": ElliottWaveEngine}),
             EngineSlot.SUPPORT_CONFIRMATION: simple(
                 implementations={"0.2.0": SupportConfirmationEngine}
             ),
@@ -233,12 +234,8 @@ def default_engine_registry() -> EngineRegistry:
                     "0.5.0": SignalFusionEngineV05,
                 }
             ),
-            EngineSlot.DILUTION_SEC: simple(
-                implementations={"1.0.0": DilutionSecEngine}
-            ),
-            EngineSlot.PETER_LYNCH: simple(
-                implementations={"1.1.0": PeterLynchEngine}
-            ),
+            EngineSlot.DILUTION_SEC: simple(implementations={"1.0.0": DilutionSecEngine}),
+            EngineSlot.PETER_LYNCH: simple(implementations={"1.1.0": PeterLynchEngine}),
             EngineSlot.NEWS_INTELLIGENCE: simple(
                 implementations={"1.0.0": NewsIntelligenceEngine},
                 required_since="7.12.0",

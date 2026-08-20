@@ -145,12 +145,12 @@ def test_market_backtest_parses_isolated_run_configuration() -> None:
 
 
 def test_backtest_default_simulated_date_skips_weekends_and_follows_source() -> None:
-    assert _backtest_simulated_date(
-        source=date(2026, 8, 14), today=date(2026, 8, 16)
-    ) == date(2026, 8, 17)
-    assert _backtest_simulated_date(
-        source=date(2026, 8, 17), today=date(2026, 8, 17)
-    ) == date(2026, 8, 18)
+    assert _backtest_simulated_date(source=date(2026, 8, 14), today=date(2026, 8, 16)) == date(
+        2026, 8, 17
+    )
+    assert _backtest_simulated_date(source=date(2026, 8, 17), today=date(2026, 8, 17)) == date(
+        2026, 8, 18
+    )
 
 
 def test_live_help_exposes_analysis_only_operation() -> None:
@@ -200,11 +200,11 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.18.0"
+    assert payload["version"] == "7.19.0"
     assert payload["engines"]["swing"]["implementation"] == "6.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "2.0.0"
     assert payload["engines"]["swing-channel-4h"]["implementation"] == "1.1.0"
-    assert payload["engines"]["4hgeri"]["implementation"] == "1.1.0"
+    assert payload["engines"]["4hgeri"]["implementation"] == "1.2.0"
     assert payload["engines"]["entry-watcher"]["implementation"] == "5.4.0"
     assert payload["engines"]["entry-opportunity"]["implementation"] == "3.0.0"
     assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
@@ -243,7 +243,7 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.18.0"
+    assert payload["definition_version"] == "7.19.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
@@ -254,6 +254,7 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
         "HIMS,ZETA",
     ]
     assert processes["4hgeri"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
+    assert processes["4hgeri"]["dependencies"] == ["market-history-v1"]
 
 
 def test_single_dash_analyzer_alias_passes_the_received_ticker() -> None:

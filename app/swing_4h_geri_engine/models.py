@@ -13,6 +13,7 @@ class Swing4HGeriContext:
     symbol: str
     bars: tuple[MarketBar, ...]
     current_price: Decimal
+    confirmation_bars: tuple[MarketBar, ...] = ()
     daily_swing: AnalysisResult | None = None
     existing_maturity: EntryMaturityLevel | None = None
     active_structure: GeriAssessment | None = None

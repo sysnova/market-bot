@@ -45,7 +45,11 @@ from app.options_gamma_engine import OptionsGammaEngine
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.signal_fusion_engine import SignalFusionEngineV05
-from app.swing_4h_geri_engine import Swing4HGeriEngine, Swing4HGeriEngineV11
+from app.swing_4h_geri_engine import (
+    Swing4HGeriEngine,
+    Swing4HGeriEngineV11,
+    Swing4HGeriEngineV12,
+)
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 from app.swing_engine import SwingEngineV4, SwingEngineV5, SwingEngineV6
 from app.volume_structure_engine import VolumeStructureEngineV11
@@ -68,15 +72,14 @@ GERI_DEFINITION = ROOT / "configs/marketbot/7.15.0.yaml"
 PINNED_SWING_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.16.0.yaml"
 PINNED_GERI_DEFINITION = ROOT / "configs/marketbot/7.17.0.yaml"
 FAILED_BREAKOUT_FSM_DEFINITION = ROOT / "configs/marketbot/7.18.0.yaml"
+MIRRORED_GERI_DEFINITION = ROOT / "configs/marketbot/7.19.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
     assembly = MarketBotAssembly.from_path(NEWS_DEFINITION)
 
     assert assembly.definition.version == "7.12.0"
-    assert isinstance(
-        assembly.build(EngineSlot.NEWS_INTELLIGENCE), NewsIntelligenceEngine
-    )
+    assert isinstance(assembly.build(EngineSlot.NEWS_INTELLIGENCE), NewsIntelligenceEngine)
     assert isinstance(assembly.build_alert(), AlertEngineV36)
 
 
@@ -135,6 +138,17 @@ def test_failed_breakout_fsm_definition_activates_swing_v6_without_mutating_v5()
     assert swing._failed_breakout_maximum_age_days == 60
     assert swing._failed_breakout_structural_reset_lookback_days == 20
     assert swing._failed_breakout_reset_atr_multiple == Decimal("5")
+
+
+def test_mirrored_geri_definition_keeps_v11_and_selects_standalone_v12() -> None:
+    previous = MarketBotAssembly.from_path(FAILED_BREAKOUT_FSM_DEFINITION)
+    assembly = MarketBotAssembly.from_path(MIRRORED_GERI_DEFINITION)
+
+    assert previous.definition.version == "7.18.0"
+    assert isinstance(previous.build_4hgeri(), Swing4HGeriEngineV11)
+    assert assembly.definition.version == "7.19.0"
+    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV12)
+    assert assembly.spec(EngineSlot.GERI_4H).strategy.version == "1.2.0"
 
 
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
@@ -296,9 +310,7 @@ def test_generic_build_api_does_not_require_a_new_assembly_method() -> None:
 
 def test_artifact_engines_resolve_their_own_runtime_policies() -> None:
     assembly = MarketBotAssembly.from_path(DEFINITION)
-    allocations = (
-        PortfolioAllocation(symbol="HIMS", weight_percent=Decimal("75.73")),
-    )
+    allocations = (PortfolioAllocation(symbol="HIMS", weight_percent=Decimal("75.73")),)
 
     long_policy = assembly.resolve_strategy(
         EngineSlot.LONG_PORTFOLIO,
@@ -314,9 +326,7 @@ def test_artifact_engines_resolve_their_own_runtime_policies() -> None:
 
 def test_artifact_engines_build_without_policy_objects_from_compositions() -> None:
     assembly = MarketBotAssembly.from_path(DEFINITION)
-    allocations = (
-        PortfolioAllocation(symbol="HIMS", weight_percent=Decimal("75.73")),
-    )
+    allocations = (PortfolioAllocation(symbol="HIMS", weight_percent=Decimal("75.73")),)
 
     long_engine = assembly.build_long_portfolio(allocations=allocations)
     patreon_engine = assembly.build_patreon_caps()
@@ -335,13 +345,16 @@ def test_each_confirmation_engine_loads_its_own_strategy_artifact() -> None:
     assert assembly.strategy_artifact(EngineSlot.SWING).parent.name == "swing"
     assert assembly.strategy_artifact(EngineSlot.INTRADAY).parent.name == "intraday"
     assert assembly.strategy_artifact(EngineSlot.ENTRY_WATCHER).parent.name == "entry_watcher"
-    assert len(
-        {
-            assembly.strategy_artifact(EngineSlot.SWING),
-            assembly.strategy_artifact(EngineSlot.INTRADAY),
-            assembly.strategy_artifact(EngineSlot.ENTRY_WATCHER),
-        }
-    ) == 3
+    assert (
+        len(
+            {
+                assembly.strategy_artifact(EngineSlot.SWING),
+                assembly.strategy_artifact(EngineSlot.INTRADAY),
+                assembly.strategy_artifact(EngineSlot.ENTRY_WATCHER),
+            }
+        )
+        == 3
+    )
     assert swing._strategy_version == "1.1.0"
     assert swing._minimum_reward_risk_to_resistance == Decimal("1.5")
     assert intraday._minimum_momentum_percent == Decimal("0.15")
