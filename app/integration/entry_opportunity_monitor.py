@@ -582,7 +582,8 @@ def _trade_summary_lines(
             f"MADUREZ {maturity} | ESTADO {checkpoint.status.value} | "
             f"{price_label} {_styled(str(checkpoint.entry_price), _ENTRY_STYLE, color)} | "
             f"{mark_label} {_styled(str(mark), _EXIT_STYLE, color)} | "
-            f"P/L {_styled_percent(performance, color=color)}"
+            f"{'MOVE' if tracking else 'P/L'} "
+            f"{_styled_percent(performance, color=color)}"
         )
     return lines
 

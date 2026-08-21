@@ -207,6 +207,8 @@ def test_dashboard_does_not_label_armed_tracking_as_a_purchase() -> None:
     output = format_opportunity_dashboard(dashboard, refreshed_at=NOW)
 
     assert "REFERENCIA AAPL" in output
+    assert "MOVE +5.0000%" in output
+    assert "P/L +5.0000%" not in output
     assert "COMPRA AAPL | MADUREZ ARMED" not in output
 
 

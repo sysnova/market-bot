@@ -189,6 +189,88 @@ async def test_preentry_loss_closes_tracking_but_pullback_after_ct1_stays_open()
 
 
 @pytest.mark.asyncio
+async def test_favorable_preentry_rr_loss_waits_until_regular_session_close() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV5(store=store)
+    await engine.ingest_signal(countertrend_signal(GeriCountertrendMaturity.CT0, price="81"))
+
+    intraday = await engine.ingest_signal(
+        countertrend_signal(
+            None,
+            at=NOW + timedelta(minutes=15),
+            price="90",
+            reasons=("insufficient_reward_risk", "countertrend_ineligible"),
+        )
+    )
+
+    assert "geri_countertrend_preentry_ineligible_deferred" in intraday[0].reasons
+    active = await store.load_active("AAPL")
+    assert active is not None
+    reference = next(
+        item
+        for item in active.signal_references
+        if item.family is EntrySignalFamily.GERI_COUNTERTREND
+    )
+    assert reference.current_ct is GeriCountertrendMaturity.CT0
+
+    close_at = datetime(2026, 8, 20, 19, 59, tzinfo=UTC)
+    closed_events = await engine.ingest_signal(
+        countertrend_signal(
+            None,
+            at=close_at,
+            price="90",
+            reasons=(
+                "insufficient_reward_risk",
+                "countertrend_ineligible",
+                "regular_session_close",
+            ),
+        )
+    )
+
+    assert len(closed_events) == 1
+    closed = closed_events[0].opportunity
+    assert closed.close_reason is EntryCloseReason.POLICY_INELIGIBLE
+    assert closed.checkpoints[0].outcome is EntryLegStatus.TIME_EXIT
+    assert "geri_countertrend_preentry_ineligible_at_session_close" in closed_events[0].reasons
+
+
+@pytest.mark.asyncio
+async def test_countertrend_cannot_be_created_outside_regular_session() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV5(store=store)
+
+    events = await engine.ingest_signal(
+        countertrend_signal(
+            GeriCountertrendMaturity.CT0,
+            at=datetime(2026, 8, 20, 4, 49, tzinfo=UTC),
+        )
+    )
+
+    assert events == ()
+    assert await store.load_active("AAPL") is None
+
+
+@pytest.mark.asyncio
+async def test_ct0_target_is_terminal_before_preentry_policy_loss() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV5(store=store)
+    await engine.ingest_signal(countertrend_signal(GeriCountertrendMaturity.CT0, price="81"))
+
+    events = await engine.ingest_signal(
+        countertrend_signal(
+            None,
+            at=NOW + timedelta(minutes=15),
+            price="95",
+            reasons=("countertrend_target_reached",),
+        )
+    )
+
+    assert len(events) == 1
+    assert events[0].opportunity.close_reason is EntryCloseReason.ALL_HORIZONS_CLOSED
+    assert events[0].opportunity.checkpoints[0].outcome is EntryLegStatus.TARGET_HIT
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("bar", "expected_status"),
     [

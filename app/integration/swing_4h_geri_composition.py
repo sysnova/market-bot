@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from app.common.clock import Clock, SystemClock
-from app.common.market_session import is_regular_session
+from app.common.market_session import is_regular_session, is_regular_session_close_minute
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
@@ -94,6 +94,9 @@ class Swing4HGeriRuntime:
         self._existing_maturity: dict[str, EntryMaturityLevel] = {}
         self._opportunity_at: dict[str, datetime] = {}
         self._latest: dict[str, GeriAssessment] = {}
+        self._last_countertrend_signal: dict[
+            str, tuple[str, GeriCountertrendMaturity | None, tuple[str, ...]]
+        ] = {}
 
     async def restore_assessment(self, envelope: EventEnvelope) -> None:
         if envelope.event_type != GERI_ASSESSMENT_EVENT:
@@ -138,7 +141,10 @@ class Swing4HGeriRuntime:
         if bar.timeframe is BarTimeframe.HOUR_4:
             self._bars.add(bar)
             self._prices[bar.symbol] = bar.close
-            await self.evaluate(bar.symbol)
+            await self.evaluate(
+                bar.symbol,
+                market_at=bar.timestamp if is_regular_session(bar.timestamp) else None,
+            )
             return
         if bar.timeframe is BarTimeframe.MINUTE_15:
             if is_regular_session(bar.timestamp):
@@ -150,11 +156,14 @@ class Swing4HGeriRuntime:
         if is_regular_session(bar.timestamp):
             self._prices[bar.symbol] = bar.close
             for fifteen in aggregated:
-                await self._accept_fifteen(fifteen, evaluate=False)
-            await self.evaluate(bar.symbol, current_price=bar.close)
+                if is_regular_session(fifteen.timestamp):
+                    await self._accept_fifteen(fifteen, evaluate=False)
+            await self.evaluate(
+                bar.symbol,
+                current_price=bar.close,
+                market_at=bar.timestamp,
+            )
             return
-        for fifteen in aggregated:
-            await self._accept_fifteen(fifteen)
 
     async def handle_analysis(self, envelope: EventEnvelope) -> None:
         if self._standalone:
@@ -194,7 +203,13 @@ class Swing4HGeriRuntime:
         self._existing_maturity[opportunity.symbol] = opportunity.current_maturity
         await self.evaluate(opportunity.symbol)
 
-    async def evaluate(self, symbol: str, *, current_price: Decimal | None = None) -> bool:
+    async def evaluate(
+        self,
+        symbol: str,
+        *,
+        current_price: Decimal | None = None,
+        market_at: datetime | None = None,
+    ) -> bool:
         normalized = symbol.strip().upper()
         bars = self._bars.history(normalized, BarTimeframe.HOUR_4, limit=60, final_only=True)
         value = current_price if current_price is not None else self._prices.get(normalized)
@@ -222,9 +237,13 @@ class Swing4HGeriRuntime:
         assessment = assessment.model_copy(update={"assessed_at": self._clock.now()})
         previous = self._latest.get(normalized)
         if previous is not None and _same_observation(previous, assessment):
-            return False
+            return await self._publish_countertrend_signal(assessment, market_at=market_at)
         self._latest[normalized] = assessment
         await self._publish_assessment(assessment)
+        await self._publish_countertrend_signal(
+            assessment,
+            market_at=market_at,
+        )
         if previous is None or _material_transition(previous, assessment):
             await self._publish_transition(assessment, previous)
         return True
@@ -248,11 +267,34 @@ class Swing4HGeriRuntime:
                 payload=item,
             ),
         )
-        if not self._emit_countertrend_signals:
-            return
+    async def _publish_countertrend_signal(
+        self,
+        item: GeriAssessment,
+        *,
+        market_at: datetime | None,
+    ) -> bool:
+        if (
+            not self._emit_countertrend_signals
+            or market_at is None
+            or not is_regular_session(market_at)
+        ):
+            return False
         signal = _countertrend_signal(item)
         if signal is None:
-            return
+            return False
+        reasons = signal.reasons
+        if is_regular_session_close_minute(market_at):
+            reasons = (*reasons, "regular_session_close")
+        signal = signal.model_copy(
+            update={
+                "created_at": market_at,
+                "reasons": reasons,
+            }
+        )
+        signature = (signal.setup_id, signal.countertrend_maturity, signal.reasons)
+        if self._last_countertrend_signal.get(signal.symbol) == signature:
+            return False
+        self._last_countertrend_signal[signal.symbol] = signature
         await self._publisher.publish(
             entry_signal_subject(signal.family, signal.symbol),
             EventEnvelope(
@@ -263,6 +305,7 @@ class Swing4HGeriRuntime:
                 payload=signal,
             ),
         )
+        return True
 
     async def _publish_transition(
         self, item: GeriAssessment, previous: GeriAssessment | None

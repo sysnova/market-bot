@@ -37,6 +37,9 @@ adds the GERI tactical countertrend family with a separate `CT0-CT4` maturity: `
 reference-only watch, `CT1` opens the paper Swing leg, and `CT2-CT4` add measurement checkpoints.
 It records P/L, MFE/MAE, invalidation, target and a five-session TTL without changing any Core
 `L1-L4` or SwingTrade `ST1-ST4` maturity. It never submits broker orders.
+Standalone GERI opportunities can only be created from regular-session signals. CT0 favorable
+extension or reward/risk loss is tracked until the final regular minute, while target and
+invalidation remain immediate; CT0 output is a reference move, not trade P/L.
 
 Commands:
 

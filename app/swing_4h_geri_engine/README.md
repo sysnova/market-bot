@@ -34,3 +34,7 @@ manual assessment/tmux mode. Definition `7.22.0` projects eligible tactical `LON
 `GERI_COUNTERTREND` signals into Entry Opportunity `5.0.0`: `CT0` watches and `CT1-CT4` paper-track
 the rebound and its P/L. Tactical `SHORT` remains analytical because Opportunities are long-only.
 Neither version places orders; `7.20.0` stays pinned to `1.2.0` for comparison.
+
+Countertrend opportunity signals are session-gated to US regular hours. A favorable CT0 move
+that makes a fresh entry's reward/risk ineligible remains a reference through the regular session;
+the policy decision is finalized on the 15:59 ET minute. Target and invalidation remain immediate.

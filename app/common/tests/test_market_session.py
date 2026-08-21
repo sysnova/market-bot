@@ -6,6 +6,7 @@ import pytest
 from app.common.market_session import (
     is_completed_daily_bar,
     is_regular_analytical_bar,
+    is_regular_session_close_minute,
     market_session,
 )
 from app.contracts import BarTimeframe, MarketBar, MarketSession
@@ -46,6 +47,13 @@ def test_only_intraday_bars_are_session_gated() -> None:
 
     assert not is_regular_analytical_bar(_bar(BarTimeframe.MINUTE_1, premarket))
     assert is_regular_analytical_bar(_bar(BarTimeframe.DAY_1, premarket))
+
+
+@pytest.mark.unit
+def test_regular_session_close_minute_is_explicit() -> None:
+    assert not is_regular_session_close_minute(datetime(2026, 7, 24, 19, 58, tzinfo=UTC))
+    assert is_regular_session_close_minute(datetime(2026, 7, 24, 19, 59, tzinfo=UTC))
+    assert not is_regular_session_close_minute(datetime(2026, 7, 24, 20, 0, tzinfo=UTC))
 
 
 @pytest.mark.unit

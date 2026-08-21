@@ -38,6 +38,14 @@ def is_regular_session(value: datetime) -> bool:
     return market_session(value) is MarketSession.REGULAR
 
 
+def is_regular_session_close_minute(value: datetime) -> bool:
+    """Return whether a timestamp belongs to the final minute of US RTH."""
+
+    if not is_regular_session(value):
+        return False
+    return value.astimezone(_NEW_YORK).time() >= time(15, 59)
+
+
 def is_regular_analytical_bar(bar: MarketBar) -> bool:
     """Allow structural bars, but require RTH for every intraday timeframe."""
 

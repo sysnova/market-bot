@@ -1309,6 +1309,8 @@ class EntryOpportunityEngineV5(EntryOpportunityEngineV4):
             return ()
         active = await self._store.load_active(signal.symbol)
         if active is None:
+            if not is_regular_session(signal.created_at):
+                return ()
             if signal.countertrend_maturity is None or not _has_complete_signal_levels(signal):
                 return ()
             changed = self._new_countertrend_opportunity(signal)
@@ -1457,14 +1459,6 @@ class EntryOpportunityEngineV5(EntryOpportunityEngineV4):
         reference = _countertrend_reference(signal, previous)
         terminal = _countertrend_terminal(signal)
         if active.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND:
-            if not paper_open:
-                return self._close_opportunity(
-                    active,
-                    price=signal.entry_price,
-                    now=signal.created_at,
-                    reason=EntryCloseReason.POLICY_INELIGIBLE,
-                    leg_status=EntryLegStatus.THESIS_BROKEN,
-                ), "geri_countertrend_preentry_ineligible"
             if terminal is not None:
                 price, close_reason, leg_status, reason = terminal
                 return self._close_opportunity(
@@ -1474,6 +1468,39 @@ class EntryOpportunityEngineV5(EntryOpportunityEngineV4):
                     reason=close_reason,
                     leg_status=leg_status,
                 ), reason
+            if not paper_open:
+                favorable_entry_loss = any(
+                    reason in {"insufficient_reward_risk", "countertrend_extended"}
+                    for reason in signal.reasons
+                )
+                if favorable_entry_loss and "regular_session_close" not in signal.reasons:
+                    reference = reference.model_copy(update={"current_ct": previous.current_ct})
+                    return active.model_copy(
+                        update={
+                            "signal_references": _replace_signal_reference(
+                                active.signal_references, reference
+                            ),
+                            "current_price": signal.entry_price,
+                            "updated_at": max(active.updated_at, signal.created_at),
+                            "revision": active.revision + 1,
+                        }
+                    ), "geri_countertrend_preentry_ineligible_deferred"
+                at_session_close = "regular_session_close" in signal.reasons
+                return self._close_opportunity(
+                    active,
+                    price=signal.entry_price,
+                    now=signal.created_at,
+                    reason=EntryCloseReason.POLICY_INELIGIBLE,
+                    leg_status=(
+                        EntryLegStatus.TIME_EXIT
+                        if at_session_close
+                        else EntryLegStatus.THESIS_BROKEN
+                    ),
+                ), (
+                    "geri_countertrend_preentry_ineligible_at_session_close"
+                    if at_session_close
+                    else "geri_countertrend_preentry_ineligible"
+                )
             return active.model_copy(
                 update={
                     "signal_references": _replace_signal_reference(
@@ -1486,15 +1513,32 @@ class EntryOpportunityEngineV5(EntryOpportunityEngineV4):
             ), "geri_countertrend_tracking_lost_after_entry"
 
         outcome = terminal
-        if outcome is None and not paper_open:
-            outcome = (
-                signal.entry_price,
-                EntryCloseReason.POLICY_INELIGIBLE,
-                EntryLegStatus.THESIS_BROKEN,
-                "geri_countertrend_preentry_ineligible",
-            )
-        checkpoints = active.checkpoints
         reason = "geri_countertrend_tracking_lost_after_entry"
+        if outcome is None and not paper_open:
+            favorable_entry_loss = any(
+                item in {"insufficient_reward_risk", "countertrend_extended"}
+                for item in signal.reasons
+            )
+            at_session_close = "regular_session_close" in signal.reasons
+            if favorable_entry_loss and not at_session_close:
+                reference = reference.model_copy(update={"current_ct": previous.current_ct})
+                reason = "geri_countertrend_preentry_ineligible_deferred"
+            else:
+                outcome = (
+                    signal.entry_price,
+                    EntryCloseReason.POLICY_INELIGIBLE,
+                    (
+                        EntryLegStatus.TIME_EXIT
+                        if at_session_close
+                        else EntryLegStatus.THESIS_BROKEN
+                    ),
+                    (
+                        "geri_countertrend_preentry_ineligible_at_session_close"
+                        if at_session_close
+                        else "geri_countertrend_preentry_ineligible"
+                    ),
+                )
+        checkpoints = active.checkpoints
         if outcome is not None:
             price, _, leg_status, reason = outcome
             checkpoints = tuple(

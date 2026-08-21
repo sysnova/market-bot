@@ -206,7 +206,16 @@ async def test_v13_runtime_emits_long_countertrend_signal_only_when_enabled() ->
         emit_countertrend_signals=True,
     )
 
-    await runtime.bootstrap(bearish_bars_with_countertrend_pivot(), symbols=("AAPL",))
+    history = bearish_bars_with_countertrend_pivot()
+    await runtime.bootstrap(history, symbols=("AAPL",))
+
+    assert not any(event.event_type == ENTRY_SIGNAL_EVENT for _, event in publisher.events)
+
+    await runtime.evaluate(
+        "AAPL",
+        current_price=history[-1].close,
+        market_at=datetime(2026, 8, 21, 13, 31, tzinfo=UTC),
+    )
 
     signal = next(
         event.payload for _, event in publisher.events if event.event_type == ENTRY_SIGNAL_EVENT
@@ -214,3 +223,74 @@ async def test_v13_runtime_emits_long_countertrend_signal_only_when_enabled() ->
     assert signal.family.value == "GERI_COUNTERTREND"
     assert signal.countertrend_maturity is GeriCountertrendMaturity.CT0
     assert signal.maturity is None
+    assert signal.created_at == datetime(2026, 8, 21, 13, 31, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_v13_runtime_marks_the_final_regular_minute_signal() -> None:
+    publisher = Publisher()
+    runtime = Swing4HGeriRuntime(
+        engine=Swing4HGeriEngineV13(countertrend_minimum_reward_risk=Decimal("0.5")),
+        publisher=publisher,
+        emit_countertrend_signals=True,
+    )
+    history = bearish_bars_with_countertrend_pivot()
+    await runtime.bootstrap(history, symbols=("AAPL",))
+    price = history[-1].close
+
+    await runtime.evaluate(
+        "AAPL",
+        current_price=price,
+        market_at=datetime(2026, 8, 21, 13, 31, tzinfo=UTC),
+    )
+    await runtime.evaluate(
+        "AAPL",
+        current_price=price,
+        market_at=datetime(2026, 8, 21, 19, 59, tzinfo=UTC),
+    )
+
+    signals = [
+        event.payload for _, event in publisher.events if event.event_type == ENTRY_SIGNAL_EVENT
+    ]
+    assert len(signals) == 2
+    assert "regular_session_close" not in signals[0].reasons
+    assert "regular_session_close" in signals[1].reasons
+
+
+@pytest.mark.asyncio
+async def test_v13_runtime_does_not_evaluate_or_signal_premarket_minutes() -> None:
+    publisher = Publisher()
+    runtime = Swing4HGeriRuntime(
+        engine=Swing4HGeriEngineV13(countertrend_minimum_reward_risk=Decimal("0.5")),
+        publisher=publisher,
+        emit_countertrend_signals=True,
+    )
+    await runtime.bootstrap(bearish_bars_with_countertrend_pivot(), symbols=("AAPL",))
+    published_at_bootstrap = len(publisher.events)
+
+    for offset in range(16):
+        timestamp = datetime(2026, 8, 21, 12, 0, tzinfo=UTC) + timedelta(minutes=offset)
+        bar = MarketBar(
+            symbol="AAPL",
+            timeframe=BarTimeframe.MINUTE_1,
+            timestamp=timestamp,
+            open=Decimal("120"),
+            high=Decimal("121"),
+            low=Decimal("119"),
+            close=Decimal("120"),
+            volume=Decimal("1000"),
+            source="test",
+            feed="sip",
+            is_final=True,
+        )
+        await runtime.handle_market(
+            EventEnvelope(
+                event_type=MARKET_BAR_EVENT,
+                occurred_at=timestamp,
+                source="test",
+                subject="AAPL",
+                payload=bar,
+            )
+        )
+
+    assert len(publisher.events) == published_at_bootstrap
