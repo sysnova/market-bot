@@ -30,6 +30,7 @@ from app.contracts import (
     EntrySignalFamily,
     EntryWatchStatus,
     EntryWatchTransition,
+    GeriCountertrendMaturity,
     LocalAlert,
     MarketBar,
     PatternDirection,
@@ -498,6 +499,7 @@ class EntryOpportunityEngine:
         marked = _record_l2_bar_retest(marked, bar)
         checkpoints = marked.checkpoints
         reasons = _leg_close_reasons(active.legs, legs)
+        reasons.extend(_checkpoint_close_reasons(active.checkpoints, checkpoints))
 
         if bar.low <= active.invalidation:
             updated = active.model_copy(
@@ -1281,6 +1283,232 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
         return active.model_copy(update=updates), f"swing_trade_{stage.value.lower()}_reached"
 
 
+class EntryOpportunityEngineV5(EntryOpportunityEngineV4):
+    """Paper-track GERI countertrend CT0-CT4 without changing Core or ST maturity."""
+
+    engine_version = "5.0.0"
+
+    async def ingest_signal(self, signal: EntrySignal) -> tuple[EntryOpportunityEvent, ...]:
+        if signal.family is not EntrySignalFamily.GERI_COUNTERTREND:
+            return await super().ingest_signal(signal)
+        if await self._store.event_seen(signal.signal_id):
+            return ()
+        active = await self._store.load_active(signal.symbol)
+        if active is None:
+            if signal.countertrend_maturity is None or not _has_complete_signal_levels(signal):
+                return ()
+            changed = self._new_countertrend_opportunity(signal)
+            reason = "geri_countertrend_tracking_created"
+        else:
+            changed, reason = self._apply_countertrend(active, signal)
+            if changed is None:
+                return ()
+        event = self._event(
+            changed,
+            occurred_at=signal.created_at,
+            reasons=(reason, *signal.reasons),
+            event_id=signal.signal_id,
+        )
+        await self._store.save(changed, event)
+        return (event,)
+
+    def _new_countertrend_opportunity(self, signal: EntrySignal) -> EntryOpportunity:
+        assert signal.zone_low is not None
+        assert signal.zone_high is not None
+        assert signal.invalidation is not None
+        assert signal.countertrend_maturity is not None
+        stage = signal.countertrend_maturity
+        entered = _ct_rank(stage) >= _ct_rank(GeriCountertrendMaturity.CT1)
+        target = _first_actionable_target(signal)
+        leg = EntryHorizonLeg(
+            horizon=AnalysisHorizon.SWING,
+            status=EntryLegStatus.OPEN if entered else EntryLegStatus.WATCHING,
+            opened_at=signal.created_at if entered else None,
+            entry_price=signal.entry_price if entered else None,
+            current_price=signal.entry_price,
+            invalidation=signal.invalidation,
+            target=target,
+            highest_price=signal.entry_price,
+            lowest_price=signal.entry_price,
+        )
+        return EntryOpportunity(
+            opportunity_id=self._id_factory(),
+            symbol=signal.symbol,
+            status=EntryOpportunityStatus.OPEN if entered else EntryOpportunityStatus.CONFIRMING,
+            current_maturity=EntryMaturityLevel.ARMED,
+            peak_maturity=EntryMaturityLevel.ARMED,
+            progress_percent=_ct_progress(stage),
+            armed_at=signal.created_at,
+            updated_at=signal.created_at,
+            expires_at=_add_weekdays(signal.created_at, 5),
+            zone_low=signal.zone_low,
+            zone_high=signal.zone_high,
+            invalidation=signal.invalidation,
+            original_price=signal.entry_price,
+            current_price=signal.entry_price,
+            source_analysis_ids=_signal_source_ids(signal),
+            primary_signal_family=EntrySignalFamily.GERI_COUNTERTREND,
+            signal_references=(_countertrend_reference(signal, None),),
+            legs=(leg,),
+            checkpoints=(
+                _countertrend_checkpoint(signal, stage, self._child_id_factory()),
+            ),
+        )
+
+    def _apply_countertrend(
+        self, active: EntryOpportunity, signal: EntrySignal
+    ) -> tuple[EntryOpportunity | None, str]:
+        previous = _signal_reference_for_setup(active, signal)
+        if previous is not None and previous.signal_id == signal.signal_id:
+            return None, "duplicate"
+        paper_open = _countertrend_paper_open(active, setup_id=signal.setup_id)
+        has_other_setup = any(
+            item.family is EntrySignalFamily.GERI_COUNTERTREND
+            and item.setup_id != signal.setup_id
+            for item in active.signal_references
+        )
+        if (
+            previous is None
+            and has_other_setup
+            and _any_countertrend_paper_open(active)
+        ):
+            return None, "new_countertrend_setup_ignored_while_paper_open"
+        if signal.countertrend_maturity is None:
+            return self._apply_countertrend_loss(active, signal, previous, paper_open)
+        if not _has_complete_signal_levels(signal):
+            return None, "incomplete_levels"
+        stage = signal.countertrend_maturity
+        prior_peak = previous.peak_ct if previous is not None else None
+        if prior_peak is not None and _ct_rank(stage) <= _ct_rank(prior_peak):
+            if previous is not None and previous.current_ct is stage:
+                return None, "unchanged_stage"
+            reference = _countertrend_reference(signal, previous)
+            return active.model_copy(
+                update={
+                    "signal_references": _replace_signal_reference(
+                        active.signal_references, reference
+                    ),
+                    "current_price": signal.entry_price,
+                    "updated_at": max(active.updated_at, signal.created_at),
+                    "revision": active.revision + 1,
+                }
+            ), f"geri_countertrend_current_{stage.value.lower()}"
+
+        reference = _countertrend_reference(signal, previous)
+        checkpoints = active.checkpoints
+        if not any(
+            item.signal_family is EntrySignalFamily.GERI_COUNTERTREND
+            and item.setup_id == signal.setup_id
+            and item.countertrend_maturity is stage
+            for item in checkpoints
+        ):
+            checkpoints = (
+                *checkpoints,
+                _countertrend_checkpoint(signal, stage, self._child_id_factory()),
+            )
+        entered_now = (
+            _ct_rank(stage) >= _ct_rank(GeriCountertrendMaturity.CT1) and not paper_open
+        )
+        legs = active.legs
+        if entered_now and active.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND:
+            legs = _open_countertrend_leg(active, signal)
+        updates: dict[str, object] = {
+            "signal_references": _replace_signal_reference(
+                active.signal_references, reference
+            ),
+            "source_analysis_ids": _bounded_source_analysis_ids(
+                active.source_analysis_ids, _signal_source_ids(signal)
+            ),
+            "current_price": signal.entry_price,
+            "updated_at": max(active.updated_at, signal.created_at),
+            "revision": active.revision + 1,
+            "checkpoints": checkpoints,
+            "legs": legs,
+        }
+        if active.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND:
+            updates["progress_percent"] = _ct_progress(stage)
+            if entered_now:
+                updates["status"] = EntryOpportunityStatus.OPEN
+        return active.model_copy(update=updates), f"geri_countertrend_{stage.value.lower()}_reached"
+
+    def _apply_countertrend_loss(
+        self,
+        active: EntryOpportunity,
+        signal: EntrySignal,
+        previous: EntryOpportunitySignalReference | None,
+        paper_open: bool,
+    ) -> tuple[EntryOpportunity | None, str]:
+        if previous is None:
+            return None, "unknown_setup"
+        reference = _countertrend_reference(signal, previous)
+        terminal = _countertrend_terminal(signal)
+        if active.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND:
+            if not paper_open:
+                return self._close_opportunity(
+                    active,
+                    price=signal.entry_price,
+                    now=signal.created_at,
+                    reason=EntryCloseReason.POLICY_INELIGIBLE,
+                    leg_status=EntryLegStatus.THESIS_BROKEN,
+                ), "geri_countertrend_preentry_ineligible"
+            if terminal is not None:
+                price, close_reason, leg_status, reason = terminal
+                return self._close_opportunity(
+                    active,
+                    price=price,
+                    now=signal.created_at,
+                    reason=close_reason,
+                    leg_status=leg_status,
+                ), reason
+            return active.model_copy(
+                update={
+                    "signal_references": _replace_signal_reference(
+                        active.signal_references, reference
+                    ),
+                    "current_price": signal.entry_price,
+                    "updated_at": max(active.updated_at, signal.created_at),
+                    "revision": active.revision + 1,
+                }
+            ), "geri_countertrend_tracking_lost_after_entry"
+
+        outcome = terminal
+        if outcome is None and not paper_open:
+            outcome = (
+                signal.entry_price,
+                EntryCloseReason.POLICY_INELIGIBLE,
+                EntryLegStatus.THESIS_BROKEN,
+                "geri_countertrend_preentry_ineligible",
+            )
+        checkpoints = active.checkpoints
+        reason = "geri_countertrend_tracking_lost_after_entry"
+        if outcome is not None:
+            price, _, leg_status, reason = outcome
+            checkpoints = tuple(
+                _close_checkpoint(
+                    item,
+                    price=price,
+                    now=signal.created_at,
+                    outcome=leg_status,
+                )
+                if item.signal_family is EntrySignalFamily.GERI_COUNTERTREND
+                and item.setup_id == signal.setup_id
+                and item.status is EntryCheckpointStatus.OPEN
+                else item
+                for item in checkpoints
+            )
+        return active.model_copy(
+            update={
+                "signal_references": _replace_signal_reference(
+                    active.signal_references, reference
+                ),
+                "current_price": signal.entry_price,
+                "updated_at": max(active.updated_at, signal.created_at),
+                "revision": active.revision + 1,
+                "checkpoints": checkpoints,
+            }
+        ), reason
+
+
 def _is_core_signal(signal: EntrySignal) -> bool:
     return signal.family in {
         EntrySignalFamily.CORE_ENTRY,
@@ -1337,6 +1565,31 @@ def _swing_trade_reference(
     )
 
 
+def _countertrend_reference(
+    signal: EntrySignal,
+    previous: EntryOpportunitySignalReference | None,
+) -> EntryOpportunitySignalReference:
+    peak = signal.countertrend_maturity
+    if (
+        previous is not None
+        and previous.peak_ct is not None
+        and (peak is None or _ct_rank(previous.peak_ct) > _ct_rank(peak))
+    ):
+        peak = previous.peak_ct
+    return EntryOpportunitySignalReference(
+        signal_id=signal.signal_id,
+        family=signal.family,
+        setup_id=signal.setup_id,
+        created_at=signal.created_at,
+        entry_price=signal.entry_price,
+        horizons=signal.horizons,
+        policy_id=signal.policy_id,
+        policy_version=signal.policy_version,
+        current_ct=signal.countertrend_maturity,
+        peak_ct=peak,
+    )
+
+
 def _swing_trade_checkpoint(
     signal: EntrySignal,
     stage: SwingTradeMaturity,
@@ -1361,6 +1614,30 @@ def _swing_trade_checkpoint(
     )
 
 
+def _countertrend_checkpoint(
+    signal: EntrySignal,
+    stage: GeriCountertrendMaturity,
+    checkpoint_id: UUID,
+) -> EntryMaturityCheckpoint:
+    assert signal.invalidation is not None
+    return EntryMaturityCheckpoint(
+        checkpoint_id=checkpoint_id,
+        level=EntryMaturityLevel.ARMED,
+        countertrend_maturity=stage,
+        signal_family=EntrySignalFamily.GERI_COUNTERTREND,
+        setup_id=signal.setup_id,
+        reached_at=signal.created_at,
+        entry_price=signal.entry_price,
+        current_price=signal.entry_price,
+        highest_price=signal.entry_price,
+        lowest_price=signal.entry_price,
+        invalidation=signal.invalidation,
+        target=_first_actionable_target(signal),
+        zone_low=signal.zone_low,
+        zone_high=signal.zone_high,
+    )
+
+
 def _st_rank(stage: SwingTradeMaturity) -> int:
     return {
         SwingTradeMaturity.ST1: 1,
@@ -1372,6 +1649,116 @@ def _st_rank(stage: SwingTradeMaturity) -> int:
 
 def _st_progress(stage: SwingTradeMaturity) -> Decimal:
     return Decimal(_st_rank(stage) * 25)
+
+
+def _ct_rank(stage: GeriCountertrendMaturity) -> int:
+    return {
+        GeriCountertrendMaturity.CT0: 0,
+        GeriCountertrendMaturity.CT1: 1,
+        GeriCountertrendMaturity.CT2: 2,
+        GeriCountertrendMaturity.CT3: 3,
+        GeriCountertrendMaturity.CT4: 4,
+    }[stage]
+
+
+def _ct_progress(stage: GeriCountertrendMaturity) -> Decimal:
+    return Decimal((_ct_rank(stage) + 1) * 20)
+
+
+def _countertrend_paper_open(opportunity: EntryOpportunity, *, setup_id: str) -> bool:
+    if opportunity.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND:
+        return any(leg.status is EntryLegStatus.OPEN for leg in opportunity.legs)
+    return any(
+        item.signal_family is EntrySignalFamily.GERI_COUNTERTREND
+        and item.setup_id == setup_id
+        and item.countertrend_maturity is not None
+        and _ct_rank(item.countertrend_maturity) >= _ct_rank(GeriCountertrendMaturity.CT1)
+        and item.status is EntryCheckpointStatus.OPEN
+        for item in opportunity.checkpoints
+    )
+
+
+def _any_countertrend_paper_open(opportunity: EntryOpportunity) -> bool:
+    if opportunity.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND:
+        return any(leg.status is EntryLegStatus.OPEN for leg in opportunity.legs)
+    return any(
+        item.signal_family is EntrySignalFamily.GERI_COUNTERTREND
+        and item.countertrend_maturity is not None
+        and _ct_rank(item.countertrend_maturity) >= _ct_rank(GeriCountertrendMaturity.CT1)
+        and item.status is EntryCheckpointStatus.OPEN
+        for item in opportunity.checkpoints
+    )
+
+
+def _open_countertrend_leg(
+    opportunity: EntryOpportunity, signal: EntrySignal
+) -> tuple[EntryHorizonLeg, ...]:
+    assert signal.invalidation is not None
+    target = _first_actionable_target(signal)
+    output: list[EntryHorizonLeg] = []
+    found = False
+    for leg in opportunity.legs:
+        if leg.horizon is AnalysisHorizon.SWING and leg.status is EntryLegStatus.WATCHING:
+            output.append(
+                leg.model_copy(
+                    update={
+                        "status": EntryLegStatus.OPEN,
+                        "opened_at": signal.created_at,
+                        "entry_price": signal.entry_price,
+                        "current_price": signal.entry_price,
+                        "invalidation": signal.invalidation,
+                        "target": target,
+                        "highest_price": signal.entry_price,
+                        "lowest_price": signal.entry_price,
+                    }
+                )
+            )
+            found = True
+        else:
+            output.append(leg)
+    if not found:
+        output.append(
+            EntryHorizonLeg(
+                horizon=AnalysisHorizon.SWING,
+                status=EntryLegStatus.OPEN,
+                opened_at=signal.created_at,
+                entry_price=signal.entry_price,
+                current_price=signal.entry_price,
+                invalidation=signal.invalidation,
+                target=target,
+                highest_price=signal.entry_price,
+                lowest_price=signal.entry_price,
+            )
+        )
+    return tuple(output)
+
+
+def _countertrend_terminal(
+    signal: EntrySignal,
+) -> tuple[Decimal, EntryCloseReason, EntryLegStatus, str] | None:
+    if "countertrend_expired" in signal.reasons:
+        return (
+            signal.entry_price,
+            EntryCloseReason.EXPIRED,
+            EntryLegStatus.EXPIRED,
+            "geri_countertrend_expired",
+        )
+    if "countertrend_invalidated" in signal.reasons and signal.invalidation is not None:
+        return (
+            signal.invalidation,
+            EntryCloseReason.ORIGINAL_THESIS_INVALIDATED,
+            EntryLegStatus.INVALIDATED,
+            "geri_countertrend_invalidated",
+        )
+    target = min(signal.targets, default=None)
+    if "countertrend_target_reached" in signal.reasons and target is not None:
+        return (
+            target,
+            EntryCloseReason.ALL_HORIZONS_CLOSED,
+            EntryLegStatus.TARGET_HIT,
+            "geri_countertrend_target_reached",
+        )
+    return None
 
 
 def _add_weekdays(value: datetime, sessions: int) -> datetime:
@@ -1584,6 +1971,28 @@ def _leg_close_reasons(
         for item in current
         if item.status in _TERMINAL_LEGS
         and previous_by_id[item.leg_id].status not in _TERMINAL_LEGS
+    ]
+
+
+def _checkpoint_close_reasons(
+    previous: tuple[EntryMaturityCheckpoint, ...],
+    current: tuple[EntryMaturityCheckpoint, ...],
+) -> list[str]:
+    previous_by_id = {item.checkpoint_id: item for item in previous}
+
+    def maturity(item: EntryMaturityCheckpoint) -> str:
+        value = item.countertrend_maturity or item.swing_trade_maturity or item.level
+        return value.value.lower()
+
+    return [
+        (
+            f"{item.signal_family.value.lower()}_"
+            f"{maturity(item)}_{item.outcome.value.lower()}"
+        )
+        for item in current
+        if item.status is EntryCheckpointStatus.CLOSED
+        and previous_by_id[item.checkpoint_id].status is EntryCheckpointStatus.OPEN
+        and item.outcome is not None
     ]
 
 

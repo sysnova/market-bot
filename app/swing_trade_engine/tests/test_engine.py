@@ -10,6 +10,7 @@ from app.contracts import (
     GeriMaturity,
     GeriStructuralLevel,
     MarketBar,
+    NamedValue,
     SwingTradeAssessment,
     SwingTradeMaturity,
     TradeSide,
@@ -171,6 +172,59 @@ def test_engine_matures_st1_through_st4_hierarchically() -> None:
     assert analyze("100.1").maturity is SwingTradeMaturity.ST2
     assert analyze("97").maturity is SwingTradeMaturity.ST3
     assert analyze("97", with_geri=True).maturity is SwingTradeMaturity.ST4
+
+
+def test_st4_accepts_v13_structural_long_and_ignores_its_tactical_lane() -> None:
+    bars = daily_bars()
+    v13 = geri(bars).model_copy(
+        update={
+            "engine_version": "1.3.0",
+            "metrics": (
+                NamedValue(name="countertrend_side", value=TradeSide.SHORT),
+                NamedValue(name="countertrend_state", value=GeriMaturity.L4),
+            ),
+        }
+    )
+
+    result = SwingTradeEngine().analyze(
+        SwingTradeContext(
+            symbol="AAPL",
+            as_of=bars[-1].timestamp + timedelta(minutes=15),
+            current_price=Decimal("97"),
+            daily_bars=bars,
+            geri=v13,
+        )
+    )
+
+    assert result.maturity is SwingTradeMaturity.ST4
+    assert result.geri_assessment_id == v13.assessment_id
+
+
+def test_v13_tactical_long_cannot_promote_st4_over_structural_short() -> None:
+    bars = daily_bars()
+    v13 = geri(bars).model_copy(
+        update={
+            "engine_version": "1.3.0",
+            "trade_side": TradeSide.SHORT,
+            "metrics": (
+                NamedValue(name="countertrend_side", value=TradeSide.LONG),
+                NamedValue(name="countertrend_state", value=GeriMaturity.L4),
+            ),
+        }
+    )
+
+    result = SwingTradeEngine().analyze(
+        SwingTradeContext(
+            symbol="AAPL",
+            as_of=bars[-1].timestamp + timedelta(minutes=15),
+            current_price=Decimal("97"),
+            daily_bars=bars,
+            geri=v13,
+        )
+    )
+
+    assert result.maturity is SwingTradeMaturity.ST3
+    assert result.geri_confluence is False
 
 
 def test_engine_requires_strictly_more_than_minimum_rr() -> None:

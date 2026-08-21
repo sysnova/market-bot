@@ -621,6 +621,302 @@ class Swing4HGeriEngineV12(Swing4HGeriEngine):
         )
 
 
+class Swing4HGeriEngineV13(Swing4HGeriEngineV12):
+    """Add a manual countertrend lane without changing the structural chain."""
+
+    engine_version = "1.3.0"
+
+    def __init__(
+        self,
+        *,
+        pivot_radius: int = 1,
+        minimum_bars: int = 8,
+        lookback_bars: int = 60,
+        breakout_atr: Decimal = Decimal("0.10"),
+        zone_atr: Decimal = Decimal("0.25"),
+        invalidation_atr: Decimal = Decimal("0.50"),
+        maximum_extension_atr: Decimal = Decimal("1.50"),
+        countertrend_minimum_reward_risk: Decimal = Decimal("1.50"),
+        countertrend_ttl_sessions: int = 5,
+    ) -> None:
+        super().__init__(
+            pivot_radius=pivot_radius,
+            minimum_bars=minimum_bars,
+            lookback_bars=lookback_bars,
+            breakout_atr=breakout_atr,
+            zone_atr=zone_atr,
+            invalidation_atr=invalidation_atr,
+            maximum_extension_atr=maximum_extension_atr,
+        )
+        if countertrend_minimum_reward_risk <= ZERO:
+            raise ValueError("countertrend minimum reward/risk must be positive")
+        if countertrend_ttl_sessions < 1:
+            raise ValueError("countertrend TTL must be positive")
+        self._countertrend_minimum_rr = countertrend_minimum_reward_risk
+        self._countertrend_ttl_sessions = countertrend_ttl_sessions
+
+    def analyze(self, context: Swing4HGeriContext) -> GeriAssessment:
+        structural = super().analyze(context)
+        bars = tuple(bar for bar in context.bars[-self._lookback :] if bar.is_final)
+        tactical = _countertrend_metrics(
+            bars,
+            confirmation_bars=tuple(
+                bar for bar in context.confirmation_bars if bar.is_final
+            ),
+            structural=structural,
+            current_price=context.current_price,
+            pivot_radius=self._pivot_radius,
+            zone_atr=self._zone_atr,
+            invalidation_atr=self._invalidation_atr,
+            maximum_extension_atr=self._maximum_extension_atr,
+            minimum_reward_risk=self._countertrend_minimum_rr,
+            ttl_sessions=self._countertrend_ttl_sessions,
+        )
+        return structural.model_copy(update={"metrics": (*structural.metrics, *tactical)})
+
+
+def _countertrend_metrics(
+    bars: tuple[MarketBar, ...],
+    *,
+    confirmation_bars: tuple[MarketBar, ...],
+    structural: GeriAssessment,
+    current_price: Decimal,
+    pivot_radius: int,
+    zone_atr: Decimal,
+    invalidation_atr: Decimal,
+    maximum_extension_atr: Decimal,
+    minimum_reward_risk: Decimal,
+    ttl_sessions: int,
+) -> tuple[NamedValue, ...]:
+    """Describe a tactical opposite-side setup without mutating structural GERI."""
+
+    side = TradeSide.LONG if structural.trade_side is TradeSide.SHORT else TradeSide.SHORT
+    kind = GeriLevelKind.SUPPORT if side is TradeSide.LONG else GeriLevelKind.RESISTANCE
+    pivot_index = _latest_confirmed_pivot(
+        bars,
+        kind=kind,
+        radius=pivot_radius,
+        after=structural.levels[-1].confirmed_at,
+    )
+    if pivot_index is None:
+        return ()
+
+    pivot = bars[pivot_index]
+    confirmed_at = bars[pivot_index + pivot_radius].timestamp
+    level = pivot.low if side is TradeSide.LONG else pivot.high
+    atr14 = _atr(bars[: pivot_index + pivot_radius + 1])
+    padding = atr14 * zone_atr
+    zone_low = max(Decimal("0.0001"), level - padding)
+    zone_high = level + padding
+    invalidation = (
+        max(Decimal("0.0001"), level - atr14 * invalidation_atr)
+        if side is TradeSide.LONG
+        else level + atr14 * invalidation_atr
+    )
+    target = structural.active_level_price
+    risk, reward = _countertrend_risk_reward(
+        side=side,
+        price=current_price,
+        invalidation=invalidation,
+        target=target,
+    )
+    reward_risk = reward / risk if risk > ZERO and reward > ZERO else ZERO
+    session_age = _session_age(bars, confirmed_at=confirmed_at)
+    expired = session_age >= ttl_sessions
+    tactical_confirmations = tuple(
+        bar for bar in confirmation_bars if bar.timestamp >= confirmed_at
+    )
+    fast = _fast_rejection_confirmed(
+        tactical_confirmations,
+        side=side,
+        level=level,
+        zone_low=zone_low,
+        zone_high=zone_high,
+        confirmed_at=confirmed_at,
+    )
+    four_hour = _four_hour_reaction_confirmed(
+        bars,
+        side=side,
+        level=level,
+        zone_low=zone_low,
+        zone_high=zone_high,
+        confirmed_at=confirmed_at,
+    )
+    continuation = _continuation_confirmed(
+        tactical_confirmations,
+        side=side,
+        four_hour_confirmed=four_hour,
+    )
+    eligible = (
+        not expired
+        and reward_risk > minimum_reward_risk
+        and (
+            target > current_price > invalidation
+            if side is TradeSide.LONG
+            else invalidation > current_price > target
+        )
+    )
+    state = _countertrend_maturity(
+        side=side,
+        price=current_price,
+        level=level,
+        atr14=atr14,
+        maximum_extension_atr=maximum_extension_atr,
+        zone_low=zone_low,
+        zone_high=zone_high,
+        invalidation=invalidation,
+        eligible=eligible,
+        fast=fast,
+        four_hour=four_hour,
+        continuation=continuation,
+    )
+    eligibility_reasons = _countertrend_eligibility_reasons(
+        side=side,
+        price=current_price,
+        invalidation=invalidation,
+        target=target,
+        reward_risk=reward_risk,
+        minimum_reward_risk=minimum_reward_risk,
+        expired=expired,
+    )
+    return (
+        NamedValue(name="countertrend_side", value=side),
+        NamedValue(name="countertrend_state", value=state),
+        NamedValue(name="countertrend_level_kind", value=kind),
+        NamedValue(name="countertrend_level_price", value=_rounded(level)),
+        NamedValue(name="countertrend_level_source_at", value=pivot.timestamp),
+        NamedValue(name="countertrend_level_confirmed_at", value=confirmed_at),
+        NamedValue(name="countertrend_zone_low", value=_rounded(zone_low)),
+        NamedValue(name="countertrend_zone_high", value=_rounded(zone_high)),
+        NamedValue(name="countertrend_invalidation", value=_rounded(invalidation)),
+        NamedValue(name="countertrend_target", value=_rounded(target)),
+        NamedValue(name="countertrend_risk", value=_rounded(max(ZERO, risk))),
+        NamedValue(name="countertrend_reward", value=_rounded(max(ZERO, reward))),
+        NamedValue(name="countertrend_reward_risk", value=_rounded(reward_risk)),
+        NamedValue(name="countertrend_minimum_reward_risk", value=minimum_reward_risk),
+        NamedValue(name="countertrend_session_age", value=session_age),
+        NamedValue(name="countertrend_ttl_sessions", value=ttl_sessions),
+        NamedValue(name="countertrend_expired", value=expired),
+        NamedValue(name="countertrend_eligible", value=eligible),
+        NamedValue(name="countertrend_eligibility_reasons", value=eligibility_reasons),
+        NamedValue(name="countertrend_fast_confirmation", value=fast),
+        NamedValue(name="countertrend_four_hour_confirmation", value=four_hour),
+        NamedValue(name="countertrend_continuation_confirmation", value=continuation),
+        NamedValue(name="countertrend_emits_opportunities", value=False),
+        NamedValue(name="countertrend_places_orders", value=False),
+    )
+
+
+def _countertrend_eligibility_reasons(
+    *,
+    side: TradeSide,
+    price: Decimal,
+    invalidation: Decimal,
+    target: Decimal,
+    reward_risk: Decimal,
+    minimum_reward_risk: Decimal,
+    expired: bool,
+) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if expired:
+        reasons.append("tracking_ttl_expired")
+    if reward_risk <= minimum_reward_risk:
+        reasons.append("insufficient_reward_risk")
+    correctly_ordered = (
+        target > price > invalidation
+        if side is TradeSide.LONG
+        else invalidation > price > target
+    )
+    if not correctly_ordered:
+        reasons.append("target_or_invalidation_order_failed")
+    return tuple(reasons) if reasons else ("countertrend_setup_eligible",)
+
+
+def _latest_confirmed_pivot(
+    bars: tuple[MarketBar, ...],
+    *,
+    kind: GeriLevelKind,
+    radius: int,
+    after: datetime,
+) -> int | None:
+    for index in range(len(bars) - radius - 1, radius - 1, -1):
+        if bars[index].timestamp <= after:
+            continue
+        neighbors = (*bars[index - radius : index], *bars[index + 1 : index + radius + 1])
+        if kind is GeriLevelKind.SUPPORT:
+            value = bars[index].low
+            confirmed = all(value <= bar.low for bar in neighbors) and any(
+                value < bar.low for bar in neighbors
+            )
+        else:
+            value = bars[index].high
+            confirmed = all(value >= bar.high for bar in neighbors) and any(
+                value > bar.high for bar in neighbors
+            )
+        if confirmed:
+            return index
+    return None
+
+
+def _countertrend_risk_reward(
+    *,
+    side: TradeSide,
+    price: Decimal,
+    invalidation: Decimal,
+    target: Decimal,
+) -> tuple[Decimal, Decimal]:
+    if side is TradeSide.LONG:
+        return price - invalidation, target - price
+    return invalidation - price, price - target
+
+
+def _session_age(bars: tuple[MarketBar, ...], *, confirmed_at: datetime) -> int:
+    sessions = {bar.timestamp.date() for bar in bars if bar.timestamp >= confirmed_at}
+    return max(0, len(sessions) - 1)
+
+
+def _countertrend_maturity(
+    *,
+    side: TradeSide,
+    price: Decimal,
+    level: Decimal,
+    atr14: Decimal,
+    maximum_extension_atr: Decimal,
+    zone_low: Decimal,
+    zone_high: Decimal,
+    invalidation: Decimal,
+    eligible: bool,
+    fast: bool,
+    four_hour: bool,
+    continuation: bool,
+) -> GeriMaturity:
+    if side is TradeSide.LONG:
+        if price <= invalidation:
+            return GeriMaturity.INVALIDATED
+        if price < zone_low:
+            return GeriMaturity.RECLAIM_REQUIRED
+        extension = price - level
+    else:
+        if price >= invalidation:
+            return GeriMaturity.INVALIDATED
+        if price > zone_high:
+            return GeriMaturity.RECLAIM_REQUIRED
+        extension = level - price
+    if extension > atr14 * maximum_extension_atr:
+        return GeriMaturity.EXTENDED
+    if not eligible:
+        return GeriMaturity.BUILDING
+    if continuation:
+        return GeriMaturity.L4
+    if four_hour:
+        return GeriMaturity.L3
+    if fast:
+        return GeriMaturity.L2_4H
+    if zone_low <= price <= zone_high:
+        return GeriMaturity.IN_ZONE_4H
+    return GeriMaturity.ARMED
+
+
 def _first_pivot_low(bars: tuple[MarketBar, ...], radius: int) -> int:
     for index in range(radius, len(bars) - radius):
         neighbors = (*bars[index - radius : index], *bars[index + 1 : index + radius + 1])

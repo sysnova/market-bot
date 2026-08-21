@@ -32,6 +32,12 @@ the latest REST tail, replays only PostgreSQL bars after that cursor, and then d
 bars in timestamp order. This makes restart recovery independent of retained JetStream bar history;
 duplicate or older bars are ignored.
 
+`EntryOpportunityEngineV4` adds the independent SwingTrade `ST1-ST4` lane. Version `5.0.0`
+adds the GERI tactical countertrend family with a separate `CT0-CT4` maturity: `CT0` is a
+reference-only watch, `CT1` opens the paper Swing leg, and `CT2-CT4` add measurement checkpoints.
+It records P/L, MFE/MAE, invalidation, target and a five-session TTL without changing any Core
+`L1-L4` or SwingTrade `ST1-ST4` maturity. It never submits broker orders.
+
 Commands:
 
 ```bash

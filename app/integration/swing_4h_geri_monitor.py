@@ -129,4 +129,30 @@ def _format_assessment(item: GeriAssessment, *, color: bool) -> str:
         f"continuacion {'SI' if item.continuation_confirmation else 'NO'}\n"
         "  SALIDA: MONITOR MANUAL | NO COMPRA | NO OPPORTUNITY"
     )
+    tactical = _format_countertrend(item)
+    if tactical:
+        body = f"{body}\n{tactical}"
     return f"{_COLORS[item.maturity]}{body}{_RESET}" if color else body
+
+
+def _format_countertrend(item: GeriAssessment) -> str:
+    metrics = {metric.name: metric.value for metric in item.metrics}
+    side = metrics.get("countertrend_side")
+    state = metrics.get("countertrend_state")
+    if side is None or state is None:
+        return ""
+    side_value = side.value if hasattr(side, "value") else str(side)
+    state_value = state.value if hasattr(state, "value") else str(state)
+    eligible = "SI" if metrics.get("countertrend_eligible") else "NO"
+    expired = "SI" if metrics.get("countertrend_expired") else "NO"
+    return (
+        f"  TACTICAL COUNTERTREND {side_value} | {state_value}\n"
+        f"  LEVEL {metrics.get('countertrend_level_price')} | "
+        f"ZONE {metrics.get('countertrend_zone_low')}-{metrics.get('countertrend_zone_high')} | "
+        f"INV {metrics.get('countertrend_invalidation')} | "
+        f"TARGET {metrics.get('countertrend_target')} | "
+        f"R:R {metrics.get('countertrend_reward_risk')}\n"
+        f"  ELEGIBLE {eligible} | EDAD {metrics.get('countertrend_session_age')}/"
+        f"{metrics.get('countertrend_ttl_sessions')} ruedas | EXPIRADO {expired}\n"
+        "  SALIDA TACTICA: MONITOR MANUAL | NO OPPORTUNITY | NO ORDEN"
+    )

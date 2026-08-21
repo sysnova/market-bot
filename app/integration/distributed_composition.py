@@ -991,7 +991,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             ("marketbot.v1.analysis.result.>", handle_analysis, "analysis"),
             ("marketbot.v1.entry-watch.transition.>", handle_transition, "entry-watch"),
         ]
-        if spec.implementation == "2.0.0":
+        if isinstance(engine, EntryOpportunityEngineV2):
             handlers.append(("marketbot.v1.entry-signal.>", handle_signal, "entry-signal"))
         else:
             handlers.append(("marketbot.v1.alert.local.>", handle_alert, "alerts"))
@@ -1003,6 +1003,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                     options=SubscriptionOptions(
                         durable_name=f"marketbot-{service}-{suffix}-v1",
                         replay_all=False,
+                        replay_latest_per_subject=(suffix == "entry-signal"),
                         ack_wait_seconds=60,
                     ),
                 )
@@ -1040,7 +1041,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             "delivery": "transactional-outbox",
             **universe_health_details("entry-opportunity"),
         }
-        if spec.implementation == "2.0.0":
+        if isinstance(engine, EntryOpportunityEngineV2):
             details.pop("maturity_subject")
             details["entry_signal_subject"] = "marketbot.v1.entry-signal.>"
         await _publish_health(bus, service, details, clock.now())

@@ -24,6 +24,7 @@ from .enums import (
     EntryMaturityLevel,
     EntryOpportunityStatus,
     EntrySignalFamily,
+    GeriCountertrendMaturity,
     SwingTradeMaturity,
 )
 from .market_analysis import AnalysisResult
@@ -35,6 +36,7 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
     checkpoint_id: UUID = Field(default_factory=new_uuid7)
     level: EntryMaturityLevel
     swing_trade_maturity: SwingTradeMaturity | None = None
+    countertrend_maturity: GeriCountertrendMaturity | None = None
     signal_family: EntrySignalFamily = EntrySignalFamily.CORE_ENTRY
     setup_id: NonEmptyStr | None = None
     reached_at: datetime
@@ -81,6 +83,11 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
             raise ValueError("checkpoint zone must sit above invalidation")
         if (self.retested_at is None) != (self.retest_low is None):
             raise ValueError("checkpoint retest requires timestamp and low")
+        if self.signal_family is EntrySignalFamily.GERI_COUNTERTREND:
+            if self.countertrend_maturity is None or self.swing_trade_maturity is not None:
+                raise ValueError("GERI countertrend checkpoints require only CT maturity")
+        elif self.countertrend_maturity is not None:
+            raise ValueError("only GERI countertrend checkpoints use CT maturity")
         return self
 
 
@@ -144,6 +151,8 @@ class EntryOpportunitySignalReference(StrictFrozenModel):
     maturity: EntryMaturityLevel | None = None
     current_st: SwingTradeMaturity | None = None
     peak_st: SwingTradeMaturity | None = None
+    current_ct: GeriCountertrendMaturity | None = None
+    peak_ct: GeriCountertrendMaturity | None = None
     setup_id: NonEmptyStr
     created_at: datetime
     entry_price: PositiveDecimal
@@ -168,6 +177,11 @@ class EntryOpportunitySignalReference(StrictFrozenModel):
                 raise ValueError("SwingTrade current ST requires peak ST")
         elif self.current_st is not None or self.peak_st is not None:
             raise ValueError("only SwingTrade references use ST maturity")
+        if self.family is EntrySignalFamily.GERI_COUNTERTREND:
+            if self.peak_ct is None and self.current_ct is not None:
+                raise ValueError("GERI countertrend current CT requires peak CT")
+        elif self.current_ct is not None or self.peak_ct is not None:
+            raise ValueError("only GERI countertrend references use CT maturity")
         return self
 
 
@@ -228,7 +242,13 @@ class EntryOpportunity(StrictFrozenModel):
         if closed != (self.closed_at is not None and self.close_reason is not None):
             raise ValueError("closed opportunity requires closed_at and close_reason")
         checkpoint_keys = {
-            (item.level, item.swing_trade_maturity, item.signal_family, item.setup_id)
+            (
+                item.level,
+                item.swing_trade_maturity,
+                item.countertrend_maturity,
+                item.signal_family,
+                item.setup_id,
+            )
             for item in self.checkpoints
         }
         if len(checkpoint_keys) != len(self.checkpoints):

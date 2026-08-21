@@ -23,6 +23,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV2,
     EntryOpportunityEngineV3,
     EntryOpportunityEngineV4,
+    EntryOpportunityEngineV5,
 )
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
@@ -74,6 +75,7 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngine,
     Swing4HGeriEngineV11,
     Swing4HGeriEngineV12,
+    Swing4HGeriEngineV13,
 )
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 from app.swing_engine import (
@@ -129,6 +131,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.0.0": Swing4HGeriEngine,
                     "1.1.0": Swing4HGeriEngineV11,
                     "1.2.0": Swing4HGeriEngineV12,
+                    "1.3.0": Swing4HGeriEngineV13,
                 },
                 required_since="7.15.0",
             ),
@@ -171,6 +174,7 @@ def default_engine_registry() -> EngineRegistry:
                     "2.0.0": EntryOpportunityEngineV2,
                     "3.0.0": EntryOpportunityEngineV3,
                     "4.0.0": EntryOpportunityEngineV4,
+                    "5.0.0": EntryOpportunityEngineV5,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(

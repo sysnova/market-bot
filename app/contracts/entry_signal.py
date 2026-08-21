@@ -8,7 +8,13 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from ._base import Identifier, NonEmptyStr, PositiveDecimal, SemVer, StrictFrozenModel, new_uuid7
-from .enums import AnalysisHorizon, EntryMaturityLevel, EntrySignalFamily, SwingTradeMaturity
+from .enums import (
+    AnalysisHorizon,
+    EntryMaturityLevel,
+    EntrySignalFamily,
+    GeriCountertrendMaturity,
+    SwingTradeMaturity,
+)
 
 
 class EntrySignal(StrictFrozenModel):
@@ -18,6 +24,7 @@ class EntrySignal(StrictFrozenModel):
     family: EntrySignalFamily
     maturity: EntryMaturityLevel | None = None
     swing_trade_maturity: SwingTradeMaturity | None = None
+    countertrend_maturity: GeriCountertrendMaturity | None = None
     symbol: Identifier
     created_at: datetime
     setup_id: NonEmptyStr
@@ -47,13 +54,23 @@ class EntrySignal(StrictFrozenModel):
         if self.family in {EntrySignalFamily.CORE_ENTRY, EntrySignalFamily.CORE_RECOVERY}:
             if self.maturity is None:
                 raise ValueError("core entry signals require maturity")
-            if self.swing_trade_maturity is not None:
-                raise ValueError("core entry signals cannot use ST maturity")
+            if self.swing_trade_maturity is not None or self.countertrend_maturity is not None:
+                raise ValueError("core entry signals cannot use analytical maturity")
         elif self.family is EntrySignalFamily.SWING_TRADE:
-            if self.maturity is not None:
-                raise ValueError("SwingTrade signals keep Core L1-L4 maturity empty")
-        elif self.maturity is not None or self.swing_trade_maturity is not None:
-            raise ValueError("only core entry signal families use L1-L4 maturity")
+            if self.maturity is not None or self.countertrend_maturity is not None:
+                raise ValueError("SwingTrade signals use only ST maturity")
+        elif self.family is EntrySignalFamily.GERI_COUNTERTREND:
+            if self.maturity is not None or self.swing_trade_maturity is not None:
+                raise ValueError("GERI countertrend signals use only CT maturity")
+        elif any(
+            value is not None
+            for value in (
+                self.maturity,
+                self.swing_trade_maturity,
+                self.countertrend_maturity,
+            )
+        ):
+            raise ValueError("analytical signal maturity does not match its family")
         zone_values = (self.zone_low, self.zone_high, self.invalidation)
         if any(value is not None for value in zone_values):
             if any(value is None for value in zone_values):

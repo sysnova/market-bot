@@ -12,6 +12,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
     EntryOpportunityEngineV3,
     EntryOpportunityEngineV4,
+    EntryOpportunityEngineV5,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_recovery_engine import EntryRecoveryEngineV11
@@ -50,6 +51,7 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngine,
     Swing4HGeriEngineV11,
     Swing4HGeriEngineV12,
+    Swing4HGeriEngineV13,
 )
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 from app.swing_engine import SwingEngineV4, SwingEngineV5, SwingEngineV6
@@ -76,6 +78,8 @@ PINNED_GERI_DEFINITION = ROOT / "configs/marketbot/7.17.0.yaml"
 FAILED_BREAKOUT_FSM_DEFINITION = ROOT / "configs/marketbot/7.18.0.yaml"
 MIRRORED_GERI_DEFINITION = ROOT / "configs/marketbot/7.19.0.yaml"
 SWING_TRADE_DEFINITION = ROOT / "configs/marketbot/7.20.0.yaml"
+COUNTERTREND_GERI_DEFINITION = ROOT / "configs/marketbot/7.21.0.yaml"
+COUNTERTREND_OPPORTUNITY_DEFINITION = ROOT / "configs/marketbot/7.22.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -167,6 +171,34 @@ def test_swing_trade_definition_adds_independent_versioned_engine() -> None:
         EntryOpportunityEngineV4,
     )
     assert assembly.spec(EngineSlot.SWING_TRADE).strategy.version == "1.0.0"
+
+
+def test_countertrend_geri_definition_preserves_v12_and_selects_v13() -> None:
+    previous = MarketBotAssembly.from_path(SWING_TRADE_DEFINITION)
+    assembly = MarketBotAssembly.from_path(COUNTERTREND_GERI_DEFINITION)
+
+    assert isinstance(previous.build_4hgeri(), Swing4HGeriEngineV12)
+    assert previous.definition.version == "7.20.0"
+    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV13)
+    assert assembly.definition.version == "7.21.0"
+    assert assembly.spec(EngineSlot.GERI_4H).strategy.version == "1.3.0"
+
+
+def test_countertrend_opportunity_definition_preserves_v4_and_selects_v5() -> None:
+    previous = MarketBotAssembly.from_path(COUNTERTREND_GERI_DEFINITION)
+    assembly = MarketBotAssembly.from_path(COUNTERTREND_OPPORTUNITY_DEFINITION)
+
+    assert isinstance(
+        previous.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV4,
+    )
+    assert previous.definition.version == "7.21.0"
+    assert isinstance(
+        assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV5,
+    )
+    assert assembly.definition.version == "7.22.0"
+    assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).strategy.version == "5.0.0"
 
 
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:

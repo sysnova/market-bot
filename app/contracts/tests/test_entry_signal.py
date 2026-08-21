@@ -9,6 +9,7 @@ from app.contracts import (
     EntryMaturityLevel,
     EntrySignal,
     EntrySignalFamily,
+    GeriCountertrendMaturity,
     SwingTradeMaturity,
     entry_signal_subject,
 )
@@ -74,6 +75,32 @@ def test_swing_trade_uses_separate_optional_st_maturity() -> None:
 
     assert signal.maturity is None
     assert signal.swing_trade_maturity is SwingTradeMaturity.ST3
+
+
+def test_geri_countertrend_uses_separate_optional_ct_maturity() -> None:
+    signal = EntrySignal(
+        family=EntrySignalFamily.GERI_COUNTERTREND,
+        countertrend_maturity=GeriCountertrendMaturity.CT1,
+        symbol="NVO",
+        created_at=NOW,
+        setup_id="geri-countertrend:NVO:2026-08-09T15:00:00Z:1.3.0",
+        entry_price=Decimal("52.25"),
+        horizons=(AnalysisHorizon.SWING,),
+        zone_low=Decimal("51"),
+        zone_high=Decimal("53"),
+        invalidation=Decimal("50"),
+        targets=(Decimal("60"),),
+        policy_id="geri-countertrend",
+        policy_version="1.3.0",
+        reasons=("countertrend_in_zone",),
+    )
+
+    assert signal.maturity is None
+    assert signal.swing_trade_maturity is None
+    assert signal.countertrend_maturity is GeriCountertrendMaturity.CT1
+    assert entry_signal_subject(signal.family, signal.symbol) == (
+        "marketbot.v1.entry-signal.GERI_COUNTERTREND.NVO"
+    )
 
 
 def test_core_signal_requires_maturity_and_coherent_zone() -> None:

@@ -17,9 +17,11 @@ from app.contracts import (
     EntryMaturityLevel,
     EntryOpportunity,
     EntryOpportunityEvent,
+    EntryOpportunitySignalReference,
     EntryOpportunityStatus,
     EntrySignalFamily,
     EventEnvelope,
+    GeriCountertrendMaturity,
     new_uuid7,
 )
 from app.integration import entry_opportunity_monitor
@@ -314,6 +316,51 @@ def test_dashboard_labels_analytical_family_without_fake_core_maturity() -> None
 
     assert "FAMILY PATREON_CAPS" in output
     assert "MAT L4" not in output
+
+
+@pytest.mark.unit
+def test_dashboard_renders_geri_countertrend_maturity_and_paper_entry() -> None:
+    base = _closed_opportunity()
+    setup_id = "geri-countertrend:AAPL:2026-08-08T14:00:00Z:1.3.0"
+    checkpoint = base.checkpoints[0].model_copy(
+        update={
+            "level": EntryMaturityLevel.ARMED,
+            "countertrend_maturity": GeriCountertrendMaturity.CT1,
+            "signal_family": EntrySignalFamily.GERI_COUNTERTREND,
+            "setup_id": setup_id,
+            "zone_low": Decimal("99"),
+            "zone_high": Decimal("101"),
+        }
+    )
+    reference = EntryOpportunitySignalReference(
+        signal_id=new_uuid7(),
+        family=EntrySignalFamily.GERI_COUNTERTREND,
+        current_ct=GeriCountertrendMaturity.CT1,
+        peak_ct=GeriCountertrendMaturity.CT3,
+        setup_id=setup_id,
+        created_at=NOW,
+        entry_price=Decimal("100"),
+        horizons=(AnalysisHorizon.SWING,),
+        policy_id="geri-countertrend",
+        policy_version="1.3.0",
+    )
+    opportunity = base.model_copy(
+        update={
+            "primary_signal_family": EntrySignalFamily.GERI_COUNTERTREND,
+            "signal_references": (reference,),
+            "checkpoints": (checkpoint,),
+        }
+    )
+    dashboard = OpportunityDashboard(history=25)
+    dashboard.merge(opportunity)
+
+    output = format_opportunity_dashboard(dashboard, refreshed_at=NOW)
+
+    assert "GERI TACTICAL CURRENT CT1 | PEAK CT3" in output
+    assert "CT1/GERI_COUNTERTREND" in output
+    assert "MADUREZ CT1" in output
+    assert "COMPRA AAPL" in output
+    assert "CT ZONE 99-101" in output
 
 
 @pytest.mark.unit

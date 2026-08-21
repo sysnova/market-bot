@@ -145,6 +145,16 @@ class SwingTradeMaturity(ContractEnum):
     ST4 = "ST4"
 
 
+class GeriCountertrendMaturity(ContractEnum):
+    """Independent maturity for paper-tracked GERI tactical rebounds."""
+
+    CT0 = "CT0"
+    CT1 = "CT1"
+    CT2 = "CT2"
+    CT3 = "CT3"
+    CT4 = "CT4"
+
+
 class AnalysisVerdict(ContractEnum):
     FAVORABLE = "FAVORABLE"
     WATCH = "WATCH"
@@ -229,6 +239,7 @@ class EntrySignalFamily(ContractEnum):
     SIGNAL_FUSION = "SIGNAL_FUSION"
     PORTFOLIO_FLOW = "PORTFOLIO_FLOW"
     SWING_TRADE = "SWING_TRADE"
+    GERI_COUNTERTREND = "GERI_COUNTERTREND"
 
 
 class EntryLegStatus(ContractEnum):

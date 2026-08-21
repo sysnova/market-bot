@@ -302,7 +302,7 @@ def build_runtime_process_plan(
         elif (
             slot is EngineSlot.GERI_4H
             and slot in definition.engines
-            and definition.engines[slot].implementation == "1.2.0"
+            and definition.engines[slot].implementation in {"1.2.0", "1.3.0"}
         ):
             dependencies = ("market-history-v1",)
         elif slot is EngineSlot.SWING_TRADE:

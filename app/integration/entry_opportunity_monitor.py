@@ -423,17 +423,39 @@ def _format_opportunity(
             f"PEAK {reference.peak_st.value if reference.peak_st else '-'} | "
             f"SETUP {reference.setup_id}"
         )
+    countertrend = tuple(
+        item
+        for item in opportunity.signal_references
+        if item.family is EntrySignalFamily.GERI_COUNTERTREND
+    )
+    if countertrend:
+        reference = countertrend[-1]
+        lines.append(
+            "  GERI TACTICAL "
+            f"CURRENT {reference.current_ct.value if reference.current_ct else '-'} | "
+            f"PEAK {reference.peak_ct.value if reference.peak_ct else '-'} | "
+            f"SETUP {reference.setup_id}"
+        )
     for item in opportunity.checkpoints:
         level = (
-            item.swing_trade_maturity.value
-            if item.swing_trade_maturity is not None
-            else item.level.value
+            item.countertrend_maturity.value
+            if item.countertrend_maturity is not None
+            else (
+                item.swing_trade_maturity.value
+                if item.swing_trade_maturity is not None
+                else item.level.value
+            )
         )
         setup = f"{level}/{item.signal_family.value}"
-        tracking = item.level in {
-            EntryMaturityLevel.ARMED,
-            EntryMaturityLevel.IN_ZONE,
-        }
+        tracking = (
+            item.countertrend_maturity.value == "CT0"
+            if item.countertrend_maturity is not None
+            else item.level
+            in {
+                EntryMaturityLevel.ARMED,
+                EntryMaturityLevel.IN_ZONE,
+            }
+        )
         if tracking:
             price_label = "REFERENCE"
             performance = (
@@ -462,8 +484,13 @@ def _format_opportunity(
             f"OUTCOME {item.outcome.value if item.outcome else '-'}"
         )
         if item.zone_low is not None and item.zone_high is not None:
+            zone_label = (
+                "CT ZONE"
+                if item.signal_family is EntrySignalFamily.GERI_COUNTERTREND
+                else "L2 ANCHOR"
+            )
             lines.append(
-                f"      L2 ANCHOR {item.zone_low}-{item.zone_high} | "
+                f"      {zone_label} {item.zone_low}-{item.zone_high} | "
                 f"RETEST {item.retested_at.strftime('%m-%d %H:%M') if item.retested_at else '-'} "
                 f"LOW {item.retest_low or '-'}"
             )
@@ -516,10 +543,15 @@ def _trade_summary_lines(
 ) -> list[str]:
     lines: list[str] = []
     for checkpoint in opportunity.checkpoints:
-        tracking = checkpoint.level in {
-            EntryMaturityLevel.ARMED,
-            EntryMaturityLevel.IN_ZONE,
-        }
+        tracking = (
+            checkpoint.countertrend_maturity.value == "CT0"
+            if checkpoint.countertrend_maturity is not None
+            else checkpoint.level
+            in {
+                EntryMaturityLevel.ARMED,
+                EntryMaturityLevel.IN_ZONE,
+            }
+        )
         closed = checkpoint.status is EntryCheckpointStatus.CLOSED
         if closed:
             assert checkpoint.exit_price is not None
@@ -536,9 +568,18 @@ def _trade_summary_lines(
             )
         summary_label = "REFERENCIA" if tracking else "COMPRA"
         price_label = "PRECIO" if tracking else "ENTRADA"
+        maturity = (
+            checkpoint.countertrend_maturity.value
+            if checkpoint.countertrend_maturity is not None
+            else (
+                checkpoint.swing_trade_maturity.value
+                if checkpoint.swing_trade_maturity is not None
+                else checkpoint.level.value
+            )
+        )
         lines.append(
             f"  {summary_label} {_styled(opportunity.symbol, _TICKER_STYLE, color)} | "
-            f"MADUREZ {checkpoint.level.value} | ESTADO {checkpoint.status.value} | "
+            f"MADUREZ {maturity} | ESTADO {checkpoint.status.value} | "
             f"{price_label} {_styled(str(checkpoint.entry_price), _ENTRY_STYLE, color)} | "
             f"{mark_label} {_styled(str(mark), _EXIT_STYLE, color)} | "
             f"P/L {_styled_percent(performance, color=color)}"

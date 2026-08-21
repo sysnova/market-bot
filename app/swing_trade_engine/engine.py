@@ -219,7 +219,11 @@ def _geri_confluence(
     zone_high: Decimal,
 ) -> tuple[bool, bool]:
     geri = context.geri
-    if geri is None or geri.engine_version != "1.2.0" or not geri.standalone_swing:
+    if (
+        geri is None
+        or geri.engine_version not in {"1.2.0", "1.3.0"}
+        or not geri.standalone_swing
+    ):
         return False, False
     cutoff_index = max(0, len(bars) - freshness_sessions)
     if geri.occurred_at < bars[cutoff_index].timestamp:

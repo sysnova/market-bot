@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from app.common.clock import Clock, SystemClock
 from app.common.market_session import is_regular_session
@@ -15,6 +15,7 @@ from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     ENTRY_OPPORTUNITY_EVENT,
+    ENTRY_SIGNAL_EVENT,
     GERI_ASSESSMENT_EVENT,
     GERI_TRANSITION_EVENT,
     MARKET_BAR_EVENT,
@@ -24,12 +25,18 @@ from app.contracts import (
     BarTimeframe,
     EntryMaturityLevel,
     EntryOpportunityEvent,
+    EntrySignal,
+    EntrySignalFamily,
     EventEnvelope,
     GeriAssessment,
+    GeriCountertrendMaturity,
+    GeriMaturity,
     GeriTransition,
     MarketBar,
     Subscription,
     SubscriptionOptions,
+    TradeSide,
+    entry_signal_subject,
     geri_assessment_subject,
     geri_transition_subject,
 )
@@ -71,11 +78,13 @@ class Swing4HGeriRuntime:
         engine: GeriEngine,
         publisher: GeriPublisher,
         clock: Clock | None = None,
+        emit_countertrend_signals: bool = False,
     ) -> None:
         self._engine = engine
-        self._standalone = getattr(engine, "engine_version", "") == "1.2.0"
+        self._standalone = getattr(engine, "engine_version", "") in {"1.2.0", "1.3.0"}
         self._publisher = publisher
         self._clock = clock or SystemClock()
+        self._emit_countertrend_signals = emit_countertrend_signals
         self._bars = MarketBarStore(capacity_per_series=80)
         self._minute = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
         self._four_hour = RegularSessionFourHourAggregator()
@@ -239,6 +248,21 @@ class Swing4HGeriRuntime:
                 payload=item,
             ),
         )
+        if not self._emit_countertrend_signals:
+            return
+        signal = _countertrend_signal(item)
+        if signal is None:
+            return
+        await self._publisher.publish(
+            entry_signal_subject(signal.family, signal.symbol),
+            EventEnvelope(
+                event_type=ENTRY_SIGNAL_EVENT,
+                occurred_at=signal.created_at,
+                source="4hgeri-v1",
+                subject=signal.symbol,
+                payload=signal,
+            ),
+        )
 
     async def _publish_transition(
         self, item: GeriAssessment, previous: GeriAssessment | None
@@ -289,6 +313,110 @@ def _same_observation(previous: GeriAssessment, current: GeriAssessment) -> bool
         and previous.fast_confirmation is current.fast_confirmation
         and previous.four_hour_confirmation is current.four_hour_confirmation
         and previous.continuation_confirmation is current.continuation_confirmation
+        and _countertrend_observation(previous) == _countertrend_observation(current)
+    )
+
+
+def _countertrend_observation(item: GeriAssessment) -> tuple[tuple[str, object], ...]:
+    material_names = {
+        "countertrend_side",
+        "countertrend_state",
+        "countertrend_level_kind",
+        "countertrend_level_price",
+        "countertrend_level_source_at",
+        "countertrend_eligible",
+        "countertrend_expired",
+        "countertrend_fast_confirmation",
+        "countertrend_four_hour_confirmation",
+        "countertrend_continuation_confirmation",
+    }
+    return tuple(
+        (metric.name, metric.value) for metric in item.metrics if metric.name in material_names
+    )
+
+
+def _countertrend_signal(item: GeriAssessment) -> EntrySignal | None:
+    metrics = {metric.name: metric.value for metric in item.metrics}
+    side = metrics.get("countertrend_side")
+    if getattr(side, "value", side) != TradeSide.LONG.value:
+        return None
+    required = (
+        "countertrend_state",
+        "countertrend_level_source_at",
+        "countertrend_zone_low",
+        "countertrend_zone_high",
+        "countertrend_invalidation",
+        "countertrend_target",
+    )
+    if any(metrics.get(name) is None for name in required):
+        return None
+    state_value = getattr(metrics["countertrend_state"], "value", metrics["countertrend_state"])
+    maturity = {
+        GeriMaturity.ARMED.value: GeriCountertrendMaturity.CT0,
+        GeriMaturity.IN_ZONE_4H.value: GeriCountertrendMaturity.CT1,
+        GeriMaturity.L2_4H.value: GeriCountertrendMaturity.CT2,
+        GeriMaturity.L3.value: GeriCountertrendMaturity.CT3,
+        GeriMaturity.L4.value: GeriCountertrendMaturity.CT4,
+    }.get(str(state_value))
+    source_at = metrics["countertrend_level_source_at"]
+    if not isinstance(source_at, datetime):
+        source_at = datetime.fromisoformat(str(source_at).replace("Z", "+00:00"))
+    reasons = _countertrend_signal_reasons(
+        metrics, state_value, maturity, current_price=item.current_price
+    )
+    return EntrySignal(
+        family=EntrySignalFamily.GERI_COUNTERTREND,
+        countertrend_maturity=maturity,
+        symbol=item.symbol,
+        created_at=item.assessed_at or item.occurred_at,
+        setup_id=(
+            f"geri-countertrend:{item.symbol}:{source_at.isoformat()}:{item.engine_version}"
+        ),
+        entry_price=item.current_price,
+        horizons=(AnalysisHorizon.SWING,),
+        zone_low=Decimal(str(metrics["countertrend_zone_low"])),
+        zone_high=Decimal(str(metrics["countertrend_zone_high"])),
+        invalidation=Decimal(str(metrics["countertrend_invalidation"])),
+        targets=(Decimal(str(metrics["countertrend_target"])),),
+        policy_id="geri-countertrend",
+        policy_version=item.engine_version,
+        reasons=reasons,
+        source_event_ids=(item.assessment_id,),
+    )
+
+
+def _countertrend_signal_reasons(
+    metrics: dict[str, object],
+    state: object,
+    maturity: GeriCountertrendMaturity | None,
+    *,
+    current_price: Decimal,
+) -> tuple[str, ...]:
+    if bool(metrics.get("countertrend_expired")):
+        return ("countertrend_expired",)
+    state_value = str(state)
+    if state_value == GeriMaturity.INVALIDATED.value:
+        return ("countertrend_invalidated",)
+    target = Decimal(str(metrics["countertrend_target"]))
+    side = getattr(metrics.get("countertrend_side"), "value", metrics.get("countertrend_side"))
+    if side == TradeSide.LONG.value and current_price >= target:
+        return ("countertrend_target_reached",)
+    if maturity is not None:
+        return (f"countertrend_{maturity.value.lower()}",)
+    if state_value == GeriMaturity.RECLAIM_REQUIRED.value:
+        return ("countertrend_reclaim_required",)
+    if state_value == GeriMaturity.EXTENDED.value:
+        return ("countertrend_extended",)
+    eligibility = metrics.get("countertrend_eligibility_reasons", ())
+    if isinstance(eligibility, tuple):
+        eligibility_values = cast(tuple[object, ...], eligibility)
+    elif isinstance(eligibility, list):
+        eligibility_values = tuple(cast(list[object], eligibility))
+    else:
+        eligibility_values = (eligibility,)
+    return (
+        *tuple(str(reason) for reason in eligibility_values),
+        "countertrend_ineligible",
     )
 
 
@@ -330,7 +458,13 @@ async def run_swing_4h_geri_process(
                 raise ValueError("4HGERI requires at least one symbol")
             universe_source = "operator-override"
         bus = await connect_nats(settings)
-        runtime = Swing4HGeriRuntime(engine=assembly.build_4hgeri(), publisher=bus)
+        runtime = Swing4HGeriRuntime(
+            engine=assembly.build_4hgeri(),
+            publisher=bus,
+            emit_countertrend_signals=(
+                assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation == "5.0.0"
+            ),
+        )
         engine_version = assembly.spec(EngineSlot.GERI_4H).implementation
         replay_specs = (
             (
@@ -339,7 +473,7 @@ async def run_swing_4h_geri_process(
                 "marketbot-4hgeri-restore-v1",
             ),
         )
-        if engine_version != "1.2.0":
+        if engine_version not in {"1.2.0", "1.3.0"}:
             replay_specs += (
                 (
                     "marketbot.v1.analysis.result.SWING.>",
@@ -389,6 +523,9 @@ async def run_swing_4h_geri_process(
             "assessments_published": published,
             "bar_source": "15Min_RTH_aggregated_09:30_ET",
             "feeds_core_opportunities": False,
+            "feeds_countertrend_opportunities": (
+                assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation == "5.0.0"
+            ),
             "emits_buy_signals": False,
             "places_orders": False,
         }

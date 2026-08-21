@@ -19,6 +19,7 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngine,
     Swing4HGeriEngineV11,
     Swing4HGeriEngineV12,
+    Swing4HGeriEngineV13,
 )
 
 START = datetime(2026, 7, 20, 13, 30, tzinfo=UTC)
@@ -355,3 +356,71 @@ def test_v12_marks_extension_and_failed_level_reclaim_for_manual_monitoring() ->
     assert reclaim.maturity is GeriMaturity.RECLAIM_REQUIRED
     assert "manual_monitor_only" in extended.reasons
     assert "manual_monitor_only" in reclaim.reasons
+
+
+def test_v13_tracks_a_recent_countertrend_long_without_changing_short_structure() -> None:
+    bars = (
+        *bearish_level_three_bars(),
+        bar(9, low="80", high="98", close="90"),
+        bar(10, low="85", high="96", close="92"),
+    )
+
+    result = Swing4HGeriEngineV13().analyze(
+        Swing4HGeriContext(symbol="AAPL", bars=bars, current_price=Decimal("80.2"))
+    )
+    metrics = {item.name: item.value for item in result.metrics}
+
+    assert result.trade_side is TradeSide.SHORT
+    assert result.active_level_kind is GeriLevelKind.RESISTANCE
+    assert result.active_level_price == Decimal("112")
+    assert metrics["countertrend_side"] == TradeSide.LONG
+    assert metrics["countertrend_state"] == GeriMaturity.IN_ZONE_4H
+    assert metrics["countertrend_level_price"] == Decimal("80.0000")
+    assert metrics["countertrend_level_kind"] == GeriLevelKind.SUPPORT
+    assert metrics["countertrend_target"] == Decimal("112.0000")
+    assert metrics["countertrend_emits_opportunities"] is False
+    assert metrics["countertrend_places_orders"] is False
+
+
+def test_v13_waits_for_the_following_bar_before_confirming_tactical_pivot() -> None:
+    bars = (*bearish_level_three_bars(), bar(9, low="80", high="98", close="90"))
+
+    result = Swing4HGeriEngineV13().analyze(
+        Swing4HGeriContext(symbol="AAPL", bars=bars, current_price=Decimal("80.2"))
+    )
+
+    assert not any(item.name.startswith("countertrend_") for item in result.metrics)
+
+
+def test_v13_mirrors_countertrend_short_above_a_structural_long() -> None:
+    bars = (
+        *level_three_bars(),
+        bar(9, low="105", high="120", close="110"),
+        bar(10, low="104", high="115", close="108"),
+    )
+
+    result = Swing4HGeriEngineV13().analyze(
+        Swing4HGeriContext(symbol="AAPL", bars=bars, current_price=Decimal("119.8"))
+    )
+    metrics = {item.name: item.value for item in result.metrics}
+
+    assert result.trade_side is TradeSide.LONG
+    assert result.active_level_kind is GeriLevelKind.SUPPORT
+    assert result.active_level_price == Decimal("93")
+    assert metrics["countertrend_side"] == TradeSide.SHORT
+    assert metrics["countertrend_state"] == GeriMaturity.IN_ZONE_4H
+    assert metrics["countertrend_level_price"] == Decimal("120.0000")
+    assert metrics["countertrend_level_kind"] == GeriLevelKind.RESISTANCE
+    assert metrics["countertrend_target"] == Decimal("93.0000")
+
+
+def test_v12_remains_without_the_countertrend_lane() -> None:
+    result = Swing4HGeriEngineV12().analyze(
+        Swing4HGeriContext(
+            symbol="AAPL",
+            bars=bearish_level_three_bars(),
+            current_price=Decimal("103"),
+        )
+    )
+
+    assert not any(item.name.startswith("countertrend_") for item in result.metrics)
