@@ -318,6 +318,33 @@ def swing_4h_geri_engine_process(
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
+@engine.command("swing-trade")
+def swing_trade_engine_process(
+    once: Annotated[bool, typer.Option(help="Analyze SwingTrade once, then exit.")] = False,
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Comma-separated Watchlist override."),
+    ] = None,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after history and GERI replay."),
+    ] = Path(".runtime/status/swing-trade-v1.ready.json"),
+) -> None:
+    """Run Watchlist-only Fibonacci SwingTrade ST1-ST4."""
+
+    from app.integration.swing_trade_composition import run_swing_trade_process
+
+    summary = _run_async(
+        run_swing_trade_process(
+            ready_path=ready_path,
+            once=once,
+            symbols=tuple(symbols.split(",")) if symbols else None,
+        )
+    )
+    if summary is not None:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 @engine.command("rotation")
 def rotation_engine_process(
     once: Annotated[bool, typer.Option(help="Analizar una vez y salir.")] = False,
@@ -361,9 +388,7 @@ def peter_lynch_engine_process(
     def report(message: str) -> None:
         typer.echo(f"[Peter Lynch] {message}", err=True)
 
-    summary = _run_async(
-        run_peter_lynch_once(progress=report, analysis_ttl_days=ttl_days)
-    )
+    summary = _run_async(run_peter_lynch_once(progress=report, analysis_ttl_days=ttl_days))
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
@@ -394,9 +419,7 @@ def news_intelligence_process(
         run_news_intelligence_process,
     )
 
-    summary = _run_async(
-        run_news_intelligence_process(ready_path=ready_path, once=once)
-    )
+    summary = _run_async(run_news_intelligence_process(ready_path=ready_path, once=once))
     if summary is not None:
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
@@ -516,9 +539,7 @@ def signal_fusion_process(
 def volume_structure_process(
     symbols: Annotated[
         str | None,
-        typer.Option(
-            help="Comma-separated symbols; defaults to watchlist plus positive holdings."
-        ),
+        typer.Option(help="Comma-separated symbols; defaults to watchlist plus positive holdings."),
     ] = None,
     once: Annotated[
         bool,
@@ -564,9 +585,7 @@ def entry_recovery_process(
 def options_gamma_process(
     symbols: Annotated[
         str | None,
-        typer.Option(
-            help="Comma-separated symbols; defaults to watchlist plus positive holdings."
-        ),
+        typer.Option(help="Comma-separated symbols; defaults to watchlist plus positive holdings."),
     ] = None,
     once: Annotated[
         bool,
@@ -594,6 +613,7 @@ def options_gamma_process(
 
 market = typer.Typer(name="market", help="Run independent market-data processes.")
 app.add_typer(market, name="market")
+
 
 @market.command("stream")
 def market_stream_process(
@@ -625,9 +645,7 @@ def market_backtest_process(
     ],
     simulated_date: Annotated[
         str | None,
-        typer.Option(
-            help="Date exposed to engines; defaults to the next eligible weekday."
-        ),
+        typer.Option(help="Date exposed to engines; defaults to the next eligible weekday."),
     ] = None,
     cadence_seconds: Annotated[
         float,

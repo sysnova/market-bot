@@ -229,6 +229,11 @@ def build_runtime_process_plan(
             ("run", "marketbot", "engine", "4hgeri"),
         ),
         (
+            "swing-trade",
+            EngineSlot.SWING_TRADE,
+            ("run", "marketbot", "engine", "swing-trade"),
+        ),
+        (
             "intraday",
             EngineSlot.INTRADAY,
             ("run", "marketbot", "engine", "intraday"),
@@ -286,6 +291,7 @@ def build_runtime_process_plan(
             EngineSlot.SWING,
             EngineSlot.SWING_CHANNEL_4H,
             EngineSlot.GERI_4H,
+            EngineSlot.SWING_TRADE,
             EngineSlot.INTRADAY,
             EngineSlot.VOLUME_STRUCTURE,
             EngineSlot.OPTIONS_GAMMA,
@@ -293,8 +299,14 @@ def build_runtime_process_plan(
             arguments += symbol_arguments
         if slot is EngineSlot.NEWS_INTELLIGENCE:
             dependencies = ("alert", "entry-watcher", "entry-opportunity")
-        elif slot is EngineSlot.GERI_4H and definition.engines[slot].implementation == "1.2.0":
+        elif (
+            slot is EngineSlot.GERI_4H
+            and slot in definition.engines
+            and definition.engines[slot].implementation == "1.2.0"
+        ):
             dependencies = ("market-history-v1",)
+        elif slot is EngineSlot.SWING_TRADE:
+            dependencies = ("market-history-v1", "4hgeri", "entry-opportunity")
         else:
             dependencies = analytical_dependencies
         add(name, arguments, slot=slot, dependencies=dependencies)

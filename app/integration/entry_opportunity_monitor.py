@@ -21,6 +21,7 @@ from app.contracts import (
     EntryOpportunity,
     EntryOpportunityEvent,
     EntryOpportunityStatus,
+    EntrySignalFamily,
     EventEnvelope,
     SubscriptionOptions,
 )
@@ -409,8 +410,26 @@ def _format_opportunity(
         ),
         "  CHECKPOINTS DE MADURACION",
     ]
+    swing_trade = tuple(
+        item
+        for item in opportunity.signal_references
+        if item.family is EntrySignalFamily.SWING_TRADE
+    )
+    if swing_trade:
+        reference = swing_trade[-1]
+        lines.append(
+            "  SWING TRADE "
+            f"CURRENT {reference.current_st.value if reference.current_st else '-'} | "
+            f"PEAK {reference.peak_st.value if reference.peak_st else '-'} | "
+            f"SETUP {reference.setup_id}"
+        )
     for item in opportunity.checkpoints:
-        setup = f"{item.level.value}/{item.signal_family.value}"
+        level = (
+            item.swing_trade_maturity.value
+            if item.swing_trade_maturity is not None
+            else item.level.value
+        )
+        setup = f"{level}/{item.signal_family.value}"
         tracking = item.level in {
             EntryMaturityLevel.ARMED,
             EntryMaturityLevel.IN_ZONE,

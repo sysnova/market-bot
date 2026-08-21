@@ -136,6 +136,15 @@ class GeriMaturity(ContractEnum):
     INVALIDATED = "INVALIDATED"
 
 
+class SwingTradeMaturity(ContractEnum):
+    """Independent Fibonacci SwingTrade maturity."""
+
+    ST1 = "ST1"
+    ST2 = "ST2"
+    ST3 = "ST3"
+    ST4 = "ST4"
+
+
 class AnalysisVerdict(ContractEnum):
     FAVORABLE = "FAVORABLE"
     WATCH = "WATCH"
@@ -219,6 +228,7 @@ class EntrySignalFamily(ContractEnum):
     LONG_PORTFOLIO = "LONG_PORTFOLIO"
     SIGNAL_FUSION = "SIGNAL_FUSION"
     PORTFOLIO_FLOW = "PORTFOLIO_FLOW"
+    SWING_TRADE = "SWING_TRADE"
 
 
 class EntryLegStatus(ContractEnum):

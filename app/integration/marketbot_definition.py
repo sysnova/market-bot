@@ -20,6 +20,7 @@ class EngineSlot(StrEnum):
     SWING = "swing"
     SWING_CHANNEL_4H = "swing-channel-4h"
     GERI_4H = "4hgeri"
+    SWING_TRADE = "swing-trade"
     INTRADAY = "intraday"
     ENTRY_WATCHER = "entry-watcher"
     ENTRY_OPPORTUNITY = "entry-opportunity"

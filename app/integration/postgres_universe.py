@@ -105,20 +105,63 @@ class PostgresUniverseClient:
 
         try:
             async with self._engine.connect() as connection:
-                rows = (await connection.execute(text("""
+                rows = (
+                    await connection.execute(
+                        text("""
                     select h.symbol, h.updated_at
                     from stock.customer_holding h
                     join stock.customer c on c.id = h.customer_id
                     where c.slug = :customer_slug and c.status = 'active'
                       and h.status = 'active' and h.quantity > 0
                     order by h.symbol asc
-                """), {"customer_slug": self._customer_slug})).all()
+                """),
+                        {"customer_slug": self._customer_slug},
+                    )
+                ).all()
         except SQLAlchemyError as error:
             raise PostgresUniverseError("Local PostgreSQL holdings query failed") from error
         return UniverseSnapshot(
             symbols=_normalize_symbols(tuple(str(row.symbol) for row in rows)),
             source="postgresql-local-holdings",
             holdings_updated_at=_latest_timestamp(row.updated_at for row in rows),
+        )
+
+    async def get_watchlist(self) -> UniverseSnapshot:
+        """Load only active Watchlist symbols, explicitly excluding holdings."""
+
+        try:
+            async with self._engine.connect() as connection:
+                rows = (
+                    await connection.execute(
+                        text(
+                            """
+                            select ws.symbol, w.updated_at
+                            from stock.watchlist w
+                            join stock.customer c on c.id = w.customer_id
+                            join stock.watchlist_symbol ws on ws.watchlist_id = w.id
+                            where c.slug = :customer_slug
+                              and c.status = 'active'
+                              and w.code = :watchlist_code
+                              and w.status = 'active'
+                              and ws.status = 'active'
+                            order by ws.sort_order asc, ws.symbol asc
+                            """
+                        ),
+                        {
+                            "customer_slug": self._customer_slug,
+                            "watchlist_code": self._watchlist_code,
+                        },
+                    )
+                ).all()
+        except SQLAlchemyError as error:
+            raise PostgresUniverseError("Local PostgreSQL watchlist query failed") from error
+        symbols = _normalize_symbols(tuple(str(row.symbol) for row in rows))
+        if not symbols:
+            raise PostgresUniverseError("Local PostgreSQL returned an empty watchlist")
+        return UniverseSnapshot(
+            symbols=symbols,
+            source="postgresql-local-watchlist",
+            watchlist_updated_at=_latest_timestamp(row.updated_at for row in rows),
         )
 
     async def get_portfolio_allocations(
@@ -231,9 +274,7 @@ class PostgresUniverseClient:
                 ).all()
         except SQLAlchemyError as error:
             raise PostgresUniverseError("Local PostgreSQL holdings query failed") from error
-        return {
-            str(row.symbol).strip().upper(): Decimal(str(row.quantity)) for row in rows
-        }
+        return {str(row.symbol).strip().upper(): Decimal(str(row.quantity)) for row in rows}
 
 
 def fallback_universe(symbols: Sequence[str], *, source: str = "env-fallback") -> UniverseSnapshot:

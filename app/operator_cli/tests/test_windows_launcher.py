@@ -360,6 +360,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "swing",
         "swing-channel-4h",
         "4hgeri",
+        "swing-trade",
         "intraday",
         "market-rotation-v1",
         "portfolio-flow-v1",

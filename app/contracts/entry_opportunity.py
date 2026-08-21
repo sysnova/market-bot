@@ -24,6 +24,7 @@ from .enums import (
     EntryMaturityLevel,
     EntryOpportunityStatus,
     EntrySignalFamily,
+    SwingTradeMaturity,
 )
 from .market_analysis import AnalysisResult
 
@@ -33,6 +34,7 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
 
     checkpoint_id: UUID = Field(default_factory=new_uuid7)
     level: EntryMaturityLevel
+    swing_trade_maturity: SwingTradeMaturity | None = None
     signal_family: EntrySignalFamily = EntrySignalFamily.CORE_ENTRY
     setup_id: NonEmptyStr | None = None
     reached_at: datetime
@@ -140,6 +142,8 @@ class EntryOpportunitySignalReference(StrictFrozenModel):
     signal_id: UUID
     family: EntrySignalFamily
     maturity: EntryMaturityLevel | None = None
+    current_st: SwingTradeMaturity | None = None
+    peak_st: SwingTradeMaturity | None = None
     setup_id: NonEmptyStr
     created_at: datetime
     entry_price: PositiveDecimal
@@ -159,6 +163,11 @@ class EntryOpportunitySignalReference(StrictFrozenModel):
         }
         if core != (self.maturity is not None):
             raise ValueError("only core signal references use L1-L4 maturity")
+        if self.family is EntrySignalFamily.SWING_TRADE:
+            if self.peak_st is None and self.current_st is not None:
+                raise ValueError("SwingTrade current ST requires peak ST")
+        elif self.current_st is not None or self.peak_st is not None:
+            raise ValueError("only SwingTrade references use ST maturity")
         return self
 
 
@@ -219,7 +228,8 @@ class EntryOpportunity(StrictFrozenModel):
         if closed != (self.closed_at is not None and self.close_reason is not None):
             raise ValueError("closed opportunity requires closed_at and close_reason")
         checkpoint_keys = {
-            (item.level, item.signal_family, item.setup_id) for item in self.checkpoints
+            (item.level, item.swing_trade_maturity, item.signal_family, item.setup_id)
+            for item in self.checkpoints
         }
         if len(checkpoint_keys) != len(self.checkpoints):
             raise ValueError("maturity checkpoints must be unique by level and setup")

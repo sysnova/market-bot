@@ -15,6 +15,7 @@ from app.contracts import (
     LOCAL_ALERT_EVENT,
     AlertKind,
     EntrySignal,
+    EntrySignalFamily,
     EventEnvelope,
     LocalAlert,
     SubscriptionOptions,
@@ -47,7 +48,7 @@ async def run_confirmed_buy_monitor(
     )
     sink = ConsoleAlertSink(stream=output, bell=False, color=True)
 
-    displayed: set[UUID] = set()
+    displayed: set[UUID | str] = set()
 
     async def handle_signal(envelope: EventEnvelope) -> None:
         if envelope.event_type != ENTRY_SIGNAL_EVENT:
@@ -57,12 +58,21 @@ async def run_confirmed_buy_monitor(
             if isinstance(envelope.payload, EntrySignal)
             else EntrySignal.model_validate(envelope.payload, strict=False)
         )
-        if signal.signal_id in displayed:
+        display_key: UUID | str = signal.signal_id
+        if (
+            signal.family is EntrySignalFamily.SWING_TRADE
+            and signal.swing_trade_maturity is not None
+        ):
+            display_key = (
+                f"{signal.family.value}:{signal.setup_id}:"
+                f"{signal.swing_trade_maturity.value}"
+            )
+        if display_key in displayed:
             return
         projection = project_confirmed_signal(signal, color=True)
         if projection is None:
             return
-        displayed.add(signal.signal_id)
+        displayed.add(display_key)
         print(projection.text, file=output, flush=True)
         if not bell:
             return

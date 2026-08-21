@@ -200,13 +200,14 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.19.0"
+    assert payload["version"] == "7.20.0"
     assert payload["engines"]["swing"]["implementation"] == "6.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "2.0.0"
     assert payload["engines"]["swing-channel-4h"]["implementation"] == "1.1.0"
     assert payload["engines"]["4hgeri"]["implementation"] == "1.2.0"
     assert payload["engines"]["entry-watcher"]["implementation"] == "5.4.0"
-    assert payload["engines"]["entry-opportunity"]["implementation"] == "3.0.0"
+    assert payload["engines"]["entry-opportunity"]["implementation"] == "4.0.0"
+    assert payload["engines"]["swing-trade"]["implementation"] == "1.0.0"
     assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
     assert payload["engines"]["portfolio-flow"]["strategy"]["version"] == "2.0.0"
     assert payload["engines"]["options-gamma"]["mode"] == "active"
@@ -243,7 +244,7 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.19.0"
+    assert payload["definition_version"] == "7.20.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
@@ -255,6 +256,11 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
     ]
     assert processes["4hgeri"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
     assert processes["4hgeri"]["dependencies"] == ["market-history-v1"]
+    assert processes["swing-trade"]["dependencies"] == [
+        "market-history-v1",
+        "4hgeri",
+        "entry-opportunity",
+    ]
 
 
 def test_single_dash_analyzer_alias_passes_the_received_ticker() -> None:

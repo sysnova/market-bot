@@ -1,0 +1,15 @@
+rule_id: swing-trade
+rule_version: 1.0.0
+behavior:
+  fibonacci_lookback_sessions: 60
+  movement_lookback_sessions: 20
+  fibonacci_50_ratio: 0.500
+  fibonacci_618_ratio: 0.618
+  fibonacci_1618_ratio: 1.618
+  support_band_atr: 0.25
+  invalidation_atr: 0.50
+  minimum_reward_risk: 1.50
+  maximum_distance_to_zone_atr: 3
+  geri_freshness_sessions: 2
+  tracking_ttl_sessions: 10
+  trade_ttl_sessions: 10

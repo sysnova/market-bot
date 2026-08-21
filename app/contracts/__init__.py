@@ -30,6 +30,8 @@ from .analysis_events import (
     SUPPORT_TRANSITION_EVENT,
     SWING_CHANNEL_ASSESSMENT_EVENT,
     SWING_CHANNEL_TRANSITION_EVENT,
+    SWING_TRADE_ASSESSMENT_EVENT,
+    SWING_TRADE_TRANSITION_EVENT,
     UNIVERSE_CHANGED_EVENT,
     analysis_result_subject,
     elliott_wave_assessment_subject,
@@ -53,6 +55,8 @@ from .analysis_events import (
     support_transition_subject,
     swing_channel_assessment_subject,
     swing_channel_transition_subject,
+    swing_trade_assessment_subject,
+    swing_trade_transition_subject,
     universe_changed_subject,
 )
 from .domain import (
@@ -110,6 +114,7 @@ from .enums import (
     SupportConfirmationType,
     SupportState,
     SwingChannelMaturity,
+    SwingTradeMaturity,
     TradeSide,
     WavePhase,
 )
@@ -159,6 +164,7 @@ from .support_confirmation import (
     SupportTransition,
 )
 from .swing_channel import SwingChannelAssessment, SwingChannelTransition
+from .swing_trade import SwingTradeAssessment, SwingTradeTransition
 from .universe import UniverseChanged
 
 __all__ = [
@@ -188,6 +194,8 @@ __all__ = [
     "SUPPORT_TRANSITION_EVENT",
     "SWING_CHANNEL_ASSESSMENT_EVENT",
     "SWING_CHANNEL_TRANSITION_EVENT",
+    "SWING_TRADE_ASSESSMENT_EVENT",
+    "SWING_TRADE_TRANSITION_EVENT",
     "UNIVERSE_CHANGED_EVENT",
     "AlertDecision",
     "AlertKind",
@@ -287,6 +295,9 @@ __all__ = [
     "SwingChannelAssessment",
     "SwingChannelMaturity",
     "SwingChannelTransition",
+    "SwingTradeAssessment",
+    "SwingTradeMaturity",
+    "SwingTradeTransition",
     "TradePlan",
     "TradeSide",
     "UniverseChanged",
@@ -315,6 +326,8 @@ __all__ = [
     "support_transition_subject",
     "swing_channel_assessment_subject",
     "swing_channel_transition_subject",
+    "swing_trade_assessment_subject",
+    "swing_trade_transition_subject",
     "universe_changed_subject",
     "validate_primary_uniqueness",
 ]

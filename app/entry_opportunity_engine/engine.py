@@ -33,6 +33,7 @@ from app.contracts import (
     LocalAlert,
     MarketBar,
     PatternDirection,
+    SwingTradeMaturity,
     new_uuid7,
 )
 
@@ -489,10 +490,7 @@ class EntryOpportunityEngine:
         active = await self._store.load_active(bar.symbol)
         if active is None or bar.timestamp < active.armed_at:
             return ()
-        if (
-            active.last_market_bar_at is not None
-            and bar.timestamp <= active.last_market_bar_at
-        ):
+        if active.last_market_bar_at is not None and bar.timestamp <= active.last_market_bar_at:
             return ()
         checkpoints = tuple(_mark_checkpoint(item, bar) for item in active.checkpoints)
         legs = tuple(_mark_leg(item, bar) for item in active.legs)
@@ -1077,6 +1075,212 @@ class EntryOpportunityEngineV3(EntryOpportunityEngineV2):
     regress_tracking_maturity = True
 
 
+class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
+    """Track SwingTrade ST1-ST4 independently from Core L1-L4."""
+
+    engine_version = "4.0.0"
+
+    async def ingest_signal(self, signal: EntrySignal) -> tuple[EntryOpportunityEvent, ...]:
+        if signal.family is not EntrySignalFamily.SWING_TRADE:
+            return await super().ingest_signal(signal)
+        if await self._store.event_seen(signal.signal_id):
+            return ()
+        active = await self._store.load_active(signal.symbol)
+        if active is None:
+            if signal.swing_trade_maturity is None or not _has_complete_signal_levels(signal):
+                return ()
+            changed = self._new_swing_trade_opportunity(signal)
+            reason = "swing_trade_tracking_created"
+        else:
+            changed, reason = self._apply_swing_trade(active, signal)
+            if changed is None:
+                return ()
+        event = self._event(
+            changed,
+            occurred_at=signal.created_at,
+            reasons=(reason, *signal.reasons),
+            event_id=signal.signal_id,
+        )
+        await self._store.save(changed, event)
+        return (event,)
+
+    def _new_swing_trade_opportunity(self, signal: EntrySignal) -> EntryOpportunity:
+        assert signal.zone_low is not None
+        assert signal.zone_high is not None
+        assert signal.invalidation is not None
+        assert signal.swing_trade_maturity is not None
+        stage = signal.swing_trade_maturity
+        target = _first_actionable_target(signal)
+        entered = _st_rank(stage) >= _st_rank(SwingTradeMaturity.ST3)
+        leg = EntryHorizonLeg(
+            horizon=AnalysisHorizon.SWING,
+            status=EntryLegStatus.OPEN if entered else EntryLegStatus.WATCHING,
+            opened_at=signal.created_at if entered else None,
+            entry_price=signal.entry_price if entered else None,
+            current_price=signal.entry_price,
+            invalidation=signal.invalidation,
+            target=target,
+            highest_price=signal.entry_price,
+            lowest_price=signal.entry_price,
+        )
+        checkpoint = _swing_trade_checkpoint(signal, stage, self._child_id_factory())
+        return EntryOpportunity(
+            opportunity_id=self._id_factory(),
+            symbol=signal.symbol,
+            status=EntryOpportunityStatus.OPEN if entered else EntryOpportunityStatus.CONFIRMING,
+            current_maturity=EntryMaturityLevel.ARMED,
+            peak_maturity=EntryMaturityLevel.ARMED,
+            progress_percent=_st_progress(stage),
+            armed_at=signal.created_at,
+            updated_at=signal.created_at,
+            expires_at=_add_weekdays(signal.created_at, 10),
+            zone_low=signal.zone_low,
+            zone_high=signal.zone_high,
+            invalidation=signal.invalidation,
+            original_price=signal.entry_price,
+            current_price=signal.entry_price,
+            source_analysis_ids=_signal_source_ids(signal),
+            primary_signal_family=EntrySignalFamily.SWING_TRADE,
+            signal_references=(_swing_trade_reference(signal, None),),
+            legs=(leg,),
+            checkpoints=(checkpoint,),
+        )
+
+    def _apply_swing_trade(
+        self, active: EntryOpportunity, signal: EntrySignal
+    ) -> tuple[EntryOpportunity | None, str]:
+        previous = _signal_reference_for_setup(active, signal)
+        if previous is not None and previous.signal_id == signal.signal_id:
+            return None, "duplicate"
+        paper_open = any(leg.status is EntryLegStatus.OPEN for leg in active.legs)
+        has_other_swing_setup = any(
+            item.family is EntrySignalFamily.SWING_TRADE
+            and item.setup_id != signal.setup_id
+            for item in active.signal_references
+        )
+        if paper_open and previous is None and has_other_swing_setup:
+            return None, "new_setup_ignored_while_paper_open"
+        if signal.swing_trade_maturity is None:
+            if paper_open:
+                reference = _swing_trade_reference(signal, previous)
+                return active.model_copy(
+                    update={
+                        "signal_references": _replace_signal_reference(
+                            active.signal_references, reference
+                        ),
+                        "updated_at": max(active.updated_at, signal.created_at),
+                        "revision": active.revision + 1,
+                    }
+                ), "swing_trade_tracking_lost_after_entry"
+            if active.primary_signal_family is EntrySignalFamily.SWING_TRADE:
+                return self._close_opportunity(
+                    active,
+                    price=signal.entry_price,
+                    now=signal.created_at,
+                    reason=EntryCloseReason.POLICY_INELIGIBLE,
+                    leg_status=EntryLegStatus.THESIS_BROKEN,
+                ), "swing_trade_preentry_ineligible"
+            reference = _swing_trade_reference(signal, previous)
+            return active.model_copy(
+                update={
+                    "signal_references": _replace_signal_reference(
+                        active.signal_references, reference
+                    ),
+                    "updated_at": max(active.updated_at, signal.created_at),
+                    "revision": active.revision + 1,
+                }
+            ), "swing_trade_confluence_removed"
+
+        stage = signal.swing_trade_maturity
+        if not _has_complete_signal_levels(signal):
+            return None, "incomplete_levels"
+        assert signal.invalidation is not None
+        prior_peak = previous.peak_st if previous is not None else None
+        if prior_peak is not None and _st_rank(stage) <= _st_rank(prior_peak):
+            if previous is not None and previous.current_st is stage:
+                return None, "unchanged_stage"
+            reference = _swing_trade_reference(signal, previous)
+            return active.model_copy(
+                update={
+                    "signal_references": _replace_signal_reference(
+                        active.signal_references, reference
+                    ),
+                    "current_price": signal.entry_price,
+                    "updated_at": max(active.updated_at, signal.created_at),
+                    "revision": active.revision + 1,
+                }
+            ), f"swing_trade_current_{stage.value.lower()}"
+        reference = _swing_trade_reference(signal, previous)
+        checkpoints = active.checkpoints
+        if not any(
+            item.signal_family is EntrySignalFamily.SWING_TRADE
+            and item.setup_id == signal.setup_id
+            and item.swing_trade_maturity is stage
+            for item in checkpoints
+        ):
+            checkpoints = (
+                *checkpoints,
+                _swing_trade_checkpoint(signal, stage, self._child_id_factory()),
+            )
+        legs = active.legs
+        entered_now = _st_rank(stage) >= _st_rank(SwingTradeMaturity.ST3) and not paper_open
+        if entered_now:
+            target = _first_actionable_target(signal)
+            found = False
+            updated_legs: list[EntryHorizonLeg] = []
+            for leg in legs:
+                if leg.horizon is AnalysisHorizon.SWING and leg.status is EntryLegStatus.WATCHING:
+                    updated_legs.append(
+                        leg.model_copy(
+                            update={
+                                "status": EntryLegStatus.OPEN,
+                                "opened_at": signal.created_at,
+                                "entry_price": signal.entry_price,
+                                "current_price": signal.entry_price,
+                                "invalidation": signal.invalidation,
+                                "target": target,
+                                "highest_price": signal.entry_price,
+                                "lowest_price": signal.entry_price,
+                            }
+                        )
+                    )
+                    found = True
+                else:
+                    updated_legs.append(leg)
+            if not found:
+                updated_legs.append(
+                    EntryHorizonLeg(
+                        horizon=AnalysisHorizon.SWING,
+                        status=EntryLegStatus.OPEN,
+                        opened_at=signal.created_at,
+                        entry_price=signal.entry_price,
+                        current_price=signal.entry_price,
+                        invalidation=signal.invalidation,
+                        target=target,
+                        highest_price=signal.entry_price,
+                        lowest_price=signal.entry_price,
+                    )
+                )
+            legs = tuple(updated_legs)
+        updates: dict[str, object] = {
+            "signal_references": _replace_signal_reference(active.signal_references, reference),
+            "source_analysis_ids": _bounded_source_analysis_ids(
+                active.source_analysis_ids, _signal_source_ids(signal)
+            ),
+            "current_price": signal.entry_price,
+            "updated_at": max(active.updated_at, signal.created_at),
+            "revision": active.revision + 1,
+            "checkpoints": checkpoints,
+            "legs": legs,
+        }
+        if active.primary_signal_family is EntrySignalFamily.SWING_TRADE:
+            updates["progress_percent"] = _st_progress(stage)
+            if entered_now:
+                updates["status"] = EntryOpportunityStatus.OPEN
+                updates["expires_at"] = _add_weekdays(signal.created_at, 10)
+        return active.model_copy(update=updates), f"swing_trade_{stage.value.lower()}_reached"
+
+
 def _is_core_signal(signal: EntrySignal) -> bool:
     return signal.family in {
         EntrySignalFamily.CORE_ENTRY,
@@ -1097,6 +1301,8 @@ def _signal_reference(signal: EntrySignal) -> EntryOpportunitySignalReference:
         signal_id=signal.signal_id,
         family=signal.family,
         maturity=signal.maturity,
+        current_st=signal.swing_trade_maturity,
+        peak_st=signal.swing_trade_maturity,
         setup_id=signal.setup_id,
         created_at=signal.created_at,
         entry_price=signal.entry_price,
@@ -1104,6 +1310,78 @@ def _signal_reference(signal: EntrySignal) -> EntryOpportunitySignalReference:
         policy_id=signal.policy_id,
         policy_version=signal.policy_version,
     )
+
+
+def _swing_trade_reference(
+    signal: EntrySignal,
+    previous: EntryOpportunitySignalReference | None,
+) -> EntryOpportunitySignalReference:
+    peak = signal.swing_trade_maturity
+    if (
+        previous is not None
+        and previous.peak_st is not None
+        and (peak is None or _st_rank(previous.peak_st) > _st_rank(peak))
+    ):
+        peak = previous.peak_st
+    return EntryOpportunitySignalReference(
+        signal_id=signal.signal_id,
+        family=signal.family,
+        setup_id=signal.setup_id,
+        created_at=signal.created_at,
+        entry_price=signal.entry_price,
+        horizons=signal.horizons,
+        policy_id=signal.policy_id,
+        policy_version=signal.policy_version,
+        current_st=signal.swing_trade_maturity,
+        peak_st=peak,
+    )
+
+
+def _swing_trade_checkpoint(
+    signal: EntrySignal,
+    stage: SwingTradeMaturity,
+    checkpoint_id: UUID,
+) -> EntryMaturityCheckpoint:
+    assert signal.invalidation is not None
+    return EntryMaturityCheckpoint(
+        checkpoint_id=checkpoint_id,
+        level=EntryMaturityLevel.ARMED,
+        swing_trade_maturity=stage,
+        signal_family=EntrySignalFamily.SWING_TRADE,
+        setup_id=signal.setup_id,
+        reached_at=signal.created_at,
+        entry_price=signal.entry_price,
+        current_price=signal.entry_price,
+        highest_price=signal.entry_price,
+        lowest_price=signal.entry_price,
+        invalidation=signal.invalidation,
+        target=_first_actionable_target(signal),
+        zone_low=signal.zone_low,
+        zone_high=signal.zone_high,
+    )
+
+
+def _st_rank(stage: SwingTradeMaturity) -> int:
+    return {
+        SwingTradeMaturity.ST1: 1,
+        SwingTradeMaturity.ST2: 2,
+        SwingTradeMaturity.ST3: 3,
+        SwingTradeMaturity.ST4: 4,
+    }[stage]
+
+
+def _st_progress(stage: SwingTradeMaturity) -> Decimal:
+    return Decimal(_st_rank(stage) * 25)
+
+
+def _add_weekdays(value: datetime, sessions: int) -> datetime:
+    result = value
+    remaining = sessions
+    while remaining:
+        result += timedelta(days=1)
+        if result.weekday() < 5:
+            remaining -= 1
+    return result
 
 
 def _signal_reference_for_setup(

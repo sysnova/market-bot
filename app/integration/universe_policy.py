@@ -69,12 +69,17 @@ GERI_4H = UniversePolicyDetails(
     universe_policy="active-watchlist-plus-positive-holdings",
     warmup_policy="completed-rth-15m-history-reconstructed-as-horizontal-4h-levels",
 )
+SWING_TRADE = UniversePolicyDetails(
+    universe_policy="active-watchlist-only-excluding-holdings",
+    warmup_policy="120-completed-daily-bars-plus-latest-geri-replay-before-15m-evaluation",
+)
 
 ENGINE_UNIVERSE_POLICIES: dict[str, UniversePolicyDetails] = {
     "long-term": CORE_DYNAMIC,
     "swing": CORE_DYNAMIC,
     "swing-channel-4h": SWING_CHANNEL_4H,
     "4hgeri": GERI_4H,
+    "swing-trade": SWING_TRADE,
     "intraday": CORE_DYNAMIC,
     "volume-structure": VOLUME_STRUCTURE,
     "options-gamma": OPTIONS_GAMMA,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.alert_engine.confirmed import BuyMaturity
-from app.contracts import EntryMaturityLevel, EntrySignal, EntrySignalFamily
+from app.contracts import EntryMaturityLevel, EntrySignal, EntrySignalFamily, SwingTradeMaturity
 
 _RESET_STYLE = "\x1b[0m"
 _CORE_MATURITY = {
@@ -52,6 +52,15 @@ def project_confirmed_signal(
             return None
         sound_maturity, style = maturity_spec
         label = f"{_CORE_LABELS[signal.family]} {maturity.value}"
+    elif signal.family is EntrySignalFamily.SWING_TRADE:
+        swing_trade_maturity = signal.swing_trade_maturity
+        if swing_trade_maturity is None or swing_trade_maturity not in {
+            SwingTradeMaturity.ST3,
+            SwingTradeMaturity.ST4,
+        }:
+            return None
+        label = f"SWING TRADE {swing_trade_maturity.value}"
+        style = _ANALYTICAL_STYLE
     else:
         label = _FINAL_ANALYTICAL_LABELS.get(signal.family)
         if label is None:

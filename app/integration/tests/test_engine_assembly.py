@@ -11,6 +11,7 @@ from app.common.settings import AppSettings
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
     EntryOpportunityEngineV3,
+    EntryOpportunityEngineV4,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_recovery_engine import EntryRecoveryEngineV11
@@ -52,6 +53,7 @@ from app.swing_4h_geri_engine import (
 )
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 from app.swing_engine import SwingEngineV4, SwingEngineV5, SwingEngineV6
+from app.swing_trade_engine import SwingTradeEngine
 from app.volume_structure_engine import VolumeStructureEngineV11
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -73,6 +75,7 @@ PINNED_SWING_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.16.0.yaml"
 PINNED_GERI_DEFINITION = ROOT / "configs/marketbot/7.17.0.yaml"
 FAILED_BREAKOUT_FSM_DEFINITION = ROOT / "configs/marketbot/7.18.0.yaml"
 MIRRORED_GERI_DEFINITION = ROOT / "configs/marketbot/7.19.0.yaml"
+SWING_TRADE_DEFINITION = ROOT / "configs/marketbot/7.20.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -151,6 +154,21 @@ def test_mirrored_geri_definition_keeps_v11_and_selects_standalone_v12() -> None
     assert assembly.spec(EngineSlot.GERI_4H).strategy.version == "1.2.0"
 
 
+def test_swing_trade_definition_adds_independent_versioned_engine() -> None:
+    previous = MarketBotAssembly.from_path(MIRRORED_GERI_DEFINITION)
+    assembly = MarketBotAssembly.from_path(SWING_TRADE_DEFINITION)
+
+    assert previous.definition.version == "7.19.0"
+    assert EngineSlot.SWING_TRADE not in previous.definition.engines
+    assert assembly.definition.version == "7.20.0"
+    assert isinstance(assembly.build_swing_trade(), SwingTradeEngine)
+    assert isinstance(
+        assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV4,
+    )
+    assert assembly.spec(EngineSlot.SWING_TRADE).strategy.version == "1.0.0"
+
+
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
     definition = load_marketbot_definition(DEFINITION)
 
@@ -160,6 +178,7 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
         EngineSlot.NEWS_INTELLIGENCE,
         EngineSlot.SWING_CHANNEL_4H,
         EngineSlot.GERI_4H,
+        EngineSlot.SWING_TRADE,
     }
     assert definition.version == "7.2.0"
     assert all(item.strategy.version for item in definition.engines.values())
@@ -179,6 +198,7 @@ def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
         EngineSlot.NEWS_INTELLIGENCE,
         EngineSlot.SWING_CHANNEL_4H,
         EngineSlot.GERI_4H,
+        EngineSlot.SWING_TRADE,
     }
     assert definition.version == "7.3.0"
     assert definition.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"

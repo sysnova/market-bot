@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from ._base import Identifier, NonEmptyStr, PositiveDecimal, SemVer, StrictFrozenModel, new_uuid7
-from .enums import AnalysisHorizon, EntryMaturityLevel, EntrySignalFamily
+from .enums import AnalysisHorizon, EntryMaturityLevel, EntrySignalFamily, SwingTradeMaturity
 
 
 class EntrySignal(StrictFrozenModel):
@@ -17,6 +17,7 @@ class EntrySignal(StrictFrozenModel):
     signal_id: UUID = Field(default_factory=new_uuid7)
     family: EntrySignalFamily
     maturity: EntryMaturityLevel | None = None
+    swing_trade_maturity: SwingTradeMaturity | None = None
     symbol: Identifier
     created_at: datetime
     setup_id: NonEmptyStr
@@ -46,7 +47,12 @@ class EntrySignal(StrictFrozenModel):
         if self.family in {EntrySignalFamily.CORE_ENTRY, EntrySignalFamily.CORE_RECOVERY}:
             if self.maturity is None:
                 raise ValueError("core entry signals require maturity")
-        elif self.maturity is not None:
+            if self.swing_trade_maturity is not None:
+                raise ValueError("core entry signals cannot use ST maturity")
+        elif self.family is EntrySignalFamily.SWING_TRADE:
+            if self.maturity is not None:
+                raise ValueError("SwingTrade signals keep Core L1-L4 maturity empty")
+        elif self.maturity is not None or self.swing_trade_maturity is not None:
             raise ValueError("only core entry signal families use L1-L4 maturity")
         zone_values = (self.zone_low, self.zone_high, self.invalidation)
         if any(value is not None for value in zone_values):

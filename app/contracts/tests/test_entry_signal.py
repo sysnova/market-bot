@@ -9,6 +9,7 @@ from app.contracts import (
     EntryMaturityLevel,
     EntrySignal,
     EntrySignalFamily,
+    SwingTradeMaturity,
     entry_signal_subject,
 )
 
@@ -55,6 +56,24 @@ def test_non_core_signal_does_not_reuse_core_l4_scale() -> None:
     )
 
     assert signal.maturity is None
+
+
+def test_swing_trade_uses_separate_optional_st_maturity() -> None:
+    signal = EntrySignal(
+        family=EntrySignalFamily.SWING_TRADE,
+        swing_trade_maturity=SwingTradeMaturity.ST3,
+        symbol="NVO",
+        created_at=NOW,
+        setup_id="swing-trade:NVO:L:H:1.0.0",
+        entry_price=Decimal("52.25"),
+        horizons=(AnalysisHorizon.SWING,),
+        policy_id="swing-trade",
+        policy_version="1.0.0",
+        reasons=("swing_trade_st3",),
+    )
+
+    assert signal.maturity is None
+    assert signal.swing_trade_maturity is SwingTradeMaturity.ST3
 
 
 def test_core_signal_requires_maturity_and_coherent_zone() -> None:

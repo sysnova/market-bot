@@ -29,6 +29,8 @@ SWING_CHANNEL_ASSESSMENT_EVENT: Final = "swing-channel-4h.assessed"
 SWING_CHANNEL_TRANSITION_EVENT: Final = "swing-channel-4h.transitioned"
 GERI_ASSESSMENT_EVENT: Final = "4hgeri.assessed"
 GERI_TRANSITION_EVENT: Final = "4hgeri.transitioned"
+SWING_TRADE_ASSESSMENT_EVENT: Final = "swing-trade.assessed"
+SWING_TRADE_TRANSITION_EVENT: Final = "swing-trade.transitioned"
 OPTIONS_GAMMA_ASSESSMENT_EVENT: Final = "options-gamma.assessed"
 UNIVERSE_CHANGED_EVENT: Final = "universe.changed"
 FUSION_ASSESSMENT_EVENT: Final = "signal-fusion.assessed"
@@ -121,6 +123,17 @@ def geri_transition_subject(maturity: object, symbol: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError("4HGERI maturity is invalid")
     return f"marketbot.v1.4hgeri.transition.{value}.{_symbol_token(symbol)}"
+
+
+def swing_trade_assessment_subject(symbol: str) -> str:
+    return f"marketbot.v1.swing-trade.assessment.{_symbol_token(symbol)}"
+
+
+def swing_trade_transition_subject(maturity: object | None, symbol: str) -> str:
+    value = getattr(maturity, "value", maturity) or "NO_THESIS"
+    if not isinstance(value, str):
+        raise ValueError("SwingTrade maturity is invalid")
+    return f"marketbot.v1.swing-trade.transition.{value}.{_symbol_token(symbol)}"
 
 
 def options_gamma_assessment_subject(symbol: str) -> str:
