@@ -156,6 +156,19 @@ class EntryOpportunityEngine:
             event_id=transition.transition_id,
         ):
             return ()
+        if (
+            active.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND
+            and active.original_watch_id is None
+            and transition.status
+            in {
+                EntryWatchStatus.INVALIDATED,
+                EntryWatchStatus.EXPIRED,
+            }
+        ):
+            # A standalone GERI countertrend has no Entry Watcher thesis. Its
+            # lifecycle is owned by the GERI setup levels, bars, target and TTL,
+            # so an unrelated Core watch must not terminate it.
+            return ()
         if transition.status is EntryWatchStatus.INVALIDATED:
             closed = self._close_opportunity(
                 active,
@@ -343,7 +356,8 @@ class EntryOpportunityEngine:
             AnalysisVerdict.CAUTION,
         }
         if original_breached or (
-            result.horizon is AnalysisHorizon.LONG_TERM
+            active.primary_signal_family is not EntrySignalFamily.GERI_COUNTERTREND
+            and result.horizon is AnalysisHorizon.LONG_TERM
             and (result.verdict is AnalysisVerdict.AVOID or bearish_failure)
         ):
             closed = self._close_opportunity(

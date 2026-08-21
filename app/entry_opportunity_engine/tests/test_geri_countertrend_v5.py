@@ -1,18 +1,26 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 
 from app.contracts import (
     AnalysisHorizon,
+    AnalysisResult,
+    AnalysisVerdict,
     BarTimeframe,
     EntryCheckpointStatus,
+    EntryCloseReason,
     EntryLegStatus,
     EntryMaturityLevel,
     EntrySignal,
     EntrySignalFamily,
+    EntryWatchStatus,
+    EntryWatchTransition,
     GeriCountertrendMaturity,
     MarketBar,
+    NamedValue,
+    PatternDirection,
 )
 from app.entry_opportunity_engine import (
     EntryOpportunityEngineV5,
@@ -224,6 +232,97 @@ async def test_ct1_paper_trade_closes_and_records_pl(
     )
     assert ct1.status is EntryCheckpointStatus.CLOSED
     assert ct1.gain_loss_percent is not None
+
+
+@pytest.mark.asyncio
+async def test_long_term_bearish_avoid_is_context_not_invalidation_for_countertrend() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV5(store=store)
+    await engine.ingest_signal(countertrend_signal(GeriCountertrendMaturity.CT1, price="81"))
+    result = AnalysisResult(
+        analysis_id=UUID("0195f3a5-9000-7000-8000-000000000071"),
+        engine_id="long-term",
+        engine_version="2.0.0",
+        symbol="AAPL",
+        horizon=AnalysisHorizon.LONG_TERM,
+        as_of=NOW - timedelta(days=1),
+        verdict=AnalysisVerdict.AVOID,
+        direction=PatternDirection.BEARISH,
+        score=Decimal("25.75"),
+        confidence=Decimal("0.2575"),
+        reasons=("bearish_structure",),
+        metrics=(NamedValue(name="reference_price", value=Decimal("81")),),
+        context_hash="sha256:" + "a" * 64,
+    )
+
+    events = await engine.ingest_analysis(result, now=NOW + timedelta(minutes=16))
+
+    assert events == ()
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.legs[0].status is EntryLegStatus.OPEN
+    assert active.latest_analyses == (result,)
+
+
+@pytest.mark.asyncio
+async def test_price_below_invalidation_still_closes_countertrend_on_analysis() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV5(store=store)
+    await engine.ingest_signal(countertrend_signal(GeriCountertrendMaturity.CT1, price="81"))
+    result = AnalysisResult(
+        analysis_id=UUID("0195f3a5-9000-7000-8000-000000000072"),
+        engine_id="long-term",
+        engine_version="2.0.0",
+        symbol="AAPL",
+        horizon=AnalysisHorizon.LONG_TERM,
+        as_of=NOW + timedelta(minutes=16),
+        verdict=AnalysisVerdict.AVOID,
+        direction=PatternDirection.BEARISH,
+        score=Decimal("20"),
+        confidence=Decimal("0.8"),
+        reasons=("bearish_structure",),
+        metrics=(NamedValue(name="reference_price", value=Decimal("77")),),
+        context_hash="sha256:" + "b" * 64,
+    )
+
+    events = await engine.ingest_analysis(result, now=NOW + timedelta(minutes=16))
+
+    assert len(events) == 1
+    assert events[0].opportunity.close_reason is EntryCloseReason.ORIGINAL_THESIS_INVALIDATED
+    assert "original_invalidation_breached" in events[0].reasons
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", (EntryWatchStatus.INVALIDATED, EntryWatchStatus.EXPIRED))
+async def test_unrelated_watcher_terminal_cannot_close_standalone_countertrend(
+    status: EntryWatchStatus,
+) -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV5(store=store)
+    await engine.ingest_signal(countertrend_signal(GeriCountertrendMaturity.CT1, price="81"))
+    transition = EntryWatchTransition(
+        transition_id=UUID("0195f3a5-9000-7000-8000-000000000084"),
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000021"),
+        symbol="AAPL",
+        previous_status=EntryWatchStatus.ARMED,
+        status=status,
+        occurred_at=NOW + timedelta(minutes=16),
+        zone_low=Decimal("80"),
+        zone_high=Decimal("82"),
+        invalidation=Decimal("78"),
+        current_price=Decimal("81"),
+        watch_expires_at=NOW + timedelta(days=5),
+        reasons=("long_structure_invalidated",),
+        horizons=(AnalysisHorizon.LONG_TERM,),
+        source_analysis_ids=(UUID("0195f3a5-9000-7000-8000-000000000071"),),
+    )
+
+    events = await engine.ingest_transition(transition)
+
+    assert events == ()
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.legs[0].status is EntryLegStatus.OPEN
 
 
 @pytest.mark.asyncio
