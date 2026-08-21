@@ -75,12 +75,14 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
             raise ValueError("checkpoint price extrema are inverted")
         if (self.zone_low is None) != (self.zone_high is None):
             raise ValueError("checkpoint zone requires both low and high")
-        if (
-            self.zone_low is not None
-            and self.zone_high is not None
-            and not self.invalidation < self.zone_low <= self.zone_high
-        ):
-            raise ValueError("checkpoint zone must sit above invalidation")
+        if self.zone_low is not None and self.zone_high is not None:
+            if self.signal_family is EntrySignalFamily.SWING_TRADE:
+                if self.zone_low > self.zone_high:
+                    raise ValueError("SwingTrade checkpoint zone levels are out of order")
+                if self.invalidation >= self.entry_price:
+                    raise ValueError("SwingTrade checkpoint entry must sit above invalidation")
+            elif not self.invalidation < self.zone_low <= self.zone_high:
+                raise ValueError("checkpoint zone must sit above invalidation")
         if (self.retested_at is None) != (self.retest_low is None):
             raise ValueError("checkpoint retest requires timestamp and low")
         if self.signal_family is EntrySignalFamily.GERI_COUNTERTREND:
@@ -212,9 +214,7 @@ class EntryOpportunity(StrictFrozenModel):
     signal_references: tuple[EntryOpportunitySignalReference, ...] = Field(
         default=(), max_length=32
     )
-    source_cursors: tuple[EntryOpportunitySourceCursor, ...] = Field(
-        default=(), max_length=16
-    )
+    source_cursors: tuple[EntryOpportunitySourceCursor, ...] = Field(default=(), max_length=16)
     latest_analyses: tuple[AnalysisResult, ...] = ()
     legs: tuple[EntryHorizonLeg, ...] = ()
     checkpoints: tuple[EntryMaturityCheckpoint, ...] = Field(min_length=1)
@@ -229,14 +229,17 @@ class EntryOpportunity(StrictFrozenModel):
             raise ValueError("source_analysis_ids must contain UUIDv7 values")
         if len({item.source for item in self.source_cursors}) != len(self.source_cursors):
             raise ValueError("opportunity source cursors must be unique")
-        if len({item.signal_id for item in self.signal_references}) != len(
-            self.signal_references
-        ):
+        if len({item.signal_id for item in self.signal_references}) != len(self.signal_references):
             raise ValueError("opportunity signal references must have unique signal IDs")
         setups = {(item.family, item.setup_id) for item in self.signal_references}
         if len(setups) != len(self.signal_references):
             raise ValueError("opportunity signal references must have unique setups")
-        if self.invalidation >= self.zone_low or self.zone_low > self.zone_high:
+        if self.primary_signal_family is EntrySignalFamily.SWING_TRADE:
+            if self.zone_low > self.zone_high:
+                raise ValueError("SwingTrade opportunity zone levels are out of order")
+            if self.invalidation >= self.original_price:
+                raise ValueError("SwingTrade opportunity reference must sit above invalidation")
+        elif self.invalidation >= self.zone_low or self.zone_low > self.zone_high:
             raise ValueError("opportunity levels must satisfy invalidation < low <= high")
         closed = self.status is EntryOpportunityStatus.CLOSED
         if closed != (self.closed_at is not None and self.close_reason is not None):

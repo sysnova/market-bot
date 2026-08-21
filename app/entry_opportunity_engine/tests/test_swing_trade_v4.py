@@ -68,21 +68,15 @@ async def test_st1_st2_watch_and_st3_opens_paper_then_st4_checkpoints() -> None:
     engine = EntryOpportunityEngineV4(store=store)
 
     await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST1))
-    await engine.ingest_signal(
-        swing_signal(SwingTradeMaturity.ST2, at=NOW + timedelta(minutes=15))
-    )
+    await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST2, at=NOW + timedelta(minutes=15)))
     tracking = await store.load_active("AAPL")
     assert tracking is not None
     assert tracking.current_maturity is EntryMaturityLevel.ARMED
     assert tracking.peak_maturity is EntryMaturityLevel.ARMED
     assert tracking.legs[0].status is EntryLegStatus.WATCHING
 
-    await engine.ingest_signal(
-        swing_signal(SwingTradeMaturity.ST3, at=NOW + timedelta(minutes=30))
-    )
-    await engine.ingest_signal(
-        swing_signal(SwingTradeMaturity.ST4, at=NOW + timedelta(minutes=45))
-    )
+    await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST3, at=NOW + timedelta(minutes=30)))
+    await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST4, at=NOW + timedelta(minutes=45)))
     opened = await store.load_active("AAPL")
     assert opened is not None
     assert opened.legs[0].status is EntryLegStatus.OPEN
@@ -119,6 +113,35 @@ async def test_direct_st4_opens_without_fabricating_prior_checkpoints() -> None:
 
 
 @pytest.mark.asyncio
+async def test_swing_trade_accepts_structural_invalidation_inside_fibonacci_zone() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV4(store=store)
+    signal = EntrySignal(
+        family=EntrySignalFamily.SWING_TRADE,
+        swing_trade_maturity=SwingTradeMaturity.ST3,
+        symbol="AAPL",
+        created_at=NOW,
+        setup_id="swing-trade:AAPL:L:H:1.0.0",
+        entry_price=Decimal("99"),
+        horizons=(AnalysisHorizon.SWING,),
+        zone_low=Decimal("95.28"),
+        zone_high=Decimal("100"),
+        invalidation=Decimal("96.75"),
+        targets=(Decimal("119"), Decimal("144.72")),
+        policy_id="swing-trade",
+        policy_version="1.0.0",
+        reasons=("swing_trade_st3",),
+    )
+
+    await engine.ingest_signal(signal)
+
+    opportunity = await store.load_active("AAPL")
+    assert opportunity is not None
+    assert opportunity.invalidation == Decimal("96.75")
+    assert opportunity.legs[0].status is EntryLegStatus.OPEN
+
+
+@pytest.mark.asyncio
 async def test_preentry_thesis_loss_closes_tracking_but_not_open_trade() -> None:
     store = InMemoryEntryOpportunityStore()
     engine = EntryOpportunityEngineV4(store=store)
@@ -150,9 +173,7 @@ async def test_swing_trade_coexists_without_changing_core_l1_l4_maturity() -> No
     store = InMemoryEntryOpportunityStore()
     engine = EntryOpportunityEngineV4(store=store)
     await engine.ingest_signal(core_signal())
-    await engine.ingest_signal(
-        swing_signal(SwingTradeMaturity.ST4, at=NOW + timedelta(minutes=15))
-    )
+    await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST4, at=NOW + timedelta(minutes=15)))
 
     opportunity = await store.load_active("AAPL")
     assert opportunity is not None

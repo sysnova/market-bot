@@ -80,6 +80,13 @@ class EntrySignal(StrictFrozenModel):
             zone_high = self.zone_high
             if invalidation is None or zone_low is None or zone_high is None:
                 raise AssertionError("complete zone values were checked above")
-            if not invalidation < zone_low <= zone_high:
+            if self.family is EntrySignalFamily.SWING_TRADE:
+                if zone_low > zone_high:
+                    raise ValueError("SwingTrade signal zone levels are out of order")
+                if self.swing_trade_maturity is not None and invalidation >= self.entry_price:
+                    raise ValueError(
+                        "actionable SwingTrade signal requires entry above invalidation"
+                    )
+            elif not invalidation < zone_low <= zone_high:
                 raise ValueError("signal levels must satisfy invalidation < zone_low <= zone_high")
         return self

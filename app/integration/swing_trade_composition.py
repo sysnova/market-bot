@@ -172,13 +172,16 @@ class SwingTradeRuntime:
                 payload=item,
             ),
         )
+        previous_maturity = previous.maturity if previous is not None else None
+        if item.maturity is None and previous_maturity is None:
+            return
         transition = SwingTradeTransition(
             assessment_id=item.assessment_id,
             symbol=item.symbol,
             occurred_at=occurred_at,
             engine_version=item.engine_version,
             strategy_version=item.strategy_version,
-            previous_maturity=previous.maturity if previous is not None else None,
+            previous_maturity=previous_maturity,
             maturity=item.maturity,
             current_price=item.current_price,
             zone_low=item.zone_low,
@@ -200,7 +203,12 @@ class SwingTradeRuntime:
                 payload=transition,
             ),
         )
-        setup_id = str(next(metric.value for metric in item.metrics if metric.name == "setup_id"))
+        signal_basis = item if item.maturity is not None else previous
+        if signal_basis is None:
+            raise AssertionError("SwingTrade thesis loss requires a previous assessment")
+        setup_id = str(
+            next(metric.value for metric in signal_basis.metrics if metric.name == "setup_id")
+        )
         signal = EntrySignal(
             family=EntrySignalFamily.SWING_TRADE,
             swing_trade_maturity=item.maturity,
@@ -209,12 +217,12 @@ class SwingTradeRuntime:
             setup_id=setup_id,
             entry_price=item.current_price,
             horizons=(AnalysisHorizon.SWING,),
-            zone_low=item.zone_low,
-            zone_high=item.zone_high,
-            invalidation=item.invalidation,
-            targets=(item.primary_target, item.extended_target),
+            zone_low=signal_basis.zone_low,
+            zone_high=signal_basis.zone_high,
+            invalidation=signal_basis.invalidation,
+            targets=(signal_basis.primary_target, signal_basis.extended_target),
             policy_id="swing-trade",
-            policy_version=item.strategy_version,
+            policy_version=signal_basis.strategy_version,
             reasons=item.reasons,
             source_event_ids=(item.assessment_id, transition.transition_id),
         )

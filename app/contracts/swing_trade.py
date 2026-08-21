@@ -113,6 +113,8 @@ class SwingTradeTransition(StrictFrozenModel):
     def validate_transition(self) -> SwingTradeTransition:
         if self.transition_id.version != 7 or self.assessment_id.version != 7:
             raise ValueError("SwingTrade transition IDs must be UUIDv7")
-        if not self.invalidation < self.zone_low <= self.zone_high:
+        if self.zone_low > self.zone_high:
             raise ValueError("SwingTrade transition levels are out of order")
+        if self.maturity is not None and self.invalidation >= self.current_price:
+            raise ValueError("actionable SwingTrade transition requires price above invalidation")
         return self
