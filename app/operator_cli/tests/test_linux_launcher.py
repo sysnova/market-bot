@@ -62,6 +62,18 @@ def test_linux_launcher_adds_independent_four_hour_engine_windows() -> None:
     assert "4HGERI — NIVELES HORIZONTALES" in script
 
 
+def test_linux_launcher_adds_dedicated_swing_trade_dashboard() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "run marketbot monitor swing-trade" in script
+    assert "--role swing-trade" in script
+    assert 'wait_ready "$STATUS_ROOT/swing-trade.ready.json"' in script
+    assert '"$STATUS_ROOT/swing-trade-monitor.ready.json"' in script
+    assert '-n SwingTrade "$swing_trade"' in script
+    assert "SWING TRADE — FIBONACCI WATCHLIST" in script
+    assert 'SwingTrade history-limit 50000' in script
+
+
 def test_linux_launcher_inherits_stock_analyzer_openai_key_without_sourcing_env() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
@@ -197,7 +209,8 @@ def test_analytical_tmux_roles_are_read_only_monitors() -> None:
 
     for start, end in (
         ("run_swing_channel_4h()", "run_4hgeri()"),
-        ("run_4hgeri()", "run_patreon_caps_analysis()"),
+        ("run_4hgeri()", "run_swing_trade()"),
+        ("run_swing_trade()", "run_patreon_caps_analysis()"),
         ("run_patreon_caps_analysis()", "run_patreon_caps_alerts()"),
         ("run_elliott_wave()", "run_support_confirmation()"),
         ("run_support_confirmation()", "run_signal_fusion_analysis()"),
@@ -221,6 +234,7 @@ def test_market_stream_is_gated_only_by_headless_engine_readiness() -> None:
         "entry-opportunity-monitor",
         "swing-channel-4h-monitor",
         "4hgeri-monitor",
+        "swing-trade-monitor",
         "patreon-caps-analysis",
         "elliott-wave-analysis",
         "support-confirmation-analysis",

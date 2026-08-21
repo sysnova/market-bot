@@ -959,6 +959,20 @@ def swing_4h_geri_monitor(
     _run_async(run_swing_4h_geri_monitor(ready_path=ready_path))
 
 
+@monitor.command("swing-trade")
+def swing_trade_monitor(
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file for the SwingTrade Watchlist dashboard."),
+    ] = Path(".runtime/status/swing-trade-monitor.ready.json"),
+) -> None:
+    """Run the dashboard process showing every current SwingTrade assessment."""
+
+    from app.integration.swing_trade_monitor import run_swing_trade_monitor
+
+    _run_async(run_swing_trade_monitor(ready_path=ready_path))
+
+
 @monitor.command("news")
 def alpaca_news_monitor(
     history: Annotated[

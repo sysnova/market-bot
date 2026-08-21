@@ -121,7 +121,7 @@ clear_runtime_readiness() {
   local -a all_ready_paths=()
   mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
   ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
-  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,swing-trade-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 }
 
 exec_marketbot() {
@@ -180,6 +180,13 @@ run_4hgeri() {
   wait_ready "$STATUS_ROOT/4hgeri.ready.json"
   exec_marketbot run marketbot monitor 4hgeri \
     --ready-path "$STATUS_ROOT/4hgeri-monitor.ready.json"
+}
+
+run_swing_trade() {
+  cd "$PROJECT_ROOT"
+  wait_ready "$STATUS_ROOT/swing-trade.ready.json"
+  exec_marketbot run marketbot monitor swing-trade \
+    --ready-path "$STATUS_ROOT/swing-trade-monitor.ready.json"
 }
 
 run_patreon_caps_analysis() {
@@ -366,7 +373,7 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed opportunities long_portfolio news swing_channel_4h geri_4h patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
+  local control analysis confirmed opportunities long_portfolio news swing_channel_4h geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
@@ -375,6 +382,7 @@ launch_tmux() {
   printf -v news '%q ' "${base[@]}" --role news
   printf -v swing_channel_4h '%q ' "${base[@]}" --role swing-channel-4h
   printf -v geri_4h '%q ' "${base[@]}" --role 4hgeri
+  printf -v swing_trade '%q ' "${base[@]}" --role swing-trade
   printf -v patreon_analysis '%q ' "${base[@]}" --role patreon-analysis
   printf -v patreon_alerts '%q ' "${base[@]}" --role patreon-alerts
   printf -v elliott_wave '%q ' "${base[@]}" --role elliott-wave
@@ -429,6 +437,13 @@ launch_tmux() {
       tmux new-window -d -t "$SESSION" -n 4HGERI "$geri_4h"
       tmux set-window-option -t "$SESSION":4HGERI remain-on-exit on
       tmux select-pane -t "$SESSION":4HGERI.0 -T '4HGERI — NIVELES HORIZONTALES'
+    fi
+    if engine_is_active swing-trade && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'SwingTrade'; then
+      tmux new-window -d -t "$SESSION" -n SwingTrade "$swing_trade"
+      tmux set-window-option -t "$SESSION":SwingTrade remain-on-exit on
+      tmux set-window-option -t "$SESSION":SwingTrade history-limit 50000
+      tmux select-pane -t "$SESSION":SwingTrade.0 -T 'SWING TRADE — FIBONACCI WATCHLIST'
     fi
     tmux select-layout -t "$SESSION":MarketBot even-vertical 2>/dev/null || true
     if engine_is_active patreon-caps && \
@@ -507,6 +522,12 @@ launch_tmux() {
     tmux set-window-option -t "$SESSION":4HGERI remain-on-exit on
     tmux select-pane -t "$SESSION":4HGERI.0 -T '4HGERI — NIVELES HORIZONTALES'
   fi
+  if engine_is_active swing-trade; then
+    tmux new-window -d -t "$SESSION" -n SwingTrade "$swing_trade"
+    tmux set-window-option -t "$SESSION":SwingTrade remain-on-exit on
+    tmux set-window-option -t "$SESSION":SwingTrade history-limit 50000
+    tmux select-pane -t "$SESSION":SwingTrade.0 -T 'SWING TRADE — FIBONACCI WATCHLIST'
+  fi
   if engine_is_active patreon-caps; then
     tmux new-window -d -t "$SESSION" -n PatreonCaps "$patreon_analysis"
     tmux set-window-option -t "$SESSION":PatreonCaps remain-on-exit on
@@ -546,6 +567,7 @@ case "$ROLE" in
   news) run_news ;;
   swing-channel-4h) run_swing_channel_4h ;;
   4hgeri) run_4hgeri ;;
+  swing-trade) run_swing_trade ;;
   patreon-analysis) run_patreon_caps_analysis ;;
   patreon-alerts) run_patreon_caps_alerts ;;
   elliott-wave) run_elliott_wave ;;

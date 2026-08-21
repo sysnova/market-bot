@@ -96,6 +96,7 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("monitor", "entry-opportunity"),
         ("monitor", "swing-channel-4h"),
         ("monitor", "4hgeri"),
+        ("monitor", "swing-trade"),
     ):
         result = runner.invoke(app, [*command, "--help"])
 
