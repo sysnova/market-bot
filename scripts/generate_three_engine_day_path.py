@@ -240,6 +240,40 @@ def _as_string_list(value: object | None) -> list[str]:
     return [str(item) for item in cast(list[object] | tuple[object, ...], value)]
 
 
+def _geri_structural_levels(
+    payload: Mapping[str, object] | None,
+) -> list[dict[str, object]]:
+    """Preserve only structural levels actually published by 4HGERI."""
+
+    if payload is None:
+        return []
+    raw_levels = payload.get("levels")
+    if not isinstance(raw_levels, list):
+        return []
+    levels: list[dict[str, object]] = []
+    for raw_level in cast(list[object], raw_levels):
+        if not isinstance(raw_level, dict):
+            continue
+        level = cast(dict[str, object], raw_level)
+        price = _as_float(level.get("price"))
+        sequence = level.get("sequence")
+        kind = str(level.get("kind", ""))
+        source_at = _as_text(level.get("source_at"))
+        if price is None or not isinstance(sequence, int) or not kind or source_at is None:
+            continue
+        levels.append(
+            {
+                "sequence": sequence,
+                "kind": kind,
+                "price": price,
+                "source_at": source_at,
+                "confirmed_at": _as_text(level.get("confirmed_at")),
+                "broken_at": _as_text(level.get("broken_at")),
+            }
+        )
+    return levels
+
+
 def _parse_datetime(value: object | None) -> datetime | None:
     if value is None:
         return None
@@ -696,6 +730,22 @@ def _build_template(title: str, data: Mapping[str, object]) -> str:
     stroke-width: 2;
     stroke-dasharray: 4 4;
   }}
+  #engineDayPath .geri-level-line {{
+    stroke-width: 2;
+    opacity: 0.95;
+  }}
+  #engineDayPath .geri-level-label {{
+    fill: var(--foreground);
+    font-size: 11px;
+    font-weight: 650;
+    paint-order: stroke;
+    stroke: var(--background);
+    stroke-width: 3px;
+  }}
+  #engineDayPath .geri-level-origin {{
+    stroke: var(--background);
+    stroke-width: 1.5;
+  }}
   #engineDayPath .guide-line {{
     stroke: var(--muted-foreground);
     stroke-width: 1;
@@ -798,6 +848,7 @@ def _build_template(title: str, data: Mapping[str, object]) -> str:
       zoneHigh: data.geri.zone_high,
       support: data.geri.support,
       invalidation: data.geri.invalidation,
+      structuralLevels: data.geri.levels || [],
       fill: 'var(--viz-series-3)',
       stateTarget: stateGeri,
     }},
@@ -904,6 +955,7 @@ def _build_template(title: str, data: Mapping[str, object]) -> str:
   const allPrices = [
     ...series.map((d) => d.v),
     ...panels.flatMap((panel) => [panel.zoneLow, panel.zoneHigh, panel.support, panel.invalidation].filter((v) => Number.isFinite(v))),
+    ...(data.geri.levels || []).map((level) => level.price).filter((v) => Number.isFinite(v)),
   ];
   const yExtent = d3.extent(allPrices);
   const pad = (yExtent[1] - yExtent[0]) * 0.09;
@@ -1014,6 +1066,25 @@ def _build_template(title: str, data: Mapping[str, object]) -> str:
     if (hasInvalidation) {{
       plot.append('line').attr('class', 'invalidation-line').attr('x1', 0).attr('x2', innerW).attr('y1', y(panel.invalidation)).attr('y2', y(panel.invalidation));
     }}
+    if (panel.key === 'geri') {{
+      panel.structuralLevels.forEach((level) => {{
+        const support = level.kind === 'SUPPORT';
+        const broken = Boolean(level.broken_at);
+        const color = support ? 'var(--green)' : 'var(--red)';
+        plot.append('line')
+          .attr('class', 'geri-level-line')
+          .attr('data-geri-level', `N${{level.sequence}}`)
+          .attr('x1', 0).attr('x2', innerW)
+          .attr('y1', y(level.price)).attr('y2', y(level.price))
+          .attr('stroke', color)
+          .attr('stroke-dasharray', broken ? '4 4' : null);
+        plot.append('text')
+          .attr('class', 'geri-level-label')
+          .attr('x', 6)
+          .attr('y', y(level.price) - 6)
+          .text(`N${{level.sequence}} ${{support ? 'SOPORTE' : 'RESISTENCIA'}} · ${{formatMoney(level.price)}}${{broken ? ' · ROTO' : ' · ACTIVO'}}`);
+      }});
+    }}
 
     const guide = plot.append('g');
     guide.append('line').attr('class', 'guide-line').attr('y1', 0).attr('y2', innerH);
@@ -1088,8 +1159,11 @@ def _build_template(title: str, data: Mapping[str, object]) -> str:
     const margin = {{ top: 28, right: narrow ? 18 : 34, bottom: 40, left: narrow ? 58 : 68 }};
     const innerW = width - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
-    const levelValues = panels.flatMap((panel) => [panel.zoneLow, panel.zoneHigh, panel.support])
-      .filter((value) => Number.isFinite(value));
+    const geriLevels = data.geri.levels || [];
+    const levelValues = [
+      ...panels.flatMap((panel) => [panel.zoneLow, panel.zoneHigh, panel.support]),
+      ...geriLevels.map((level) => level.price),
+    ].filter((value) => Number.isFinite(value));
     const extent = d3.extent([
       ...dailySeries.flatMap((bar) => [bar.l, bar.h]),
       ...levelValues,
@@ -1172,6 +1246,41 @@ def _build_template(title: str, data: Mapping[str, object]) -> str:
       }}
     }});
 
+    function dailyIndexForTimestamp(value) {{
+      const timestamp = new Date(value);
+      if (Number.isNaN(timestamp.getTime())) return 0;
+      const dateKey = d3.utcFormat('%Y-%m-%d')(timestamp);
+      const exact = dailySeries.findIndex((bar) => d3.utcFormat('%Y-%m-%d')(bar.t) === dateKey);
+      if (exact >= 0) return exact;
+      const next = dailySeries.findIndex((bar) => bar.t >= timestamp);
+      return next >= 0 ? next : dailySeries.length - 1;
+    }}
+
+    geriLevels.forEach((level) => {{
+      const sourceIndex = dailyIndexForTimestamp(level.source_at);
+      const sourceX = x(sourceIndex) + x.bandwidth() / 2;
+      const support = level.kind === 'SUPPORT';
+      const broken = Boolean(level.broken_at);
+      const color = support ? 'var(--green)' : 'var(--red)';
+      g.append('line')
+        .attr('class', 'geri-level-line')
+        .attr('data-geri-level', `N${{level.sequence}}`)
+        .attr('x1', sourceX).attr('x2', innerW)
+        .attr('y1', y(level.price)).attr('y2', y(level.price))
+        .attr('stroke', color)
+        .attr('stroke-dasharray', broken ? '4 4' : null);
+      g.append('circle')
+        .attr('class', 'geri-level-origin')
+        .attr('cx', sourceX).attr('cy', y(level.price)).attr('r', 4.5)
+        .attr('fill', color);
+      g.append('text')
+        .attr('class', 'geri-level-label')
+        .attr('x', sourceX)
+        .attr('y', y(level.price) + (support ? 16 : -8))
+        .attr('text-anchor', sourceIndex > dailySeries.length - 5 ? 'end' : 'start')
+        .text(`N${{level.sequence}} ${{support ? 'SOPORTE' : 'RESISTENCIA'}} · ${{formatMoney(level.price)}}${{broken ? ' · ROTO' : ' · ACTIVO'}}`);
+    }});
+
     const candles = g.append('g');
     candles.selectAll('line.daily-wick')
       .data(dailySeries).join('line')
@@ -1241,6 +1350,9 @@ def _build_template(title: str, data: Mapping[str, object]) -> str:
       ? `${{formatMoney(panel.zoneLow)}}-${{formatMoney(panel.zoneHigh)}}`
       : 'sin entrada';
     return `<span class="legend-item"><span class="legend-swatch" style="--legend-color:${{panel.fill}}"></span>${{panel.title}} · soporte ${{support}} · entrada ${{entry}}</span>`;
+  }}).join('') + (data.geri.levels || []).map((level) => {{
+    const state = level.broken_at ? 'roto' : 'activo';
+    return `<span class="legend-item"><span class="legend-swatch" style="--legend-color:${{level.kind === 'SUPPORT' ? 'var(--green)' : 'var(--red)'}}"></span>GERI N${{level.sequence}} ${{level.kind.toLowerCase()}} · ${{formatMoney(level.price)}} · ${{state}}</span>`;
   }}).join('');
 
   function redrawCharts() {{
@@ -1380,6 +1492,7 @@ async def build_html(symbol: str, output_dir: Path) -> Path:
                 else None
             ),
             "invalidation": _as_float(geri.get("invalidation")) if geri is not None else None,
+            "levels": _geri_structural_levels(geri),
         },
         "divergence": _divergence_indicator(divergence),
         "gamma": _gamma_indicator(

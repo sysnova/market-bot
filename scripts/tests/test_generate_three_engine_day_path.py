@@ -12,6 +12,7 @@ from scripts.generate_three_engine_day_path import (
     _divergence_indicator,
     _extract_swing_from_analyzer,
     _gamma_indicator,
+    _geri_structural_levels,
     _resolve_assessments,
 )
 
@@ -173,3 +174,49 @@ def test_template_contains_divergence_and_gamma_indicators() -> None:
     assert "Divergencia semanal precio/OBV" in template
     assert "Gamma de opciones" in template
     assert "CALL_POSITIVE_PUT_NEGATIVE" in template
+    assert "geri-level-line" in template
+    assert "geri-level-origin" in template
+
+
+def test_geri_structural_levels_preserve_confirmed_horizontal_sequence() -> None:
+    payload: dict[str, object] = {
+        "levels": [
+            {
+                "sequence": 1,
+                "kind": "SUPPORT",
+                "price": "86.0400",
+                "source_at": "2026-08-07T13:30:00Z",
+                "confirmed_at": "2026-08-07T17:30:00Z",
+                "broken_at": "2026-08-20T13:30:00Z",
+            },
+            {
+                "sequence": 2,
+                "kind": "RESISTANCE",
+                "price": "89.5250",
+                "source_at": "2026-08-17T13:30:00Z",
+                "confirmed_at": "2026-08-20T13:30:00Z",
+                "broken_at": None,
+            },
+        ]
+    }
+
+    levels = _geri_structural_levels(payload)
+
+    assert levels == [
+        {
+            "sequence": 1,
+            "kind": "SUPPORT",
+            "price": 86.04,
+            "source_at": "2026-08-07T13:30:00Z",
+            "confirmed_at": "2026-08-07T17:30:00Z",
+            "broken_at": "2026-08-20T13:30:00Z",
+        },
+        {
+            "sequence": 2,
+            "kind": "RESISTANCE",
+            "price": 89.525,
+            "source_at": "2026-08-17T13:30:00Z",
+            "confirmed_at": "2026-08-20T13:30:00Z",
+            "broken_at": None,
+        },
+    ]
