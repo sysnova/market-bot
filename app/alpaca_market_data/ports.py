@@ -77,3 +77,11 @@ class MarketDataStream(Protocol):
         trade_symbols: tuple[str, ...] | None = None,
         quote_symbols: tuple[str, ...] | None = None,
     ) -> AsyncIterator[Mapping[str, object]]: ...
+
+    async def update_subscriptions(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        trade_symbols: tuple[str, ...] | None = None,
+        quote_symbols: tuple[str, ...] | None = None,
+    ) -> None: ...

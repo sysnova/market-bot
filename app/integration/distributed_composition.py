@@ -450,6 +450,7 @@ async def run_market_stream_process(
             )
         backoff = 1.0
         while True:
+            stream_task: asyncio.Task[int] | None = None
             try:
                 rotation_refresh.clear()
                 universe = await _resolve_universe(settings, symbols)
@@ -494,21 +495,83 @@ async def run_market_stream_process(
                         quote_symbols=holdings.symbols,
                     )
                 )
-                refresh_task = asyncio.create_task(rotation_refresh.wait())
-                done, _ = await asyncio.wait(
-                    (stream_task, refresh_task),
-                    timeout=settings.universe_refresh_seconds,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                if stream_task in done:
+                while True:
+                    refresh_task = asyncio.create_task(rotation_refresh.wait())
+                    done, _ = await asyncio.wait(
+                        (stream_task, refresh_task),
+                        timeout=settings.universe_refresh_seconds,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
                     refresh_task.cancel()
-                    count = await stream_task
-                else:
-                    stream_task.cancel()
-                    refresh_task.cancel()
-                    await asyncio.gather(stream_task, refresh_task, return_exceptions=True)
-                    backoff = 1.0
-                    continue
+                    await asyncio.gather(refresh_task, return_exceptions=True)
+                    if stream_task in done:
+                        count = await stream_task
+                        break
+
+                    rotation_refresh.clear()
+                    try:
+                        refreshed_universe = await _resolve_universe(settings, symbols)
+                        refreshed_holdings = await _resolve_holdings(settings)
+                    except Exception as error:
+                        await logger.aexception(
+                            "market_universe_refresh_failed",
+                            error_type=type(error).__name__,
+                        )
+                        continue
+                    if (
+                        refreshed_universe.symbols == universe.symbols
+                        and refreshed_holdings.symbols == holdings.symbols
+                    ):
+                        continue
+
+                    refreshed_stream_symbols = _stream_symbols(
+                        refreshed_universe.symbols, macro_symbols
+                    )
+                    await engine.update_stream_subscriptions(
+                        refreshed_stream_symbols,
+                        trade_symbols=refreshed_holdings.symbols,
+                        quote_symbols=refreshed_holdings.symbols,
+                    )
+                    if refreshed_universe.symbols != universe.symbols:
+                        await universe_publisher.publish_universe_changed(
+                            UniverseChanged(
+                                occurred_at=clock.now(),
+                                source=refreshed_universe.source,
+                                previous_symbols=universe.symbols,
+                                symbols=refreshed_universe.symbols,
+                                added_symbols=tuple(
+                                    value
+                                    for value in refreshed_universe.symbols
+                                    if value not in universe.symbols
+                                ),
+                                removed_symbols=tuple(
+                                    value
+                                    for value in universe.symbols
+                                    if value not in refreshed_universe.symbols
+                                ),
+                            )
+                        )
+                        previous_core_symbols = refreshed_universe.symbols
+                    universe = refreshed_universe
+                    holdings = refreshed_holdings
+                    stream_symbols = refreshed_stream_symbols
+                    await _publish_health(
+                        bus,
+                        "alpaca-market-stream",
+                        {
+                            "symbols": len(stream_symbols),
+                            "patreon_macro_symbols": len(macro_symbols),
+                            "portfolio_symbols": len(holdings.symbols),
+                            "universe_source": universe.source,
+                        },
+                        clock.now(),
+                    )
+                    await logger.ainfo(
+                        "alpaca_stream_subscriptions_updated",
+                        symbols=len(stream_symbols),
+                        portfolio_symbols=len(holdings.symbols),
+                        universe_source=universe.source,
+                    )
                 if count > 0:
                     backoff = 1.0
             except asyncio.CancelledError:
@@ -519,6 +582,10 @@ async def run_market_stream_process(
                     error_type=type(error).__name__,
                     reconnect_seconds=backoff,
                 )
+            finally:
+                if stream_task is not None and not stream_task.done():
+                    stream_task.cancel()
+                    await asyncio.gather(stream_task, return_exceptions=True)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
     finally:

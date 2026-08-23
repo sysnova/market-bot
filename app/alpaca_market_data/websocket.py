@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping
 from typing import cast
@@ -32,6 +33,9 @@ class AlpacaMarketDataStream:
         self._api_secret_key = api_secret_key
         self._url = f"{base_url.rstrip('/')}/{feed}"
         self._connector = connector
+        self._subscription_lock = asyncio.Lock()
+        self._active_socket: WebSocketConnection | None = None
+        self._subscriptions: dict[str, tuple[str, ...]] = {}
 
     async def messages(
         self,
@@ -45,11 +49,7 @@ class AlpacaMarketDataStream:
         trade_symbols: tuple[str, ...] | None = None,
         quote_symbols: tuple[str, ...] | None = None,
     ) -> AsyncIterator[Mapping[str, object]]:
-        normalized_symbols = tuple(
-            dict.fromkeys(symbol.strip().upper() for symbol in symbols)
-        )
-        if not normalized_symbols or any(not symbol for symbol in normalized_symbols):
-            raise ValueError("at least one non-blank symbol is required")
+        normalized_symbols = _normalize_symbols(symbols)
         if not any((trades, quotes, bars, updated_bars, daily_bars)):
             raise ValueError("at least one stream channel must be enabled")
 
@@ -76,19 +76,24 @@ class AlpacaMarketDataStream:
             ):
                 raise AlpacaMarketDataError("Alpaca WebSocket authentication failed")
 
-            request: dict[str, object] = {"action": "subscribe"}
-            channels = {
-                "trades": (trades, trade_symbols),
-                "quotes": (quotes, quote_symbols),
-                "bars": (bars, None),
-                "updatedBars": (updated_bars, None),
-                "dailyBars": (daily_bars, None),
-            }
-            for channel, (enabled, selected) in channels.items():
-                if enabled:
-                    channel_symbols = selected if selected is not None else normalized_symbols
-                    request[channel] = list(channel_symbols)
-            await _send_json(socket, request)
+            subscriptions = _subscriptions(
+                normalized_symbols,
+                trades=trades,
+                quotes=quotes,
+                bars=bars,
+                updated_bars=updated_bars,
+                daily_bars=daily_bars,
+                trade_symbols=trade_symbols,
+                quote_symbols=quote_symbols,
+            )
+            async with self._subscription_lock:
+                if self._active_socket is not None:
+                    raise AlpacaMarketDataError(
+                        "Alpaca market-data stream already has an active session"
+                    )
+                await _send_subscription_request(socket, "subscribe", subscriptions)
+                self._active_socket = socket
+                self._subscriptions = subscriptions
 
             while True:
                 for message in await _receive_batch(socket):
@@ -100,11 +105,107 @@ class AlpacaMarketDataStream:
                     if message_type not in _CONTROL_TYPES:
                         yield message
         finally:
+            async with self._subscription_lock:
+                if self._active_socket is socket:
+                    self._active_socket = None
+                    self._subscriptions = {}
             await socket.close()
+
+    async def update_subscriptions(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        trade_symbols: tuple[str, ...] | None = None,
+        quote_symbols: tuple[str, ...] | None = None,
+    ) -> None:
+        """Replace channel targets by sending only deltas on the active connection."""
+
+        normalized_symbols = _normalize_symbols(symbols)
+        async with self._subscription_lock:
+            socket = self._active_socket
+            if socket is None:
+                raise AlpacaMarketDataError(
+                    "Alpaca market-data stream has no active session to update"
+                )
+            current = self._subscriptions
+            target = _subscriptions(
+                normalized_symbols,
+                trades="trades" in current,
+                quotes="quotes" in current,
+                bars="bars" in current,
+                updated_bars="updatedBars" in current,
+                daily_bars="dailyBars" in current,
+                trade_symbols=trade_symbols,
+                quote_symbols=quote_symbols,
+            )
+            removed = _subscription_delta(current, target)
+            added = _subscription_delta(target, current)
+            if removed:
+                await _send_subscription_request(socket, "unsubscribe", removed)
+            if added:
+                await _send_subscription_request(socket, "subscribe", added)
+            self._subscriptions = target
 
 
 async def _send_json(socket: WebSocketConnection, payload: Mapping[str, object]) -> None:
     await socket.send(json.dumps(payload, separators=(",", ":")))
+
+
+async def _send_subscription_request(
+    socket: WebSocketConnection,
+    action: str,
+    subscriptions: Mapping[str, tuple[str, ...]],
+) -> None:
+    request: dict[str, object] = {"action": action}
+    request.update({channel: list(symbols) for channel, symbols in subscriptions.items()})
+    await _send_json(socket, request)
+
+
+def _subscriptions(
+    symbols: tuple[str, ...],
+    *,
+    trades: bool,
+    quotes: bool,
+    bars: bool,
+    updated_bars: bool,
+    daily_bars: bool,
+    trade_symbols: tuple[str, ...] | None,
+    quote_symbols: tuple[str, ...] | None,
+) -> dict[str, tuple[str, ...]]:
+    channels: dict[str, tuple[str, ...]] = {}
+    selections = {
+        "trades": (trades, trade_symbols),
+        "quotes": (quotes, quote_symbols),
+        "bars": (bars, None),
+        "updatedBars": (updated_bars, None),
+        "dailyBars": (daily_bars, None),
+    }
+    for channel, (enabled, selected) in selections.items():
+        if enabled:
+            channels[channel] = (
+                symbols if selected is None else _normalize_symbols(selected, allow_empty=True)
+            )
+    return channels
+
+
+def _subscription_delta(
+    desired: Mapping[str, tuple[str, ...]],
+    existing: Mapping[str, tuple[str, ...]],
+) -> dict[str, tuple[str, ...]]:
+    return {
+        channel: tuple(symbol for symbol in symbols if symbol not in existing.get(channel, ()))
+        for channel, symbols in desired.items()
+        if any(symbol not in existing.get(channel, ()) for symbol in symbols)
+    }
+
+
+def _normalize_symbols(
+    symbols: tuple[str, ...], *, allow_empty: bool = False
+) -> tuple[str, ...]:
+    normalized = tuple(dict.fromkeys(symbol.strip().upper() for symbol in symbols))
+    if any(not symbol for symbol in normalized) or (not normalized and not allow_empty):
+        raise ValueError("at least one non-blank symbol is required")
+    return normalized
 
 
 async def _receive_batch(socket: WebSocketConnection) -> tuple[Mapping[str, object], ...]:

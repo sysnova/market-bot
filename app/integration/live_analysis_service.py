@@ -41,6 +41,14 @@ class MarketDataService(Protocol):
         daily_bars: bool = True,
     ) -> int: ...
 
+    async def update_stream_subscriptions(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        trade_symbols: tuple[str, ...] | None = None,
+        quote_symbols: tuple[str, ...] | None = None,
+    ) -> None: ...
+
 
 class JoinableBus(Protocol):
     async def join(self) -> None: ...
@@ -212,9 +220,8 @@ class LiveAnalysisService:
         backoff = initial_backoff_seconds
         while True:
             stream_task = asyncio.create_task(self._market_data.stream_once(self._symbols))
-            universe_changed = False
             try:
-                count, universe_changed = await self._run_stream_session(
+                count = await self._run_stream_session(
                     stream_task,
                     universe_provider=universe_provider,
                     universe_refresh_seconds=universe_refresh_seconds,
@@ -233,9 +240,6 @@ class LiveAnalysisService:
                     stream_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await stream_task
-            if universe_changed:
-                backoff = initial_backoff_seconds
-                continue
             await asyncio.sleep(backoff)
             backoff = min(maximum_backoff_seconds, backoff * 2)
 
@@ -245,9 +249,9 @@ class LiveAnalysisService:
         *,
         universe_provider: UniverseProvider | None,
         universe_refresh_seconds: float,
-    ) -> tuple[int, bool]:
+    ) -> int:
         if universe_provider is None:
-            return await stream_task, False
+            return await stream_task
         if universe_refresh_seconds <= 0:
             raise ValueError("universe refresh interval must be positive")
         while True:
@@ -255,7 +259,7 @@ class LiveAnalysisService:
                 (stream_task,), timeout=universe_refresh_seconds
             )
             if done:
-                return await stream_task, False
+                return await stream_task
             try:
                 universe = await universe_provider.get_universe()
             except Exception:
@@ -265,20 +269,17 @@ class LiveAnalysisService:
                 continue
             if _normalize_symbols(universe.symbols) == self._symbols:
                 continue
-            stream_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await stream_task
             await self.refresh_universe(
                 universe.symbols,
                 datetime.now(UTC),
                 source=universe.source,
             )
+            await self._market_data.update_stream_subscriptions(self._symbols)
             _LOGGER.info(
-                "Market universe changed to %d symbols from %s",
+                "Market universe updated in-place to %d symbols from %s",
                 len(self._symbols),
                 universe.source,
             )
-            return 0, True
 
 
 def _normalize_symbols(symbols: tuple[str, ...]) -> tuple[str, ...]:

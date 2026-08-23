@@ -105,6 +105,16 @@ class HistoricalMarketDataStream:
             yield record
             previous_timestamp = timestamp
 
+    async def update_subscriptions(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        trade_symbols: tuple[str, ...] | None = None,
+        quote_symbols: tuple[str, ...] | None = None,
+    ) -> None:
+        del symbols, trade_symbols, quote_symbols
+        raise RuntimeError("historical replay subscriptions cannot be updated")
+
 
 def _ordered_records(
     fetched: Mapping[str, list[Mapping[str, object]]],

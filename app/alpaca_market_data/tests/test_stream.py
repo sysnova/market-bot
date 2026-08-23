@@ -71,6 +71,88 @@ async def test_stream_authenticates_subscribes_and_yields_market_data() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream_updates_only_subscription_deltas_on_the_existing_socket() -> None:
+    socket = FakeSocket(
+        [
+            '[{"T":"success","msg":"connected"}]',
+            '[{"T":"success","msg":"authenticated"}]',
+            '[{"T":"subscription","trades":["AAPL"],"quotes":["AAPL"],'
+            '"bars":["AAPL","MSFT"]}]',
+            '[{"T":"t","S":"AAPL","p":224.1,"s":2,'
+            '"t":"2026-07-24T14:30:00Z"}]',
+        ]
+    )
+    connector = FakeConnector(socket)
+    stream = AlpacaMarketDataStream(
+        api_key_id="key",
+        api_secret_key="secret",
+        base_url="wss://stream.data.alpaca.markets/v2",
+        feed="sip",
+        connector=connector,
+    )
+
+    iterator = stream.messages(
+        ("AAPL", "MSFT"),
+        trade_symbols=("AAPL",),
+        quote_symbols=("AAPL",),
+    )
+    await anext(iterator)
+    await stream.update_subscriptions(
+        ("MSFT", "NVDA"),
+        trade_symbols=("NVDA",),
+        quote_symbols=("AAPL", "NVDA"),
+    )
+    await iterator.aclose()
+
+    assert connector.urls == ["wss://stream.data.alpaca.markets/v2/sip"]
+    assert socket.sent[2:] == [
+        {
+            "action": "unsubscribe",
+            "trades": ["AAPL"],
+            "bars": ["AAPL"],
+            "updatedBars": ["AAPL"],
+            "dailyBars": ["AAPL"],
+        },
+        {
+            "action": "subscribe",
+            "trades": ["NVDA"],
+            "quotes": ["NVDA"],
+            "bars": ["NVDA"],
+            "updatedBars": ["NVDA"],
+            "dailyBars": ["NVDA"],
+        },
+    ]
+    assert socket.closed is True
+
+
+@pytest.mark.asyncio
+async def test_stream_does_nothing_when_subscription_targets_are_unchanged() -> None:
+    socket = FakeSocket(
+        [
+            '[{"T":"success","msg":"connected"}]',
+            '[{"T":"success","msg":"authenticated"}]',
+            '[{"T":"subscription","bars":["AAPL"]}]',
+            '[{"T":"b","S":"AAPL","o":1,"h":1,"l":1,"c":1,"v":1,'
+            '"t":"2026-07-24T14:30:00Z"}]',
+        ]
+    )
+    stream = AlpacaMarketDataStream(
+        api_key_id="key",
+        api_secret_key="secret",
+        base_url="wss://stream.data.alpaca.markets/v2",
+        feed="sip",
+        connector=FakeConnector(socket),
+    )
+
+    iterator = stream.messages(("AAPL",))
+    await anext(iterator)
+    await stream.update_subscriptions(("AAPL",))
+    await iterator.aclose()
+
+    assert len(socket.sent) == 2
+
+
+@pytest.mark.asyncio
 async def test_stream_rejects_failed_authentication() -> None:
     socket = FakeSocket(
         [

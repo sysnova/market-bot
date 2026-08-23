@@ -69,10 +69,20 @@ class RecordingUniversePublisher:
 
 
 class BlockingMarketData(FakeMarketData):
+    def __init__(self) -> None:
+        super().__init__()
+        self.subscription_updated = asyncio.Event()
+
     async def stream_once(self, symbols: tuple[str, ...], **kwargs: Any) -> int:
         self.calls.append(("stream", (symbols, kwargs)))
-        await asyncio.Event().wait()
-        return 0
+        await self.subscription_updated.wait()
+        return 1
+
+    async def update_stream_subscriptions(
+        self, symbols: tuple[str, ...], **kwargs: Any
+    ) -> None:
+        self.calls.append(("update_stream", (symbols, kwargs)))
+        self.subscription_updated.set()
 
 
 class FakeUniverseProvider:
@@ -176,7 +186,7 @@ async def test_refresh_publishes_universe_change_only_after_added_symbols_are_wa
 
 
 @pytest.mark.unit
-async def test_stream_session_reconnects_when_shared_universe_changes() -> None:
+async def test_stream_session_updates_subscriptions_without_reconnecting() -> None:
     market_data = BlockingMarketData()
     runtime = FakeRuntime()
     service = LiveAnalysisService(
@@ -187,15 +197,19 @@ async def test_stream_session_reconnects_when_shared_universe_changes() -> None:
     )
     stream_task = asyncio.create_task(market_data.stream_once(service.symbols))
 
-    count, changed = await service._run_stream_session(
+    count = await service._run_stream_session(
         stream_task,
         universe_provider=FakeUniverseProvider(),
         universe_refresh_seconds=0.001,
     )
 
-    assert (count, changed) == (0, True)
-    assert stream_task.cancelled()
+    assert count == 1
+    assert not stream_task.cancelled()
     assert service.symbols == ("MSFT", "NVDA")
+    assert ("update_stream", (("MSFT", "NVDA"), {})) in market_data.calls
+    assert [call for call in market_data.calls if call[0] == "stream"] == [
+        ("stream", (("AAPL", "MSFT"), {}))
+    ]
     assert runtime.enabled is True
 
 

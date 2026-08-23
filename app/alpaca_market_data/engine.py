@@ -115,6 +115,21 @@ class AlpacaMarketDataEngine:
             count += 1
         return count
 
+    async def update_stream_subscriptions(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        trade_symbols: tuple[str, ...] | None = None,
+        quote_symbols: tuple[str, ...] | None = None,
+    ) -> None:
+        """Update an active stream without replacing its WebSocket connection."""
+
+        await self._stream.update_subscriptions(
+            symbols,
+            trade_symbols=trade_symbols,
+            quote_symbols=quote_symbols,
+        )
+
     async def close(self) -> None:
         """Release the owned REST transport; stream sessions close themselves."""
 
