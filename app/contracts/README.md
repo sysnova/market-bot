@@ -109,6 +109,15 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   Mantiene niveles horizontales alternados SUPPORT/RESISTANCE; cada nivel nuevo queda
   confirmado solamente cuando un cierre 4h atraviesa el anterior.
 
+- Microestructura v1 separa tres responsabilidades. `MarketTrade`, `MarketQuote`,
+  `MarketTradeCorrection` y `MarketTradeCancel` tipan el hot path efimero de Alpaca.
+  `OrderFlowState` y `OrderFlowTransition` publican inteligencia compacta durable sin autoridad
+  de ejecucion. `OrderFlowSupportAssessment` vincula evidencia fresca con una zona propiedad de
+  Support, sin crear ni mover geometria Swing. `ScalpAssessment` y `ScalpTransition` describen
+  maduracion analitica de la rueda
+  actual, mientras `IntradayOpportunity` y sus eventos auditan fills paper, P/L y excursiones.
+  Ninguno de estos contratos representa una orden real ni depende de una tesis LONG.
+
 ## Invariantes comprobadas
 
 Cada `PipelineStep` fija `rule_id` y `rule_version` SemVer exactos; bindings y scoring

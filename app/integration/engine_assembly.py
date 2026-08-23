@@ -32,6 +32,10 @@ if TYPE_CHECKING:
     from app.entry_watcher import EntryWatcher, EntryWatcherPolicy
     from app.entry_watcher.ports import EntryWatchStore
     from app.intraday_engine import IntradayEngine
+    from app.intraday_opportunity_engine import (
+        IntradayOpportunityEngine,
+        IntradayOpportunityStore,
+    )
     from app.long_portfolio_engine import (
         LongPortfolioEngine,
         LongPortfolioState,
@@ -40,9 +44,11 @@ if TYPE_CHECKING:
     from app.long_term_engine import LongTermEngine
     from app.market_rotation_engine import RotationEngine
     from app.options_gamma_engine import OptionsGammaEngine
+    from app.order_flow_engine import OrderFlowEngine
     from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsWatch
     from app.peter_lynch_engine import PeterLynchEngine
     from app.portfolio_flow_engine import PortfolioFlowEngineV1
+    from app.scalp_engine import ScalpEngine
     from app.signal_fusion_engine import SignalFusionEngine
     from app.support_confirmation_engine import SupportConfirmationEngine
     from app.swing_4h_geri_engine import Swing4HGeriEngine
@@ -161,6 +167,22 @@ class MarketBotAssembly:
 
     def build_intraday(self) -> IntradayEngine:
         return cast("IntradayEngine", self.build(EngineSlot.INTRADAY))
+
+    def build_order_flow(self) -> OrderFlowEngine:
+        return cast("OrderFlowEngine", self.build(EngineSlot.ORDER_FLOW))
+
+    def build_scalp(self) -> ScalpEngine:
+        return cast("ScalpEngine", self.build(EngineSlot.SCALP))
+
+    def build_intraday_opportunity(
+        self,
+        *,
+        store: IntradayOpportunityStore,
+    ) -> IntradayOpportunityEngine:
+        return cast(
+            "IntradayOpportunityEngine",
+            self.build(EngineSlot.INTRADAY_OPPORTUNITY, store=store),
+        )
 
     def build_entry_watcher(
         self,

@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
+DEFINITION_PATH="${MARKETBOT_DEFINITION_PATH:-$PROJECT_ROOT/configs/marketbot/7.32.0.yaml}"
+export MARKETBOT_DEFINITION_PATH="$DEFINITION_PATH"
 MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
 ROLE="launcher"
@@ -71,6 +73,19 @@ STATUS_ROOT="$RUNTIME_ROOT/status"
 LOG_ROOT="$RUNTIME_ROOT/logs"
 PLAN_PATH="$STATUS_ROOT/runtime-process-plan.json"
 
+prepare_runtime() {
+  [[ -f "$DEFINITION_PATH" ]] || {
+    echo "MarketBot definition not found: $DEFINITION_PATH" >&2
+    return 1
+  }
+  (cd "$PROJECT_ROOT" && uv sync --frozen)
+  [[ -x "$MARKETBOT_EXECUTABLE" ]] || {
+    echo "MarketBot executable was not installed in $UV_PROJECT_ENVIRONMENT." >&2
+    return 1
+  }
+  (cd "$PROJECT_ROOT" && uv run python -m app.integration.local_schema_bootstrap)
+}
+
 write_runtime_plan() {
   local args=(run marketbot runtime-plan --runtime-root "$RUNTIME_ROOT" --no-bell)
   [[ -n "$SYMBOLS" ]] && args+=(--symbols "$SYMBOLS")
@@ -116,12 +131,37 @@ plan_all_ready_paths() {
     "$PLAN_PATH")
 }
 
+runtime_matches_plan() {
+  (cd "$PROJECT_ROOT" && uv run python - "$PLAN_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+plan = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+version = plan["definition_version"]
+for process in plan["processes"]:
+    ready_path = process.get("ready_path")
+    if ready_path is None:
+        continue
+    path = Path(ready_path)
+    if not path.is_file():
+        raise SystemExit(1)
+    try:
+        ready = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise SystemExit(1) from None
+    if ready.get("marketbot_definition_version") != version:
+        raise SystemExit(1)
+PY
+  )
+}
+
 clear_runtime_readiness() {
   mkdir -p "$STATUS_ROOT"
   local -a all_ready_paths=()
   mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
   ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
-  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,swing-trade-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,scalping-monitor,intraday-opportunity-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,swing-trade-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 }
 
 exec_marketbot() {
@@ -152,6 +192,18 @@ run_opportunities() {
   cd "$PROJECT_ROOT"
   exec_marketbot run marketbot monitor entry-opportunity \
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
+}
+
+run_scalping_monitor() {
+  cd "$PROJECT_ROOT"
+  exec_marketbot run marketbot monitor scalping \
+    --ready-path "$STATUS_ROOT/scalping-monitor.ready.json"
+}
+
+run_intraday_ops_monitor() {
+  cd "$PROJECT_ROOT"
+  exec_marketbot run marketbot monitor intraday-opportunity \
+    --ready-path "$STATUS_ROOT/intraday-opportunity-monitor.ready.json"
 }
 
 run_news() {
@@ -363,6 +415,7 @@ launch_tmux() {
     echo "Run this launcher outside an existing tmux session." >&2
     exit 1
   }
+  prepare_runtime
   write_runtime_plan
   export MARKETBOT_LINUX_RUNTIME="$RUNTIME_ROOT"
   export MARKETBOT_LINUX_SYMBOLS="$SYMBOLS"
@@ -373,11 +426,13 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed opportunities long_portfolio news swing_channel_4h geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
+  local control analysis confirmed opportunities scalping intraday_ops long_portfolio news swing_channel_4h geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
   printf -v opportunities '%q ' "${base[@]}" --role opportunities
+  printf -v scalping '%q ' "${base[@]}" --role scalping
+  printf -v intraday_ops '%q ' "${base[@]}" --role intraday-ops
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
   printf -v news '%q ' "${base[@]}" --role news
   printf -v swing_channel_4h '%q ' "${base[@]}" --role swing-channel-4h
@@ -390,12 +445,30 @@ launch_tmux() {
   printf -v signal_fusion_analysis '%q ' "${base[@]}" --role signal-fusion-analysis
   printf -v signal_fusion_buys '%q ' "${base[@]}" --role signal-fusion-buys
 
+  if tmux has-session -t "$SESSION" 2>/dev/null && ! runtime_matches_plan; then
+    echo "MarketBot assembly changed; restarting the stale tmux runtime."
+    "$PROJECT_ROOT/scripts/linux/stop-market-bot.sh" --session "$SESSION"
+    clear_runtime_readiness
+  fi
+
   if tmux has-session -t "$SESSION" 2>/dev/null; then
     if engine_is_active entry-opportunity && \
       ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Opportunities'; then
       tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
       tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
       tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
+    fi
+    if engine_is_active scalp && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Scalping'; then
+      tmux new-window -d -t "$SESSION" -n Scalping "$scalping"
+      tmux set-window-option -t "$SESSION":Scalping remain-on-exit on
+      tmux select-pane -t "$SESSION":Scalping.0 -T 'SCALPING — ORDER FLOW + SETUPS'
+    fi
+    if engine_is_active intraday-opportunity && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'IntradayOps'; then
+      tmux new-window -d -t "$SESSION" -n IntradayOps "$intraday_ops"
+      tmux set-window-option -t "$SESSION":IntradayOps remain-on-exit on
+      tmux select-pane -t "$SESSION":IntradayOps.0 -T 'INTRADAY OPS — PAPER P/L'
     fi
     if engine_is_active long-portfolio && \
       ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Portfolio2026'; then
@@ -499,6 +572,16 @@ launch_tmux() {
     tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
     tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
   fi
+  if engine_is_active scalp; then
+    tmux new-window -d -t "$SESSION" -n Scalping "$scalping"
+    tmux set-window-option -t "$SESSION":Scalping remain-on-exit on
+    tmux select-pane -t "$SESSION":Scalping.0 -T 'SCALPING — ORDER FLOW + SETUPS'
+  fi
+  if engine_is_active intraday-opportunity; then
+    tmux new-window -d -t "$SESSION" -n IntradayOps "$intraday_ops"
+    tmux set-window-option -t "$SESSION":IntradayOps remain-on-exit on
+    tmux select-pane -t "$SESSION":IntradayOps.0 -T 'INTRADAY OPS — PAPER P/L'
+  fi
   if engine_is_active long-portfolio; then
     tmux new-window -d -t "$SESSION" -n Portfolio2026 "$long_portfolio"
     tmux set-window-option -t "$SESSION":Portfolio2026 remain-on-exit on
@@ -563,6 +646,8 @@ case "$ROLE" in
   analysis) run_analysis ;;
   confirmed) run_confirmed ;;
   opportunities) run_opportunities ;;
+  scalping) run_scalping_monitor ;;
+  intraday-ops) run_intraday_ops_monitor ;;
   long-portfolio) run_long_portfolio_monitor ;;
   news) run_news ;;
   swing-channel-4h) run_swing_channel_4h ;;

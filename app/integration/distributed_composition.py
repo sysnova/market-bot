@@ -267,7 +267,8 @@ async def run_engine_process(
         worker = _build_worker(horizon, bus, assembly=assembly)
         if (
             horizon is AnalysisHorizon.SWING
-            and assembly.spec(EngineSlot.SWING).implementation == "11.0.0"
+            and assembly.spec(EngineSlot.SWING).implementation
+            in {"11.0.0", "12.0.0", "13.0.0"}
         ):
             swing_worker = cast(SwingWorker, worker)
             support_subscription = await bus.subscribe(
@@ -281,6 +282,20 @@ async def run_engine_process(
             )
             subscriptions.append(support_subscription)
             await bus.wait_until_caught_up(support_subscription, timeout_seconds=60)
+            if assembly.spec(EngineSlot.SWING).implementation == "13.0.0":
+                order_flow_support_subscription = await bus.subscribe(
+                    "marketbot.v1.order-flow.support.>",
+                    swing_worker.handle_order_flow_support_event,
+                    options=SubscriptionOptions(
+                        durable_name="marketbot-swing-order-flow-support-v1",
+                        replay_latest_per_subject=True,
+                        ack_wait_seconds=60,
+                    ),
+                )
+                subscriptions.append(order_flow_support_subscription)
+                await bus.wait_until_caught_up(
+                    order_flow_support_subscription, timeout_seconds=60
+                )
         bootstrap_started = perf_counter()
         result_count = await worker.bootstrap(bars, symbols=universe.symbols)
         bootstrap_ms = _elapsed_ms(bootstrap_started)
@@ -492,6 +507,11 @@ async def run_market_stream_process(
                     )
                     previous_core_symbols = universe.symbols
                 stream_symbols = _stream_symbols(universe.symbols, macro_symbols)
+                microstructure_symbols = _microstructure_symbols(
+                    universe.symbols,
+                    holdings.symbols,
+                    max_symbols=settings.microstructure_max_symbols,
+                )
                 await _publish_health(
                     bus,
                     "alpaca-market-stream",
@@ -499,6 +519,7 @@ async def run_market_stream_process(
                         "symbols": len(stream_symbols),
                         "patreon_macro_symbols": len(macro_symbols),
                         "portfolio_symbols": len(holdings.symbols),
+                        "microstructure_symbols": len(microstructure_symbols),
                         "universe_source": universe.source,
                     },
                     clock.now(),
@@ -507,8 +528,8 @@ async def run_market_stream_process(
                     engine.stream_once(
                         stream_symbols,
                         **market_stream_subscription_options(),
-                        trade_symbols=holdings.symbols,
-                        quote_symbols=holdings.symbols,
+                        trade_symbols=microstructure_symbols,
+                        quote_symbols=microstructure_symbols,
                     )
                 )
                 while True:
@@ -543,10 +564,15 @@ async def run_market_stream_process(
                     refreshed_stream_symbols = _stream_symbols(
                         refreshed_universe.symbols, macro_symbols
                     )
+                    refreshed_microstructure_symbols = _microstructure_symbols(
+                        refreshed_universe.symbols,
+                        refreshed_holdings.symbols,
+                        max_symbols=settings.microstructure_max_symbols,
+                    )
                     await engine.update_stream_subscriptions(
                         refreshed_stream_symbols,
-                        trade_symbols=refreshed_holdings.symbols,
-                        quote_symbols=refreshed_holdings.symbols,
+                        trade_symbols=refreshed_microstructure_symbols,
+                        quote_symbols=refreshed_microstructure_symbols,
                     )
                     if refreshed_universe.symbols != universe.symbols:
                         await universe_publisher.publish_universe_changed(
@@ -571,6 +597,7 @@ async def run_market_stream_process(
                     universe = refreshed_universe
                     holdings = refreshed_holdings
                     stream_symbols = refreshed_stream_symbols
+                    microstructure_symbols = refreshed_microstructure_symbols
                     await _publish_health(
                         bus,
                         "alpaca-market-stream",
@@ -578,6 +605,7 @@ async def run_market_stream_process(
                             "symbols": len(stream_symbols),
                             "patreon_macro_symbols": len(macro_symbols),
                             "portfolio_symbols": len(holdings.symbols),
+                            "microstructure_symbols": len(microstructure_symbols),
                             "universe_source": universe.source,
                         },
                         clock.now(),
@@ -586,6 +614,7 @@ async def run_market_stream_process(
                         "alpaca_stream_subscriptions_updated",
                         symbols=len(stream_symbols),
                         portfolio_symbols=len(holdings.symbols),
+                        microstructure_symbols=len(microstructure_symbols),
                         universe_source=universe.source,
                     )
                 if count > 0:
@@ -618,6 +647,26 @@ def _stream_symbols(
     universe_symbols: tuple[str, ...], macro_symbols: tuple[str, ...]
 ) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*universe_symbols, *macro_symbols)))
+
+
+def _microstructure_symbols(
+    universe_symbols: tuple[str, ...],
+    holding_symbols: tuple[str, ...],
+    *,
+    max_symbols: int,
+) -> tuple[str, ...]:
+    """Return the bounded live trade/quote universe, prioritizing held risk."""
+
+    if isinstance(max_symbols, bool) or max_symbols < 1:
+        raise ValueError("max_symbols must be positive")
+    normalized = tuple(
+        dict.fromkeys(
+            symbol.strip().upper()
+            for symbol in (*holding_symbols, *universe_symbols)
+            if symbol.strip()
+        )
+    )
+    return normalized[:max_symbols]
 
 
 async def run_alert_process(

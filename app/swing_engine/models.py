@@ -11,6 +11,7 @@ from typing import Annotated, Self
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.contracts import BarTimeframe, MarketBar, SupportAssessment
+from app.contracts.order_flow_support import OrderFlowSupportAssessment
 
 PositiveDecimal = Annotated[Decimal, Field(gt=Decimal("0"))]
 Score = Annotated[Decimal, Field(ge=Decimal("0"), le=Decimal("100"))]
@@ -39,6 +40,7 @@ class SwingContext(FrozenModel):
     daily_bars: tuple[MarketBar, ...]
     intraday_bars: tuple[MarketBar, ...]
     support: SupportAssessment | None = None
+    order_flow_support: OrderFlowSupportAssessment | None = None
 
     @model_validator(mode="after")
     def validate_context(self) -> Self:
@@ -59,6 +61,17 @@ class SwingContext(FrozenModel):
             support_as_of = self.support.data_as_of or self.support.occurred_at
             if support_as_of > self.as_of:
                 raise ValueError("Support evidence is later than Swing as_of")
+        if self.order_flow_support is not None:
+            if self.order_flow_support.symbol != self.symbol:
+                raise ValueError("Order Flow Support evidence must match Swing context symbol")
+            if self.order_flow_support.occurred_at > self.as_of:
+                raise ValueError("Order Flow Support evidence is later than Swing as_of")
+            if (
+                self.support is not None
+                and self.order_flow_support.support_assessment_id
+                != self.support.assessment_id
+            ):
+                raise ValueError("Order Flow Support must reference the supplied Support evidence")
         return self
 
     def _validate_series(self, name: str, bars: tuple[MarketBar, ...]) -> None:

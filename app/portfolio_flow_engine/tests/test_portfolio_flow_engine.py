@@ -1,13 +1,13 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from app.contracts import AlertKind, EventEnvelope
+from app.contracts import AlertKind, EventEnvelope, MarketQuote, MarketTrade
 from app.portfolio_flow_engine import PortfolioFlowEngine, PortfolioFlowPolicy
 
 NOW = datetime(2026, 7, 29, 18, tzinfo=UTC)
 
 
-def _event(kind: str, payload: dict[str, object], at: datetime) -> EventEnvelope:
+def _event(kind: str, payload: object, at: datetime) -> EventEnvelope:
     return EventEnvelope(
         event_type=f"market.{kind}.received",
         occurred_at=at,
@@ -15,6 +15,30 @@ def _event(kind: str, payload: dict[str, object], at: datetime) -> EventEnvelope
         subject="TEST",
         payload=payload,
     )
+
+
+def test_accepts_the_typed_alpaca_hot_path_during_order_flow_migration() -> None:
+    engine = PortfolioFlowEngine()
+    quote = MarketQuote(
+        symbol="TEST",
+        occurred_at=NOW,
+        received_at=NOW,
+        bid_price=Decimal("100"),
+        ask_price=Decimal("100.1"),
+        bid_size=Decimal("10"),
+        ask_size=Decimal("10"),
+    )
+    trade = MarketTrade(
+        symbol="TEST",
+        occurred_at=NOW,
+        received_at=NOW,
+        price=Decimal("100.1"),
+        size=Decimal("10"),
+        trade_id="typed-1",
+    )
+
+    assert engine.ingest(_event("quote", quote, NOW), now=NOW) is None
+    assert engine.ingest(_event("trade", trade, NOW), now=NOW) is None
 
 
 def test_emits_one_protect_alert_for_concentrated_selling_then_cools_down() -> None:

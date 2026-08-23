@@ -404,6 +404,71 @@ def portfolio_flow_process(
     _run_async(run_portfolio_flow_process(ready_path=ready_path))
 
 
+@engine.command("order-flow")
+def order_flow_process(
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file for the live microstructure engine.")
+    ] = Path(".runtime/status/order-flow.ready.json"),
+) -> None:
+    """Classify live trades against quotes and publish compact order-flow state."""
+
+    from app.integration.order_flow_composition import run_order_flow_process
+
+    _run_async(run_order_flow_process(ready_path=ready_path))
+
+
+@engine.command("scalp")
+def scalp_process(
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file for the operational paper scalp engine.")
+    ] = Path(".runtime/status/scalp.ready.json"),
+) -> None:
+    """Evaluate same-session scalp setups without placing broker orders."""
+
+    from app.integration.scalp_composition import run_scalp_process
+
+    _run_async(run_scalp_process(ready_path=ready_path))
+
+
+@engine.command("intraday-opportunity")
+def intraday_opportunity_process(
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file for the paper intraday lifecycle.")
+    ] = Path(".runtime/status/intraday-opportunity.ready.json"),
+) -> None:
+    """Track paper-only scalp entries, exits, excursions and P/L."""
+
+    from app.integration.intraday_opportunity_composition import (
+        run_intraday_opportunity_process,
+    )
+
+    _run_async(run_intraday_opportunity_process(ready_path=ready_path))
+
+
+intraday_opportunity = typer.Typer(
+    name="intraday-opportunity",
+    help="Inspect operational paper scalp opportunities and effectiveness.",
+)
+app.add_typer(intraday_opportunity, name="intraday-opportunity")
+
+
+@intraday_opportunity.command("report")
+def intraday_opportunity_report(
+    days: Annotated[
+        int,
+        typer.Option(min=1, max=90, help="Calendar days included in the paper report."),
+    ] = 7,
+) -> None:
+    """Print paper entries, exits, P/L and closed-trade effectiveness."""
+
+    from app.integration.intraday_opportunity_report import (
+        load_intraday_opportunity_report,
+    )
+
+    report = _run_async(load_intraday_opportunity_report(days=days))
+    typer.echo(json.dumps(report, indent=2, sort_keys=True))
+
+
 @engine.command("news-intelligence")
 def news_intelligence_process(
     once: Annotated[
@@ -938,6 +1003,68 @@ def entry_opportunity_monitor(
         run_entry_opportunity_monitor(
             ready_path=ready_path,
             history=history,
+            refresh_interval=timedelta(seconds=refresh_seconds),
+        )
+    )
+
+
+@monitor.command("scalping")
+def scalping_monitor(
+    history: Annotated[
+        int,
+        typer.Option(min=1, max=200, help="Symbols displayed in the live panel."),
+    ] = 40,
+    refresh_seconds: Annotated[
+        int,
+        typer.Option(min=1, max=60, help="Maximum terminal redraw interval."),
+    ] = 1,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after NATS subscriptions are ready.")
+    ] = Path(".runtime/status/scalping-monitor.ready.json"),
+) -> None:
+    """Run the process showing Order Flow and Scalp maturity without broker orders."""
+
+    from app.integration.microstructure_monitor import run_scalping_monitor
+
+    _run_async(
+        run_scalping_monitor(
+            ready_path=ready_path,
+            history=history,
+            refresh_interval=timedelta(seconds=refresh_seconds),
+        )
+    )
+
+
+@monitor.command("intraday-opportunity")
+def intraday_opportunity_monitor(
+    history: Annotated[
+        int,
+        typer.Option(min=1, max=500, help="Paper round trips displayed in the panel."),
+    ] = 50,
+    days: Annotated[
+        int,
+        typer.Option(min=1, max=30, help="Calendar days included in effectiveness metrics."),
+    ] = 7,
+    refresh_seconds: Annotated[
+        int,
+        typer.Option(min=2, max=300, help="PostgreSQL fallback refresh interval."),
+    ] = 10,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after PostgreSQL and NATS are ready."),
+    ] = Path(".runtime/status/intraday-opportunity-monitor.ready.json"),
+) -> None:
+    """Run the process showing intraday paper P/L and recent effectiveness."""
+
+    from app.integration.microstructure_monitor import (
+        run_intraday_opportunity_monitor,
+    )
+
+    _run_async(
+        run_intraday_opportunity_monitor(
+            ready_path=ready_path,
+            history=history,
+            days=days,
             refresh_interval=timedelta(seconds=refresh_seconds),
         )
     )

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime
+from decimal import Decimal
 from typing import Protocol
 from uuid import UUID
 
@@ -11,12 +13,14 @@ from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
     UNIVERSE_CHANGED_EVENT,
     AnalysisResult,
     BarTimeframe,
     EventEnvelope,
     MarketBar,
+    OrderFlowSupportAssessment,
     SupportAssessment,
     UniverseChanged,
     analysis_result_subject,
@@ -57,6 +61,7 @@ class SwingWorker:
         self._daily_aggregator = RegularSessionDailyAggregator()
         self._universe = UniverseWarmupGate()
         self._support: dict[str, SupportAssessment] = {}
+        self._order_flow_support: dict[str, OrderFlowSupportAssessment] = {}
 
     def activate_universe(self, symbols: tuple[str, ...]) -> None:
         self._universe.activate(symbols)
@@ -127,13 +132,42 @@ class SwingWorker:
         if previous is not None and item.occurred_at < previous.occurred_at:
             return
         self._support[item.symbol] = item
+        order_flow_support = self._order_flow_support.get(item.symbol)
+        if (
+            order_flow_support is not None
+            and order_flow_support.support_assessment_id != item.assessment_id
+        ):
+            self._order_flow_support.pop(item.symbol, None)
         if self._universe.allows(item.symbol):
             await self._evaluate(item.symbol, (envelope.event_id,))
+
+    async def handle_order_flow_support_event(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT:
+            return
+        item = (
+            envelope.payload
+            if isinstance(envelope.payload, OrderFlowSupportAssessment)
+            else OrderFlowSupportAssessment.model_validate(envelope.payload, strict=False)
+        )
+        previous = self._order_flow_support.get(item.symbol)
+        if previous is not None and item.occurred_at < previous.occurred_at:
+            return
+        self._order_flow_support[item.symbol] = item
+        if self._universe.allows(item.symbol):
+            await self._evaluate(
+                item.symbol,
+                (envelope.event_id,),
+                as_of=item.occurred_at,
+                current_price=item.current_price,
+            )
 
     async def _evaluate(
         self,
         symbol: str,
         source_event_ids: tuple[UUID, ...] = (),
+        *,
+        as_of: datetime | None = None,
+        current_price: Decimal | None = None,
     ) -> int:
         if not self._universe.allows(symbol):
             return 0
@@ -148,14 +182,30 @@ class SwingWorker:
         )
         if not daily or not intraday:
             return 0
+        effective_as_of = max(daily[-1].timestamp, intraday[-1].timestamp)
+        if as_of is not None:
+            effective_as_of = max(effective_as_of, as_of)
+        effective_price = current_price if current_price is not None else intraday[-1].close
+        support = self._support.get(symbol)
+        order_flow_support = self._order_flow_support.get(symbol)
+        if (
+            order_flow_support is not None
+            and (
+                order_flow_support.occurred_at > effective_as_of
+                or support is None
+                or order_flow_support.support_assessment_id != support.assessment_id
+            )
+        ):
+            order_flow_support = None
         result = self._analyzer.analyze(
             SwingContext(
                 symbol=symbol,
-                as_of=max(daily[-1].timestamp, intraday[-1].timestamp),
-                price=intraday[-1].close,
+                as_of=effective_as_of,
+                price=effective_price,
                 daily_bars=daily,
                 intraday_bars=intraday,
-                support=self._support.get(symbol),
+                support=support,
+                order_flow_support=order_flow_support,
             ),
             source_event_ids=source_event_ids,
         )

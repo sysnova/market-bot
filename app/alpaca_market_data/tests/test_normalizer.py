@@ -1,10 +1,20 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
 from app.alpaca_market_data.normalizer import AlpacaEventNormalizer
 from app.contracts import MARKET_BAR_EVENT, MARKET_BAR_UPDATED_EVENT, BarTimeframe, MarketBar
+from app.contracts.order_flow import (
+    MARKET_TRADE_CANCEL_EVENT,
+    MARKET_TRADE_CORRECTION_EVENT,
+    MARKET_TRADE_EVENT,
+    MarketQuote,
+    MarketTrade,
+    MarketTradeCancel,
+    MarketTradeCorrection,
+)
 
 
 def test_trade_is_normalized_without_float_values_and_has_stable_identity() -> None:
@@ -27,20 +37,14 @@ def test_trade_is_normalized_without_float_values_and_has_stable_identity() -> N
     assert first.subject == "market.data.trade.aapl"
     assert first.envelope.event_id == second.envelope.event_id
     assert first.envelope.event_id.version == 7
-    assert first.envelope.event_type == "market.trade.received"
+    assert first.envelope.event_type == MARKET_TRADE_EVENT
     assert first.envelope.occurred_at == datetime(2026, 7, 24, 14, 30, 1, 123456, tzinfo=UTC)
     assert first.envelope.subject == "AAPL"
-    assert first.envelope.payload == {
-        "conditions": ["@"],
-        "exchange": "V",
-        "feed": "sip",
-        "id": "1234",
-        "price": "224.37",
-        "provider": "alpaca",
-        "size": "100",
-        "symbol": "AAPL",
-        "tape": "C",
-    }
+    assert isinstance(first.envelope.payload, MarketTrade)
+    assert first.envelope.payload.event_id == first.envelope.event_id
+    assert first.envelope.payload.trade_id == "1234"
+    assert first.envelope.payload.price == Decimal("224.37")
+    assert first.envelope.payload.size == Decimal("100")
 
 
 def test_quote_and_bar_are_normalized_to_distinct_subjects() -> None:
@@ -77,12 +81,47 @@ def test_quote_and_bar_are_normalized_to_distinct_subjects() -> None:
     )
 
     assert quote.subject == "market.data.quote.brk-b"
-    assert quote.envelope.payload["bid_price"] == "710.1"
-    assert quote.envelope.payload["ask_price"] == "710.3"
+    assert isinstance(quote.envelope.payload, MarketQuote)
+    assert quote.envelope.payload.bid_price == Decimal("710.1")
+    assert quote.envelope.payload.ask_price == Decimal("710.3")
     assert bar.subject == "marketbot.v1.market.bar.1Min.AAPL"
     assert isinstance(bar.envelope.payload, MarketBar)
     assert bar.envelope.payload.timeframe is BarTimeframe.MINUTE_1
     assert str(bar.envelope.payload.vwap) == "224.4"
+
+
+def test_trade_corrections_and_cancels_are_typed_reversible_events() -> None:
+    normalizer = AlpacaEventNormalizer(feed="sip")
+    correction = normalizer.stream_message(
+        {
+            "T": "c",
+            "S": "AAPL",
+            "oi": 1001,
+            "ci": 1002,
+            "cp": 101.25,
+            "cs": 50,
+            "x": "V",
+            "cc": ["@"],
+            "t": "2026-07-24T14:30:03Z",
+            "z": "C",
+        }
+    )
+    cancel = normalizer.stream_message(
+        {
+            "T": "x",
+            "S": "AAPL",
+            "i": 1002,
+            "t": "2026-07-24T14:30:04Z",
+        }
+    )
+
+    assert correction.envelope.event_type == MARKET_TRADE_CORRECTION_EVENT
+    assert isinstance(correction.envelope.payload, MarketTradeCorrection)
+    assert correction.envelope.payload.original_trade_id == "1001"
+    assert correction.envelope.payload.corrected_trade.trade_id == "1002"
+    assert cancel.envelope.event_type == MARKET_TRADE_CANCEL_EVENT
+    assert isinstance(cancel.envelope.payload, MarketTradeCancel)
+    assert cancel.envelope.payload.trade_id == "1002"
 
 
 def test_rest_bar_and_snapshot_are_normalized() -> None:

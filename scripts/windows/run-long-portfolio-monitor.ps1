@@ -11,7 +11,8 @@ $ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $null = Set-MarketBotWindowsEnvironment -ProjectRoot $ProjectRoot
 Set-Location -LiteralPath $ProjectRoot
 $Arguments = @(
-    "run", "marketbot", "alerts", "long-portfolio", "--ready-path", $ReadyPath
+    "run", "python", "-m", "app.operator_cli", "alerts", "long-portfolio",
+    "--ready-path", $ReadyPath
 )
 if ($NoBell) {
     $Arguments += "--no-bell"

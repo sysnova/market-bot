@@ -18,6 +18,7 @@ from app.contracts import (
     GERI_ASSESSMENT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
     SWING_TRADE_ASSESSMENT_EVENT,
     SWING_TRADE_TRANSITION_EVENT,
@@ -28,6 +29,7 @@ from app.contracts import (
     EventEnvelope,
     GeriAssessment,
     MarketBar,
+    OrderFlowSupportAssessment,
     Subscription,
     SubscriptionOptions,
     SupportAssessment,
@@ -84,6 +86,7 @@ class SwingTradeRuntime:
         self._symbols: set[str] = set()
         self._geri: dict[str, GeriAssessment] = {}
         self._support: dict[str, SupportAssessment] = {}
+        self._order_flow_support: dict[str, OrderFlowSupportAssessment] = {}
         self._latest: dict[str, SwingTradeAssessment] = {}
         self._evaluated: set[tuple[str, datetime]] = set()
         self._rejected_evaluations: dict[str, int] = {}
@@ -114,6 +117,20 @@ class SwingTradeRuntime:
         previous = self._support.get(item.symbol)
         if previous is None or item.occurred_at >= previous.occurred_at:
             self._support[item.symbol] = item
+            order_flow_support = self._order_flow_support.get(item.symbol)
+            if (
+                order_flow_support is not None
+                and order_flow_support.support_assessment_id != item.assessment_id
+            ):
+                self._order_flow_support.pop(item.symbol, None)
+
+    async def restore_order_flow_support(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT:
+            return
+        item = _payload(envelope, OrderFlowSupportAssessment)
+        previous = self._order_flow_support.get(item.symbol)
+        if previous is None or item.occurred_at >= previous.occurred_at:
+            self._order_flow_support[item.symbol] = item
 
     async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {symbol.strip().upper() for symbol in symbols if symbol.strip()}
@@ -164,6 +181,7 @@ class SwingTradeRuntime:
                     daily_bars=daily,
                     geri=self._geri.get(bar.symbol),
                     support=self._support.get(bar.symbol),
+                    order_flow_support=self._order_flow_support.get(bar.symbol),
                     confirmation_bars=self._bars.history(
                         bar.symbol,
                         BarTimeframe.MINUTE_15,
@@ -331,6 +349,11 @@ async def run_swing_trade_process(
                 "marketbot.v1.support-confirmation.assessment.>",
                 runtime.restore_support,
                 "marketbot-swing-trade-support-v1",
+            ),
+            (
+                "marketbot.v1.order-flow.support.>",
+                runtime.restore_order_flow_support,
+                "marketbot-swing-trade-order-flow-support-v1",
             ),
         ):
             subscription = await bus.subscribe(

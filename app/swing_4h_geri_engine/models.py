@@ -13,6 +13,7 @@ from app.contracts import (
     MarketBar,
     SupportAssessment,
 )
+from app.contracts.order_flow_support import OrderFlowSupportAssessment
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,5 +26,6 @@ class Swing4HGeriContext:
     existing_maturity: EntryMaturityLevel | None = None
     active_structure: GeriAssessment | None = None
     support: SupportAssessment | None = None
+    order_flow_support: OrderFlowSupportAssessment | None = None
     as_of: datetime | None = None
     current_price_at: datetime | None = None

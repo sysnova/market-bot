@@ -17,6 +17,7 @@ from app.integration.distributed_composition import (
     _build_worker,
     _entry_watcher_subscription_options,
     _horizon_durable_name,
+    _microstructure_symbols,
     _publish_health,
     _service_name,
     _write_ready,
@@ -99,6 +100,15 @@ def test_market_stream_subscribes_only_to_events_consumed_by_engines() -> None:
         "updated_bars": True,
         "daily_bars": True,
     }
+
+
+@pytest.mark.unit
+def test_microstructure_universe_prioritizes_holdings_then_caps_watchlist() -> None:
+    assert _microstructure_symbols(
+        ("AAPL", "MSFT", "NVDA", "TSLA"),
+        ("TSLA", "RIOT"),
+        max_symbols=4,
+    ) == ("TSLA", "RIOT", "AAPL", "MSFT")
 
 
 @pytest.mark.unit

@@ -114,6 +114,42 @@ class AlpacaRestClient:
             params["page_token"] = token
         raise AlpacaMarketDataError("Alpaca bars pagination exceeded max_pages")
 
+    async def fetch_trades(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        start: datetime,
+        end: datetime,
+        limit: int = 10_000,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        """Fetch historical SIP/IEX prints for deterministic microstructure replay."""
+
+        return await self._fetch_symbol_records(
+            symbols,
+            record_kind="trades",
+            start=start,
+            end=end,
+            limit=limit,
+        )
+
+    async def fetch_quotes(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        start: datetime,
+        end: datetime,
+        limit: int = 10_000,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        """Fetch historical NBBO records for deterministic microstructure replay."""
+
+        return await self._fetch_symbol_records(
+            symbols,
+            record_kind="quotes",
+            start=start,
+            end=end,
+            limit=limit,
+        )
+
     async def fetch_snapshots(
         self, symbols: tuple[str, ...]
     ) -> dict[str, Mapping[str, object]]:
@@ -177,6 +213,58 @@ class AlpacaRestClient:
 
     async def close(self) -> None:
         await self._transport.close()
+
+    async def _fetch_symbol_records(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        record_kind: str,
+        start: datetime,
+        end: datetime,
+        limit: int,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        normalized_symbols = _symbols(symbols)
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError(f"{record_kind} boundaries must be timezone-aware")
+        if end <= start:
+            raise ValueError(f"{record_kind} end must be later than start")
+        if not 1 <= limit <= 10_000:
+            raise ValueError("limit must be between 1 and 10000")
+        params = {
+            "end": _rfc3339(end),
+            "feed": self._feed,
+            "limit": str(limit),
+            "sort": "asc",
+            "start": _rfc3339(start),
+            "symbols": ",".join(normalized_symbols),
+        }
+        collected: dict[str, list[Mapping[str, object]]] = {
+            symbol: [] for symbol in normalized_symbols
+        }
+        for _ in range(self._max_pages):
+            payload = await self._get(f"/v2/stocks/{record_kind}", params)
+            raw_records = payload.get(record_kind)
+            if not isinstance(raw_records, Mapping):
+                raise AlpacaMarketDataError(
+                    f"Alpaca {record_kind} response has no {record_kind} object"
+                )
+            for symbol, records in cast("Mapping[object, object]", raw_records).items():
+                if not isinstance(symbol, str) or not isinstance(records, list):
+                    raise AlpacaMarketDataError(f"Alpaca {record_kind} response is malformed")
+                target = collected.setdefault(symbol, [])
+                for record in cast("list[object]", records):
+                    if not isinstance(record, Mapping):
+                        raise AlpacaMarketDataError(
+                            f"Alpaca {record_kind} record is malformed"
+                        )
+                    target.append(cast("Mapping[str, object]", record))
+            token = payload.get("next_page_token")
+            if token is None:
+                return collected
+            if not isinstance(token, str) or not token:
+                raise AlpacaMarketDataError("Alpaca next page token is malformed")
+            params["page_token"] = token
+        raise AlpacaMarketDataError(f"Alpaca {record_kind} pagination exceeded max_pages")
 
     async def _get(self, path: str, params: dict[str, str]) -> Mapping[str, object]:
         try:

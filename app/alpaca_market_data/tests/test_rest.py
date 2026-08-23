@@ -101,6 +101,47 @@ async def test_fetch_snapshots_uses_only_market_data_endpoint() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_trades_and_quotes_paginate_for_causal_replay() -> None:
+    transport = FakeHttpTransport(
+        [
+            FakeResponse(
+                {
+                    "trades": {"AAPL": [{"t": "2026-08-21T14:30:00Z", "p": 100}]},
+                    "next_page_token": None,
+                }
+            ),
+            FakeResponse(
+                {
+                    "quotes": {
+                        "AAPL": [{"t": "2026-08-21T14:29:59.999Z", "bp": 99, "ap": 100}]
+                    },
+                    "next_page_token": None,
+                }
+            ),
+        ]
+    )
+    client = AlpacaRestClient(
+        api_key_id="key",
+        api_secret_key="secret",
+        base_url="https://data.alpaca.markets",
+        feed="sip",
+        transport=transport,
+    )
+    start = datetime(2026, 8, 21, 14, 0, tzinfo=UTC)
+    end = datetime(2026, 8, 21, 15, 0, tzinfo=UTC)
+
+    trades = await client.fetch_trades(("AAPL",), start=start, end=end)
+    quotes = await client.fetch_quotes(("AAPL",), start=start, end=end)
+
+    assert trades["AAPL"][0]["p"] == 100
+    assert quotes["AAPL"][0]["bp"] == 99
+    assert transport.calls[0][0].endswith("/v2/stocks/trades")
+    assert transport.calls[1][0].endswith("/v2/stocks/quotes")
+    assert transport.calls[0][2]["sort"] == "asc"
+    assert transport.calls[0][2]["feed"] == "sip"
+
+
+@pytest.mark.asyncio
 async def test_fetch_news_paginates_and_normalizes_articles() -> None:
     transport = FakeHttpTransport(
         [

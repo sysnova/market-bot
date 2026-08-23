@@ -6,6 +6,7 @@ import pytest
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
+    ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
     AnalysisHorizon,
     AnalysisResult,
@@ -13,11 +14,15 @@ from app.contracts import (
     BarTimeframe,
     EventEnvelope,
     MarketBar,
+    OrderFlowStateKind,
+    OrderFlowSupportAssessment,
+    OrderFlowSupportDisposition,
     PatternDirection,
     SupportAssessment,
     SupportConfirmationType,
     SupportState,
     UniverseChanged,
+    new_uuid7,
 )
 from app.integration.swing_worker import SwingWorker
 from app.swing_engine.models import SwingContext
@@ -212,3 +217,76 @@ async def test_swing_worker_passes_latest_support_assessment_to_the_engine() -> 
     )
 
     assert analyzer.contexts[-1].support == support
+
+
+@pytest.mark.unit
+async def test_swing_worker_passes_latest_order_flow_support_evidence() -> None:
+    publisher = RecordingPublisher()
+    analyzer = RecordingAnalyzer()
+    worker = SwingWorker(publisher=publisher, analyzer=analyzer)
+    support_id = new_uuid7()
+    support = SupportAssessment(
+        assessment_id=support_id,
+        symbol="HIMS",
+        occurred_at=NOW - timedelta(days=1),
+        engine_version="0.3.0",
+        state=SupportState.REACTION_CONFIRMED,
+        current_price=Decimal("100"),
+        zone_low=Decimal("99"),
+        zone_center=Decimal("100"),
+        zone_high=Decimal("101"),
+        invalidation=Decimal("97"),
+        support_score=Decimal("80"),
+        reaction_score=Decimal("70"),
+        reversal_score=Decimal("60"),
+        confidence=Decimal("0.8"),
+        reasons=("fixture",),
+        context_hash="sha256:" + "8" * 64,
+    )
+    evidence = OrderFlowSupportAssessment(
+        symbol="HIMS",
+        occurred_at=NOW - timedelta(seconds=10),
+        engine_version="1.0.0",
+        disposition=OrderFlowSupportDisposition.CONFIRMS_SUPPORT,
+        support_assessment_id=support_id,
+        order_flow_state_id=new_uuid7(),
+        support_occurred_at=NOW - timedelta(days=1),
+        order_flow_occurred_at=NOW - timedelta(seconds=10),
+        current_price=Decimal("100"),
+        zone_low=Decimal("99"),
+        zone_high=Decimal("101"),
+        order_flow_state=OrderFlowStateKind.SELLER_EXHAUSTION,
+        confidence=Decimal("0.8"),
+        data_quality=Decimal("0.9"),
+        quote_fresh=True,
+        fresh_until=NOW + timedelta(seconds=110),
+        reasons=("seller_exhaustion_over_support",),
+        context_hash="sha256:" + "9" * 64,
+    )
+    await worker.handle_support_event(
+        EventEnvelope(
+            event_type=SUPPORT_ASSESSMENT_EVENT,
+            occurred_at=support.occurred_at,
+            source="support-confirmation-v0",
+            subject="HIMS",
+            payload=support,
+        )
+    )
+    await worker.bootstrap(
+        (
+            bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+            bar(BarTimeframe.MINUTE_15, NOW - timedelta(minutes=15)),
+        ),
+        symbols=("HIMS",),
+    )
+    await worker.handle_order_flow_support_event(
+        EventEnvelope(
+            event_type=ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT,
+            occurred_at=evidence.occurred_at,
+            source="order-flow",
+            subject="HIMS",
+            payload=evidence,
+        )
+    )
+
+    assert analyzer.contexts[-1].order_flow_support == evidence

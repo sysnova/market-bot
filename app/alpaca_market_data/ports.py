@@ -35,6 +35,24 @@ class HttpTransport(Protocol):
 
 
 class MarketDataRest(Protocol):
+    async def fetch_trades(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        start: datetime,
+        end: datetime,
+        limit: int = 10_000,
+    ) -> dict[str, list[Mapping[str, object]]]: ...
+
+    async def fetch_quotes(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        start: datetime,
+        end: datetime,
+        limit: int = 10_000,
+    ) -> dict[str, list[Mapping[str, object]]]: ...
+
     async def fetch_bars(
         self,
         symbols: tuple[str, ...],

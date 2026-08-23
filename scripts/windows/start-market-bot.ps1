@@ -39,7 +39,9 @@ if ($Once -or $NoNats) {
     $MarketBotArguments = [System.Collections.Generic.List[string]]::new()
     foreach ($Argument in @(
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "live",
         "--runtime-root",
         $ResolvedRuntimeRoot
@@ -83,7 +85,7 @@ $StatusRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "status"
 $LogRoot = Join-Path -Path $ResolvedRuntimeRoot -ChildPath "logs"
 $PlanArguments = [System.Collections.Generic.List[string]]::new()
 foreach ($Argument in @(
-    "run", "marketbot", "runtime-plan", "--runtime-root", $ResolvedRuntimeRoot
+    "run", "python", "-m", "app.operator_cli", "runtime-plan", "--runtime-root", $ResolvedRuntimeRoot
 )) {
     $PlanArguments.Add($Argument)
 }
@@ -108,6 +110,12 @@ finally {
 
 $ActiveEngineSlots = @($RuntimePlan.active_engine_slots)
 $ProcessSpecs = @($RuntimePlan.processes)
+foreach ($Spec in $ProcessSpecs) {
+    $Arguments = @($Spec.arguments)
+    if ($Arguments.Count -ge 2 -and $Arguments[0] -eq "run" -and $Arguments[1] -eq "marketbot") {
+        $Spec.arguments = @("run", "python", "-m", "app.operator_cli") + $Arguments[2..($Arguments.Count - 1)]
+    }
+}
 $ReadyFiles = @{}
 foreach ($Spec in $ProcessSpecs) {
     if (-not [string]::IsNullOrWhiteSpace($Spec.ready_path)) {
@@ -443,15 +451,20 @@ try {
 
     $StreamChild = $Children | Where-Object { $_.name -eq "alpaca-market-stream" } | Select-Object -First 1
     if (Test-EngineActive -Slot "long-portfolio") {
-        $TmuxLauncher = Join-Path $PSScriptRoot "start-long-portfolio-tmux.ps1"
-        $TmuxArguments = @(
-            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $TmuxLauncher,
-            "-ReadyPath", $ReadyFiles["long-portfolio-monitor"]
+        $LongPortfolioArguments = @(
+            "run", "python", "-m", "app.operator_cli", "alerts", "long-portfolio",
+            "--ready-path", $ReadyFiles["long-portfolio-monitor"]
         )
         if ($NoBell) {
-            $TmuxArguments += "-NoBell"
+            $LongPortfolioArguments += "--no-bell"
         }
-        & powershell.exe @TmuxArguments
+        $LongPortfolioSpec = [pscustomobject]@{
+            name = "long-portfolio-monitor"
+            arguments = $LongPortfolioArguments
+        }
+        $Child = Start-MarketBotProcess -Spec $LongPortfolioSpec
+        $Children.Add($Child)
+        Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
         Wait-MarketBotReadiness -Paths @($ReadyFiles["long-portfolio-monitor"])
     }
     Write-Host "All engines ready. Started Alpaca WebSocket (PID $($StreamChild.process.Id))."
@@ -472,7 +485,6 @@ finally {
         Stop-MarketBotProcessTree -Process $Child.process
     }
     Close-MarketBotMonitorWindows
-    & wsl.exe sh -lc "tmux kill-session -t marketbot-long 2>/dev/null || true"
     Get-ChildItem -LiteralPath $StatusRoot -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '\.(host\.pid|arguments\.json)$' } |
         Remove-Item -Force -ErrorAction SilentlyContinue

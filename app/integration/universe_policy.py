@@ -57,6 +57,18 @@ OPTIONS_GAMMA = UniversePolicyDetails(
     universe_policy="active-watchlist-plus-positive-holdings",
     warmup_policy="startup-universe-snapshot-then-periodic-options-refresh",
 )
+MICROSTRUCTURE = UniversePolicyDetails(
+    universe_policy="bounded-active-watchlist-plus-positive-holdings",
+    warmup_policy="live-quote-and-trade-window-before-state-publication",
+)
+SCALP_DERIVED = UniversePolicyDetails(
+    universe_policy="derived-from-fresh-order-flow-state",
+    warmup_policy="latest-order-flow-and-completed-intraday-bar-context",
+)
+INTRADAY_OPPORTUNITY = UniversePolicyDetails(
+    universe_policy="derived-from-scalp-transitions-and-active-paper-positions",
+    warmup_policy="durable-paper-state-restore-before-live-transitions",
+)
 NEWS_INTELLIGENCE = UniversePolicyDetails(
     universe_policy="active-watchlist-plus-positive-holdings",
     warmup_policy="durable-article-deduplication-before-llm-classification",
@@ -81,6 +93,9 @@ ENGINE_UNIVERSE_POLICIES: dict[str, UniversePolicyDetails] = {
     "4hgeri": GERI_4H,
     "swing-trade": SWING_TRADE,
     "intraday": CORE_DYNAMIC,
+    "order-flow": MICROSTRUCTURE,
+    "scalp": SCALP_DERIVED,
+    "intraday-opportunity": INTRADAY_OPPORTUNITY,
     "volume-structure": VOLUME_STRUCTURE,
     "options-gamma": OPTIONS_GAMMA,
     "news-intelligence": NEWS_INTELLIGENCE,
@@ -93,7 +108,7 @@ ENGINE_UNIVERSE_POLICIES: dict[str, UniversePolicyDetails] = {
     "long-portfolio": TAGGED_PORTFOLIO,
     "patreon-caps": PATREON_CORE,
     "elliott-wave": HOLDINGS_ONLY,
-    "support-confirmation": HOLDINGS_ONLY,
+    "support-confirmation": CORE_DYNAMIC,
     "signal-fusion": HOLDINGS_ONLY,
     "dilution-sec": REGISTERED_WATCHLIST,
     "peter-lynch": REGISTERED_WATCHLIST,

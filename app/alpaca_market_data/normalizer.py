@@ -21,6 +21,16 @@ from app.contracts import (
     NamedValue,
     market_bar_subject,
 )
+from app.contracts.order_flow import (
+    MARKET_QUOTE_EVENT,
+    MARKET_TRADE_CANCEL_EVENT,
+    MARKET_TRADE_CORRECTION_EVENT,
+    MARKET_TRADE_EVENT,
+    MarketQuote,
+    MarketTrade,
+    MarketTradeCancel,
+    MarketTradeCorrection,
+)
 
 _TYPE_NAMES = {
     "t": "trade",
@@ -54,15 +64,35 @@ class AlpacaEventNormalizer:
         kind = _TYPE_NAMES.get(message_type, f"raw_{_subject_token(message_type)}")
         symbol = _required_text(raw, "S")
         occurred_at = _timestamp(raw.get("t"))
+        identity = {"message": raw, "feed": self._feed}
+        event_id = _stable_uuid7(occurred_at, identity)
 
         if message_type == "t":
-            payload = _trade(raw, symbol=symbol, feed=self._feed)
-            event_type = "market.trade.received"
+            payload = _trade(raw, symbol=symbol, occurred_at=occurred_at, event_id=event_id)
+            event_type = MARKET_TRADE_EVENT
             subject_kind = "trade"
         elif message_type == "q":
-            payload = _quote(raw, symbol=symbol, feed=self._feed)
-            event_type = "market.quote.received"
+            payload = _quote(raw, symbol=symbol, occurred_at=occurred_at, event_id=event_id)
+            event_type = MARKET_QUOTE_EVENT
             subject_kind = "quote"
+        elif message_type == "c":
+            payload = _trade_correction(
+                raw,
+                symbol=symbol,
+                occurred_at=occurred_at,
+                event_id=event_id,
+            )
+            event_type = MARKET_TRADE_CORRECTION_EVENT
+            subject_kind = "trade-correction"
+        elif message_type == "x":
+            payload = MarketTradeCancel(
+                event_id=event_id,
+                symbol=symbol,
+                occurred_at=occurred_at,
+                trade_id=_required_identifier(raw, "i"),
+            )
+            event_type = MARKET_TRADE_CANCEL_EVENT
+            subject_kind = "trade-cancel"
         elif message_type in {"b", "u", "d"}:
             timeframe = "1Day" if message_type == "d" else "1Min"
             payload = _market_bar(
@@ -94,7 +124,8 @@ class AlpacaEventNormalizer:
             symbol=symbol,
             occurred_at=occurred_at,
             payload=payload,
-            identity={"message": raw, "feed": self._feed},
+            identity=identity,
+            event_id=event_id,
         )
 
     def rest_bar(
@@ -159,11 +190,12 @@ class AlpacaEventNormalizer:
         occurred_at: datetime,
         payload: object,
         identity: object,
+        event_id: UUID | None = None,
     ) -> Publication:
         return Publication(
             subject=subject,
             envelope=EventEnvelope(
-                event_id=_stable_uuid7(occurred_at, identity),
+                event_id=event_id or _stable_uuid7(occurred_at, identity),
                 event_type=event_type,
                 occurred_at=occurred_at,
                 source="alpaca_market_data",
@@ -177,36 +209,80 @@ class AlpacaEventNormalizer:
         )
 
 
-def _trade(raw: Mapping[str, object], *, symbol: str, feed: str) -> dict[str, object]:
-    result: dict[str, object] = {
-        "feed": feed,
-        "price": _decimal_text(raw.get("p")),
-        "provider": "alpaca",
-        "size": _decimal_text(raw.get("s")),
-        "symbol": symbol,
-    }
-    _copy_text(result, "id", raw.get("i"))
-    _copy_text(result, "exchange", raw.get("x"))
-    _copy_text(result, "tape", raw.get("z"))
-    _copy_sequence(result, "conditions", raw.get("c"))
-    return result
+def _trade(
+    raw: Mapping[str, object],
+    *,
+    symbol: str,
+    occurred_at: datetime,
+    event_id: UUID,
+) -> MarketTrade:
+    return MarketTrade(
+        event_id=event_id,
+        symbol=symbol,
+        occurred_at=occurred_at,
+        received_at=occurred_at,
+        price=Decimal(_decimal_text(raw.get("p"))),
+        size=Decimal(_decimal_text(raw.get("s"))),
+        trade_id=_required_identifier(raw, "i"),
+        exchange=_optional_text(raw.get("x")),
+        tape=_optional_text(raw.get("z")),
+        conditions=_text_sequence(raw.get("c")),
+    )
 
 
-def _quote(raw: Mapping[str, object], *, symbol: str, feed: str) -> dict[str, object]:
-    result: dict[str, object] = {
-        "ask_price": _decimal_text(raw.get("ap")),
-        "ask_size": _decimal_text(raw.get("as")),
-        "bid_price": _decimal_text(raw.get("bp")),
-        "bid_size": _decimal_text(raw.get("bs")),
-        "feed": feed,
-        "provider": "alpaca",
-        "symbol": symbol,
-    }
-    _copy_text(result, "ask_exchange", raw.get("ax"))
-    _copy_text(result, "bid_exchange", raw.get("bx"))
-    _copy_text(result, "tape", raw.get("z"))
-    _copy_sequence(result, "conditions", raw.get("c"))
-    return result
+def _quote(
+    raw: Mapping[str, object],
+    *,
+    symbol: str,
+    occurred_at: datetime,
+    event_id: UUID,
+) -> MarketQuote:
+    return MarketQuote(
+        event_id=event_id,
+        symbol=symbol,
+        occurred_at=occurred_at,
+        received_at=occurred_at,
+        ask_price=Decimal(_decimal_text(raw.get("ap"))),
+        ask_size=Decimal(_decimal_text(raw.get("as"))),
+        bid_price=Decimal(_decimal_text(raw.get("bp"))),
+        bid_size=Decimal(_decimal_text(raw.get("bs"))),
+        ask_exchange=_optional_text(raw.get("ax")),
+        bid_exchange=_optional_text(raw.get("bx")),
+        tape=_optional_text(raw.get("z")),
+        conditions=_text_sequence(raw.get("c")),
+    )
+
+
+def _trade_correction(
+    raw: Mapping[str, object],
+    *,
+    symbol: str,
+    occurred_at: datetime,
+    event_id: UUID,
+) -> MarketTradeCorrection:
+    corrected_event_id = _stable_uuid7(
+        occurred_at,
+        {"corrected_trade": raw, "symbol": symbol},
+    )
+    corrected = MarketTrade(
+        event_id=corrected_event_id,
+        symbol=symbol,
+        occurred_at=occurred_at,
+        received_at=occurred_at,
+        price=Decimal(_decimal_text(raw.get("cp"))),
+        size=Decimal(_decimal_text(raw.get("cs"))),
+        trade_id=_required_identifier(raw, "ci"),
+        exchange=_optional_text(raw.get("x")),
+        tape=_optional_text(raw.get("z")),
+        conditions=_text_sequence(raw.get("cc")),
+    )
+    return MarketTradeCorrection(
+        event_id=event_id,
+        symbol=symbol,
+        occurred_at=occurred_at,
+        original_trade_id=_required_identifier(raw, "oi"),
+        corrected_trade=corrected,
+    )
 
 
 def _market_bar(
@@ -329,15 +405,25 @@ def _required_text(raw: Mapping[str, object], key: str) -> str:
     return value
 
 
-def _copy_text(output: dict[str, object], key: str, value: object) -> None:
-    if value is not None:
-        output[key] = str(value)
+def _required_identifier(raw: Mapping[str, object], key: str) -> str:
+    value = raw.get(key)
+    if value is None or isinstance(value, bool) or not str(value).strip():
+        raise ValueError(f"Alpaca message requires {key}")
+    return str(value).strip()
 
 
-def _copy_sequence(output: dict[str, object], key: str, value: object) -> None:
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _text_sequence(value: object) -> tuple[str, ...]:
     if isinstance(value, list | tuple):
         items = cast("list[object] | tuple[object, ...]", value)
-        output[key] = [str(item) for item in items]
+        return tuple(dict.fromkeys(str(item) for item in items if str(item).strip()))
+    return ()
 
 
 def _subject_token(value: str) -> str:

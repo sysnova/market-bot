@@ -2,6 +2,7 @@
 
 from .engine import AlpacaMarketDataEngine
 from .factory import build_alpaca_market_data_engine
+from .microstructure_replay import HistoricalOrderFlowReplay
 from .normalizer import AlpacaEventNormalizer, Publication
 from .replay import HistoricalMarketDataStream
 from .rest import AlpacaMarketDataError, AlpacaNewsArticle, AlpacaRestClient
@@ -15,6 +16,7 @@ __all__ = [
     "AlpacaNewsArticle",
     "AlpacaRestClient",
     "HistoricalMarketDataStream",
+    "HistoricalOrderFlowReplay",
     "Publication",
     "build_alpaca_market_data_engine",
 ]

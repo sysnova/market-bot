@@ -211,6 +211,8 @@ class NatsJetStreamEventBus:
         ephemeral_prefixes = (
             f"{self._prefix}.market.data.trade.",
             f"{self._prefix}.market.data.quote.",
+            f"{self._prefix}.market.data.trade-correction.",
+            f"{self._prefix}.market.data.trade-cancel.",
         )
         if qualified.startswith(ephemeral_prefixes):
             if self._client is None:

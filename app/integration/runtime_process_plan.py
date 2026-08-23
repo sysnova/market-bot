@@ -239,6 +239,21 @@ def build_runtime_process_plan(
             ("run", "marketbot", "engine", "intraday"),
         ),
         (
+            "order-flow",
+            EngineSlot.ORDER_FLOW,
+            ("run", "marketbot", "engine", "order-flow"),
+        ),
+        (
+            "scalp",
+            EngineSlot.SCALP,
+            ("run", "marketbot", "engine", "scalp"),
+        ),
+        (
+            "intraday-opportunity",
+            EngineSlot.INTRADAY_OPPORTUNITY,
+            ("run", "marketbot", "engine", "intraday-opportunity"),
+        ),
+        (
             "market-rotation-v1",
             EngineSlot.MARKET_ROTATION,
             ("run", "marketbot", "engine", "rotation"),
@@ -299,16 +314,31 @@ def build_runtime_process_plan(
             arguments += symbol_arguments
         if slot is EngineSlot.NEWS_INTELLIGENCE:
             dependencies = ("alert", "entry-watcher", "entry-opportunity")
+        elif slot is EngineSlot.ORDER_FLOW:
+            dependencies = ("outbox-relay",) + (
+                ("support-confirmation-v0",)
+                if EngineSlot.SUPPORT_CONFIRMATION in active
+                else ()
+            )
+        elif slot is EngineSlot.SCALP:
+            dependencies = ("order-flow",)
+        elif slot is EngineSlot.INTRADAY_OPPORTUNITY:
+            dependencies = ("outbox-relay", "scalp")
         elif slot is EngineSlot.SUPPORT_CONFIRMATION:
             dependencies = ("market-history-v1",)
         elif (
             slot is EngineSlot.GERI_4H
             and slot in definition.engines
             and definition.engines[slot].implementation
-            in {"1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0"}
+            in {"1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0"}
         ):
             dependencies = ("market-history-v1",) + (
                 ("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ()
+            ) + (
+                ("order-flow",)
+                if definition.engines[slot].implementation == "1.7.0"
+                and EngineSlot.ORDER_FLOW in active
+                else ()
             )
         elif slot is EngineSlot.SWING_TRADE:
             dependencies = (
@@ -316,10 +346,22 @@ def build_runtime_process_plan(
                 "4hgeri",
                 "entry-opportunity",
             ) + (("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ())
+            if (
+                slot in definition.engines
+                and definition.engines[slot].implementation == "1.5.0"
+                and EngineSlot.ORDER_FLOW in active
+            ):
+                dependencies += ("order-flow",)
         elif slot is EngineSlot.SWING:
             dependencies = analytical_dependencies + (
                 ("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ()
             )
+            if (
+                slot in definition.engines
+                and definition.engines[slot].implementation == "13.0.0"
+                and EngineSlot.ORDER_FLOW in active
+            ):
+                dependencies += ("order-flow",)
         else:
             dependencies = analytical_dependencies
         add(name, arguments, slot=slot, dependencies=dependencies)

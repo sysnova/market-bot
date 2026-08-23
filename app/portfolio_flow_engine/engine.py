@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import cast
 
+from pydantic import BaseModel
+
 from app.contracts import (
     AlertKind,
     AlertSeverity,
@@ -58,9 +60,12 @@ class PortfolioFlowEngineV1:
 
     def ingest(self, envelope: EventEnvelope, *, now: datetime) -> LocalAlert | None:
         raw_payload = envelope.payload
-        if not isinstance(raw_payload, Mapping):
+        if isinstance(raw_payload, BaseModel):
+            payload = raw_payload.model_dump(mode="python")
+        elif isinstance(raw_payload, Mapping):
+            payload = cast("Mapping[str, object]", raw_payload)
+        else:
             return None
-        payload = cast("Mapping[str, object]", raw_payload)
         symbol = str(payload.get("symbol", "")).strip().upper()
         if not symbol:
             return None

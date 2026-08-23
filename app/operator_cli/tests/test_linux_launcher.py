@@ -24,6 +24,29 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     assert "tmux kill-pane -a" not in script
 
 
+def test_linux_launcher_prepares_current_definition_environment_and_database() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    launcher = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
+
+    assert "configs/marketbot/7.32.0.yaml" in script
+    assert 'export MARKETBOT_DEFINITION_PATH="$DEFINITION_PATH"' in script
+    assert "uv sync --frozen" in script
+    assert "app.integration.local_schema_bootstrap" in script
+    assert launcher.index("prepare_runtime") < launcher.index("write_runtime_plan")
+
+
+def test_linux_launcher_restarts_session_when_effective_plan_changed() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    launcher = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
+
+    assert "runtime_matches_plan" in script
+    stale_guard = 'tmux has-session -t "$SESSION" 2>/dev/null && ! runtime_matches_plan'
+    assert stale_guard in launcher
+    assert launcher.index(stale_guard) < launcher.index(
+        'if tmux has-session -t "$SESSION" 2>/dev/null; then'
+    )
+
+
 def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
@@ -33,6 +56,21 @@ def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
     assert "-n Opportunities" in script
     assert "ENTRY OPPORTUNITIES" in script
     assert "list-windows" in script
+
+
+def test_linux_launcher_adds_scalping_and_intraday_paper_windows() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "run marketbot monitor scalping" in script
+    assert "run marketbot monitor intraday-opportunity" in script
+    assert "--role scalping" in script
+    assert "--role intraday-ops" in script
+    assert "scalping-monitor.ready.json" in script
+    assert "intraday-opportunity-monitor.ready.json" in script
+    assert '-n Scalping "$scalping"' in script
+    assert '-n IntradayOps "$intraday_ops"' in script
+    assert "SCALPING — ORDER FLOW + SETUPS" in script
+    assert "INTRADAY OPS — PAPER P/L" in script
 
 
 def test_linux_launcher_adds_independent_alpaca_news_window() -> None:
@@ -232,6 +270,8 @@ def test_market_stream_is_gated_only_by_headless_engine_readiness() -> None:
     for monitor in (
         "confirmed-buy-monitor",
         "entry-opportunity-monitor",
+        "scalping-monitor",
+        "intraday-opportunity-monitor",
         "swing-channel-4h-monitor",
         "4hgeri-monitor",
         "swing-trade-monitor",

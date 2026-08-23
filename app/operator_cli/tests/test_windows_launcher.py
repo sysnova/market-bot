@@ -317,7 +317,13 @@ def test_windows_launcher_builds_live_command_without_running_it() -> None:
     assert command["working_directory"] == str(PROJECT_ROOT)
     assert command["executable"].endswith("uv.exe")
     assert command["environment"].endswith(".venv-windows")
-    assert command["arguments"][:3] == ["run", "marketbot", "live"]
+    assert command["arguments"][:5] == [
+        "run",
+        "python",
+        "-m",
+        "app.operator_cli",
+        "live",
+    ]
     assert "--once" in command["arguments"]
     assert "--no-nats" in command["arguments"]
     assert "--no-bell" in command["arguments"]
@@ -362,8 +368,12 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "4hgeri",
         "swing-trade",
         "intraday",
+        "order-flow",
+        "scalp",
+        "intraday-opportunity",
         "market-rotation-v1",
         "portfolio-flow-v1",
+        "support-confirmation-v0",
         "volume-structure-v1",
         "options-gamma-v1",
         "news-intelligence-v1",
@@ -373,63 +383,83 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert "dilution-sec" not in plan["active_engine_slots"]
     assert "peter-lynch" not in plan["active_engine_slots"]
     processes = {process["name"]: process for process in plan["processes"]}
-    assert processes["entry-opportunity"]["arguments"][:4] == [
+    assert processes["entry-opportunity"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "entry-opportunity",
         "serve",
     ]
-    assert processes["market-history-v1"]["arguments"][:4] == [
+    assert processes["market-history-v1"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "market",
         "history",
     ]
-    assert processes["long-term"]["arguments"][:4] == [
+    assert processes["long-term"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "engine",
         "long",
     ]
-    assert processes["alpaca-market-stream"]["arguments"][:4] == [
+    assert processes["alpaca-market-stream"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "market",
         "stream",
     ]
-    assert processes["outbox-relay"]["arguments"][:4] == [
+    assert processes["outbox-relay"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "outbox",
         "serve",
     ]
-    assert processes["entry-recovery"]["arguments"][:4] == [
+    assert processes["entry-recovery"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "engine",
         "entry-recovery",
     ]
-    assert processes["market-rotation-v1"]["arguments"][:4] == [
+    assert processes["market-rotation-v1"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "engine",
         "rotation",
     ]
-    assert processes["portfolio-flow-v1"]["arguments"][:4] == [
+    assert processes["portfolio-flow-v1"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "engine",
         "portfolio-flow",
     ]
-    assert processes["long-portfolio-v1"]["arguments"][:4] == [
+    assert processes["long-portfolio-v1"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "engine",
         "long-portfolio",
     ]
-    assert processes["confirmed-buy-monitor"]["arguments"][:4] == [
+    assert processes["confirmed-buy-monitor"]["arguments"][:6] == [
         "run",
-        "marketbot",
+        "python",
+        "-m",
+        "app.operator_cli",
         "alerts",
         "confirmed",
     ]

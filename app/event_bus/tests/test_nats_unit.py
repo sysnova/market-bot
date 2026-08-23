@@ -111,6 +111,7 @@ class FakeClient:
     is_closed: bool = False
     drains: int = 0
     jetstream_timeouts: list[float] = field(default_factory=list)
+    published: list[tuple[str, bytes]] = field(default_factory=list)
 
     def jetstream(self, *, timeout: float) -> FakeJetStream:
         self.jetstream_timeouts.append(timeout)
@@ -119,6 +120,9 @@ class FakeClient:
     async def drain(self) -> None:
         self.drains += 1
         self.is_closed = True
+
+    async def publish(self, subject: str, payload: bytes) -> None:
+        self.published.append((subject, payload))
 
 
 @pytest.mark.unit
@@ -285,6 +289,29 @@ async def test_publish_market_bar_uses_live_subject_without_per_message_ttl(
             {"Nats-Msg-Id": str(event.event_id)},
         )
     ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "subject",
+    (
+        "marketbot.market.data.trade.AAPL",
+        "marketbot.market.data.quote.AAPL",
+        "marketbot.market.data.trade-correction.AAPL",
+        "marketbot.market.data.trade-cancel.AAPL",
+    ),
+)
+async def test_publish_microstructure_hot_path_uses_core_nats(
+    subject: str, event: EventEnvelope
+) -> None:
+    js = FakeJetStream()
+    client = FakeClient(js)
+    bus = NatsJetStreamEventBus(client=client, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]
+
+    await bus.publish(subject, event)
+
+    assert client.published == [(subject, encode_envelope(event))]
+    assert js.published == []
 
 
 @pytest.mark.unit

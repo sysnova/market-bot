@@ -20,6 +20,7 @@ from app.contracts import (
     GERI_TRANSITION_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
     AnalysisHorizon,
     AnalysisResult,
@@ -34,6 +35,7 @@ from app.contracts import (
     GeriMaturity,
     GeriTransition,
     MarketBar,
+    OrderFlowSupportAssessment,
     Subscription,
     SubscriptionOptions,
     SupportAssessment,
@@ -88,6 +90,8 @@ class Swing4HGeriRuntime:
             "1.3.0",
             "1.4.0",
             "1.5.0",
+            "1.6.0",
+            "1.7.0",
         }
         self._publisher = publisher
         self._clock = clock or SystemClock()
@@ -103,6 +107,7 @@ class Swing4HGeriRuntime:
         self._opportunity_at: dict[str, datetime] = {}
         self._latest: dict[str, GeriAssessment] = {}
         self._support: dict[str, SupportAssessment] = {}
+        self._order_flow_support: dict[str, OrderFlowSupportAssessment] = {}
         self._last_countertrend_signal: dict[
             str, tuple[str, GeriCountertrendMaturity | None, tuple[str, ...]]
         ] = {}
@@ -131,8 +136,33 @@ class Swing4HGeriRuntime:
         if previous is not None and item.occurred_at < previous.occurred_at:
             return
         self._support[item.symbol] = item
+        order_flow_support = self._order_flow_support.get(item.symbol)
+        if (
+            order_flow_support is not None
+            and order_flow_support.support_assessment_id != item.assessment_id
+        ):
+            self._order_flow_support.pop(item.symbol, None)
         if item.symbol in self._symbols:
             await self.evaluate(item.symbol)
+
+    async def restore_order_flow_support(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT:
+            return
+        item = (
+            envelope.payload
+            if isinstance(envelope.payload, OrderFlowSupportAssessment)
+            else OrderFlowSupportAssessment.model_validate(envelope.payload, strict=False)
+        )
+        previous = self._order_flow_support.get(item.symbol)
+        if previous is not None and item.occurred_at < previous.occurred_at:
+            return
+        self._order_flow_support[item.symbol] = item
+        if item.symbol in self._symbols:
+            await self.evaluate(
+                item.symbol,
+                current_price=item.current_price,
+                market_at=item.occurred_at,
+            )
 
     async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {item.strip().upper() for item in symbols if item.strip()}
@@ -241,7 +271,11 @@ class Swing4HGeriRuntime:
         normalized = symbol.strip().upper()
         bars = self._bars.history(normalized, BarTimeframe.HOUR_4, limit=60, final_only=True)
         value = current_price if current_price is not None else self._prices.get(normalized)
-        price_at = self._price_at.get(normalized)
+        price_at = (
+            market_at
+            if current_price is not None and market_at is not None
+            else self._price_at.get(normalized)
+        )
         if value is None or price_at is None or not bars:
             return False
         try:
@@ -260,6 +294,7 @@ class Swing4HGeriRuntime:
                     existing_maturity=self._existing_maturity.get(normalized),
                     active_structure=self._latest.get(normalized),
                     support=self._support.get(normalized),
+                    order_flow_support=self._order_flow_support.get(normalized),
                     as_of=self._clock.now(),
                     current_price_at=price_at,
                 )
@@ -566,7 +601,7 @@ async def run_swing_4h_geri_process(
                 "marketbot-4hgeri-restore-v1",
             ),
         )
-        if engine_version == "1.5.0":
+        if engine_version in {"1.5.0", "1.6.0", "1.7.0"}:
             replay_specs += (
                 (
                     "marketbot.v1.support-confirmation.assessment.>",
@@ -574,7 +609,22 @@ async def run_swing_4h_geri_process(
                     "marketbot-4hgeri-support-v1",
                 ),
             )
-        if engine_version not in {"1.2.0", "1.3.0", "1.4.0", "1.5.0"}:
+        if engine_version == "1.7.0":
+            replay_specs += (
+                (
+                    "marketbot.v1.order-flow.support.>",
+                    runtime.restore_order_flow_support,
+                    "marketbot-4hgeri-order-flow-support-v1",
+                ),
+            )
+        if engine_version not in {
+            "1.2.0",
+            "1.3.0",
+            "1.4.0",
+            "1.5.0",
+            "1.6.0",
+            "1.7.0",
+        }:
             replay_specs += (
                 (
                     "marketbot.v1.analysis.result.SWING.>",

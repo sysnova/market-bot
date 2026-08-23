@@ -396,6 +396,83 @@ Table market_bot.news_intelligence_results {
   }
 }
 
+Table market_bot.intraday_opportunities {
+  id uuid [pk]
+  symbol text [not null]
+  strategy_id text [not null]
+  session_date date [not null]
+  side text [not null, note: "LONG | SHORT"]
+  status text [not null, note: "OPEN | CLOSED"]
+  opened_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  expires_at timestamptz [not null]
+  closed_at timestamptz
+  close_reason text [note: "STOP | TARGET | TIME_EXIT | END_OF_DAY | FLOW_REVERSAL | MANUAL"]
+  quantity numeric(28,8) [not null]
+  entry_price numeric(28,8) [not null]
+  current_price numeric(28,8) [not null]
+  exit_price numeric(28,8)
+  stop_price numeric(28,8) [not null]
+  target_price numeric(28,8) [not null]
+  highest_mark numeric(28,8) [not null]
+  lowest_mark numeric(28,8) [not null]
+  gross_pnl numeric(28,8) [not null]
+  net_pnl numeric(28,8) [not null]
+  gross_pnl_percent numeric(16,8) [not null]
+  net_pnl_percent numeric(16,8) [not null]
+  mfe_percent numeric(16,8) [not null]
+  mae_percent numeric(16,8) [not null]
+  fees_total numeric(28,8) [not null]
+  revision integer [not null]
+  source_signal_id uuid [not null]
+  payload jsonb [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (symbol, strategy_id) [unique, name: "intraday_opportunities_one_active_strategy_symbol_idx", note: "Partial: status = 'OPEN'"]
+    (session_date, symbol, opened_at) [name: "intraday_opportunities_session_symbol_idx"]
+    (status, expires_at) [name: "intraday_opportunities_status_expiry_idx"]
+  }
+}
+
+Table market_bot.intraday_fills {
+  id uuid [pk]
+  opportunity_id uuid [not null]
+  source_event_id uuid [not null, unique]
+  occurred_at timestamptz [not null]
+  role text [not null, note: "ENTRY | EXIT"]
+  action text [not null, note: "BUY | SELL"]
+  quantity numeric(28,8) [not null]
+  price numeric(28,8) [not null]
+  fee numeric(28,8) [not null]
+  payload jsonb [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (opportunity_id, role) [unique]
+    (opportunity_id, occurred_at) [name: "intraday_fills_opportunity_occurred_idx"]
+  }
+}
+
+Table market_bot.intraday_opportunity_events {
+  id uuid [pk]
+  source_event_id uuid [not null, unique]
+  opportunity_id uuid [not null]
+  symbol text [not null]
+  strategy_id text [not null]
+  session_date date [not null]
+  kind text [not null, note: "OPENED | MARKED | CLOSED"]
+  occurred_at timestamptz [not null]
+  reasons jsonb [not null]
+  payload jsonb [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (opportunity_id, occurred_at) [name: "intraday_opportunity_events_opportunity_occurred_idx"]
+    (session_date, symbol, occurred_at) [name: "intraday_opportunity_events_session_symbol_idx"]
+  }
+}
+
 Ref: market_bot.run_strategies.run_id > market_bot.runs.id [delete: restrict]
 Ref: market_bot.run_strategies.strategy_version_id > market_bot.strategy_versions.id [delete: restrict]
 Ref: market_bot.processed_events.run_id > market_bot.runs.id [delete: restrict]
@@ -403,4 +480,6 @@ Ref: market_bot.control_events.run_id > market_bot.runs.id [delete: restrict]
 Ref: market_bot.entry_watch_transitions.watch_id > market_bot.entry_watches.id [delete: restrict]
 Ref: market_bot.entry_opportunities.original_watch_id > market_bot.entry_watches.id [delete: restrict]
 Ref: market_bot.entry_opportunity_events.opportunity_id > market_bot.entry_opportunities.id [delete: restrict]
+Ref: market_bot.intraday_fills.opportunity_id > market_bot.intraday_opportunities.id [delete: restrict]
+Ref: market_bot.intraday_opportunity_events.opportunity_id > market_bot.intraday_opportunities.id [delete: restrict]
 Ref: market_bot.patreon_caps_transitions.watch_id > market_bot.patreon_caps_watches.id [delete: restrict]

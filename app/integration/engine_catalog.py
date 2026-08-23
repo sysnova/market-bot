@@ -53,6 +53,7 @@ from app.intraday_engine import (
 )
 from app.intraday_engine.strategy import configure_engine as configure_intraday
 from app.intraday_engine.strategy import validate_strategy as validate_intraday
+from app.intraday_opportunity_engine import IntradayOpportunityEngine
 from app.long_portfolio_engine import LongPortfolioEngine
 from app.long_portfolio_engine.strategy import configure_engine as configure_long_portfolio
 from app.long_portfolio_engine.strategy import resolve_strategy as resolve_long_portfolio
@@ -61,6 +62,7 @@ from app.long_term_engine import LongTermEngine, LongTermEngineV2
 from app.market_rotation_engine import RotationEngine
 from app.news_intelligence_engine import NewsIntelligenceEngine
 from app.options_gamma_engine import OptionsGammaEngine
+from app.order_flow_engine import OrderFlowEngine
 from app.patreon_caps_engine import PatreonCapsEngine
 from app.patreon_caps_engine.strategy import configure_engine as configure_patreon_caps
 from app.patreon_caps_engine.strategy import resolve_strategy as resolve_patreon_caps
@@ -69,6 +71,7 @@ from app.peter_lynch_engine import PeterLynchEngine
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.portfolio_flow_engine.strategy import configure_engine as configure_portfolio_flow
 from app.portfolio_flow_engine.strategy import validate_strategy as validate_portfolio_flow
+from app.scalp_engine import ScalpEngine
 from app.signal_fusion_engine import (
     SignalFusionEngine,
     SignalFusionEngineV04,
@@ -86,6 +89,7 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV14,
     Swing4HGeriEngineV15,
     Swing4HGeriEngineV16,
+    Swing4HGeriEngineV17,
 )
 from app.swing_4h_geri_engine.strategy import configure_engine as configure_geri_4h
 from app.swing_4h_geri_engine.strategy import validate_strategy as validate_geri_4h
@@ -103,6 +107,7 @@ from app.swing_engine import (
     SwingEngineV10,
     SwingEngineV11,
     SwingEngineV12,
+    SwingEngineV13,
 )
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
@@ -112,6 +117,7 @@ from app.swing_trade_engine import (
     SwingTradeEngineV12,
     SwingTradeEngineV13,
     SwingTradeEngineV14,
+    SwingTradeEngineV15,
 )
 from app.swing_trade_engine.strategy import configure_engine as configure_swing_trade
 from app.swing_trade_engine.strategy import validate_strategy as validate_swing_trade
@@ -144,6 +150,7 @@ def default_engine_registry() -> EngineRegistry:
                     "10.0.0": SwingEngineV10,
                     "11.0.0": SwingEngineV11,
                     "12.0.0": SwingEngineV12,
+                    "13.0.0": SwingEngineV13,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,
@@ -165,6 +172,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.4.0": Swing4HGeriEngineV14,
                     "1.5.0": Swing4HGeriEngineV15,
                     "1.6.0": Swing4HGeriEngineV16,
+                    "1.7.0": Swing4HGeriEngineV17,
                 },
                 required_since="7.15.0",
                 configure=configure_geri_4h,
@@ -177,6 +185,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.2.0": SwingTradeEngineV12,
                     "1.3.0": SwingTradeEngineV13,
                     "1.4.0": SwingTradeEngineV14,
+                    "1.5.0": SwingTradeEngineV15,
                 },
                 required_since="7.20.0",
                 configure=configure_swing_trade,
@@ -192,6 +201,18 @@ def default_engine_registry() -> EngineRegistry:
                 required_since="0.0.0",
                 configure=configure_intraday,
                 validate_strategy=validate_intraday,
+            ),
+            EngineSlot.ORDER_FLOW: simple(
+                implementations={"1.0.0": OrderFlowEngine},
+                required_since="7.32.0",
+            ),
+            EngineSlot.SCALP: simple(
+                implementations={"1.0.0": ScalpEngine},
+                required_since="7.32.0",
+            ),
+            EngineSlot.INTRADAY_OPPORTUNITY: simple(
+                implementations={"1.0.0": IntradayOpportunityEngine},
+                required_since="7.32.0",
             ),
             EngineSlot.ENTRY_WATCHER: EngineRegistration(
                 implementations={
