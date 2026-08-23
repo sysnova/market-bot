@@ -12,6 +12,7 @@ from app.contracts import (
     EntrySignal,
     EventEnvelope,
     MarketBar,
+    NamedValue,
     SwingTradeAssessment,
     SwingTradeTransition,
 )
@@ -219,3 +220,45 @@ async def test_thesis_loss_uses_previous_actionable_setup_to_close_tracking() ->
     assert signal.setup_id == str(
         next(metric.value for metric in previous.metrics if metric.name == "setup_id")
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_publishes_setup_identity_migration_without_market_change() -> None:
+    previous = analyze("97")
+    canonical_setup = (
+        f"swing-trade:AAPL:{previous.impulse_low_at.isoformat()}:"
+        f"{previous.impulse_high_at.isoformat()}"
+    )
+    current = previous.model_copy(
+        update={
+            "engine_version": "1.4.0",
+            "metrics": (
+                *(item for item in previous.metrics if item.name != "setup_id"),
+                NamedValue(name="setup_id", value=canonical_setup),
+            ),
+        }
+    )
+    publisher = Publisher()
+    runtime = SwingTradeRuntime(engine=FixedEngine(current), publisher=publisher)
+    await runtime.restore_assessment(
+        EventEnvelope(
+            event_type=SWING_TRADE_ASSESSMENT_EVENT,
+            occurred_at=previous.occurred_at,
+            source="test",
+            subject=previous.symbol,
+            payload=previous,
+        )
+    )
+    at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+    bar = minute(at).model_copy(update={"timeframe": BarTimeframe.MINUTE_15})
+
+    await runtime.bootstrap((*daily_bars(), bar), symbols=("AAPL",))
+
+    assert [item.event_type for item in publisher.events] == [
+        SWING_TRADE_ASSESSMENT_EVENT,
+        SWING_TRADE_TRANSITION_EVENT,
+        ENTRY_SIGNAL_EVENT,
+    ]
+    signal = publisher.events[-1].payload
+    assert isinstance(signal, EntrySignal)
+    assert signal.setup_id == canonical_setup

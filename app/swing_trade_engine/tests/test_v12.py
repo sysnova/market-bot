@@ -10,7 +10,12 @@ from app.contracts import (
     SwingTradeMaturity,
     TradeSide,
 )
-from app.swing_trade_engine import SwingTradeContext, SwingTradeEngineV12, SwingTradeEngineV13
+from app.swing_trade_engine import (
+    SwingTradeContext,
+    SwingTradeEngineV12,
+    SwingTradeEngineV13,
+    SwingTradeEngineV14,
+)
 from app.swing_trade_engine.tests.test_engine import _confirmation_bars, daily_bars, geri
 
 
@@ -145,3 +150,32 @@ def test_v13_keeps_liquidity_sweep_pending_on_the_native_swing_trade_zone() -> N
 
     assert metrics["support_contribution"] == "CONTEXT"
     assert metrics["support_zone_match"] == "SWING_TRADE_ZONE"
+
+
+def test_v14_setup_identity_is_stable_across_strategy_versions() -> None:
+    bars = daily_bars()
+    confirmations = _confirmation_bars(bars)
+    as_of = confirmations[-1].timestamp + (
+        confirmations[-1].timestamp - confirmations[-2].timestamp
+    )
+    context = SwingTradeContext(
+        symbol="AAPL",
+        as_of=as_of,
+        current_price=Decimal("97"),
+        daily_bars=bars,
+        confirmation_bars=confirmations,
+        current_price_at=as_of,
+    )
+
+    old_policy = SwingTradeEngineV14(strategy_version="1.1.0").analyze(context)
+    new_policy = SwingTradeEngineV14(strategy_version="1.2.0").analyze(context)
+    old_setup = next(item.value for item in old_policy.metrics if item.name == "setup_id")
+    new_setup = next(item.value for item in new_policy.metrics if item.name == "setup_id")
+
+    assert old_setup == new_setup
+    assert old_setup == (
+        f"swing-trade:AAPL:{old_policy.impulse_low_at.isoformat()}:"
+        f"{old_policy.impulse_high_at.isoformat()}"
+    )
+    assert old_policy.strategy_version == "1.1.0"
+    assert new_policy.strategy_version == "1.2.0"

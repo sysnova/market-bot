@@ -282,6 +282,7 @@ def _material_change(previous: SwingTradeAssessment, current: SwingTradeAssessme
         or previous.invalidation != current.invalidation
         or previous.primary_target != current.primary_target
         or previous.geri_confluence is not current.geri_confluence
+        or _metric(previous, "setup_id") != _metric(current, "setup_id")
         or _metric(previous, "geri_zone_source") != _metric(current, "geri_zone_source")
         or _metric(previous, "support_assessment_id") != _metric(current, "support_assessment_id")
     )

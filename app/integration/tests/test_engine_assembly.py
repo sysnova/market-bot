@@ -20,6 +20,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV4,
     EntryOpportunityEngineV5,
     EntryOpportunityEngineV6,
+    EntryOpportunityEngineV7,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_recovery_engine import EntryRecoveryEngineV11
@@ -78,7 +79,12 @@ from app.swing_engine import (
     SwingEngineV10,
     SwingEngineV12,
 )
-from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11, SwingTradeEngineV13
+from app.swing_trade_engine import (
+    SwingTradeEngine,
+    SwingTradeEngineV11,
+    SwingTradeEngineV13,
+    SwingTradeEngineV14,
+)
 from app.volume_structure_engine import VolumeStructureEngineV11
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -110,6 +116,7 @@ REARMED_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.26.0.yaml"
 PARALLEL_SWING_LEGS_DEFINITION = ROOT / "configs/marketbot/7.28.0.yaml"
 ACTIONABLE_SUPPORT_DEFINITION = ROOT / "configs/marketbot/7.29.0.yaml"
 SUPPORT_ENRICHED_SWING_DEFINITION = ROOT / "configs/marketbot/7.30.0.yaml"
+STABLE_SWING_THESIS_DEFINITION = ROOT / "configs/marketbot/7.31.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -261,6 +268,23 @@ def test_support_enriched_swing_definition_versions_all_three_consumers() -> Non
     assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV16)
     assert isinstance(assembly.build_swing_trade(), SwingTradeEngineV13)
     assert assembly.definition.version == "7.30.0"
+
+
+def test_stable_swing_thesis_definition_updates_matching_structure() -> None:
+    previous = MarketBotAssembly.from_path(SUPPORT_ENRICHED_SWING_DEFINITION)
+    assembly = MarketBotAssembly.from_path(STABLE_SWING_THESIS_DEFINITION)
+
+    assert isinstance(previous.build_swing_trade(), SwingTradeEngineV13)
+    assert isinstance(
+        previous.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV6,
+    )
+    assert isinstance(assembly.build_swing_trade(), SwingTradeEngineV14)
+    assert isinstance(
+        assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV7,
+    )
+    assert assembly.definition.version == "7.31.0"
 
 
 def test_confirmed_entry_definition_versions_causal_buy_analysis() -> None:

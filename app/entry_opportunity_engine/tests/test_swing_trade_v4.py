@@ -17,6 +17,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV4,
     EntryOpportunityEngineV5,
     EntryOpportunityEngineV6,
+    EntryOpportunityEngineV7,
     InMemoryEntryOpportunityStore,
 )
 
@@ -342,4 +343,109 @@ async def test_v6_expires_each_parallel_swing_leg_on_its_own_ttl() -> None:
     assert [leg.status for leg in opportunity.legs] == [
         EntryLegStatus.EXPIRED,
         EntryLegStatus.OPEN,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_v7_updates_same_structure_across_strategy_versions_without_new_leg() -> None:
+    store = InMemoryEntryOpportunityStore()
+    old_setup = "swing-trade:AAPL:L:H:1.0.0"
+    new_setup = "swing-trade:AAPL:L:H:1.2.0"
+    await EntryOpportunityEngineV6(store=store).ingest_signal(
+        swing_signal(SwingTradeMaturity.ST3, setup_id=old_setup)
+    )
+
+    events = await EntryOpportunityEngineV7(store=store).ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST3,
+            at=NOW + timedelta(minutes=15),
+            setup_id=new_setup,
+            price="98",
+            policy_version="1.2.0",
+        )
+    )
+
+    opportunity = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert opportunity is not None
+    assert [item.setup_id for item in opportunity.signal_references] == [
+        "swing-trade:AAPL:L:H"
+    ]
+    assert opportunity.signal_references[0].policy_version == "1.2.0"
+    assert [item.setup_id for item in opportunity.legs] == ["swing-trade:AAPL:L:H"]
+    assert len(opportunity.legs) == 1
+    assert len(opportunity.checkpoints) == 1
+    assert opportunity.checkpoints[0].entry_price == Decimal("97")
+
+
+@pytest.mark.asyncio
+async def test_v7_consolidates_historical_preentry_duplicates_then_advances_once() -> None:
+    store = InMemoryEntryOpportunityStore()
+    legacy = EntryOpportunityEngineV6(store=store)
+    await legacy.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST1,
+            setup_id="swing-trade:AAPL:L:H:1.0.0",
+            price="96",
+        )
+    )
+    await legacy.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST1,
+            at=NOW + timedelta(minutes=15),
+            setup_id="swing-trade:AAPL:L:H:1.1.0",
+            price="97",
+            policy_version="1.1.0",
+        )
+    )
+
+    before = await store.load_active("AAPL")
+    assert before is not None
+    assert len(before.signal_references) == 2
+    assert len(before.checkpoints) == 2
+
+    await EntryOpportunityEngineV7(store=store).ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST2,
+            at=NOW + timedelta(minutes=30),
+            setup_id="swing-trade:AAPL:L:H",
+            price="98",
+            policy_version="1.2.0",
+        )
+    )
+
+    opportunity = await store.load_active("AAPL")
+    assert opportunity is not None
+    assert len(opportunity.signal_references) == 1
+    assert opportunity.signal_references[0].setup_id == "swing-trade:AAPL:L:H"
+    assert [item.swing_trade_maturity for item in opportunity.checkpoints] == [
+        SwingTradeMaturity.ST1,
+        SwingTradeMaturity.ST2,
+    ]
+    assert opportunity.checkpoints[0].entry_price == Decimal("96")
+
+
+@pytest.mark.asyncio
+async def test_v7_keeps_materially_different_anchor_structure_as_parallel_thesis() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV7(store=store)
+    first_setup = "swing-trade:AAPL:L1:H:1.2.0"
+    second_setup = "swing-trade:AAPL:L2:H:1.2.0"
+    await engine.ingest_signal(
+        swing_signal(SwingTradeMaturity.ST3, setup_id=first_setup)
+    )
+    await engine.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST3,
+            at=NOW + timedelta(minutes=15),
+            setup_id=second_setup,
+            price="98",
+        )
+    )
+
+    opportunity = await store.load_active("AAPL")
+    assert opportunity is not None
+    assert [item.setup_id for item in opportunity.legs] == [
+        "swing-trade:AAPL:L1:H",
+        "swing-trade:AAPL:L2:H",
     ]

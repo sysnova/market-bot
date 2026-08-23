@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Collection
 from datetime import datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -1770,6 +1771,178 @@ class EntryOpportunityEngineV6(EntryOpportunityEngineV5):
             await self._store.save(updated, event)
             events.append(event)
         return tuple(events)
+
+
+class EntryOpportunityEngineV7(EntryOpportunityEngineV6):
+    """Update an existing SwingTrade thesis when only its policy version changed."""
+
+    engine_version = "7.0.0"
+
+    def _new_swing_trade_opportunity(self, signal: EntrySignal) -> EntryOpportunity:
+        return super()._new_swing_trade_opportunity(_canonical_swing_trade_signal(signal))
+
+    def _apply_swing_trade(
+        self, active: EntryOpportunity, signal: EntrySignal
+    ) -> tuple[EntryOpportunity | None, str]:
+        normalized = _consolidate_swing_trade_theses(active)
+        canonical_signal = _canonical_swing_trade_signal(signal)
+        changed, reason = super()._apply_swing_trade(normalized, canonical_signal)
+        if changed is not None or normalized == active:
+            return changed, reason
+
+        previous = _signal_reference_for_setup(normalized, canonical_signal)
+        reference = _swing_trade_reference(canonical_signal, previous)
+        return normalized.model_copy(
+            update={
+                "signal_references": _replace_signal_reference(
+                    normalized.signal_references, reference
+                ),
+                "source_analysis_ids": _bounded_source_analysis_ids(
+                    normalized.source_analysis_ids,
+                    _signal_source_ids(canonical_signal),
+                ),
+                "current_price": canonical_signal.entry_price,
+                "updated_at": max(normalized.updated_at, canonical_signal.created_at),
+                "revision": active.revision + 1,
+            }
+        ), "swing_trade_equivalent_thesis_updated"
+
+
+_SEMVER_SUFFIX = re.compile(r"\d+\.\d+\.\d+")
+
+
+def _canonical_swing_trade_setup_id(setup_id: str) -> str:
+    if not setup_id.startswith("swing-trade:") or ":" not in setup_id:
+        return setup_id
+    structural_id, version = setup_id.rsplit(":", 1)
+    return structural_id if _SEMVER_SUFFIX.fullmatch(version) else setup_id
+
+
+def _canonical_swing_trade_signal(signal: EntrySignal) -> EntrySignal:
+    if signal.family is not EntrySignalFamily.SWING_TRADE:
+        return signal
+    setup_id = _canonical_swing_trade_setup_id(signal.setup_id)
+    if setup_id == signal.setup_id:
+        return signal
+    return signal.model_copy(update={"setup_id": setup_id})
+
+
+def _consolidate_swing_trade_theses(active: EntryOpportunity) -> EntryOpportunity:
+    references = _consolidate_swing_trade_references(active.signal_references)
+    checkpoints = _consolidate_swing_trade_checkpoints(active.checkpoints)
+    legs = _consolidate_swing_trade_legs(active.legs)
+    if (
+        references == active.signal_references
+        and checkpoints == active.checkpoints
+        and legs == active.legs
+    ):
+        return active
+    return active.model_copy(
+        update={
+            "signal_references": references,
+            "checkpoints": checkpoints,
+            "legs": legs,
+        }
+    )
+
+
+def _consolidate_swing_trade_references(
+    references: tuple[EntryOpportunitySignalReference, ...],
+) -> tuple[EntryOpportunitySignalReference, ...]:
+    values: list[EntryOpportunitySignalReference] = []
+    positions: dict[str, int] = {}
+    for item in references:
+        if item.family is not EntrySignalFamily.SWING_TRADE:
+            values.append(item)
+            continue
+        setup_id = _canonical_swing_trade_setup_id(item.setup_id)
+        normalized = item.model_copy(update={"setup_id": setup_id})
+        position = positions.get(setup_id)
+        if position is None:
+            positions[setup_id] = len(values)
+            values.append(normalized)
+            continue
+        existing = values[position]
+        latest = normalized if normalized.created_at >= existing.created_at else existing
+        peaks = tuple(
+            value
+            for value in (existing.peak_st, normalized.peak_st)
+            if value is not None
+        )
+        peak = max(peaks, key=_st_rank) if peaks else None
+        values[position] = latest.model_copy(update={"setup_id": setup_id, "peak_st": peak})
+    return tuple(values)
+
+
+def _consolidate_swing_trade_checkpoints(
+    checkpoints: tuple[EntryMaturityCheckpoint, ...],
+) -> tuple[EntryMaturityCheckpoint, ...]:
+    values: list[EntryMaturityCheckpoint] = []
+    positions: dict[tuple[EntryMaturityLevel, SwingTradeMaturity | None, str], int] = {}
+    for item in checkpoints:
+        if item.signal_family is not EntrySignalFamily.SWING_TRADE or item.setup_id is None:
+            values.append(item)
+            continue
+        setup_id = _canonical_swing_trade_setup_id(item.setup_id)
+        normalized = item.model_copy(update={"setup_id": setup_id})
+        key = (normalized.level, normalized.swing_trade_maturity, setup_id)
+        position = positions.get(key)
+        if position is None:
+            positions[key] = len(values)
+            values.append(normalized)
+            continue
+        existing = values[position]
+        earliest = existing if existing.reached_at <= normalized.reached_at else normalized
+        latest = normalized if normalized.reached_at >= existing.reached_at else existing
+        values[position] = earliest.model_copy(
+            update={
+                "setup_id": setup_id,
+                "current_price": latest.current_price,
+                "highest_price": max(existing.highest_price, normalized.highest_price),
+                "lowest_price": min(existing.lowest_price, normalized.lowest_price),
+                "mfe_percent": max(existing.mfe_percent, normalized.mfe_percent),
+                "mae_percent": min(existing.mae_percent, normalized.mae_percent),
+            }
+        )
+    return tuple(values)
+
+
+def _consolidate_swing_trade_legs(
+    legs: tuple[EntryHorizonLeg, ...],
+) -> tuple[EntryHorizonLeg, ...]:
+    values: list[EntryHorizonLeg] = []
+    positions: dict[tuple[AnalysisHorizon, str], int] = {}
+    for item in legs:
+        if item.horizon is not AnalysisHorizon.SWING or item.setup_id is None:
+            values.append(item)
+            continue
+        setup_id = _canonical_swing_trade_setup_id(item.setup_id)
+        normalized = item.model_copy(update={"setup_id": setup_id})
+        key = (normalized.horizon, setup_id)
+        position = positions.get(key)
+        if position is None:
+            positions[key] = len(values)
+            values.append(normalized)
+            continue
+        existing = values[position]
+        values[position] = _preferred_equivalent_swing_leg(existing, normalized)
+    return tuple(values)
+
+
+def _preferred_equivalent_swing_leg(
+    existing: EntryHorizonLeg, candidate: EntryHorizonLeg
+) -> EntryHorizonLeg:
+    rank = {
+        EntryLegStatus.OPEN: 3,
+        EntryLegStatus.WATCHING: 2,
+    }
+    existing_rank = rank.get(existing.status, 1)
+    candidate_rank = rank.get(candidate.status, 1)
+    if candidate_rank != existing_rank:
+        return candidate if candidate_rank > existing_rank else existing
+    if existing.opened_at is None or candidate.opened_at is None:
+        return existing if existing.opened_at is None else candidate
+    return existing if existing.opened_at <= candidate.opened_at else candidate
 
 
 def _is_core_signal(signal: EntrySignal) -> bool:

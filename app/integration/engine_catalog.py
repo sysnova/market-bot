@@ -26,6 +26,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV4,
     EntryOpportunityEngineV5,
     EntryOpportunityEngineV6,
+    EntryOpportunityEngineV7,
 )
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
@@ -110,6 +111,7 @@ from app.swing_trade_engine import (
     SwingTradeEngineV11,
     SwingTradeEngineV12,
     SwingTradeEngineV13,
+    SwingTradeEngineV14,
 )
 from app.swing_trade_engine.strategy import configure_engine as configure_swing_trade
 from app.swing_trade_engine.strategy import validate_strategy as validate_swing_trade
@@ -174,6 +176,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.1.0": SwingTradeEngineV11,
                     "1.2.0": SwingTradeEngineV12,
                     "1.3.0": SwingTradeEngineV13,
+                    "1.4.0": SwingTradeEngineV14,
                 },
                 required_since="7.20.0",
                 configure=configure_swing_trade,
@@ -215,6 +218,7 @@ def default_engine_registry() -> EngineRegistry:
                     "4.0.0": EntryOpportunityEngineV4,
                     "5.0.0": EntryOpportunityEngineV5,
                     "6.0.0": EntryOpportunityEngineV6,
+                    "7.0.0": EntryOpportunityEngineV7,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(
