@@ -294,6 +294,7 @@ class SupportState(ContractEnum):
 
     NO_KEY_SUPPORT = "NO_KEY_SUPPORT"
     NO_NEARBY_SUPPORT = "NO_NEARBY_SUPPORT"
+    SINGLE_SUPPORT_NEARBY = "SINGLE_SUPPORT_NEARBY"
     WATCH_KEY_SUPPORT = "WATCH_KEY_SUPPORT"
     FIRST_TOUCH = "FIRST_TOUCH"
     REACTION_CONFIRMED = "REACTION_CONFIRMED"
@@ -312,6 +313,15 @@ class SupportConfirmationType(ContractEnum):
     V_RECOVERY = "V_RECOVERY"
     BASE_BREAKOUT = "BASE_BREAKOUT"
     SWEEP_RECLAIM = "SWEEP_RECLAIM"
+
+
+class SupportZonePosition(ContractEnum):
+    """Location of spot relative to the selected support zone."""
+
+    NO_ZONE = "NO_ZONE"
+    BELOW_ZONE = "BELOW_ZONE"
+    IN_ZONE = "IN_ZONE"
+    ABOVE_ZONE = "ABOVE_ZONE"
 
 
 class FusionState(ContractEnum):

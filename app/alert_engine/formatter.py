@@ -340,7 +340,13 @@ def _swing_fields(metrics: dict[str, Any]) -> list[str]:
             metrics.get("support_zone_low"), metrics.get("support_zone_high")
         )
         suffix = f" {support_zone}" if support_zone is not None else ""
-        fields.append(f"Support confirm {support_state}/{support_contribution}{suffix}")
+        label = (
+            "Support confirm"
+            if support_contribution in {"REACTION", "STRUCTURE"}
+            else "Support context"
+        )
+        risk = " B-WAVE-RISK" if metrics.get("support_b_wave_risk") is True else ""
+        fields.append(f"{label} {support_state}/{support_contribution}{suffix}{risk}")
     return fields
 
 

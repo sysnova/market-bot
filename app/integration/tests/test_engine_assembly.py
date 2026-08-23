@@ -55,12 +55,17 @@ from app.options_gamma_engine import OptionsGammaEngine
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.signal_fusion_engine import SignalFusionEngineV05
+from app.support_confirmation_engine import (
+    SupportConfirmationEngine,
+    SupportConfirmationEngineV03,
+)
 from app.swing_4h_geri_engine import (
     Swing4HGeriEngine,
     Swing4HGeriEngineV11,
     Swing4HGeriEngineV12,
     Swing4HGeriEngineV13,
     Swing4HGeriEngineV14,
+    Swing4HGeriEngineV16,
 )
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 from app.swing_engine import (
@@ -71,8 +76,9 @@ from app.swing_engine import (
     SwingEngineV8,
     SwingEngineV9,
     SwingEngineV10,
+    SwingEngineV12,
 )
-from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11
+from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11, SwingTradeEngineV13
 from app.volume_structure_engine import VolumeStructureEngineV11
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -102,6 +108,8 @@ STRUCTURE_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.24.0.yaml"
 CORRECTION_AVWAP_DEFINITION = ROOT / "configs/marketbot/7.25.0.yaml"
 REARMED_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.26.0.yaml"
 PARALLEL_SWING_LEGS_DEFINITION = ROOT / "configs/marketbot/7.28.0.yaml"
+ACTIONABLE_SUPPORT_DEFINITION = ROOT / "configs/marketbot/7.29.0.yaml"
+SUPPORT_ENRICHED_SWING_DEFINITION = ROOT / "configs/marketbot/7.30.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -232,6 +240,27 @@ def test_parallel_swing_legs_definition_selects_entry_opportunity_v6() -> None:
     )
     assert assembly.definition.version == "7.28.0"
     assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).strategy.version == "6.0.0"
+
+
+def test_actionable_support_definition_selects_support_confirmation_v03() -> None:
+    previous = MarketBotAssembly.from_path(PARALLEL_SWING_LEGS_DEFINITION)
+    assembly = MarketBotAssembly.from_path(ACTIONABLE_SUPPORT_DEFINITION)
+
+    assert isinstance(previous.build_support_confirmation(), SupportConfirmationEngine)
+    assert isinstance(assembly.build_support_confirmation(), SupportConfirmationEngineV03)
+    assert assembly.definition.version == "7.29.0"
+    assert assembly.spec(EngineSlot.SUPPORT_CONFIRMATION).strategy.version == "0.3.0"
+
+
+def test_support_enriched_swing_definition_versions_all_three_consumers() -> None:
+    previous = MarketBotAssembly.from_path(ACTIONABLE_SUPPORT_DEFINITION)
+    assembly = MarketBotAssembly.from_path(SUPPORT_ENRICHED_SWING_DEFINITION)
+
+    assert not isinstance(previous.build_swing(), SwingEngineV12)
+    assert isinstance(assembly.build_swing(), SwingEngineV12)
+    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV16)
+    assert isinstance(assembly.build_swing_trade(), SwingTradeEngineV13)
+    assert assembly.definition.version == "7.30.0"
 
 
 def test_confirmed_entry_definition_versions_causal_buy_analysis() -> None:

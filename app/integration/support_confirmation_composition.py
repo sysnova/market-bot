@@ -144,7 +144,7 @@ class SupportConfirmationRuntime:
         }:
             return
         self._bars.add(bar)
-        if bar.timeframe is BarTimeframe.DAY_1:
+        if bar.timeframe in {BarTimeframe.DAY_1, BarTimeframe.HOUR_1}:
             await self._evaluate(bar.symbol)
 
     async def _evaluate(self, symbol: str) -> bool:

@@ -18,7 +18,7 @@ from ._base import (
     UnitInterval,
     new_uuid7,
 )
-from .enums import SupportConfirmationType, SupportState
+from .enums import SupportConfirmationType, SupportState, SupportZonePosition
 from .rules import NamedValue
 
 
@@ -55,6 +55,15 @@ class SupportAssessment(StrictFrozenModel):
     higher_high: bool = False
     higher_low: bool = False
     b_wave_risk: bool = False
+    zone_position: SupportZonePosition = SupportZonePosition.NO_ZONE
+    zone_distance_percent: Decimal | None = Field(default=None, ge=Decimal("0"))
+    zone_distance_atr: Decimal | None = Field(default=None, ge=Decimal("0"))
+    touch_count: int = Field(default=0, ge=0)
+    touch_age_sessions: int | None = Field(default=None, ge=0)
+    four_hour_reclaim: bool = False
+    four_hour_higher_high: bool = False
+    four_hour_higher_low: bool = False
+    actionability_score: Decimal = Field(default=Decimal("0"), ge=Decimal("0"), le=Decimal("100"))
     support_sources: tuple[NonEmptyStr, ...] = ()
     structural_supports: tuple[StructuralSupportReference, ...] = ()
     impulse_origin: PositiveDecimal | None = None
@@ -78,9 +87,7 @@ class SupportAssessment(StrictFrozenModel):
         if self.state not in {
             SupportState.NO_KEY_SUPPORT,
             SupportState.NO_NEARBY_SUPPORT,
-        } and any(
-            level is None for level in levels
-        ):
+        } and any(level is None for level in levels):
             raise ValueError("support state requires a complete zone")
         if all(level is not None for level in levels):
             assert self.invalidation is not None
@@ -89,6 +96,8 @@ class SupportAssessment(StrictFrozenModel):
             assert self.zone_high is not None
             if not self.invalidation < self.zone_low <= self.zone_center <= self.zone_high:
                 raise ValueError("support zone levels are out of order")
+        elif self.zone_position is not SupportZonePosition.NO_ZONE:
+            raise ValueError("support zone position requires a complete zone")
         if len(self.support_sources) != len(set(self.support_sources)):
             raise ValueError("support sources must be unique")
         structural_sources = tuple(item.source for item in self.structural_supports)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from decimal import Decimal
 
 from app.contracts import (
@@ -29,6 +30,7 @@ _GERI_REACTION_STATES = {GeriMaturity.L2_4H, GeriMaturity.L3, GeriMaturity.L4}
 _IGNORED_SUPPORT_STATES = {
     SupportState.NO_KEY_SUPPORT,
     SupportState.NO_NEARBY_SUPPORT,
+    SupportState.SINGLE_SUPPORT_NEARBY,
     SupportState.B_WAVE_RISK,
     SupportState.INVALIDATED,
     SupportState.EXPIRED,
@@ -98,26 +100,12 @@ class SwingTradeEngineV12(SwingTradeEngineV11):
             context,
             result,
             freshness_sessions=self._support_freshness_sessions,
+            classifier=self._classify_support,
         )
         if support is not None:
             support_item, strength = support
             reasons.append(f"support_confirmation_{strength.lower()}_confluence")
-            metrics.extend(
-                (
-                    NamedValue(name="support_assessment_id", value=str(support_item.assessment_id)),
-                    NamedValue(name="support_contribution", value=strength),
-                    NamedValue(name="support_state", value=support_item.state.value),
-                    NamedValue(
-                        name="support_confirmation_type",
-                        value=support_item.confirmation_type.value,
-                    ),
-                    NamedValue(name="support_zone_low", value=support_item.zone_low),
-                    NamedValue(name="support_zone_high", value=support_item.zone_high),
-                    NamedValue(name="support_reaction_score", value=support_item.reaction_score),
-                    NamedValue(name="support_reversal_score", value=support_item.reversal_score),
-                    NamedValue(name="support_sources", value=support_item.support_sources),
-                )
-            )
+            metrics.extend(self._support_metrics(support_item, strength))
             updates["context_hash"] = _enriched_hash(result.context_hash, support_item)
 
         if maturity is not None:
@@ -131,6 +119,38 @@ class SwingTradeEngineV12(SwingTradeEngineV11):
             metrics=_upsert_metrics(result, *metrics),
         )
         return result.model_copy(update=updates)
+
+    def _classify_support(self, support: SupportAssessment, current_price: Decimal) -> str | None:
+        del current_price
+        if support.b_wave_risk:
+            return None
+        if support.state in _STRUCTURE_SUPPORT_STATES and support.reversal_score >= Decimal("60"):
+            return "STRUCTURE"
+        if support.state in _REACTION_SUPPORT_STATES and support.reaction_score >= Decimal("60"):
+            return "REACTION"
+        if any(_independent_support_source(source) for source in support.support_sources):
+            return "ZONE"
+        return None
+
+    def _support_metrics(
+        self,
+        support: SupportAssessment,
+        strength: str,
+    ) -> tuple[NamedValue, ...]:
+        return (
+            NamedValue(name="support_assessment_id", value=str(support.assessment_id)),
+            NamedValue(name="support_contribution", value=strength),
+            NamedValue(name="support_state", value=support.state.value),
+            NamedValue(
+                name="support_confirmation_type",
+                value=support.confirmation_type.value,
+            ),
+            NamedValue(name="support_zone_low", value=support.zone_low),
+            NamedValue(name="support_zone_high", value=support.zone_high),
+            NamedValue(name="support_reaction_score", value=support.reaction_score),
+            NamedValue(name="support_reversal_score", value=support.reversal_score),
+            NamedValue(name="support_sources", value=support.support_sources),
+        )
 
 
 def _selected_geri_confluence(
@@ -184,13 +204,13 @@ def _support_contribution(
     result: SwingTradeAssessment,
     *,
     freshness_sessions: int,
+    classifier: Callable[[SupportAssessment, Decimal], str | None],
 ) -> tuple[SupportAssessment, str] | None:
     support = context.support
     if (
         support is None
         or result.maturity is None
         or support.state in _IGNORED_SUPPORT_STATES
-        or support.b_wave_risk
         or support.zone_low is None
         or support.zone_high is None
         or support.invalidation is None
@@ -203,13 +223,8 @@ def _support_contribution(
     if not context.daily_bars or support_as_of < context.daily_bars[cutoff_index].timestamp:
         return None
 
-    if support.state in _STRUCTURE_SUPPORT_STATES and support.reversal_score >= Decimal("60"):
-        strength = "STRUCTURE"
-    elif support.state in _REACTION_SUPPORT_STATES and support.reaction_score >= Decimal("60"):
-        strength = "REACTION"
-    elif any(_independent_support_source(source) for source in support.support_sources):
-        strength = "ZONE"
-    else:
+    strength = classifier(support, context.current_price)
+    if strength is None:
         return None
     return support, strength
 

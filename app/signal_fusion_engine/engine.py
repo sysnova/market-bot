@@ -267,6 +267,7 @@ def _support_zone_gate(support: SupportAssessment | None) -> bool:
     if support is None or support.state in {
         SupportState.NO_KEY_SUPPORT,
         SupportState.NO_NEARBY_SUPPORT,
+        SupportState.SINGLE_SUPPORT_NEARBY,
         SupportState.INVALIDATED,
         SupportState.EXPIRED,
     }:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from pathlib import Path
 from typing import TextIO
 
@@ -108,19 +109,53 @@ def _format_assessment(item: SupportAssessment) -> str:
     risk = "YES" if item.b_wave_risk else "NO"
     assessed_at = getattr(item, "assessed_at", None) or item.occurred_at
     data_as_of = getattr(item, "data_as_of", None) or item.occurred_at
-    structural = _format_structural_supports(
-        getattr(item, "structural_supports", ())
-    )
+    structural = _format_structural_supports(getattr(item, "structural_supports", ()))
+    sources = _format_sources(getattr(item, "support_sources", ()))
+    confirmation = _confirmation_label(item)
+    position = getattr(item, "zone_position", None)
+    position_label = position.value if position is not None else "-"
+    distance_percent = getattr(item, "zone_distance_percent", None)
+    distance_atr = getattr(item, "zone_distance_atr", None)
+    touch_age = getattr(item, "touch_age_sessions", None)
+    touch_count = getattr(item, "touch_count", 0)
+    four_hour = _format_four_hour(item)
+    actionability = getattr(item, "actionability_score", Decimal())
     impulse = _format_impulse(item)
     return (
-        f"{assessed_at:%H:%M} {item.symbol:<6} {item.state.value:<20} "
-        f"{item.confirmation_type.value:<15} SUP {item.support_score} "
+        f"{assessed_at:%H:%M} {item.symbol:<6} {item.state.value:<22} "
+        f"{confirmation:<17} SUP {item.support_score} "
         f"REACT {item.reaction_score} REV {item.reversal_score} "
         f"PX {item.current_price} Z {_display(item.zone_low)}-"
         f"{_display(item.zone_high)} INV {_display(item.invalidation)} "
-        f"B-RISK {risk} STRUCT {structural} IMP {impulse} "
+        f"POS {position_label} DIST {_display(distance_percent)}%/"
+        f"{_display(distance_atr)}ATR TOUCH {touch_count}@{_display(touch_age)} "
+        f"ACT {actionability} B-RISK {risk} 4H {four_hour} "
+        f"SRC {sources} STRUCT {structural} IMP {impulse} "
         f"DATA {data_as_of:%m-%d %H:%M}"
     )
+
+
+def _confirmation_label(item: SupportAssessment) -> str:
+    if item.state is SupportState.BASE_BUILDING:
+        return "BREAKOUT_PENDING"
+    if item.state is SupportState.LIQUIDITY_SWEEP:
+        return "RECLAIM_PENDING"
+    if item.state is SupportState.SINGLE_SUPPORT_NEARBY:
+        return "UNCONFIRMED"
+    return item.confirmation_type.value
+
+
+def _format_sources(items: tuple[str, ...]) -> str:
+    if not items:
+        return "-"
+    return ",".join(_support_label(item) for item in items)
+
+
+def _format_four_hour(item: SupportAssessment) -> str:
+    reclaim = "R" if getattr(item, "four_hour_reclaim", False) else "-"
+    higher_high = "HH" if getattr(item, "four_hour_higher_high", False) else "-"
+    higher_low = "HL" if getattr(item, "four_hour_higher_low", False) else "-"
+    return f"{reclaim}/{higher_high}/{higher_low}"
 
 
 def _format_structural_supports(
@@ -129,8 +164,7 @@ def _format_structural_supports(
     if not items:
         return "-"
     return ",".join(
-        f"{_support_label(str(item.source))}:"
-        f"{item.price}(-{item.distance_percent}%)"
+        f"{_support_label(str(item.source))}:{item.price}(-{item.distance_percent}%)"
         for item in items
     )
 

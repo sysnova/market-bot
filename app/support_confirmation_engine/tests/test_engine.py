@@ -6,6 +6,7 @@ import pytest
 from app.contracts import BarTimeframe, MarketBar, SupportConfirmationType, SupportState
 from app.support_confirmation_engine import (
     SupportConfirmationEngine,
+    SupportConfirmationEngineV03,
     SupportContext,
     SupportZoneHint,
 )
@@ -323,3 +324,75 @@ def test_support_input_models_reject_mixed_or_invalid_data() -> None:
                 ),
             ),
         )
+
+
+def test_v03_reports_a_nearby_single_level_without_promoting_swing_confirmation() -> None:
+    bars = tuple(
+        _bar(
+            index,
+            open_="100",
+            high="101",
+            low="99",
+            close="100",
+        )
+        for index in range(60)
+    )
+
+    result = SupportConfirmationEngineV03().evaluate(
+        SupportContext(symbol="TGT", daily_bars=bars)
+    )
+
+    assert result.state is SupportState.SINGLE_SUPPORT_NEARBY
+    assert result.support_sources == ("daily_sma50",)
+    assert result.reaction_score == Decimal("0")
+    assert result.reversal_score == Decimal("0")
+    assert result.zone_distance_atr == Decimal("0.0000")
+    assert result.touch_count == 12
+
+
+def test_v03_uses_completed_hourly_bars_as_four_hour_structure_confirmation() -> None:
+    values = (
+        ("100", "102", "98", "100"),
+        ("100", "101", "99", "100"),
+        ("100", "102", "99", "101"),
+        ("101", "102", "100", "101"),
+        ("101", "102", "100.5", "101.5"),
+        ("101.5", "103", "101", "102"),
+        ("102", "104", "101", "103"),
+        ("103", "104", "102", "103"),
+        ("103", "104", "102", "103.5"),
+        ("103.5", "105", "103", "104"),
+        ("104", "106", "103", "105"),
+        ("105", "106", "104", "105.5"),
+    )
+    start = datetime(2026, 8, 1, 12, tzinfo=UTC)
+    hourly = tuple(
+        MarketBar(
+            symbol="TGT",
+            timeframe=BarTimeframe.HOUR_1,
+            timestamp=start + timedelta(hours=index),
+            open=Decimal(open_),
+            high=Decimal(high),
+            low=Decimal(low),
+            close=Decimal(close),
+            volume=Decimal("1000"),
+            source="fixture",
+            feed="test",
+        )
+        for index, (open_, high, low, close) in enumerate(values)
+    )
+
+    result = SupportConfirmationEngineV03().evaluate(
+        SupportContext(
+            symbol="TGT",
+            daily_bars=_sweep_bars(),
+            hourly_bars=hourly,
+            zone_hint=_zone(),
+        )
+    )
+
+    assert result.four_hour_reclaim is True
+    assert result.four_hour_higher_high is True
+    assert result.four_hour_higher_low is True
+    assert result.state is SupportState.STRUCTURE_CONFIRMED
+    assert result.reversal_score >= Decimal("60")

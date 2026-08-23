@@ -300,6 +300,14 @@ async def test_runtime_publishes_assessment_transition_and_deduplicates() -> Non
     assert isinstance(transition, SupportTransition)
     assert engine.contexts[-1].previous_assessment is not None
 
+    engine.hash = f"sha256:{'4' * 64}"
+    hourly = _bar(18, timeframe=BarTimeframe.HOUR_1).model_copy(
+        update={"timestamp": datetime(2026, 7, 20, 14, tzinfo=UTC)}
+    )
+    await runtime.handle_market(_envelope(hourly))
+    assert len(publisher.items) == 6
+    assert engine.contexts[-1].hourly_bars[-1].timeframe is BarTimeframe.HOUR_1
+
 
 async def test_runtime_restores_state_and_ignores_irrelevant_market_events() -> None:
     publisher = _Publisher()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from decimal import Decimal
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from .v10 import SwingEngineV10
 _IGNORED_STATES = {
     SupportState.NO_KEY_SUPPORT,
     SupportState.NO_NEARBY_SUPPORT,
+    SupportState.SINGLE_SUPPORT_NEARBY,
     SupportState.B_WAVE_RISK,
     SupportState.INVALIDATED,
     SupportState.EXPIRED,
@@ -58,6 +60,7 @@ class SwingEngineV11(SwingEngineV10):
             context,
             result,
             freshness_sessions=self._support_freshness_sessions,
+            classifier=self._classify_support,
         )
         if contribution is None:
             return result.model_copy(update={"engine_version": self.engine_version})
@@ -69,19 +72,7 @@ class SwingEngineV11(SwingEngineV10):
                 "reasons": tuple(dict.fromkeys((*result.reasons, reason))),
                 "metrics": _upsert_metrics(
                     result,
-                    NamedValue(name="support_assessment_id", value=str(support.assessment_id)),
-                    NamedValue(name="support_contribution", value=strength),
-                    NamedValue(name="support_state", value=support.state.value),
-                    NamedValue(
-                        name="support_confirmation_type",
-                        value=support.confirmation_type.value,
-                    ),
-                    NamedValue(name="support_zone_low", value=support.zone_low),
-                    NamedValue(name="support_zone_high", value=support.zone_high),
-                    NamedValue(name="support_zone_match", value=matched_zone),
-                    NamedValue(name="support_reaction_score", value=support.reaction_score),
-                    NamedValue(name="support_reversal_score", value=support.reversal_score),
-                    NamedValue(name="support_sources", value=support.support_sources),
+                    *self._support_metrics(support, strength, matched_zone),
                 ),
                 "source_event_ids": tuple(
                     dict.fromkeys((*result.source_event_ids, support.assessment_id))
@@ -90,12 +81,47 @@ class SwingEngineV11(SwingEngineV10):
             }
         )
 
+    def _classify_support(self, support: SupportAssessment, current_price: Decimal) -> str | None:
+        del current_price
+        if support.b_wave_risk:
+            return None
+        if support.state in _STRUCTURE_STATES and support.reversal_score >= Decimal("60"):
+            return "STRUCTURE"
+        if support.state in _REACTION_STATES and support.reaction_score >= Decimal("60"):
+            return "REACTION"
+        if any(_higher_timeframe_source(source) for source in support.support_sources):
+            return "ZONE"
+        return None
+
+    def _support_metrics(
+        self,
+        support: SupportAssessment,
+        strength: str,
+        matched_zone: str,
+    ) -> tuple[NamedValue, ...]:
+        return (
+            NamedValue(name="support_assessment_id", value=str(support.assessment_id)),
+            NamedValue(name="support_contribution", value=strength),
+            NamedValue(name="support_state", value=support.state.value),
+            NamedValue(
+                name="support_confirmation_type",
+                value=support.confirmation_type.value,
+            ),
+            NamedValue(name="support_zone_low", value=support.zone_low),
+            NamedValue(name="support_zone_high", value=support.zone_high),
+            NamedValue(name="support_zone_match", value=matched_zone),
+            NamedValue(name="support_reaction_score", value=support.reaction_score),
+            NamedValue(name="support_reversal_score", value=support.reversal_score),
+            NamedValue(name="support_sources", value=support.support_sources),
+        )
+
 
 def _support_contribution(
     context: SwingContext,
     result: AnalysisResult,
     *,
     freshness_sessions: int,
+    classifier: Callable[[SupportAssessment, Decimal], str | None],
 ) -> tuple[SupportAssessment, str, str] | None:
     support = context.support
     if (
@@ -103,7 +129,6 @@ def _support_contribution(
         or result.direction is not PatternDirection.BULLISH
         or result.verdict is AnalysisVerdict.AVOID
         or support.state in _IGNORED_STATES
-        or support.b_wave_risk
         or support.zone_low is None
         or support.zone_high is None
         or support.invalidation is None
@@ -134,13 +159,8 @@ def _support_contribution(
     if matched_zone is None:
         return None
 
-    if support.state in _STRUCTURE_STATES and support.reversal_score >= Decimal("60"):
-        strength = "STRUCTURE"
-    elif support.state in _REACTION_STATES and support.reaction_score >= Decimal("60"):
-        strength = "REACTION"
-    elif any(_higher_timeframe_source(source) for source in support.support_sources):
-        strength = "ZONE"
-    else:
+    strength = classifier(support, context.price)
+    if strength is None:
         return None
     return support, strength, matched_zone
 

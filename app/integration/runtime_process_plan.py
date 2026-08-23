@@ -304,7 +304,8 @@ def build_runtime_process_plan(
         elif (
             slot is EngineSlot.GERI_4H
             and slot in definition.engines
-            and definition.engines[slot].implementation in {"1.2.0", "1.3.0", "1.4.0", "1.5.0"}
+            and definition.engines[slot].implementation
+            in {"1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0"}
         ):
             dependencies = ("market-history-v1",) + (
                 ("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ()
