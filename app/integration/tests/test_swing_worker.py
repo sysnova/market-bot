@@ -6,6 +6,7 @@ import pytest
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
+    SUPPORT_ASSESSMENT_EVENT,
     AnalysisHorizon,
     AnalysisResult,
     AnalysisVerdict,
@@ -13,6 +14,9 @@ from app.contracts import (
     EventEnvelope,
     MarketBar,
     PatternDirection,
+    SupportAssessment,
+    SupportConfirmationType,
+    SupportState,
     UniverseChanged,
 )
 from app.integration.swing_worker import SwingWorker
@@ -164,3 +168,47 @@ async def test_swing_worker_ignores_after_hours_price() -> None:
 
     assert len(analyzer.contexts) == 1
     assert analyzer.contexts[-1].price == Decimal("100")
+
+
+@pytest.mark.unit
+async def test_swing_worker_passes_latest_support_assessment_to_the_engine() -> None:
+    publisher = RecordingPublisher()
+    analyzer = RecordingAnalyzer()
+    worker = SwingWorker(publisher=publisher, analyzer=analyzer)
+    support = SupportAssessment(
+        symbol="HIMS",
+        occurred_at=NOW - timedelta(days=1),
+        engine_version="0.2.0",
+        state=SupportState.REACTION_CONFIRMED,
+        confirmation_type=SupportConfirmationType.V_RECOVERY,
+        current_price=Decimal("100"),
+        zone_low=Decimal("99"),
+        zone_center=Decimal("100"),
+        zone_high=Decimal("101"),
+        invalidation=Decimal("97"),
+        support_score=Decimal("80"),
+        reaction_score=Decimal("70"),
+        reversal_score=Decimal("30"),
+        confidence=Decimal("0.7"),
+        reasons=("fixture",),
+        context_hash="sha256:" + "8" * 64,
+    )
+    await worker.handle_support_event(
+        EventEnvelope(
+            event_type=SUPPORT_ASSESSMENT_EVENT,
+            occurred_at=NOW,
+            source="support-confirmation-v0",
+            subject="HIMS",
+            payload=support,
+        )
+    )
+
+    await worker.bootstrap(
+        (
+            bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+            bar(BarTimeframe.MINUTE_15, NOW - timedelta(minutes=15)),
+        ),
+        symbols=("HIMS",),
+    )
+
+    assert analyzer.contexts[-1].support == support

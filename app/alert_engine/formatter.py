@@ -68,15 +68,8 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
     if alert.kind is AlertKind.EARLY_INTRADAY_WITHOUT_CONFIRMATION:
         values = _metrics(alert)
         price = values.get("current_price")
-        banner = (
-            f"{alert.symbol} | EARLY INTRADAY {_money(price)} | "
-            "WITHOUT CONFIRMATION"
-        )
-        lines.append(
-            f"{_EARLY_INTRADAY_BANNER_STYLE} {banner} {_RESET_STYLE}"
-            if color
-            else banner
-        )
+        banner = f"{alert.symbol} | EARLY INTRADAY {_money(price)} | WITHOUT CONFIRMATION"
+        lines.append(f"{_EARLY_INTRADAY_BANNER_STYLE} {banner} {_RESET_STYLE}" if color else banner)
     watch_banner = _candidate_watch_banner(alert, analyses)
     if watch_banner is not None:
         style, banner = watch_banner
@@ -87,14 +80,10 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
         maturity = values.get("maturity", "-")
         banner = f"{alert.symbol} | ENTRY PROGRESS {progress}% | {maturity}"
         style = _entry_progress_style(maturity)
-        lines.append(
-            f"{style} {banner} {_RESET_STYLE}" if color else banner
-        )
+        lines.append(f"{style} {banner} {_RESET_STYLE}" if color else banner)
     if alert.kind is AlertKind.ENTRY_OPPORTUNITY_CLOSED:
         banner = f"{alert.symbol} | PAPER TRADE CLOSED | REVIEW GAIN/LOSS"
-        lines.append(
-            f"{_OPPORTUNITY_CLOSED_STYLE} {banner} {_RESET_STYLE}" if color else banner
-        )
+        lines.append(f"{_OPPORTUNITY_CLOSED_STYLE} {banner} {_RESET_STYLE}" if color else banner)
     banner_result = _buy_banner(alert, analyses)
     if banner_result is not None:
         maturity, buy_banner = banner_result
@@ -103,9 +92,7 @@ def format_local_alert(alert: LocalAlert, *, color: bool = False) -> str:
             if _metrics(alert).get("news_risk_active") is True
             else _BUY_BANNER_STYLES[maturity]
         )
-        lines.append(
-            f"{style} {buy_banner} {_RESET_STYLE}" if color else buy_banner
-        )
+        lines.append(f"{style} {buy_banner} {_RESET_STYLE}" if color else buy_banner)
     lines.extend(
         [
             f"[{alert.severity.value}] {alert.symbol} score={_number(alert.score)} {alert.title}",
@@ -201,9 +188,7 @@ def _candidate_watch_banner(
 
 def _entry_progress_style(maturity: object) -> str:
     value = getattr(maturity, "value", maturity)
-    return _OPPORTUNITY_PROGRESS_STYLES.get(
-        str(value).upper(), _DEFAULT_OPPORTUNITY_PROGRESS_STYLE
-    )
+    return _OPPORTUNITY_PROGRESS_STYLES.get(str(value).upper(), _DEFAULT_OPPORTUNITY_PROGRESS_STYLE)
 
 
 def _level_line(
@@ -348,6 +333,14 @@ def _swing_fields(metrics: dict[str, Any]) -> list[str]:
         "R/R to resistance",
         f"{reward_risk}R" if reward_risk is not None else None,
     )
+    support_state = metrics.get("support_state")
+    support_contribution = metrics.get("support_contribution")
+    if support_state is not None and support_contribution is not None:
+        support_zone = _money_pair(
+            metrics.get("support_zone_low"), metrics.get("support_zone_high")
+        )
+        suffix = f" {support_zone}" if support_zone is not None else ""
+        fields.append(f"Support confirm {support_state}/{support_contribution}{suffix}")
     return fields
 
 

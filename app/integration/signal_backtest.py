@@ -499,6 +499,17 @@ async def run_signal_backtest(
             swing_trade.restore_geri,
             handler_errors,
         )
+        for handler in (
+            swing_worker.handle_support_event,
+            geri.restore_support,
+            swing_trade.restore_support,
+        ):
+            await _subscribe_checked(
+                bus,
+                "marketbot.v1.support-confirmation.assessment.>",
+                handler,
+                handler_errors,
+            )
         await _subscribe_checked(
             bus,
             "marketbot.v1.4hgeri.transition.>",
@@ -1075,9 +1086,7 @@ def _swing_model_confirmation_summary(
         if item.engine_id == "swing" and _inside_window(item.as_of, window_start, window_end)
     )
     channels = tuple(
-        item
-        for item in channels
-        if _inside_window(item.occurred_at, window_start, window_end)
+        item for item in channels if _inside_window(item.occurred_at, window_start, window_end)
     )
     geri_assessments = tuple(
         item
@@ -1093,25 +1102,20 @@ def _swing_model_confirmation_summary(
         item for item in daily if _metrics_by_name(item).get("swing_entry_gate_passed") is True
     )
     gate_failed = tuple(
-        item
-        for item in daily
-        if _metrics_by_name(item).get("swing_entry_gate_passed") is not True
+        item for item in daily if _metrics_by_name(item).get("swing_entry_gate_passed") is not True
     )
     favorable = tuple(item for item in daily if item.verdict is AnalysisVerdict.FAVORABLE)
     confirmed = tuple(item for item in gate_passed if item.verdict is AnalysisVerdict.FAVORABLE)
     return {
         "swing_daily": {
             "assessment_count": len(daily),
-            "session_count": len(
-                {item.as_of.astimezone(_NEW_YORK).date() for item in daily}
-            ),
+            "session_count": len({item.as_of.astimezone(_NEW_YORK).date() for item in daily}),
             "verdict_counts": _value_counts(item.verdict.value for item in daily),
             "favorable_verdict_count": len(favorable),
             "entry_gate_passed_count": len(gate_passed),
             "confirmed_buy_count": len(confirmed),
             "entry_lane_counts": _value_counts(
-                str(_metrics_by_name(item).get("entry_lane", "UNSPECIFIED"))
-                for item in confirmed
+                str(_metrics_by_name(item).get("entry_lane", "UNSPECIFIED")) for item in confirmed
             ),
             "gate_failure_reason_counts": _value_counts(
                 _reason_code(reason) for item in gate_failed for reason in item.reasons
@@ -1126,12 +1130,8 @@ def _swing_model_confirmation_summary(
                     "as_of": item.as_of.isoformat(),
                     "reference_price": _string_value(_metrics_by_name(item).get("reference_price")),
                     "verdict": item.verdict.value,
-                    "entry_lane": _string_value(
-                        _metrics_by_name(item).get("entry_lane")
-                    ),
-                    "invalidation": _string_value(
-                        _metrics_by_name(item).get("invalidation")
-                    ),
+                    "entry_lane": _string_value(_metrics_by_name(item).get("entry_lane")),
+                    "invalidation": _string_value(_metrics_by_name(item).get("invalidation")),
                     "structural_invalidation": _string_value(
                         _metrics_by_name(item).get("structural_invalidation")
                     ),

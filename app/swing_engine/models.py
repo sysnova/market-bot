@@ -10,7 +10,7 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from app.contracts import BarTimeframe, MarketBar
+from app.contracts import BarTimeframe, MarketBar, SupportAssessment
 
 PositiveDecimal = Annotated[Decimal, Field(gt=Decimal("0"))]
 Score = Annotated[Decimal, Field(ge=Decimal("0"), le=Decimal("100"))]
@@ -38,6 +38,7 @@ class SwingContext(FrozenModel):
     price: PositiveDecimal
     daily_bars: tuple[MarketBar, ...]
     intraday_bars: tuple[MarketBar, ...]
+    support: SupportAssessment | None = None
 
     @model_validator(mode="after")
     def validate_context(self) -> Self:
@@ -52,6 +53,12 @@ class SwingContext(FrozenModel):
             raise ValueError("intraday bars must use 15Min or 1Hour")
         if len({bar.timeframe for bar in self.intraday_bars}) > 1:
             raise ValueError("intraday bars must share one timeframe")
+        if self.support is not None:
+            if self.support.symbol != self.symbol:
+                raise ValueError("Support evidence must match Swing context symbol")
+            support_as_of = self.support.data_as_of or self.support.occurred_at
+            if support_as_of > self.as_of:
+                raise ValueError("Support evidence is later than Swing as_of")
         return self
 
     def _validate_series(self, name: str, bars: tuple[MarketBar, ...]) -> None:

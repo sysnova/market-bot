@@ -20,6 +20,7 @@ from app.contracts import (
     GERI_TRANSITION_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    SUPPORT_ASSESSMENT_EVENT,
     AnalysisHorizon,
     AnalysisResult,
     BarTimeframe,
@@ -35,6 +36,7 @@ from app.contracts import (
     MarketBar,
     Subscription,
     SubscriptionOptions,
+    SupportAssessment,
     TradeSide,
     entry_signal_subject,
     geri_assessment_subject,
@@ -85,6 +87,7 @@ class Swing4HGeriRuntime:
             "1.2.0",
             "1.3.0",
             "1.4.0",
+            "1.5.0",
         }
         self._publisher = publisher
         self._clock = clock or SystemClock()
@@ -99,6 +102,7 @@ class Swing4HGeriRuntime:
         self._existing_maturity: dict[str, EntryMaturityLevel] = {}
         self._opportunity_at: dict[str, datetime] = {}
         self._latest: dict[str, GeriAssessment] = {}
+        self._support: dict[str, SupportAssessment] = {}
         self._last_countertrend_signal: dict[
             str, tuple[str, GeriCountertrendMaturity | None, tuple[str, ...]]
         ] = {}
@@ -114,6 +118,21 @@ class Swing4HGeriRuntime:
         previous = self._latest.get(item.symbol)
         if previous is None or item.occurred_at >= previous.occurred_at:
             self._latest[item.symbol] = item
+
+    async def restore_support(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != SUPPORT_ASSESSMENT_EVENT:
+            return
+        item = (
+            envelope.payload
+            if isinstance(envelope.payload, SupportAssessment)
+            else SupportAssessment.model_validate(envelope.payload, strict=False)
+        )
+        previous = self._support.get(item.symbol)
+        if previous is not None and item.occurred_at < previous.occurred_at:
+            return
+        self._support[item.symbol] = item
+        if item.symbol in self._symbols:
+            await self.evaluate(item.symbol)
 
     async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {item.strip().upper() for item in symbols if item.strip()}
@@ -240,6 +259,7 @@ class Swing4HGeriRuntime:
                     daily_swing=self._daily_swing.get(normalized),
                     existing_maturity=self._existing_maturity.get(normalized),
                     active_structure=self._latest.get(normalized),
+                    support=self._support.get(normalized),
                     as_of=self._clock.now(),
                     current_price_at=price_at,
                 )
@@ -280,6 +300,7 @@ class Swing4HGeriRuntime:
                 payload=item,
             ),
         )
+
     async def _publish_countertrend_signal(
         self,
         item: GeriAssessment,
@@ -385,6 +406,10 @@ def _countertrend_observation(item: GeriAssessment) -> tuple[tuple[str, object],
         "countertrend_fast_confirmation",
         "countertrend_four_hour_confirmation",
         "countertrend_continuation_confirmation",
+        "support_assessment_id",
+        "support_contribution",
+        "support_state",
+        "support_zone_match",
     }
     return tuple(
         (metric.name, metric.value) for metric in item.metrics if metric.name in material_names
@@ -425,9 +450,7 @@ def _countertrend_signal(item: GeriAssessment) -> EntrySignal | None:
         countertrend_maturity=maturity,
         symbol=item.symbol,
         created_at=item.assessed_at or item.occurred_at,
-        setup_id=(
-            f"geri-countertrend:{item.symbol}:{source_at.isoformat()}:{item.engine_version}"
-        ),
+        setup_id=(f"geri-countertrend:{item.symbol}:{source_at.isoformat()}:{item.engine_version}"),
         entry_price=item.current_price,
         horizons=(AnalysisHorizon.SWING,),
         zone_low=Decimal(str(metrics["countertrend_zone_low"])),
@@ -458,7 +481,12 @@ def _countertrend_signal_reasons(
     if side == TradeSide.LONG.value and current_price >= target:
         return ("countertrend_target_reached",)
     if maturity is not None:
-        return (f"countertrend_{maturity.value.lower()}",)
+        support_reason = _support_signal_reason(metrics, zone="TACTICAL")
+        return tuple(
+            reason
+            for reason in (f"countertrend_{maturity.value.lower()}", support_reason)
+            if reason is not None
+        )
     if state_value == GeriMaturity.RECLAIM_REQUIRED.value:
         return ("countertrend_reclaim_required",)
     if state_value == GeriMaturity.EXTENDED.value:
@@ -474,6 +502,15 @@ def _countertrend_signal_reasons(
         *tuple(str(reason) for reason in eligibility_values),
         "countertrend_ineligible",
     )
+
+
+def _support_signal_reason(metrics: dict[str, object], *, zone: str) -> str | None:
+    if metrics.get("support_zone_match") != zone:
+        return None
+    contribution = metrics.get("support_contribution")
+    if contribution is None:
+        return None
+    return f"support_confirmation_{str(contribution).lower()}_confluence"
 
 
 def _material_transition(previous: GeriAssessment, current: GeriAssessment) -> bool:
@@ -529,7 +566,15 @@ async def run_swing_4h_geri_process(
                 "marketbot-4hgeri-restore-v1",
             ),
         )
-        if engine_version not in {"1.2.0", "1.3.0", "1.4.0"}:
+        if engine_version == "1.5.0":
+            replay_specs += (
+                (
+                    "marketbot.v1.support-confirmation.assessment.>",
+                    runtime.restore_support,
+                    "marketbot-4hgeri-support-v1",
+                ),
+            )
+        if engine_version not in {"1.2.0", "1.3.0", "1.4.0", "1.5.0"}:
             replay_specs += (
                 (
                     "marketbot.v1.analysis.result.SWING.>",

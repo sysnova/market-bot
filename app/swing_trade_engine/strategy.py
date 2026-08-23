@@ -6,7 +6,7 @@ from app.common.strategy import StrategySource
 
 
 def validate_strategy(implementation: str, source: StrategySource) -> None:
-    if implementation not in {"1.0.0", "1.1.0"}:
+    if implementation not in {"1.0.0", "1.1.0", "1.2.0"}:
         return
     behavior = source.behavior()
     for name in (
@@ -28,11 +28,13 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
     ):
         if behavior.decimal(name) <= 0:
             raise ValueError(f"SwingTrade {name} must be positive")
-    if implementation == "1.1.0":
+    if implementation in {"1.1.0", "1.2.0"}:
         behavior.positive_int("minimum_rvol_samples")
         if behavior.decimal("minimum_intraday_rvol") <= 0:
             raise ValueError("SwingTrade minimum_intraday_rvol must be positive")
         behavior.boolean("require_vwap_gate")
+    if implementation == "1.2.0":
+        behavior.positive_int("support_freshness_sessions")
 
 
 def configure_engine(
@@ -41,7 +43,7 @@ def configure_engine(
     args: tuple[object, ...],
     kwargs: dict[str, object],
 ) -> tuple[tuple[object, ...], dict[str, object]]:
-    if implementation not in {"1.0.0", "1.1.0"}:
+    if implementation not in {"1.0.0", "1.1.0", "1.2.0"}:
         return args, kwargs
     behavior = source.behavior()
     kwargs.update(
@@ -59,10 +61,12 @@ def configure_engine(
         trade_ttl_sessions=behavior.positive_int("trade_ttl_sessions"),
         strategy_version=source.version,
     )
-    if implementation == "1.1.0":
+    if implementation in {"1.1.0", "1.2.0"}:
         kwargs.update(
             minimum_intraday_rvol=behavior.decimal("minimum_intraday_rvol"),
             minimum_rvol_samples=behavior.positive_int("minimum_rvol_samples"),
             require_vwap_gate=behavior.boolean("require_vwap_gate"),
         )
+    if implementation == "1.2.0":
+        kwargs["support_freshness_sessions"] = behavior.positive_int("support_freshness_sessions")
     return args, kwargs

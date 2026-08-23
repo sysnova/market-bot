@@ -38,6 +38,7 @@ from .distributed_composition import (
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
+from .marketbot_definition import EngineMode
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
 from .universe_policy import universe_health_details
 
@@ -57,6 +58,8 @@ SUPPORT_HISTORY_REQUESTS = (
 class HoldingsProvider(Protocol):
     async def get_holdings(self) -> UniverseSnapshot: ...
 
+    async def get_universe(self) -> UniverseSnapshot: ...
+
 
 class SupportPublisher(Protocol):
     async def publish(self, subject: str, envelope: EventEnvelope) -> None: ...
@@ -72,6 +75,15 @@ async def load_support_holdings(provider: HoldingsProvider) -> UniverseSnapshot:
     snapshot = await provider.get_holdings()
     if not snapshot.symbols:
         raise RuntimeError("Support Confirmation requires a positive local holding")
+    return snapshot
+
+
+async def load_support_universe(provider: HoldingsProvider) -> UniverseSnapshot:
+    """Resolve the shared Swing universe so Support can enrich every tracked symbol."""
+
+    snapshot = await provider.get_universe()
+    if not snapshot.symbols:
+        raise RuntimeError("Support Confirmation requires a non-empty Swing universe")
     return snapshot
 
 
@@ -245,18 +257,28 @@ async def run_support_confirmation_process(
     bus: NatsJetStreamEventBus | None = None
     subscriptions: list[Subscription] = []
     try:
-        holdings = await load_support_holdings(provider)
+        support_spec = assembly.spec(EngineSlot.SUPPORT_CONFIRMATION)
+        enrichment_mode = support_spec.mode is EngineMode.ACTIVE
+        universe = (
+            await load_support_universe(provider)
+            if enrichment_mode
+            else await load_support_holdings(provider)
+        )
         requested = symbol.strip().upper() if symbol is not None else None
-        if requested is not None and requested not in holdings.symbols:
+        if requested is not None and requested not in universe.symbols:
             return {
                 "service": "support-confirmation-v0",
                 "mode": "ACTIVE",
                 "requested_symbol": requested,
                 "eligible": False,
-                "reason": "positive_holding_required",
+                "reason": (
+                    "tracked_swing_symbol_required"
+                    if enrichment_mode
+                    else "positive_holding_required"
+                ),
                 "assessments_published": 0,
             }
-        selected_symbols = (requested,) if requested is not None else holdings.symbols
+        selected_symbols = (requested,) if requested is not None else universe.symbols
         bus = await connect_nats(settings)
         runtime = SupportConfirmationRuntime(
             engine=assembly.build_support_confirmation(), publisher=bus
@@ -289,8 +311,8 @@ async def run_support_confirmation_process(
             ).strategy.version,
             "marketbot_definition_version": assembly.definition.version,
             "mode": "ACTIVE",
-            "universe": "positive-holdings-only",
-            "universe_source": holdings.source,
+            "universe": ("shared-swing-universe" if enrichment_mode else "positive-holdings-only"),
+            "universe_source": universe.source,
             "symbols": list(selected_symbols),
             "assessments_published": published,
             "persistence": "nats-jetstream-7d",

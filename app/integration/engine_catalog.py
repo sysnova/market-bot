@@ -79,6 +79,7 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV12,
     Swing4HGeriEngineV13,
     Swing4HGeriEngineV14,
+    Swing4HGeriEngineV15,
 )
 from app.swing_4h_geri_engine.strategy import configure_engine as configure_geri_4h
 from app.swing_4h_geri_engine.strategy import validate_strategy as validate_geri_4h
@@ -94,10 +95,11 @@ from app.swing_engine import (
     SwingEngineV8,
     SwingEngineV9,
     SwingEngineV10,
+    SwingEngineV11,
 )
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
-from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11
+from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11, SwingTradeEngineV12
 from app.swing_trade_engine.strategy import configure_engine as configure_swing_trade
 from app.swing_trade_engine.strategy import validate_strategy as validate_swing_trade
 from app.volume_structure_engine import VolumeStructureEngine, VolumeStructureEngineV11
@@ -127,6 +129,7 @@ def default_engine_registry() -> EngineRegistry:
                     "8.0.0": SwingEngineV8,
                     "9.0.0": SwingEngineV9,
                     "10.0.0": SwingEngineV10,
+                    "11.0.0": SwingEngineV11,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,
@@ -146,6 +149,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.2.0": Swing4HGeriEngineV12,
                     "1.3.0": Swing4HGeriEngineV13,
                     "1.4.0": Swing4HGeriEngineV14,
+                    "1.5.0": Swing4HGeriEngineV15,
                 },
                 required_since="7.15.0",
                 configure=configure_geri_4h,
@@ -155,6 +159,7 @@ def default_engine_registry() -> EngineRegistry:
                 implementations={
                     "1.0.0": SwingTradeEngine,
                     "1.1.0": SwingTradeEngineV11,
+                    "1.2.0": SwingTradeEngineV12,
                 },
                 required_since="7.20.0",
                 configure=configure_swing_trade,

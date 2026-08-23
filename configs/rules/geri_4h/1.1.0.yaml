@@ -1,0 +1,24 @@
+rule_id: marketbot.geri-4h
+version: 1.1.0
+status: candidate
+behavior:
+  pivot_radius: 1
+  minimum_bars: 8
+  lookback_bars: 60
+  breakout_atr: 0.10
+  zone_atr: 0.25
+  invalidation_atr: 0.50
+  maximum_extension_atr: 1.50
+  countertrend_minimum_reward_risk: 1.50
+  countertrend_ttl_sessions: 5
+  countertrend_requires_reaction: true
+  support_freshness_days: 8
+measurement:
+  dimensions:
+    - engine_version
+    - countertrend_state
+    - market_regime
+    - entry_timing
+    - support_contribution
+    - support_zone_match
+  outcomes: [mfe_percent, mae_percent, return_15m, return_30m, return_60m, return_close]

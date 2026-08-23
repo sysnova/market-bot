@@ -158,6 +158,7 @@ def _format_assessment(item: SwingTradeAssessment, *, color: bool) -> list[str]:
     zone = "SI" if item.spot_in_fibonacci_zone else "NO"
     support = "SI" if item.support_confluence else "NO"
     geri = "SI" if item.geri_confluence else "NO"
+    metrics = {metric.name: metric.value for metric in item.metrics}
     assessed_at = item.assessed_at or item.occurred_at
     heading = (
         f"{item.symbol} | {maturity} | ELIGIBLE {eligible} | "
@@ -190,14 +191,25 @@ def _format_assessment(item: SwingTradeAssessment, *, color: bool) -> list[str]:
         ),
         (
             f"  GERI ZONA {_range(item.geri_zone_low, item.geri_zone_high)} | "
-            f"CONFLUENCIA {geri} | ASSESSMENT {item.geri_assessment_id or '-'}"
+            f"CONFLUENCIA {geri} | FUENTE {metrics.get('geri_zone_source', '-')} | "
+            f"ASSESSMENT {item.geri_assessment_id or '-'}"
         ),
         f"  RAZONES {','.join(item.reasons)}",
     ]
+    if metrics.get("support_contribution") is not None:
+        lines.insert(
+            -1,
+            (
+                f"  SUPPORT {metrics.get('support_state')} / "
+                f"{metrics.get('support_contribution')} | "
+                f"ZONA {metrics.get('support_zone_low')}-{metrics.get('support_zone_high')} | "
+                f"REACT {metrics.get('support_reaction_score')} | "
+                f"REV {metrics.get('support_reversal_score')}"
+            ),
+        )
     if item.metrics:
         lines.append(
-            "  METRICAS "
-            + " | ".join(f"{metric.name}={metric.value}" for metric in item.metrics)
+            "  METRICAS " + " | ".join(f"{metric.name}={metric.value}" for metric in item.metrics)
         )
     lines.append("-" * 118)
     return lines

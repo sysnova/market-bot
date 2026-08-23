@@ -4,6 +4,7 @@ import pytest
 
 from app.common.settings import AppSettings
 from app.integration.engine_assembly import MarketBotAssembly
+from app.integration.marketbot_definition import load_marketbot_definition
 from app.integration.runtime_process_plan import (
     RuntimeProcessSpec,
     build_runtime_process_plan,
@@ -79,6 +80,20 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     )
     assert positions["entry-opportunity"] < positions["news-intelligence-v1"]
     assert positions["news-intelligence-v1"] < positions["alpaca-market-stream"]
+
+
+def test_v727_starts_support_before_the_enriched_swing_engines() -> None:
+    definition = load_marketbot_definition(
+        Path(__file__).parents[3] / "configs/marketbot/7.27.0.yaml"
+    )
+    plan = build_runtime_process_plan(definition, runtime_root=Path(".runtime"))
+    batches = startup_batches(plan.headless_processes)
+    positions = {name: index for index, batch in enumerate(batches) for name in batch}
+
+    assert "support-confirmation-v0" in positions
+    for consumer in ("swing", "4hgeri", "swing-trade"):
+        assert "support-confirmation-v0" in plan.process(consumer).dependencies
+        assert positions["support-confirmation-v0"] < positions[consumer]
 
 
 def test_startup_batches_reject_missing_dependencies_and_cycles() -> None:

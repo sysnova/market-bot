@@ -11,11 +11,13 @@ from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    SUPPORT_ASSESSMENT_EVENT,
     UNIVERSE_CHANGED_EVENT,
     AnalysisResult,
     BarTimeframe,
     EventEnvelope,
     MarketBar,
+    SupportAssessment,
     UniverseChanged,
     analysis_result_subject,
 )
@@ -54,6 +56,7 @@ class SwingWorker:
         self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
         self._daily_aggregator = RegularSessionDailyAggregator()
         self._universe = UniverseWarmupGate()
+        self._support: dict[str, SupportAssessment] = {}
 
     def activate_universe(self, symbols: tuple[str, ...]) -> None:
         self._universe.activate(symbols)
@@ -112,6 +115,21 @@ class SwingWorker:
         if bar.is_final:
             await self._evaluate(bar.symbol, (envelope.event_id,))
 
+    async def handle_support_event(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != SUPPORT_ASSESSMENT_EVENT:
+            return
+        item = (
+            envelope.payload
+            if isinstance(envelope.payload, SupportAssessment)
+            else SupportAssessment.model_validate(envelope.payload, strict=False)
+        )
+        previous = self._support.get(item.symbol)
+        if previous is not None and item.occurred_at < previous.occurred_at:
+            return
+        self._support[item.symbol] = item
+        if self._universe.allows(item.symbol):
+            await self._evaluate(item.symbol, (envelope.event_id,))
+
     async def _evaluate(
         self,
         symbol: str,
@@ -137,6 +155,7 @@ class SwingWorker:
                 price=intraday[-1].close,
                 daily_bars=daily,
                 intraday_bars=intraday,
+                support=self._support.get(symbol),
             ),
             source_event_ids=source_event_ids,
         )

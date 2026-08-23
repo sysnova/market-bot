@@ -132,6 +132,9 @@ def _format_assessment(item: GeriAssessment, *, color: bool) -> str:
     tactical = _format_countertrend(item)
     if tactical:
         body = f"{body}\n{tactical}"
+    support = _format_support(item)
+    if support:
+        body = f"{body}\n{support}"
     return f"{_COLORS[item.maturity]}{body}{_RESET}" if color else body
 
 
@@ -155,4 +158,18 @@ def _format_countertrend(item: GeriAssessment) -> str:
         f"  ELEGIBLE {eligible} | EDAD {metrics.get('countertrend_session_age')}/"
         f"{metrics.get('countertrend_ttl_sessions')} ruedas | EXPIRADO {expired}\n"
         "  SALIDA TACTICA: MONITOR MANUAL | NO OPPORTUNITY | NO ORDEN"
+    )
+
+
+def _format_support(item: GeriAssessment) -> str:
+    metrics = {metric.name: metric.value for metric in item.metrics}
+    contribution = metrics.get("support_contribution")
+    if contribution is None:
+        return ""
+    return (
+        f"  SUPPORT {metrics.get('support_state')} / {contribution} | "
+        f"MATCH {metrics.get('support_zone_match')} | "
+        f"ZONE {metrics.get('support_zone_low')}-{metrics.get('support_zone_high')} | "
+        f"REACT {metrics.get('support_reaction_score')} | "
+        f"REV {metrics.get('support_reversal_score')}"
     )

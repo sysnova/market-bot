@@ -265,6 +265,22 @@ async def run_engine_process(
             requirements=history_requirements,
         )
         worker = _build_worker(horizon, bus, assembly=assembly)
+        if (
+            horizon is AnalysisHorizon.SWING
+            and assembly.spec(EngineSlot.SWING).implementation == "11.0.0"
+        ):
+            swing_worker = cast(SwingWorker, worker)
+            support_subscription = await bus.subscribe(
+                "marketbot.v1.support-confirmation.assessment.>",
+                swing_worker.handle_support_event,
+                options=SubscriptionOptions(
+                    durable_name="marketbot-swing-support-v1",
+                    replay_latest_per_subject=True,
+                    ack_wait_seconds=60,
+                ),
+            )
+            subscriptions.append(support_subscription)
+            await bus.wait_until_caught_up(support_subscription, timeout_seconds=60)
         bootstrap_started = perf_counter()
         result_count = await worker.bootstrap(bars, symbols=universe.symbols)
         bootstrap_ms = _elapsed_ms(bootstrap_started)
@@ -814,9 +830,8 @@ async def run_alert_process(
             ),
             "decision_state": (
                 "postgresql"
-                if alert_spec.implementation in {
-                    "3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0"
-                }
+                if alert_spec.implementation
+                in {"3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0"}
                 else "memory"
             ),
             "decision_checkpoint_interval_seconds": (

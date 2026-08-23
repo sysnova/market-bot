@@ -25,6 +25,7 @@ from app.integration import support_confirmation_monitor
 from app.integration.support_confirmation_composition import (
     SupportConfirmationRuntime,
     load_support_holdings,
+    load_support_universe,
 )
 from app.integration.support_confirmation_monitor import (
     _format_assessment,
@@ -68,6 +69,16 @@ async def test_support_universe_rejects_an_empty_portfolio() -> None:
     provider.get_holdings = empty_holdings  # type: ignore[method-assign]
     with pytest.raises(RuntimeError, match="positive local holding"):
         await load_support_holdings(provider)
+
+
+async def test_support_enrichment_universe_includes_watchlist_symbols() -> None:
+    provider = _Universe()
+
+    snapshot = await load_support_universe(provider)
+
+    assert snapshot.symbols == ("TGT", "MSFT", "WATCH_ONLY")
+    assert provider.universe_calls == 1
+    assert provider.holdings_calls == 0
 
 
 def test_tmux_launcher_has_a_sibling_support_confirmation_window() -> None:
@@ -314,16 +325,12 @@ async def test_runtime_restores_state_and_ignores_irrelevant_market_events() -> 
             payload={},
         )
     )
-    assert await runtime.bootstrap(
-        tuple(_bar(index) for index in range(15)), symbols=("TGT",)
-    ) == 0
+    assert await runtime.bootstrap(tuple(_bar(index) for index in range(15)), symbols=("TGT",)) == 0
 
     await runtime.handle_market(_envelope(_bar(15), event_type="ignored"))
     await runtime.handle_market(_envelope(_bar(15, symbol="MSFT")))
     await runtime.handle_market(_envelope(_bar(15, final=False)))
-    await runtime.handle_market(
-        _envelope(_bar(15, timeframe=BarTimeframe.MINUTE_15))
-    )
+    await runtime.handle_market(_envelope(_bar(15, timeframe=BarTimeframe.MINUTE_15)))
     await runtime.handle_market(_envelope(_bar(15, timeframe=BarTimeframe.WEEK_1)))
     assert publisher.items == []
 
@@ -342,9 +349,7 @@ class _MonitorBus:
     instance: _MonitorBus | None = None
 
     def __init__(self) -> None:
-        self.subscriptions: list[
-            tuple[str, SubscriptionOptions, _Subscription]
-        ] = []
+        self.subscriptions: list[tuple[str, SubscriptionOptions, _Subscription]] = []
         self.closed = False
         type(self).instance = self
 
@@ -421,7 +426,6 @@ async def test_monitor_rings_only_for_a_new_structural_reentry(
     transition_options = _MonitorBus.instance.subscriptions[1][1]
     assert transition_options.replay_all is False
     assert all(
-        subscription.unsubscribed
-        for _, _, subscription in _MonitorBus.instance.subscriptions
+        subscription.unsubscribed for _, _, subscription in _MonitorBus.instance.subscriptions
     )
     assert _MonitorBus.instance.closed is True

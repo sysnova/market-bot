@@ -299,14 +299,26 @@ def build_runtime_process_plan(
             arguments += symbol_arguments
         if slot is EngineSlot.NEWS_INTELLIGENCE:
             dependencies = ("alert", "entry-watcher", "entry-opportunity")
+        elif slot is EngineSlot.SUPPORT_CONFIRMATION:
+            dependencies = ("market-history-v1",)
         elif (
             slot is EngineSlot.GERI_4H
             and slot in definition.engines
-            and definition.engines[slot].implementation in {"1.2.0", "1.3.0", "1.4.0"}
+            and definition.engines[slot].implementation in {"1.2.0", "1.3.0", "1.4.0", "1.5.0"}
         ):
-            dependencies = ("market-history-v1",)
+            dependencies = ("market-history-v1",) + (
+                ("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ()
+            )
         elif slot is EngineSlot.SWING_TRADE:
-            dependencies = ("market-history-v1", "4hgeri", "entry-opportunity")
+            dependencies = (
+                "market-history-v1",
+                "4hgeri",
+                "entry-opportunity",
+            ) + (("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ())
+        elif slot is EngineSlot.SWING:
+            dependencies = analytical_dependencies + (
+                ("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ()
+            )
         else:
             dependencies = analytical_dependencies
         add(name, arguments, slot=slot, dependencies=dependencies)

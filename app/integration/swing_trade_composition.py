@@ -18,6 +18,7 @@ from app.contracts import (
     GERI_ASSESSMENT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    SUPPORT_ASSESSMENT_EVENT,
     SWING_TRADE_ASSESSMENT_EVENT,
     SWING_TRADE_TRANSITION_EVENT,
     AnalysisHorizon,
@@ -29,6 +30,7 @@ from app.contracts import (
     MarketBar,
     Subscription,
     SubscriptionOptions,
+    SupportAssessment,
     SwingTradeAssessment,
     SwingTradeTransition,
     entry_signal_subject,
@@ -81,6 +83,7 @@ class SwingTradeRuntime:
         self._minute = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
         self._symbols: set[str] = set()
         self._geri: dict[str, GeriAssessment] = {}
+        self._support: dict[str, SupportAssessment] = {}
         self._latest: dict[str, SwingTradeAssessment] = {}
         self._evaluated: set[tuple[str, datetime]] = set()
         self._rejected_evaluations: dict[str, int] = {}
@@ -103,6 +106,14 @@ class SwingTradeRuntime:
         previous = self._geri.get(item.symbol)
         if previous is None or item.occurred_at >= previous.occurred_at:
             self._geri[item.symbol] = item
+
+    async def restore_support(self, envelope: EventEnvelope) -> None:
+        if envelope.event_type != SUPPORT_ASSESSMENT_EVENT:
+            return
+        item = _payload(envelope, SupportAssessment)
+        previous = self._support.get(item.symbol)
+        if previous is None or item.occurred_at >= previous.occurred_at:
+            self._support[item.symbol] = item
 
     async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {symbol.strip().upper() for symbol in symbols if symbol.strip()}
@@ -152,6 +163,7 @@ class SwingTradeRuntime:
                     current_price=bar.close,
                     daily_bars=daily,
                     geri=self._geri.get(bar.symbol),
+                    support=self._support.get(bar.symbol),
                     confirmation_bars=self._bars.history(
                         bar.symbol,
                         BarTimeframe.MINUTE_15,
@@ -270,7 +282,13 @@ def _material_change(previous: SwingTradeAssessment, current: SwingTradeAssessme
         or previous.invalidation != current.invalidation
         or previous.primary_target != current.primary_target
         or previous.geri_confluence is not current.geri_confluence
+        or _metric(previous, "geri_zone_source") != _metric(current, "geri_zone_source")
+        or _metric(previous, "support_assessment_id") != _metric(current, "support_assessment_id")
     )
+
+
+def _metric(item: SwingTradeAssessment, name: str) -> object | None:
+    return next((metric.value for metric in item.metrics if metric.name == name), None)
 
 
 async def run_swing_trade_process(
@@ -307,6 +325,11 @@ async def run_swing_trade_process(
                 "marketbot.v1.4hgeri.assessment.>",
                 runtime.restore_geri,
                 "marketbot-swing-trade-geri-v1",
+            ),
+            (
+                "marketbot.v1.support-confirmation.assessment.>",
+                runtime.restore_support,
+                "marketbot-swing-trade-support-v1",
             ),
         ):
             subscription = await bus.subscribe(
