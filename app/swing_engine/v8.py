@@ -182,7 +182,7 @@ class SwingEngineV8(SwingEngineV7):
                             *result.reasons,
                             "structure_recovery_confirmed",
                             "daily_rejection_and_higher_low_confirmed",
-                            "pivot_low_avwap_reclaimed",
+                            self._recovery_avwap_reason(),
                             "intraday_recovery_breakout_confirmed",
                             "tactical_invalidation_reward_risk_confirmed",
                         )
@@ -218,7 +218,7 @@ class SwingEngineV8(SwingEngineV7):
                     NamedValue(name="recovery_pivot_at", value=pivot.timestamp),
                     NamedValue(name="recovery_reaction_low", value=_rounded(pivot.low)),
                     NamedValue(name="recovery_daily_higher_low", value=True),
-                    NamedValue(name="recovery_pivot_avwap_passed", value=True),
+                    *self._recovery_avwap_metrics(context, pivot),
                     NamedValue(name="recovery_intraday_higher_low", value=True),
                     NamedValue(name="recovery_intraday_breakout", value=True),
                     NamedValue(name="recovery_intraday_vwap_passed", value=True),
@@ -245,9 +245,6 @@ class SwingEngineV8(SwingEngineV7):
         atr14 = _decimal(metrics.get("atr14"))
         sma20 = _decimal(metrics.get("daily_sma20"))
         resistance = _decimal(metrics.get("resistance"))
-        pivot_avwap_distance = _decimal(
-            metrics.get("price_vs_pivot_low_avwap_percent")
-        )
         if atr14 is None or sma20 is None or resistance is None:
             return None
         flags = _string_tuple(metrics.get("risk_flags"))
@@ -256,7 +253,7 @@ class SwingEngineV8(SwingEngineV7):
             or metrics.get("structure_broken_confirmed") is True
             or "broken_daily_structure" in flags
         )
-        if not damaged_structure or pivot_avwap_distance is None or pivot_avwap_distance < ZERO:
+        if not damaged_structure:
             return None
 
         start = max(1, len(context.daily_bars) - self._recovery_daily_lookback_days)
@@ -266,6 +263,13 @@ class SwingEngineV8(SwingEngineV7):
         if pivot_index >= len(context.daily_bars) - 1:
             return None
         pivot = context.daily_bars[pivot_index]
+        recovery_avwap_distance = self._recovery_avwap_distance(
+            context,
+            metrics,
+            pivot_index,
+        )
+        if recovery_avwap_distance is None or recovery_avwap_distance < ZERO:
+            return None
         latest_daily = context.daily_bars[-1]
         selloff_atr = (context.daily_bars[pivot_index - 1].close - pivot.low) / atr14
         daily_recovery = (
@@ -324,6 +328,26 @@ class SwingEngineV8(SwingEngineV7):
             reward_risk,
             pivot,
         )
+
+    def _recovery_avwap_distance(
+        self,
+        context: SwingContext,
+        metrics: dict[str, object],
+        pivot_index: int,
+    ) -> Decimal | None:
+        del context, pivot_index
+        return _decimal(metrics.get("price_vs_pivot_low_avwap_percent"))
+
+    def _recovery_avwap_reason(self) -> str:
+        return "pivot_low_avwap_reclaimed"
+
+    def _recovery_avwap_metrics(
+        self,
+        context: SwingContext,
+        pivot: MarketBar,
+    ) -> tuple[NamedValue, ...]:
+        del context, pivot
+        return (NamedValue(name="recovery_pivot_avwap_passed", value=True),)
 
 
 def _latest_session(bars: tuple[MarketBar, ...]) -> tuple[MarketBar, ...]:

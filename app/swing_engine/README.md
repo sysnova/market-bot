@@ -16,6 +16,12 @@ VWAP y ruptura de los tres maximos intradia previos. La invalidacion accionable 
 minimo de recuperacion con buffer de ATR; la invalidacion estructural original se conserva como
 `structural_invalidation`. Ambos carriles exigen al menos `1.5R` hasta resistencia.
 
+La definicion candidata `7.25.0` agrega `SwingEngineV9`. Conserva las confirmaciones diaria,
+intradia y de riesgo de V8, pero desacopla la recuperacion del ultimo pivot general confirmado.
+Su `recovery_avwap` nace en el minimo correctivo de las ultimas cinco ruedas que el propio carril
+esta evaluando. Asi, una correccion fuerte no queda bloqueada por el AVWAP del impulso anterior;
+el AVWAP general se sigue publicando como contexto y no se promueve a veto de recuperacion.
+
 La invalidacion tactica parte del minimo real de las
 ultimas diez ruedas y nunca usa un AVWAP como soporte automatico. La resistencia operativa usa
 cierres diarios; el maximo de mecha se publica por separado como `liquidity_high`. Un breakout que
@@ -39,6 +45,8 @@ sesenta ruedas o confirmacion de una base nueva. V1-V5 permanecen disponibles pa
 - `SwingEngineV8`: conserva V7 y publica `entry_lane`,
   `continuation_entry_gate_passed` y `recovery_entry_gate_passed`; una recuperacion confirmada usa
   clasificacion `recovery` y separa riesgo tactico de riesgo estructural.
+- `SwingEngineV9`: conserva V8 y exige el reclaim de un `recovery_avwap` anclado al minimo
+  correctivo reciente; publica su ancla, valor, distancia porcentual y estado del gate.
 
 V2 solo marca estructura rota cuando el precio esta al menos `1.5 ATR` bajo SMA50, la pendiente de
 SMA20 es negativa, ADX confirma tendencia y `-DI > +DI`. Una correccion normal puede continuar como

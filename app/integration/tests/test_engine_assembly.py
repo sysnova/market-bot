@@ -62,6 +62,7 @@ from app.swing_engine import (
     SwingEngineV6,
     SwingEngineV7,
     SwingEngineV8,
+    SwingEngineV9,
 )
 from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11
 from app.volume_structure_engine import VolumeStructureEngineV11
@@ -90,6 +91,7 @@ COUNTERTREND_GERI_DEFINITION = ROOT / "configs/marketbot/7.21.0.yaml"
 COUNTERTREND_OPPORTUNITY_DEFINITION = ROOT / "configs/marketbot/7.22.0.yaml"
 CONFIRMED_ENTRY_DEFINITION = ROOT / "configs/marketbot/7.23.0.yaml"
 STRUCTURE_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.24.0.yaml"
+CORRECTION_AVWAP_DEFINITION = ROOT / "configs/marketbot/7.25.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -246,6 +248,17 @@ def test_structure_recovery_definition_adds_independent_swing_entry_lane() -> No
     assert swing._recovery_enabled is True
     assert swing._recovery_daily_lookback_days == 5
     assert swing._recovery_minimum_reward_risk == Decimal("1.5")
+
+
+def test_correction_avwap_definition_preserves_v8_and_selects_v9() -> None:
+    previous = MarketBotAssembly.from_path(STRUCTURE_RECOVERY_DEFINITION)
+    assembly = MarketBotAssembly.from_path(CORRECTION_AVWAP_DEFINITION)
+
+    assert isinstance(previous.build_swing(), SwingEngineV8)
+    assert previous.definition.version == "7.24.0"
+    assert isinstance(assembly.build_swing(), SwingEngineV9)
+    assert assembly.definition.version == "7.25.0"
+    assert assembly.spec(EngineSlot.SWING).strategy.version == "3.1.0"
 
 
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:

@@ -91,6 +91,7 @@ from app.swing_engine import (
     SwingEngineV6,
     SwingEngineV7,
     SwingEngineV8,
+    SwingEngineV9,
 )
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
@@ -122,6 +123,7 @@ def default_engine_registry() -> EngineRegistry:
                     "6.0.0": SwingEngineV6,
                     "7.0.0": SwingEngineV7,
                     "8.0.0": SwingEngineV8,
+                    "9.0.0": SwingEngineV9,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,
