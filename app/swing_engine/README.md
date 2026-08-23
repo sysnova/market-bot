@@ -22,6 +22,14 @@ Su `recovery_avwap` nace en el minimo correctivo de las ultimas cinco ruedas que
 esta evaluando. Asi, una correccion fuerte no queda bloqueada por el AVWAP del impulso anterior;
 el AVWAP general se sigue publicando como contexto y no se promueve a veto de recuperacion.
 
+La definicion `7.26.0` agrega `SwingEngineV10`. El selloff deja de medirse solamente contra el
+cierre de la rueda anterior: toma el maximo de las diez ruedas previas al minimo correctivo, por lo
+que una caida distribuida en varias sesiones puede rearmar el carril aunque la estructura diaria
+formal siga rota. La invalidacion accionable queda bajo ese minimo correctivo con buffer de ATR;
+si el riesgo excede los limites, la compra espera. Cada minimo publica un `recovery_setup_id`
+estable y un `recovery_avwap` nuevo, permitiendo deduplicar la confirmacion y habilitar un ciclo
+distinto cuando aparece otra correccion.
+
 La invalidacion tactica parte del minimo real de las
 ultimas diez ruedas y nunca usa un AVWAP como soporte automatico. La resistencia operativa usa
 cierres diarios; el maximo de mecha se publica por separado como `liquidity_high`. Un breakout que
@@ -47,6 +55,8 @@ sesenta ruedas o confirmacion de una base nueva. V1-V5 permanecen disponibles pa
   clasificacion `recovery` y separa riesgo tactico de riesgo estructural.
 - `SwingEngineV9`: conserva V8 y exige el reclaim de un `recovery_avwap` anclado al minimo
   correctivo reciente; publica su ancla, valor, distancia porcentual y estado del gate.
+- `SwingEngineV10`: conserva V9, reconoce selloffs multisesion, usa el minimo correctivo como
+  invalidacion y publica identidad/rearmado por ciclo de recuperacion.
 
 V2 solo marca estructura rota cuando el precio esta al menos `1.5 ATR` bajo SMA50, la pendiente de
 SMA20 es negativa, ADX confirma tendencia y `-DI > +DI`. Una correccion normal puede continuar como

@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from app.alert_engine import AlertEngineV33, AlertEngineV35, AlertEngineV36, AlertEngineV37
+from app.alert_engine import (
+    AlertEngineV33,
+    AlertEngineV35,
+    AlertEngineV36,
+    AlertEngineV37,
+    AlertEngineV38,
+)
 from app.common.settings import AppSettings
 from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
@@ -63,6 +69,7 @@ from app.swing_engine import (
     SwingEngineV7,
     SwingEngineV8,
     SwingEngineV9,
+    SwingEngineV10,
 )
 from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11
 from app.volume_structure_engine import VolumeStructureEngineV11
@@ -92,6 +99,7 @@ COUNTERTREND_OPPORTUNITY_DEFINITION = ROOT / "configs/marketbot/7.22.0.yaml"
 CONFIRMED_ENTRY_DEFINITION = ROOT / "configs/marketbot/7.23.0.yaml"
 STRUCTURE_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.24.0.yaml"
 CORRECTION_AVWAP_DEFINITION = ROOT / "configs/marketbot/7.25.0.yaml"
+REARMED_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.26.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -259,6 +267,21 @@ def test_correction_avwap_definition_preserves_v8_and_selects_v9() -> None:
     assert isinstance(assembly.build_swing(), SwingEngineV9)
     assert assembly.definition.version == "7.25.0"
     assert assembly.spec(EngineSlot.SWING).strategy.version == "3.1.0"
+
+
+def test_rearmed_recovery_definition_promotes_swing_v10_through_alert_v38() -> None:
+    previous = MarketBotAssembly.from_path(CORRECTION_AVWAP_DEFINITION)
+    assembly = MarketBotAssembly.from_path(REARMED_RECOVERY_DEFINITION)
+
+    assert isinstance(previous.build_swing(), SwingEngineV9)
+    assert isinstance(previous.build_alert(), AlertEngineV37)
+    assert previous.definition.version == "7.25.0"
+    assert isinstance(assembly.build_swing(), SwingEngineV10)
+    assert isinstance(assembly.build_alert(), AlertEngineV38)
+    assert assembly.definition.version == "7.26.0"
+    assert assembly.spec(EngineSlot.SWING).strategy.version == "3.2.0"
+    assert assembly.spec(EngineSlot.ALERT).strategy.version == "1.3.0"
+    assert assembly.build_swing()._recovery_selloff_lookback_days == 10
 
 
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:

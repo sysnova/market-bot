@@ -77,12 +77,8 @@ class SwingEngineV8(SwingEngineV7):
                 raise ValueError(f"{name} must be finite and positive")
         positive_integers = {
             "recovery_daily_lookback_days": recovery_daily_lookback_days,
-            "recovery_intraday_confirmation_bars": (
-                recovery_intraday_confirmation_bars
-            ),
-            "recovery_intraday_breakout_lookback_bars": (
-                recovery_intraday_breakout_lookback_bars
-            ),
+            "recovery_intraday_confirmation_bars": (recovery_intraday_confirmation_bars),
+            "recovery_intraday_breakout_lookback_bars": (recovery_intraday_breakout_lookback_bars),
             "recovery_stop_lookback_bars": recovery_stop_lookback_bars,
         }
         for name, value in positive_integers.items():
@@ -92,27 +88,19 @@ class SwingEngineV8(SwingEngineV7):
             raise ValueError("recovery_daily_lookback_days must be at least 3")
         if recovery_intraday_confirmation_bars < 3:
             raise ValueError("recovery_intraday_confirmation_bars must be at least 3")
-        if (
-            recovery_intraday_breakout_lookback_bars
-            >= recovery_intraday_confirmation_bars
-        ):
+        if recovery_intraday_breakout_lookback_bars >= recovery_intraday_confirmation_bars:
             raise ValueError(
                 "recovery_intraday_breakout_lookback_bars must be smaller than "
                 "recovery_intraday_confirmation_bars"
             )
         if recovery_stop_lookback_bars > recovery_intraday_confirmation_bars:
             raise ValueError(
-                "recovery_stop_lookback_bars cannot exceed "
-                "recovery_intraday_confirmation_bars"
+                "recovery_stop_lookback_bars cannot exceed recovery_intraday_confirmation_bars"
             )
         self._recovery_enabled = recovery_enabled
         self._recovery_daily_lookback_days = recovery_daily_lookback_days
-        self._recovery_intraday_confirmation_bars = (
-            recovery_intraday_confirmation_bars
-        )
-        self._recovery_intraday_breakout_lookback_bars = (
-            recovery_intraday_breakout_lookback_bars
-        )
+        self._recovery_intraday_confirmation_bars = recovery_intraday_confirmation_bars
+        self._recovery_intraday_breakout_lookback_bars = recovery_intraday_breakout_lookback_bars
         self._recovery_stop_lookback_bars = recovery_stop_lookback_bars
         self._recovery_stop_atr_buffer = recovery_stop_atr_buffer
         self._recovery_minimum_selloff_atr = recovery_minimum_selloff_atr
@@ -153,9 +141,7 @@ class SwingEngineV8(SwingEngineV7):
         if recovery is None:
             return result.model_copy(update={"metrics": _upsert(result, *common_metrics)})
 
-        tactical_invalidation, resistance, risk_percent, risk_atr, reward_risk, pivot = (
-            recovery
-        )
+        tactical_invalidation, resistance, risk_percent, risk_atr, reward_risk, pivot = recovery
         recovery_score = Decimal("65")
         if reward_risk >= Decimal("2"):
             recovery_score += Decimal("5")
@@ -196,16 +182,13 @@ class SwingEngineV8(SwingEngineV7):
                     NamedValue(name="continuation_entry_gate_passed", value=False),
                     NamedValue(name="recovery_entry_gate_passed", value=True),
                     NamedValue(name="swing_entry_gate_passed", value=True),
-                    NamedValue(
-                        name="structural_invalidation", value=structural_invalidation
-                    ),
-                    NamedValue(
-                        name="structural_risk_percent", value=structural_risk_percent
-                    ),
+                    NamedValue(name="structural_invalidation", value=structural_invalidation),
+                    NamedValue(name="structural_risk_percent", value=structural_risk_percent),
                     NamedValue(name="structural_risk_atr", value=structural_risk_atr),
                     NamedValue(name="invalidation", value=tactical_invalidation),
                     NamedValue(
-                        name="invalidation_source", value="intraday_recovery_low"
+                        name="invalidation_source",
+                        value=self._recovery_invalidation_source(),
                     ),
                     NamedValue(name="risk_percent", value=_rounded(risk_percent)),
                     NamedValue(name="risk_atr", value=_rounded(risk_atr)),
@@ -219,6 +202,7 @@ class SwingEngineV8(SwingEngineV7):
                     NamedValue(name="recovery_reaction_low", value=_rounded(pivot.low)),
                     NamedValue(name="recovery_daily_higher_low", value=True),
                     *self._recovery_avwap_metrics(context, pivot),
+                    *self._recovery_setup_metrics(context, pivot),
                     NamedValue(name="recovery_intraday_higher_low", value=True),
                     NamedValue(name="recovery_intraday_breakout", value=True),
                     NamedValue(name="recovery_intraday_vwap_passed", value=True),
@@ -271,7 +255,11 @@ class SwingEngineV8(SwingEngineV7):
         if recovery_avwap_distance is None or recovery_avwap_distance < ZERO:
             return None
         latest_daily = context.daily_bars[-1]
-        selloff_atr = (context.daily_bars[pivot_index - 1].close - pivot.low) / atr14
+        selloff_atr = self._recovery_selloff_atr(
+            context,
+            pivot_index=pivot_index,
+            atr14=atr14,
+        )
         daily_recovery = (
             selloff_atr >= self._recovery_minimum_selloff_atr
             and latest_daily.low > pivot.low
@@ -286,9 +274,7 @@ class SwingEngineV8(SwingEngineV7):
             return None
         confirmation = session[-self._recovery_intraday_confirmation_bars :]
         current = confirmation[-1]
-        breakout_bars = confirmation[
-            -(self._recovery_intraday_breakout_lookback_bars + 1) : -1
-        ]
+        breakout_bars = confirmation[-(self._recovery_intraday_breakout_lookback_bars + 1) : -1]
         split = len(confirmation) // 2
         earlier = confirmation[:split]
         recent = confirmation[split:]
@@ -304,9 +290,11 @@ class SwingEngineV8(SwingEngineV7):
         ):
             return None
 
-        stop_bars = confirmation[-self._recovery_stop_lookback_bars :]
-        tactical_invalidation = _rounded(
-            min(bar.low for bar in stop_bars) - atr14 * self._recovery_stop_atr_buffer
+        tactical_invalidation = self._recovery_invalidation(
+            context,
+            pivot=pivot,
+            confirmation=confirmation,
+            atr14=atr14,
         )
         risk = context.price - tactical_invalidation
         if risk <= ZERO or resistance <= context.price:
@@ -328,6 +316,40 @@ class SwingEngineV8(SwingEngineV7):
             reward_risk,
             pivot,
         )
+
+    def _recovery_selloff_atr(
+        self,
+        context: SwingContext,
+        *,
+        pivot_index: int,
+        atr14: Decimal,
+    ) -> Decimal:
+        return (
+            context.daily_bars[pivot_index - 1].close - context.daily_bars[pivot_index].low
+        ) / atr14
+
+    def _recovery_invalidation(
+        self,
+        context: SwingContext,
+        *,
+        pivot: MarketBar,
+        confirmation: tuple[MarketBar, ...],
+        atr14: Decimal,
+    ) -> Decimal:
+        del context, pivot
+        stop_bars = confirmation[-self._recovery_stop_lookback_bars :]
+        return _rounded(min(bar.low for bar in stop_bars) - atr14 * self._recovery_stop_atr_buffer)
+
+    def _recovery_invalidation_source(self) -> str:
+        return "intraday_recovery_low"
+
+    def _recovery_setup_metrics(
+        self,
+        context: SwingContext,
+        pivot: MarketBar,
+    ) -> tuple[NamedValue, ...]:
+        del context, pivot
+        return ()
 
     def _recovery_avwap_distance(
         self,

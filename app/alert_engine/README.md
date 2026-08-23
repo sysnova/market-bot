@@ -62,6 +62,12 @@ these presentation fields express or submit an order.
 
 Windows toast can be added later as an optional sink without changing the engine or tests.
 
+`AlertEngineV38` promotes a fresh `SwingEngineV10` `STRUCTURE_RECOVERY` plus mature Intraday
+confirmation into one `ENTRY_CONFIRMED` alert carrying `CORE_RECOVERY` maturity `L2`. Deduplication
+uses Swing's correction-specific `recovery_setup_id`; a later correction anchor may therefore
+produce a new independent L2. The alert is analytical and is translated to `EntrySignal` by the
+existing integration adapter; it never submits a broker order.
+
 Run the focused suite with:
 
 ```powershell

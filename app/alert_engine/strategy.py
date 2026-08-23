@@ -16,6 +16,7 @@ _CONFIGURED_IMPLEMENTATIONS = {
     "3.5.0",
     "3.6.0",
     "3.7.0",
+    "3.8.0",
 }
 
 
@@ -27,21 +28,21 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
     behavior.boolean("strong_confirmation_required")
     behavior.boolean("five_minute_higher_low_required")
     behavior.boolean("same_market_session_required")
-    if implementation in {"3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0"}:
+    if implementation in {"3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0", "3.8.0"}:
         tuple(
             AnalysisHorizon(value)
-            for value in behavior.non_empty_unique_strings(
-                "recovery_required_horizons"
-            )
+            for value in behavior.non_empty_unique_strings("recovery_required_horizons")
         )
         EntryMaturityLevel(str(behavior.values["recovery_maturity"]))
-    if implementation in {"3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0"}:
+    if implementation in {"3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0", "3.8.0"}:
         minimum = behavior.decimal("minimum_swing_reward_risk_to_resistance")
         if minimum <= 0:
             raise ValueError(
                 "strategy behavior minimum_swing_reward_risk_to_resistance must be positive"
             )
         behavior.boolean("intraday_mature_gate_required")
+    if implementation == "3.8.0":
+        behavior.boolean("direct_swing_recovery_l2")
 
 
 def configure_engine(
@@ -53,50 +54,36 @@ def configure_engine(
     restored_state = kwargs.pop("restored_state", None)
     if implementation not in _CONFIGURED_IMPLEMENTATIONS:
         if restored_state is not None:
-            raise ValueError(
-                "restored Alert state requires alert implementation 3.1.0 or newer"
-            )
+            raise ValueError("restored Alert state requires alert implementation 3.1.0 or newer")
         return args, kwargs
     behavior = source.behavior()
     kwargs.update(
         minimum_reconfirmation_delay=timedelta(
             minutes=behavior.positive_int("fresh_reconfirmation_delay_minutes")
         ),
-        strong_confirmation_required=behavior.boolean(
-            "strong_confirmation_required"
-        ),
-        five_minute_higher_low_required=behavior.boolean(
-            "five_minute_higher_low_required"
-        ),
-        same_market_session_required=behavior.boolean(
-            "same_market_session_required"
-        ),
+        strong_confirmation_required=behavior.boolean("strong_confirmation_required"),
+        five_minute_higher_low_required=behavior.boolean("five_minute_higher_low_required"),
+        same_market_session_required=behavior.boolean("same_market_session_required"),
     )
-    if implementation in {"3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0"}:
+    if implementation in {"3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0", "3.8.0"}:
         kwargs["restored_state"] = restored_state
     elif restored_state is not None:
-        raise ValueError(
-            "restored Alert state requires alert implementation 3.1.0 or newer"
-        )
-    if implementation in {"3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0"}:
+        raise ValueError("restored Alert state requires alert implementation 3.1.0 or newer")
+    if implementation in {"3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0", "3.8.0"}:
         kwargs.update(
             recovery_required_horizons=tuple(
                 AnalysisHorizon(value)
-                for value in behavior.non_empty_unique_strings(
-                    "recovery_required_horizons"
-                )
+                for value in behavior.non_empty_unique_strings("recovery_required_horizons")
             ),
-            recovery_maturity=EntryMaturityLevel(
-                str(behavior.values["recovery_maturity"])
-            ),
+            recovery_maturity=EntryMaturityLevel(str(behavior.values["recovery_maturity"])),
         )
-    if implementation in {"3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0"}:
+    if implementation in {"3.3.0", "3.4.0", "3.5.0", "3.6.0", "3.7.0", "3.8.0"}:
         kwargs.update(
             minimum_swing_reward_risk_to_resistance=behavior.decimal(
                 "minimum_swing_reward_risk_to_resistance"
             ),
-            intraday_mature_gate_required=behavior.boolean(
-                "intraday_mature_gate_required"
-            ),
+            intraday_mature_gate_required=behavior.boolean("intraday_mature_gate_required"),
         )
+    if implementation == "3.8.0":
+        kwargs["direct_swing_recovery_l2"] = behavior.boolean("direct_swing_recovery_l2")
     return args, kwargs
