@@ -98,8 +98,10 @@ class EntryHorizonLeg(StrictFrozenModel):
 
     leg_id: UUID = Field(default_factory=new_uuid7)
     horizon: AnalysisHorizon
+    setup_id: NonEmptyStr | None = None
     status: EntryLegStatus
     opened_at: datetime | None = None
+    expires_at: datetime | None = None
     entry_price: PositiveDecimal | None = None
     current_price: PositiveDecimal
     invalidation: PositiveDecimal
@@ -119,6 +121,12 @@ class EntryHorizonLeg(StrictFrozenModel):
         opened = self.status is not EntryLegStatus.WATCHING
         if opened and (self.opened_at is None or self.entry_price is None):
             raise ValueError("non-watching horizon leg requires an entry")
+        if (
+            self.opened_at is not None
+            and self.expires_at is not None
+            and self.expires_at <= self.opened_at
+        ):
+            raise ValueError("horizon leg expiry must follow its entry")
         terminal = self.status not in {EntryLegStatus.WATCHING, EntryLegStatus.OPEN}
         if terminal != (
             self.closed_at is not None

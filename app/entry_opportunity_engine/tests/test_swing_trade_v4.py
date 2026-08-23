@@ -5,14 +5,18 @@ import pytest
 
 from app.contracts import (
     AnalysisHorizon,
+    BarTimeframe,
     EntryLegStatus,
     EntryMaturityLevel,
     EntrySignal,
     EntrySignalFamily,
+    MarketBar,
     SwingTradeMaturity,
 )
 from app.entry_opportunity_engine import (
     EntryOpportunityEngineV4,
+    EntryOpportunityEngineV5,
+    EntryOpportunityEngineV6,
     InMemoryEntryOpportunityStore,
 )
 
@@ -24,6 +28,9 @@ def swing_signal(
     *,
     at: datetime = NOW,
     setup_id: str = "swing-trade:AAPL:L:H:1.0.0",
+    price: str = "97",
+    invalidation: str = "92",
+    policy_version: str = "1.0.0",
 ) -> EntrySignal:
     return EntrySignal(
         family=EntrySignalFamily.SWING_TRADE,
@@ -31,14 +38,14 @@ def swing_signal(
         symbol="AAPL",
         created_at=at,
         setup_id=setup_id,
-        entry_price=Decimal("97"),
+        entry_price=Decimal(price),
         horizons=(AnalysisHorizon.SWING,),
         zone_low=Decimal("95.28"),
         zone_high=Decimal("100"),
-        invalidation=Decimal("92"),
+        invalidation=Decimal(invalidation),
         targets=(Decimal("119"), Decimal("144.72")),
         policy_id="swing-trade",
-        policy_version="1.0.0",
+        policy_version=policy_version,
         reasons=("test",),
     )
 
@@ -208,3 +215,131 @@ async def test_st3_resets_a_new_ten_session_trade_ttl() -> None:
         if cursor.weekday() < 5:
             weekdays += 1
     assert weekdays == 10
+
+
+@pytest.mark.asyncio
+async def test_v5_keeps_ignoring_a_new_swing_setup_while_a_paper_leg_is_open() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV5(store=store)
+    await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST3))
+
+    events = await engine.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST3,
+            at=NOW + timedelta(minutes=15),
+            setup_id="swing-trade:AAPL:L:H:1.2.0",
+            policy_version="1.2.0",
+        )
+    )
+
+    opportunity = await store.load_active("AAPL")
+    assert events == ()
+    assert opportunity is not None
+    assert len(opportunity.legs) == 1
+
+
+@pytest.mark.asyncio
+async def test_v6_opens_and_tracks_a_parallel_leg_for_a_new_swing_thesis() -> None:
+    store = InMemoryEntryOpportunityStore()
+    previous_engine = EntryOpportunityEngineV5(store=store)
+    engine = EntryOpportunityEngineV6(store=store)
+    old_setup = "swing-trade:AAPL:L:H:1.0.0"
+    new_setup = "swing-trade:AAPL:L:H:1.2.0"
+    await previous_engine.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST3,
+            setup_id=old_setup,
+            invalidation="92",
+        )
+    )
+    events = await engine.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST3,
+            at=NOW + timedelta(minutes=15),
+            setup_id=new_setup,
+            price="98",
+            invalidation="90",
+            policy_version="1.2.0",
+        )
+    )
+
+    opportunity = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert opportunity is not None
+    assert [(leg.setup_id, leg.status) for leg in opportunity.legs] == [
+        (old_setup, EntryLegStatus.OPEN),
+        (new_setup, EntryLegStatus.OPEN),
+    ]
+    assert opportunity.legs[0].expires_at is not None
+    assert opportunity.legs[1].expires_at is not None
+    assert opportunity.legs[1].expires_at > opportunity.legs[0].expires_at
+
+    await engine.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST4,
+            at=NOW + timedelta(minutes=30),
+            setup_id=new_setup,
+            price="99",
+            invalidation="90",
+            policy_version="1.2.0",
+        )
+    )
+    opportunity = await store.load_active("AAPL")
+    assert opportunity is not None
+    assert len(opportunity.legs) == 2
+
+    await engine.ingest_bar(
+        MarketBar(
+            symbol="AAPL",
+            timeframe=BarTimeframe.MINUTE_1,
+            timestamp=NOW + timedelta(minutes=31),
+            open=Decimal("98"),
+            high=Decimal("100"),
+            low=Decimal("91"),
+            close=Decimal("96"),
+            volume=Decimal("1000"),
+            source="fixture",
+            feed="sip",
+            is_final=True,
+        )
+    )
+    opportunity = await store.load_active("AAPL")
+    assert opportunity is not None
+    assert opportunity.status.value == "OPEN"
+    assert [leg.status for leg in opportunity.legs] == [
+        EntryLegStatus.INVALIDATED,
+        EntryLegStatus.OPEN,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_v6_expires_each_parallel_swing_leg_on_its_own_ttl() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV6(store=store)
+    old_setup = "swing-trade:AAPL:L:H:1.0.0"
+    new_setup = "swing-trade:AAPL:L:H:1.2.0"
+    await engine.ingest_signal(
+        swing_signal(SwingTradeMaturity.ST3, setup_id=old_setup)
+    )
+    await engine.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST3,
+            at=NOW + timedelta(days=2),
+            setup_id=new_setup,
+            policy_version="1.2.0",
+        )
+    )
+    opportunity = await store.load_active("AAPL")
+    assert opportunity is not None
+    old_expiry = opportunity.legs[0].expires_at
+    assert old_expiry is not None
+
+    events = await engine.reconcile(now=old_expiry, active_symbols=("AAPL",))
+
+    opportunity = await store.load_active("AAPL")
+    assert len(events) == 1
+    assert opportunity is not None
+    assert [leg.status for leg in opportunity.legs] == [
+        EntryLegStatus.EXPIRED,
+        EntryLegStatus.OPEN,
+    ]

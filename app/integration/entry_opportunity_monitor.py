@@ -521,7 +521,9 @@ def _format_opportunity(
             f"{performance} | INV {leg.invalidation} TARGET {leg.target or '-'} | "
             f"MFE {_percent_text(leg.mfe_percent)} MAE {_percent_text(leg.mae_percent)} | "
             f"OPENED {leg.opened_at.strftime('%m-%d %H:%M') if leg.opened_at else '-'} "
-            f"CLOSED {leg.closed_at.strftime('%m-%d %H:%M') if leg.closed_at else '-'}"
+            f"CLOSED {leg.closed_at.strftime('%m-%d %H:%M') if leg.closed_at else '-'} | "
+            f"SETUP {leg.setup_id or '-'} "
+            f"EXPIRES {leg.expires_at.strftime('%m-%d %H:%M') if leg.expires_at else '-'}"
         )
     lines.append("  ANALISIS VIGENTES")
     if not opportunity.latest_analyses:

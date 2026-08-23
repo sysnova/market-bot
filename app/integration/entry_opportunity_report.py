@@ -404,7 +404,9 @@ def _open_trade(opportunity: EntryOpportunity) -> dict[str, Any]:
         "legs": [
             {
                 "horizon": leg.horizon.value,
+                "setup_id": leg.setup_id,
                 "status": leg.status.value,
+                "expires_at": leg.expires_at.isoformat() if leg.expires_at is not None else None,
                 "entry_price": str(leg.entry_price) if leg.entry_price is not None else None,
                 "current_price": str(leg.current_price),
                 "gain_loss_percent": (

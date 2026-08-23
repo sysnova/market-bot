@@ -19,6 +19,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV3,
     EntryOpportunityEngineV4,
     EntryOpportunityEngineV5,
+    EntryOpportunityEngineV6,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_recovery_engine import EntryRecoveryEngineV11
@@ -100,6 +101,7 @@ CONFIRMED_ENTRY_DEFINITION = ROOT / "configs/marketbot/7.23.0.yaml"
 STRUCTURE_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.24.0.yaml"
 CORRECTION_AVWAP_DEFINITION = ROOT / "configs/marketbot/7.25.0.yaml"
 REARMED_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.26.0.yaml"
+PARALLEL_SWING_LEGS_DEFINITION = ROOT / "configs/marketbot/7.28.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -219,6 +221,17 @@ def test_countertrend_opportunity_definition_preserves_v4_and_selects_v5() -> No
     )
     assert assembly.definition.version == "7.22.0"
     assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).strategy.version == "5.0.0"
+
+
+def test_parallel_swing_legs_definition_selects_entry_opportunity_v6() -> None:
+    assembly = MarketBotAssembly.from_path(PARALLEL_SWING_LEGS_DEFINITION)
+
+    assert isinstance(
+        assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV6,
+    )
+    assert assembly.definition.version == "7.28.0"
+    assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).strategy.version == "6.0.0"
 
 
 def test_confirmed_entry_definition_versions_causal_buy_analysis() -> None:

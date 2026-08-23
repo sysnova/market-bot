@@ -806,7 +806,8 @@ class EntryOpportunityEngine:
         horizon_invalidations: dict[AnalysisHorizon, Decimal],
         horizon_targets: dict[AnalysisHorizon, Decimal],
     ) -> tuple[EntryHorizonLeg, ...]:
-        by_horizon = {item.horizon: item for item in legs}
+        scoped_legs = tuple(item for item in legs if item.setup_id is not None)
+        by_horizon = {item.horizon: item for item in legs if item.setup_id is None}
         output: list[EntryHorizonLeg] = []
         for horizon in dict.fromkeys(horizons):
             existing = by_horizon.pop(horizon, None)
@@ -835,6 +836,7 @@ class EntryOpportunityEngine:
                 )
             output.append(existing)
         output.extend(by_horizon.values())
+        output.extend(scoped_legs)
         return tuple(output)
 
     def _close_horizon(
@@ -1095,6 +1097,7 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
     """Track SwingTrade ST1-ST4 independently from Core L1-L4."""
 
     engine_version = "4.0.0"
+    allow_parallel_swing_trade_legs = False
 
     async def ingest_signal(self, signal: EntrySignal) -> tuple[EntryOpportunityEvent, ...]:
         if signal.family is not EntrySignalFamily.SWING_TRADE:
@@ -1130,8 +1133,14 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
         entered = _st_rank(stage) >= _st_rank(SwingTradeMaturity.ST3)
         leg = EntryHorizonLeg(
             horizon=AnalysisHorizon.SWING,
+            setup_id=(signal.setup_id if self.allow_parallel_swing_trade_legs else None),
             status=EntryLegStatus.OPEN if entered else EntryLegStatus.WATCHING,
             opened_at=signal.created_at if entered else None,
+            expires_at=(
+                _add_weekdays(signal.created_at, 10)
+                if entered and self.allow_parallel_swing_trade_legs
+                else None
+            ),
             entry_price=signal.entry_price if entered else None,
             current_price=signal.entry_price,
             invalidation=signal.invalidation,
@@ -1168,13 +1177,18 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
         previous = _signal_reference_for_setup(active, signal)
         if previous is not None and previous.signal_id == signal.signal_id:
             return None, "duplicate"
-        paper_open = any(leg.status is EntryLegStatus.OPEN for leg in active.legs)
+        paper_open = self._swing_trade_paper_open(active, setup_id=signal.setup_id)
         has_other_swing_setup = any(
             item.family is EntrySignalFamily.SWING_TRADE
             and item.setup_id != signal.setup_id
             for item in active.signal_references
         )
-        if paper_open and previous is None and has_other_swing_setup:
+        if (
+            not self.allow_parallel_swing_trade_legs
+            and paper_open
+            and previous is None
+            and has_other_swing_setup
+        ):
             return None, "new_setup_ignored_while_paper_open"
         if signal.swing_trade_maturity is None:
             if paper_open:
@@ -1188,6 +1202,36 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
                         "revision": active.revision + 1,
                     }
                 ), "swing_trade_tracking_lost_after_entry"
+            if (
+                self.allow_parallel_swing_trade_legs
+                and previous is not None
+                and any(leg.status is EntryLegStatus.OPEN for leg in active.legs)
+            ):
+                reference = _swing_trade_reference(signal, previous)
+                checkpoints = tuple(
+                    _close_checkpoint(
+                        item,
+                        price=signal.entry_price,
+                        now=signal.created_at,
+                        outcome=EntryLegStatus.THESIS_BROKEN,
+                    )
+                    if item.signal_family is EntrySignalFamily.SWING_TRADE
+                    and item.setup_id == signal.setup_id
+                    and item.status is EntryCheckpointStatus.OPEN
+                    else item
+                    for item in active.checkpoints
+                )
+                return active.model_copy(
+                    update={
+                        "signal_references": _replace_signal_reference(
+                            active.signal_references, reference
+                        ),
+                        "checkpoints": checkpoints,
+                        "current_price": signal.entry_price,
+                        "updated_at": max(active.updated_at, signal.created_at),
+                        "revision": active.revision + 1,
+                    }
+                ), "swing_trade_parallel_preentry_ineligible"
             if active.primary_signal_family is EntrySignalFamily.SWING_TRADE:
                 return self._close_opportunity(
                     active,
@@ -1239,18 +1283,46 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
                 _swing_trade_checkpoint(signal, stage, self._child_id_factory()),
             )
         legs = active.legs
-        entered_now = _st_rank(stage) >= _st_rank(SwingTradeMaturity.ST3) and not paper_open
+        entered_now = (
+            _st_rank(stage) >= _st_rank(SwingTradeMaturity.ST3)
+            and not paper_open
+            and not (
+                self.allow_parallel_swing_trade_legs
+                and _swing_trade_setup_entered(active, setup_id=signal.setup_id)
+            )
+        )
+        leg_expires_at: datetime | None = None
         if entered_now:
             target = _first_actionable_target(signal)
+            leg_expires_at = _add_weekdays(signal.created_at, 10)
             found = False
             updated_legs: list[EntryHorizonLeg] = []
             for leg in legs:
-                if leg.horizon is AnalysisHorizon.SWING and leg.status is EntryLegStatus.WATCHING:
+                if (
+                    leg.horizon is AnalysisHorizon.SWING
+                    and leg.status is EntryLegStatus.WATCHING
+                    and (
+                        not self.allow_parallel_swing_trade_legs
+                        or _swing_trade_leg_matches_setup(
+                            active, leg, setup_id=signal.setup_id
+                        )
+                    )
+                ):
                     updated_legs.append(
                         leg.model_copy(
                             update={
+                                "setup_id": (
+                                    signal.setup_id
+                                    if self.allow_parallel_swing_trade_legs
+                                    else leg.setup_id
+                                ),
                                 "status": EntryLegStatus.OPEN,
                                 "opened_at": signal.created_at,
+                                "expires_at": (
+                                    leg_expires_at
+                                    if self.allow_parallel_swing_trade_legs
+                                    else leg.expires_at
+                                ),
                                 "entry_price": signal.entry_price,
                                 "current_price": signal.entry_price,
                                 "invalidation": signal.invalidation,
@@ -1267,8 +1339,14 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
                 updated_legs.append(
                     EntryHorizonLeg(
                         horizon=AnalysisHorizon.SWING,
+                        setup_id=(
+                            signal.setup_id if self.allow_parallel_swing_trade_legs else None
+                        ),
                         status=EntryLegStatus.OPEN,
                         opened_at=signal.created_at,
+                        expires_at=(
+                            leg_expires_at if self.allow_parallel_swing_trade_legs else None
+                        ),
                         entry_price=signal.entry_price,
                         current_price=signal.entry_price,
                         invalidation=signal.invalidation,
@@ -1278,6 +1356,14 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
                     )
                 )
             legs = tuple(updated_legs)
+            if self.allow_parallel_swing_trade_legs:
+                legs = _label_legacy_swing_trade_leg(active, legs)
+                legs = tuple(
+                    item.model_copy(update={"expires_at": active.expires_at})
+                    if item.status is EntryLegStatus.OPEN and item.expires_at is None
+                    else item
+                    for item in legs
+                )
         updates: dict[str, object] = {
             "signal_references": _replace_signal_reference(active.signal_references, reference),
             "source_analysis_ids": _bounded_source_analysis_ids(
@@ -1289,12 +1375,28 @@ class EntryOpportunityEngineV4(EntryOpportunityEngineV3):
             "checkpoints": checkpoints,
             "legs": legs,
         }
+        if entered_now:
+            assert leg_expires_at is not None
+            updates["status"] = EntryOpportunityStatus.OPEN
+            updates["expires_at"] = max(active.expires_at, leg_expires_at)
+            if self.allow_parallel_swing_trade_legs:
+                updates["invalidation"] = min(active.invalidation, signal.invalidation)
         if active.primary_signal_family is EntrySignalFamily.SWING_TRADE:
-            updates["progress_percent"] = _st_progress(stage)
-            if entered_now:
-                updates["status"] = EntryOpportunityStatus.OPEN
-                updates["expires_at"] = _add_weekdays(signal.created_at, 10)
+            updates["progress_percent"] = (
+                max(active.progress_percent, _st_progress(stage))
+                if self.allow_parallel_swing_trade_legs
+                else _st_progress(stage)
+            )
         return active.model_copy(update=updates), f"swing_trade_{stage.value.lower()}_reached"
+
+    def _swing_trade_paper_open(self, active: EntryOpportunity, *, setup_id: str) -> bool:
+        if not self.allow_parallel_swing_trade_legs:
+            return any(leg.status is EntryLegStatus.OPEN for leg in active.legs)
+        return any(
+            leg.status is EntryLegStatus.OPEN
+            and _swing_trade_leg_matches_setup(active, leg, setup_id=setup_id)
+            for leg in active.legs
+        )
 
 
 class EntryOpportunityEngineV5(EntryOpportunityEngineV4):
@@ -1565,6 +1667,109 @@ class EntryOpportunityEngineV5(EntryOpportunityEngineV4):
                 "checkpoints": checkpoints,
             }
         ), reason
+
+
+class EntryOpportunityEngineV6(EntryOpportunityEngineV5):
+    """Track independent SwingTrade legs when a new version emits a new thesis."""
+
+    engine_version = "6.0.0"
+    allow_parallel_swing_trade_legs = True
+
+    async def reconcile(
+        self, *, now: datetime, active_symbols: Collection[str]
+    ) -> tuple[EntryOpportunityEvent, ...]:
+        normalized = {item.strip().upper() for item in active_symbols}
+        events: list[EntryOpportunityEvent] = []
+        for active in await self._store.list_active():
+            if active.symbol not in normalized:
+                closed = self._close_opportunity(
+                    active,
+                    price=active.current_price,
+                    now=now,
+                    reason=EntryCloseReason.UNIVERSE_REMOVED,
+                    leg_status=EntryLegStatus.TIME_EXIT,
+                )
+                event = self._event(
+                    closed, occurred_at=now, reasons=("symbol_removed_from_universe",)
+                )
+                await self._store.save(closed, event)
+                events.append(event)
+                continue
+
+            legs: list[EntryHorizonLeg] = []
+            expired_setups: set[str] = set()
+            expired_horizons: set[AnalysisHorizon] = set()
+            for leg in active.legs:
+                deadline = leg.expires_at or active.expires_at
+                if (
+                    now < deadline
+                    or leg.status in _TERMINAL_LEGS
+                ):
+                    legs.append(leg)
+                    continue
+                expired_horizons.add(leg.horizon)
+                if leg.setup_id is not None:
+                    expired_setups.add(leg.setup_id)
+                if leg.status is EntryLegStatus.OPEN:
+                    legs.append(
+                        _close_leg(
+                            leg,
+                            price=leg.current_price,
+                            now=now,
+                            status=EntryLegStatus.EXPIRED,
+                        )
+                    )
+
+            if not expired_horizons:
+                continue
+
+            checkpoints = tuple(
+                _close_checkpoint(
+                    item,
+                    price=item.current_price,
+                    now=now,
+                    outcome=EntryLegStatus.EXPIRED,
+                )
+                if item.setup_id in expired_setups
+                and item.status is EntryCheckpointStatus.OPEN
+                else item
+                for item in active.checkpoints
+            )
+            updated = active.model_copy(
+                update={
+                    "legs": tuple(legs),
+                    "checkpoints": checkpoints,
+                    "updated_at": max(active.updated_at, now),
+                    "revision": active.revision + 1,
+                }
+            )
+            if not any(
+                leg.status in {EntryLegStatus.WATCHING, EntryLegStatus.OPEN}
+                for leg in updated.legs
+            ):
+                updated = self._close_opportunity(
+                    updated,
+                    price=active.current_price,
+                    now=now,
+                    reason=EntryCloseReason.EXPIRED,
+                    leg_status=EntryLegStatus.EXPIRED,
+                )
+                reasons = ("opportunity_expired",)
+            else:
+                deadlines = tuple(
+                    leg.expires_at or active.expires_at
+                    for leg in updated.legs
+                    if leg.status in {EntryLegStatus.WATCHING, EntryLegStatus.OPEN}
+                )
+                updated = updated.model_copy(update={"expires_at": max(deadlines)})
+                reasons = tuple(
+                    f"{horizon.value.lower()}_leg_expired"
+                    for horizon in sorted(expired_horizons, key=lambda item: item.value)
+                )
+            event = self._event(updated, occurred_at=now, reasons=reasons)
+            await self._store.save(updated, event)
+            events.append(event)
+        return tuple(events)
 
 
 def _is_core_signal(signal: EntrySignal) -> bool:
@@ -1839,6 +2044,59 @@ def _signal_reference_for_setup(
             if item.family is signal.family and item.setup_id == signal.setup_id
         ),
         None,
+    )
+
+
+def _swing_trade_leg_matches_setup(
+    opportunity: EntryOpportunity,
+    leg: EntryHorizonLeg,
+    *,
+    setup_id: str,
+) -> bool:
+    if leg.horizon is not AnalysisHorizon.SWING:
+        return False
+    if leg.setup_id is not None:
+        return leg.setup_id == setup_id
+    legacy_setups = tuple(
+        item.setup_id
+        for item in opportunity.signal_references
+        if item.family is EntrySignalFamily.SWING_TRADE
+    )
+    return len(legacy_setups) == 1 and legacy_setups[0] == setup_id
+
+
+def _label_legacy_swing_trade_leg(
+    opportunity: EntryOpportunity,
+    legs: tuple[EntryHorizonLeg, ...],
+) -> tuple[EntryHorizonLeg, ...]:
+    unscoped = tuple(
+        item
+        for item in legs
+        if item.horizon is AnalysisHorizon.SWING and item.setup_id is None
+    )
+    scoped_setup_ids = {item.setup_id for item in legs if item.setup_id is not None}
+    unmatched_setups = tuple(
+        item.setup_id
+        for item in opportunity.signal_references
+        if item.family is EntrySignalFamily.SWING_TRADE
+        and item.setup_id not in scoped_setup_ids
+    )
+    if len(unscoped) != 1 or len(unmatched_setups) != 1:
+        return legs
+    legacy_leg_id = unscoped[0].leg_id
+    return tuple(
+        item.model_copy(update={"setup_id": unmatched_setups[0]})
+        if item.leg_id == legacy_leg_id
+        else item
+        for item in legs
+    )
+
+
+def _swing_trade_setup_entered(opportunity: EntryOpportunity, *, setup_id: str) -> bool:
+    return any(
+        leg.opened_at is not None
+        and _swing_trade_leg_matches_setup(opportunity, leg, setup_id=setup_id)
+        for leg in opportunity.legs
     )
 
 
