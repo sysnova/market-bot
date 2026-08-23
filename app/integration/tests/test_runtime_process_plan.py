@@ -32,7 +32,7 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     assert "4hgeri" in names
     assert "patreon-caps-v1" not in names
     assert "elliott-wave-v0" not in names
-    assert "support-confirmation-v0" not in names
+    assert "support-confirmation-v0" in names
     assert "dilution-sec" not in names
     assert "peter-lynch" not in names
 
@@ -47,7 +47,7 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
 
     geri = plan.process("4hgeri")
     assert geri.arguments[-2:] == ("--symbols", "HIMS,ZETA")
-    assert geri.dependencies == ("market-history-v1",)
+    assert geri.dependencies == ("market-history-v1", "support-confirmation-v0")
 
     confirmed = plan.process("confirmed-buy-monitor")
     assert confirmed.operator_monitor is True
