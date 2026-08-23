@@ -45,6 +45,20 @@ def test_aggregator_emits_completed_five_and_fifteen_minute_bars() -> None:
     assert fifteen[0].is_final is True
 
 
+def test_aggregator_keeps_sparse_bucket_when_first_trade_is_after_boundary() -> None:
+    aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
+
+    assert aggregator.add(minute_bar(2, close="100")) == ()
+    assert aggregator.add(minute_bar(7, close="101")) == ()
+    emitted = aggregator.add(minute_bar(15, close="102"))
+
+    assert len(emitted) == 1
+    assert emitted[0].timestamp == START
+    assert emitted[0].open == Decimal("99.9")
+    assert emitted[0].close == Decimal("101")
+    assert emitted[0].volume == Decimal("20")
+
+
 def test_aggregator_ignores_provider_updates_and_rejects_non_minute_input() -> None:
     aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_5,))
     updating = minute_bar(0, close="100").model_copy(update={"is_final": False})

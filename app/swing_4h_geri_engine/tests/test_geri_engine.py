@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.contracts import (
     AnalysisHorizon,
     AnalysisResult,
@@ -20,6 +22,7 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV11,
     Swing4HGeriEngineV12,
     Swing4HGeriEngineV13,
+    Swing4HGeriEngineV14,
 )
 
 START = datetime(2026, 7, 20, 13, 30, tzinfo=UTC)
@@ -424,3 +427,78 @@ def test_v12_remains_without_the_countertrend_lane() -> None:
     )
 
     assert not any(item.name.startswith("countertrend_") for item in result.metrics)
+
+
+def test_v14_keeps_countertrend_in_zone_as_watch_until_reaction_confirms() -> None:
+    bars = (
+        *bearish_level_three_bars(),
+        bar(9, low="80", high="98", close="90"),
+        bar(10, low="85", high="96", close="92"),
+    )
+    as_of = bars[-1].timestamp + timedelta(hours=4)
+
+    result = Swing4HGeriEngineV14().analyze(
+        Swing4HGeriContext(
+            symbol="AAPL",
+            bars=bars,
+            current_price=Decimal("80.2"),
+            as_of=as_of,
+            current_price_at=as_of,
+        )
+    )
+    metrics = {item.name: item.value for item in result.metrics}
+
+    assert metrics["countertrend_location_in_zone"] is True
+    assert metrics["countertrend_state"] is GeriMaturity.ARMED
+    assert metrics["countertrend_fast_confirmation"] is False
+
+
+def test_v14_rejects_confirmation_bars_from_the_future() -> None:
+    bars = bearish_level_three_bars()
+    as_of = bars[-1].timestamp + timedelta(minutes=15)
+    future = confirmation_bar(8, low="109", high="112", close="111", open_="110")
+
+    with pytest.raises(ValueError, match="later than as_of"):
+        Swing4HGeriEngineV14().analyze(
+            Swing4HGeriContext(
+                symbol="AAPL",
+                bars=bars,
+                current_price=Decimal("103"),
+                confirmation_bars=(future,),
+                as_of=as_of,
+                current_price_at=as_of,
+            )
+        )
+
+
+def test_v14_promotes_countertrend_only_after_fast_reaction() -> None:
+    bars = (
+        *bearish_level_three_bars(),
+        bar(9, low="80", high="98", close="90"),
+        bar(10, low="85", high="96", close="92"),
+    )
+    confirmed_at = bars[-1].timestamp
+    confirmations = (
+        confirmation_bar(20, low="79.8", high="81", close="80.1", open_="80.8").model_copy(
+            update={"timestamp": confirmed_at + timedelta(minutes=15)}
+        ),
+        confirmation_bar(21, low="80", high="82", close="81.5", open_="80.2").model_copy(
+            update={"timestamp": confirmed_at + timedelta(minutes=30)}
+        ),
+    )
+    as_of = confirmed_at + timedelta(minutes=45)
+
+    result = Swing4HGeriEngineV14().analyze(
+        Swing4HGeriContext(
+            symbol="AAPL",
+            bars=bars,
+            current_price=Decimal("81.5"),
+            confirmation_bars=confirmations,
+            as_of=as_of,
+            current_price_at=as_of,
+        )
+    )
+    metrics = {item.name: item.value for item in result.metrics}
+
+    assert metrics["countertrend_state"] is GeriMaturity.L2_4H
+    assert metrics["countertrend_fast_confirmation"] is True

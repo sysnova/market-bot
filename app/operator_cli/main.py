@@ -643,6 +643,12 @@ def market_backtest_process(
         str,
         typer.Option(help="Required comma-separated symbols to evaluate."),
     ],
+    source_end_date: Annotated[
+        str | None,
+        typer.Option(
+            help="Optional final historical NY market date for a stateful multi-session replay."
+        ),
+    ] = None,
     simulated_date: Annotated[
         str | None,
         typer.Option(help="Date exposed to engines; defaults to the next eligible weekday."),
@@ -669,6 +675,11 @@ def market_backtest_process(
     from app.integration.signal_backtest import SignalBacktestConfig, run_signal_backtest
 
     parsed_source = _iso_date(source_date, option_name="source date")
+    parsed_source_end = (
+        _iso_date(source_end_date, option_name="--source-end-date")
+        if source_end_date is not None
+        else None
+    )
     target_date = (
         _iso_date(simulated_date, option_name="--simulated-date")
         if simulated_date is not None
@@ -690,6 +701,7 @@ def market_backtest_process(
         run_signal_backtest(
             SignalBacktestConfig(
                 source_date=parsed_source,
+                source_end_date=parsed_source_end,
                 simulated_date=target_date,
                 cadence_seconds=cadence_seconds,
                 symbols=normalized_symbols,

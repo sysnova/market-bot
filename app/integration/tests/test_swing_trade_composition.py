@@ -38,6 +38,12 @@ class FixedEngine:
         return self._assessment
 
 
+class RejectingEngine:
+    def analyze(self, context: object) -> SwingTradeAssessment:
+        del context
+        raise ValueError("no valid impulse")
+
+
 def minute(at: datetime, *, final: bool = True) -> MarketBar:
     return MarketBar(
         symbol="AAPL",
@@ -123,6 +129,18 @@ async def test_initial_rejected_assessment_publishes_only_analysis() -> None:
     assert isinstance(assessment, SwingTradeAssessment)
     assert assessment.maturity is None
     assert assessment.invalidation > assessment.zone_high
+
+
+@pytest.mark.asyncio
+async def test_runtime_exposes_rejected_evaluation_reasons() -> None:
+    runtime = SwingTradeRuntime(engine=RejectingEngine(), publisher=Publisher())
+    at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+    bar = minute(at).model_copy(update={"timeframe": BarTimeframe.MINUTE_15})
+
+    published = await runtime.bootstrap((*daily_bars(), bar), symbols=("AAPL",))
+
+    assert published == 0
+    assert runtime.diagnostics() == {"no valid impulse": 1}
 
 
 @pytest.mark.asyncio

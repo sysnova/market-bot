@@ -49,6 +49,7 @@ async def run_confirmed_buy_monitor(
     sink = ConsoleAlertSink(stream=output, bell=False, color=True)
 
     displayed: set[UUID | str] = set()
+    analytical_stages: dict[str, str] = {}
 
     async def handle_signal(envelope: EventEnvelope) -> None:
         if envelope.event_type != ENTRY_SIGNAL_EVENT:
@@ -58,15 +59,10 @@ async def run_confirmed_buy_monitor(
             if isinstance(envelope.payload, EntrySignal)
             else EntrySignal.model_validate(envelope.payload, strict=False)
         )
+        stage_changed = _analytical_stage_changed(signal, analytical_stages)
+        if stage_changed is False:
+            return
         display_key: UUID | str = signal.signal_id
-        if (
-            signal.family is EntrySignalFamily.SWING_TRADE
-            and signal.swing_trade_maturity is not None
-        ):
-            display_key = (
-                f"{signal.family.value}:{signal.setup_id}:"
-                f"{signal.swing_trade_maturity.value}"
-            )
         if display_key in displayed:
             return
         projection = project_confirmed_signal(signal, color=True)
@@ -130,3 +126,22 @@ async def run_confirmed_buy_monitor(
         for subscription in subscriptions:
             await subscription.unsubscribe()
         await bus.close()
+
+
+def _analytical_stage_changed(signal: EntrySignal, stages: dict[str, str]) -> bool | None:
+    if signal.family is EntrySignalFamily.SWING_TRADE:
+        stage = (
+            signal.swing_trade_maturity.value if signal.swing_trade_maturity is not None else "NONE"
+        )
+    elif signal.family is EntrySignalFamily.GERI_COUNTERTREND:
+        stage = (
+            signal.countertrend_maturity.value
+            if signal.countertrend_maturity is not None
+            else "NONE"
+        )
+    else:
+        return None
+    key = f"{signal.family.value}:{signal.setup_id}"
+    previous = stages.get(key)
+    stages[key] = stage
+    return previous != stage

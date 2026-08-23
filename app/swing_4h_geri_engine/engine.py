@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
+from zoneinfo import ZoneInfo
 
 from app.contracts import (
     AnalysisHorizon,
@@ -28,6 +30,7 @@ from .models import Swing4HGeriContext
 
 ZERO = Decimal("0")
 FOUR_PLACES = Decimal("0.0001")
+_NEW_YORK = ZoneInfo("America/New_York")
 
 
 class Swing4HGeriEngine:
@@ -63,6 +66,9 @@ class Swing4HGeriEngine:
         self._zone_atr = zone_atr
         self._invalidation_atr = invalidation_atr
 
+    def _atr(self, bars: tuple[MarketBar, ...]) -> Decimal:
+        return _atr(bars)
+
     def analyze(self, context: Swing4HGeriContext) -> GeriAssessment:
         symbol = context.symbol.strip().upper()
         bars = tuple(bar for bar in context.bars[-self._lookback :] if bar.is_final)
@@ -89,7 +95,7 @@ class Swing4HGeriEngine:
         levels: tuple[GeriStructuralLevel, ...],
         tracking_extreme: tuple[Decimal, datetime] | None = None,
     ) -> GeriAssessment:
-        atr14 = _atr(bars)
+        atr14 = self._atr(bars)
         active = levels[-1]
         breakout_buffer = atr14 * self._breakout_atr
         daily_low, daily_high = _daily_swing_zone(context.daily_swing)
@@ -193,7 +199,7 @@ class Swing4HGeriEngine:
         for index in range(confirmed_index + 1, len(bars)):
             active = levels[-1]
             current = bars[index]
-            causal_atr = _atr(bars[: index + 1])
+            causal_atr = self._atr(bars[: index + 1])
             buffer = causal_atr * self._breakout_atr
             broken = (
                 current.close < active.price - buffer
@@ -277,7 +283,7 @@ class Swing4HGeriEngineV11(Swing4HGeriEngine):
             if current.timestamp <= active_structure.occurred_at:
                 continue
             active = levels[-1]
-            causal_atr = _atr(bars[: index + 1])
+            causal_atr = self._atr(bars[: index + 1])
             buffer = causal_atr * self._breakout_atr
             broken = (
                 current.close < active.price - buffer
@@ -423,7 +429,7 @@ class Swing4HGeriEngineV12(Swing4HGeriEngine):
             if current.timestamp <= active_structure.occurred_at:
                 continue
             active = levels[-1]
-            buffer = _atr(bars[: index + 1]) * self._breakout_atr
+            buffer = self._atr(bars[: index + 1]) * self._breakout_atr
             broken = (
                 current.close < active.price - buffer
                 if active.kind is GeriLevelKind.SUPPORT
@@ -475,7 +481,7 @@ class Swing4HGeriEngineV12(Swing4HGeriEngine):
         for index in range(confirmed_index + 1, len(bars)):
             active = levels[-1]
             current = bars[index]
-            buffer = _atr(bars[: index + 1]) * self._breakout_atr
+            buffer = self._atr(bars[: index + 1]) * self._breakout_atr
             broken = (
                 current.close < active.price - buffer
                 if active.kind is GeriLevelKind.SUPPORT
@@ -519,7 +525,7 @@ class Swing4HGeriEngineV12(Swing4HGeriEngine):
         tracking_extreme: tuple[Decimal, datetime],
     ) -> GeriAssessment:
         active = levels[-1]
-        atr14 = _atr(bars)
+        atr14 = self._atr(bars)
         expected_kind = (
             GeriLevelKind.SUPPORT if side is TradeSide.LONG else GeriLevelKind.RESISTANCE
         )
@@ -563,6 +569,18 @@ class Swing4HGeriEngineV12(Swing4HGeriEngine):
                 side=side,
                 four_hour_confirmed=four_hour,
             )
+            previous = context.active_structure
+            if (
+                getattr(self, "_latch_confirmations", False)
+                and previous is not None
+                and previous.active_level_sequence == active.sequence
+                and previous.active_level_kind is active.kind
+                and previous.active_level_price == active.price
+                and previous.trade_side is side
+            ):
+                fast = fast or previous.fast_confirmation
+                four_hour = four_hour or previous.four_hour_confirmation
+                continuation = continuation or previous.continuation_confirmation
         maturity = _standalone_maturity(
             actionable=actionable,
             side=side,
@@ -638,6 +656,7 @@ class Swing4HGeriEngineV13(Swing4HGeriEngineV12):
         maximum_extension_atr: Decimal = Decimal("1.50"),
         countertrend_minimum_reward_risk: Decimal = Decimal("1.50"),
         countertrend_ttl_sessions: int = 5,
+        countertrend_requires_reaction: bool = False,
     ) -> None:
         super().__init__(
             pivot_radius=pivot_radius,
@@ -654,6 +673,7 @@ class Swing4HGeriEngineV13(Swing4HGeriEngineV12):
             raise ValueError("countertrend TTL must be positive")
         self._countertrend_minimum_rr = countertrend_minimum_reward_risk
         self._countertrend_ttl_sessions = countertrend_ttl_sessions
+        self._countertrend_requires_reaction = countertrend_requires_reaction
 
     def analyze(self, context: Swing4HGeriContext) -> GeriAssessment:
         structural = super().analyze(context)
@@ -671,8 +691,59 @@ class Swing4HGeriEngineV13(Swing4HGeriEngineV12):
             maximum_extension_atr=self._maximum_extension_atr,
             minimum_reward_risk=self._countertrend_minimum_rr,
             ttl_sessions=self._countertrend_ttl_sessions,
+            require_reaction=self._countertrend_requires_reaction,
+            atr_calculator=self._atr,
         )
         return structural.model_copy(update={"metrics": (*structural.metrics, *tactical)})
+
+
+class Swing4HGeriEngineV14(Swing4HGeriEngineV13):
+    """Require causal timestamps and a reaction before tactical LONG entry maturity."""
+
+    engine_version = "1.4.0"
+
+    def __init__(
+        self,
+        *,
+        pivot_radius: int = 1,
+        minimum_bars: int = 8,
+        lookback_bars: int = 60,
+        breakout_atr: Decimal = Decimal("0.10"),
+        zone_atr: Decimal = Decimal("0.25"),
+        invalidation_atr: Decimal = Decimal("0.50"),
+        maximum_extension_atr: Decimal = Decimal("1.50"),
+        countertrend_minimum_reward_risk: Decimal = Decimal("1.50"),
+        countertrend_ttl_sessions: int = 5,
+        countertrend_requires_reaction: bool = True,
+    ) -> None:
+        super().__init__(
+            pivot_radius=pivot_radius,
+            minimum_bars=minimum_bars,
+            lookback_bars=lookback_bars,
+            breakout_atr=breakout_atr,
+            zone_atr=zone_atr,
+            invalidation_atr=invalidation_atr,
+            maximum_extension_atr=maximum_extension_atr,
+            countertrend_minimum_reward_risk=countertrend_minimum_reward_risk,
+            countertrend_ttl_sessions=countertrend_ttl_sessions,
+            countertrend_requires_reaction=countertrend_requires_reaction,
+        )
+        self._latch_confirmations = True
+
+    def analyze(self, context: Swing4HGeriContext) -> GeriAssessment:
+        _validate_temporal_context(context)
+        result = super().analyze(context)
+        return result.model_copy(
+            update={
+                "metrics": (
+                    *result.metrics,
+                    NamedValue(name="atr_duration_normalized", value=True),
+                )
+            }
+        )
+
+    def _atr(self, bars: tuple[MarketBar, ...]) -> Decimal:
+        return _duration_normalized_atr(bars)
 
 
 def _countertrend_metrics(
@@ -687,6 +758,8 @@ def _countertrend_metrics(
     maximum_extension_atr: Decimal,
     minimum_reward_risk: Decimal,
     ttl_sessions: int,
+    require_reaction: bool = False,
+    atr_calculator: Callable[[tuple[MarketBar, ...]], Decimal] | None = None,
 ) -> tuple[NamedValue, ...]:
     """Describe a tactical opposite-side setup without mutating structural GERI."""
 
@@ -704,7 +777,8 @@ def _countertrend_metrics(
     pivot = bars[pivot_index]
     confirmed_at = bars[pivot_index + pivot_radius].timestamp
     level = pivot.low if side is TradeSide.LONG else pivot.high
-    atr14 = _atr(bars[: pivot_index + pivot_radius + 1])
+    calculate_atr = atr_calculator or _atr
+    atr14 = calculate_atr(bars[: pivot_index + pivot_radius + 1])
     padding = atr14 * zone_atr
     zone_low = max(Decimal("0.0001"), level - padding)
     zone_high = level + padding
@@ -769,6 +843,7 @@ def _countertrend_metrics(
         fast=fast,
         four_hour=four_hour,
         continuation=continuation,
+        require_reaction=require_reaction,
     )
     eligibility_reasons = _countertrend_eligibility_reasons(
         side=side,
@@ -798,6 +873,10 @@ def _countertrend_metrics(
         NamedValue(name="countertrend_ttl_sessions", value=ttl_sessions),
         NamedValue(name="countertrend_expired", value=expired),
         NamedValue(name="countertrend_eligible", value=eligible),
+        NamedValue(
+            name="countertrend_location_in_zone",
+            value=zone_low <= current_price <= zone_high,
+        ),
         NamedValue(name="countertrend_eligibility_reasons", value=eligibility_reasons),
         NamedValue(name="countertrend_fast_confirmation", value=fast),
         NamedValue(name="countertrend_four_hour_confirmation", value=four_hour),
@@ -889,6 +968,7 @@ def _countertrend_maturity(
     fast: bool,
     four_hour: bool,
     continuation: bool,
+    require_reaction: bool = False,
 ) -> GeriMaturity:
     if side is TradeSide.LONG:
         if price <= invalidation:
@@ -906,6 +986,8 @@ def _countertrend_maturity(
         return GeriMaturity.EXTENDED
     if not eligible:
         return GeriMaturity.BUILDING
+    if require_reaction and not (fast or four_hour):
+        return GeriMaturity.ARMED
     if continuation:
         return GeriMaturity.L4
     if four_hour:
@@ -915,6 +997,58 @@ def _countertrend_maturity(
     if zone_low <= price <= zone_high:
         return GeriMaturity.IN_ZONE_4H
     return GeriMaturity.ARMED
+
+
+def _validate_temporal_context(context: Swing4HGeriContext) -> None:
+    as_of = context.as_of
+    price_at = context.current_price_at
+    if as_of is None or price_at is None:
+        raise ValueError("4HGERI v1.4 requires as_of and current_price_at")
+    for name, value in (("as_of", as_of), ("current_price_at", price_at)):
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError(f"{name} must be timezone-aware UTC")
+    if price_at > as_of:
+        raise ValueError("current_price_at is later than as_of")
+    symbol = context.symbol.strip().upper()
+    evidence = (*context.bars, *context.confirmation_bars)
+    if any(bar.timestamp > as_of for bar in evidence):
+        raise ValueError("4HGERI evidence is later than as_of")
+    if any(not bar.is_final for bar in evidence):
+        raise ValueError("4HGERI v1.4 requires final evidence")
+    if any(bar.symbol != symbol for bar in evidence):
+        raise ValueError("4HGERI evidence must belong to the requested symbol")
+    if any(bar.timeframe is not BarTimeframe.HOUR_4 for bar in context.bars):
+        raise ValueError("4HGERI structural bars must use 4Hour")
+    if any(
+        bar.timeframe is not BarTimeframe.MINUTE_15
+        for bar in context.confirmation_bars
+    ):
+        raise ValueError("4HGERI confirmation bars must use 15Min")
+    if any(
+        current.timestamp <= previous.timestamp
+        for values in (context.bars, context.confirmation_bars)
+        for previous, current in pairwise(values)
+    ):
+        raise ValueError("4HGERI evidence must be chronological")
+    if any(bar.timestamp > price_at for bar in context.bars) or any(
+        bar.timestamp + timedelta(minutes=15) > price_at
+        for bar in context.confirmation_bars
+    ):
+        raise ValueError("4HGERI evidence is later than current_price_at")
+    if context.active_structure is not None:
+        if context.active_structure.symbol != symbol:
+            raise ValueError("active 4HGERI structure must belong to the requested symbol")
+        if context.active_structure.occurred_at > as_of:
+            raise ValueError("active 4HGERI structure is later than as_of")
+        if context.active_structure.occurred_at > price_at:
+            raise ValueError("active 4HGERI structure is later than current_price_at")
+    if context.daily_swing is not None:
+        if context.daily_swing.symbol != symbol:
+            raise ValueError("daily Swing evidence must belong to the requested symbol")
+        if context.daily_swing.as_of > as_of:
+            raise ValueError("daily Swing evidence is later than as_of")
+        if context.daily_swing.as_of > price_at:
+            raise ValueError("daily Swing evidence is later than current_price_at")
 
 
 def _first_pivot_low(bars: tuple[MarketBar, ...], radius: int) -> int:
@@ -1277,6 +1411,34 @@ def _atr(bars: tuple[MarketBar, ...], period: int = 14) -> Decimal:
     value = sum(sample, ZERO) / Decimal(len(sample))
     if value <= ZERO:
         raise ValueError("4HGERI ATR must be positive")
+    return value
+
+
+def _duration_normalized_atr(
+    bars: tuple[MarketBar, ...], period: int = 14
+) -> Decimal:
+    ranges = tuple(
+        _duration_normalized_true_range(previous, current)
+        for previous, current in pairwise(bars)
+    )
+    sample = ranges[-period:]
+    if not sample:
+        raise ValueError("4HGERI ATR requires multiple bars")
+    value = sum(sample, ZERO) / Decimal(len(sample))
+    if value <= ZERO:
+        raise ValueError("4HGERI ATR must be positive")
+    return value
+
+
+def _duration_normalized_true_range(previous: MarketBar, current: MarketBar) -> Decimal:
+    value = max(
+        current.high - current.low,
+        abs(current.high - previous.close),
+        abs(current.low - previous.close),
+    )
+    local = current.timestamp.astimezone(_NEW_YORK).time()
+    if local.hour == 13 and local.minute == 30:
+        return value * (Decimal("240") / Decimal("150")).sqrt()
     return value
 
 

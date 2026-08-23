@@ -35,6 +35,12 @@ tracks its rolling peak and pullback low, and derives a 38.2%-61.8% retracement 
 five-minute higher-low reclaim inside that zone opens a new L1 only when reward/risk back to the
 prior peak is at least 2. The mature V5.3 path can still advance the same watch to `TRIGGERED` L4.
 
+`EntryWatcherV55` (`5.5.0`) preserves every V5.4 path and additionally recognizes Swing v8
+classification `recovery`. It accepts that classification only when Swing publishes
+`entry_lane=STRUCTURE_RECOVERY`, `recovery_entry_gate_passed=true`, remains bullish/FAVORABLE, and
+the existing fresh mature Intraday and Long-thesis gates also pass. Older watcher versions remain
+unchanged for deterministic replay.
+
 The Entry Watcher preserves a Long entry thesis across later market evaluations. It freezes
 the original buy zone, invalidation, expected correction, source analysis, and expiry instead
 of recalculating those levels away when price finally pulls back.

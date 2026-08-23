@@ -169,6 +169,8 @@ def entry_signal_from_fusion(transition: FusionTransition) -> EntrySignal | None
         return None
     zone_low = min(transition.entry_price, transition.trigger_price)
     zone_high = max(transition.entry_price, transition.trigger_price)
+    if transition.invalidation >= zone_low:
+        return None
     targets = () if transition.target_price is None else (transition.target_price,)
     return EntrySignal(
         family=EntrySignalFamily.SIGNAL_FUSION,

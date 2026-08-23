@@ -38,3 +38,14 @@ Neither version places orders; `7.20.0` stays pinned to `1.2.0` for comparison.
 Countertrend opportunity signals are session-gated to US regular hours. A favorable CT0 move
 that makes a fresh entry's reward/risk ineligible remains a reference through the regular session;
 the policy decision is finalized on the 15:59 ET minute. Target and invalidation remain immediate.
+
+Version `1.4.0`, selected only by candidate definition `7.23.0`, requires explicit causal
+`as_of`/quote timestamps, rejects future Swing, GERI or confirmation evidence, and normalizes the
+short 13:30-16:00 RTH segment before mixing it into ATR4H. An in-zone countertrend remains `CT0`
+until a completed 15-minute or 4-hour reaction confirms it; the first paper-entry checkpoint is
+therefore `CT2` or later. Structural reaction flags are latched while the same active level remains
+valid. Its parameters live in `configs/rules/geri_4h/1.0.0.yaml`.
+
+The confirmed-buy monitor keeps `CT0` and `CT1` as tracking only and surfaces `CT2`, `CT3` and
+`CT4` as `GERI REACTION` entries. Repeated observations at the same maturity are deduplicated, but
+a downgrade or reclaim-required state resets the latch so a later reaction can confirm again.

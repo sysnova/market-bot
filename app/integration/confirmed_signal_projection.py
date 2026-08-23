@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.alert_engine.confirmed import BuyMaturity
-from app.contracts import EntryMaturityLevel, EntrySignal, EntrySignalFamily, SwingTradeMaturity
+from app.contracts import (
+    EntryMaturityLevel,
+    EntrySignal,
+    EntrySignalFamily,
+    GeriCountertrendMaturity,
+    SwingTradeMaturity,
+)
 
 _RESET_STYLE = "\x1b[0m"
 _CORE_MATURITY = {
@@ -25,6 +31,11 @@ _FINAL_ANALYTICAL_LABELS = {
 }
 _ANALYTICAL_STYLE = "\x1b[1;97;45m"
 _NEWS_RISK_STYLE = "\x1b[1;97;41m"
+_GERI_CONFIRMED_MATURITY = {
+    GeriCountertrendMaturity.CT2: BuyMaturity.SWING_CONFIRMED,
+    GeriCountertrendMaturity.CT3: BuyMaturity.HIGH_CONVICTION,
+    GeriCountertrendMaturity.CT4: BuyMaturity.FULLY_MATURED,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +71,15 @@ def project_confirmed_signal(
         }:
             return None
         label = f"SWING TRADE {swing_trade_maturity.value}"
+        style = _ANALYTICAL_STYLE
+    elif signal.family is EntrySignalFamily.GERI_COUNTERTREND:
+        countertrend_maturity = signal.countertrend_maturity
+        if countertrend_maturity is None:
+            return None
+        sound_maturity = _GERI_CONFIRMED_MATURITY.get(countertrend_maturity)
+        if sound_maturity is None:
+            return None
+        label = f"GERI REACTION {countertrend_maturity.value}"
         style = _ANALYTICAL_STYLE
     else:
         label = _FINAL_ANALYTICAL_LABELS.get(signal.family)

@@ -16,11 +16,15 @@ from app.contracts import (
     EntrySignal,
     EntrySignalFamily,
     EventEnvelope,
+    GeriCountertrendMaturity,
     LocalAlert,
     new_uuid7,
 )
 from app.integration import confirmed_buy_monitor
-from app.integration.confirmed_buy_monitor import run_confirmed_buy_monitor
+from app.integration.confirmed_buy_monitor import (
+    _analytical_stage_changed,
+    run_confirmed_buy_monitor,
+)
 
 NOW = datetime(2026, 8, 9, 15, tzinfo=UTC)
 
@@ -148,3 +152,36 @@ async def test_monitor_projects_final_signals_and_only_manual_flow_alerts(
     ]
     assert all(item.unsubscribed for item in bus.subscriptions)
     assert bus.closed is True
+
+
+def test_monitor_realerts_geri_after_maturity_resets() -> None:
+    first = EntrySignal(
+        family=EntrySignalFamily.GERI_COUNTERTREND,
+        countertrend_maturity=GeriCountertrendMaturity.CT2,
+        symbol="ADUR",
+        created_at=NOW,
+        setup_id="geri-countertrend:ADUR:pivot:1.4.0",
+        entry_price=Decimal("12.955"),
+        horizons=(AnalysisHorizon.SWING,),
+        zone_low=Decimal("12.701"),
+        zone_high=Decimal("13.099"),
+        invalidation=Decimal("12.502"),
+        targets=(Decimal("15"),),
+        policy_id="geri-countertrend",
+        policy_version="1.4.0",
+        reasons=("countertrend_ct2",),
+    )
+    repeated = first.model_copy(update={"signal_id": new_uuid7()})
+    reset = first.model_copy(
+        update={
+            "signal_id": new_uuid7(),
+            "countertrend_maturity": GeriCountertrendMaturity.CT1,
+        }
+    )
+    reconfirmed = first.model_copy(update={"signal_id": new_uuid7()})
+    state: dict[str, str] = {}
+
+    assert _analytical_stage_changed(first, state) is True
+    assert _analytical_stage_changed(repeated, state) is False
+    assert _analytical_stage_changed(reset, state) is True
+    assert _analytical_stage_changed(reconfirmed, state) is True

@@ -9,6 +9,7 @@ from app.contracts import (
     EntryMaturityLevel,
     EntrySignal,
     EntrySignalFamily,
+    GeriCountertrendMaturity,
     SwingTradeMaturity,
 )
 from app.integration.confirmed_signal_projection import project_confirmed_signal
@@ -115,12 +116,8 @@ def test_portfolio_flow_entry_signal_remains_a_manual_local_alert() -> None:
         (SwingTradeMaturity.ST4, True),
     ],
 )
-def test_swing_trade_highlights_only_st3_and_st4(
-    stage: SwingTradeMaturity, visible: bool
-) -> None:
-    item = signal(EntrySignalFamily.SWING_TRADE).model_copy(
-        update={"swing_trade_maturity": stage}
-    )
+def test_swing_trade_highlights_only_st3_and_st4(stage: SwingTradeMaturity, visible: bool) -> None:
+    item = signal(EntrySignalFamily.SWING_TRADE).model_copy(update={"swing_trade_maturity": stage})
 
     projection = project_confirmed_signal(item, color=False)
 
@@ -129,10 +126,34 @@ def test_swing_trade_highlights_only_st3_and_st4(
         assert f"SWING TRADE {stage.value}" in projection.text
 
 
+@pytest.mark.parametrize(
+    ("stage", "visible"),
+    [
+        (GeriCountertrendMaturity.CT0, False),
+        (GeriCountertrendMaturity.CT1, False),
+        (GeriCountertrendMaturity.CT2, True),
+        (GeriCountertrendMaturity.CT3, True),
+        (GeriCountertrendMaturity.CT4, True),
+    ],
+)
+def test_geri_countertrend_highlights_only_confirmed_reactions(
+    stage: GeriCountertrendMaturity, visible: bool
+) -> None:
+    item = signal(EntrySignalFamily.GERI_COUNTERTREND).model_copy(
+        update={"countertrend_maturity": stage}
+    )
+
+    projection = project_confirmed_signal(item, color=False)
+
+    assert (projection is not None) is visible
+    if projection is not None:
+        assert f"GERI REACTION {stage.value}" in projection.text
+
+
 def test_news_risk_keeps_confirmation_and_paints_banner_red() -> None:
-    risky = signal(
-        EntrySignalFamily.CORE_ENTRY, maturity=EntryMaturityLevel.L4
-    ).model_copy(update={"reasons": ("confirmed", "news_risk_active:red_alert")})
+    risky = signal(EntrySignalFamily.CORE_ENTRY, maturity=EntryMaturityLevel.L4).model_copy(
+        update={"reasons": ("confirmed", "news_risk_active:red_alert")}
+    )
 
     projection = project_confirmed_signal(risky, color=True)
 

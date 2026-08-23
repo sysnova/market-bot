@@ -54,7 +54,7 @@ class MinuteBarAggregator:
             if bucket_start == current_start:
                 pending.append(bar)
                 continue
-            if pending[0].timestamp == current_start:
+            if is_regular_session(current_start):
                 emitted.append(_aggregate(pending, target, current_start))
             self._pending[key] = [bar]
         return tuple(emitted)
@@ -66,7 +66,7 @@ class MinuteBarAggregator:
             if pending is None:
                 continue
             start = _bucket_start(pending[0].timestamp, _TARGET_MINUTES[target])
-            if pending[0].timestamp == start:
+            if is_regular_session(start):
                 emitted.append(_aggregate(pending, target, start))
         return tuple(emitted)
 

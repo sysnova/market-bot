@@ -25,3 +25,14 @@ invalidation, targets, R/R, GERI confluence, eligibility and rejection reasons.
 Configuration lives in `configs/rules/swing_trade/1.0.0.yaml`; changing the
 Fibonacci lookback to 70 or 80 sessions requires only a new immutable rule
 artifact/definition, not an engine code change.
+
+Candidate version `1.1.0` separates location from entry confirmation. A price inside Fibonacci
+remains at most `ST2` until two completed 15-minute bars confirm a rejection, the close passes the
+bar VWAP and volume exceeds a same-clock-slot baseline. `ST4` additionally requires a GERI
+`G2/G3/G4` reaction rather than an armed support zone alone. The engine rejects bars, quotes or
+GERI evidence later than `as_of`. Rules are versioned in `configs/rules/swing_trade/1.1.0.yaml`.
+
+`ST3` and `ST4` are projected into the confirmed-buy monitor with their native ST maturity. A
+later demotion resets the notification latch, so a genuinely new rejection may confirm again while
+unchanged repeated assessments remain silent. The isolated backtest accepts `--source-end-date`
+to preserve the opportunity and its target/invalidation lifecycle across multiple sessions.

@@ -21,6 +21,7 @@ from app.entry_watcher import (
     EntryWatcherV52,
     EntryWatcherV53,
     EntryWatcherV54,
+    EntryWatcherV55,
     InMemoryEntryWatchStore,
 )
 from app.integration.engine_assembly import (
@@ -52,10 +53,17 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV11,
     Swing4HGeriEngineV12,
     Swing4HGeriEngineV13,
+    Swing4HGeriEngineV14,
 )
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
-from app.swing_engine import SwingEngineV4, SwingEngineV5, SwingEngineV6
-from app.swing_trade_engine import SwingTradeEngine
+from app.swing_engine import (
+    SwingEngineV4,
+    SwingEngineV5,
+    SwingEngineV6,
+    SwingEngineV7,
+    SwingEngineV8,
+)
+from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11
 from app.volume_structure_engine import VolumeStructureEngineV11
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -80,6 +88,8 @@ MIRRORED_GERI_DEFINITION = ROOT / "configs/marketbot/7.19.0.yaml"
 SWING_TRADE_DEFINITION = ROOT / "configs/marketbot/7.20.0.yaml"
 COUNTERTREND_GERI_DEFINITION = ROOT / "configs/marketbot/7.21.0.yaml"
 COUNTERTREND_OPPORTUNITY_DEFINITION = ROOT / "configs/marketbot/7.22.0.yaml"
+CONFIRMED_ENTRY_DEFINITION = ROOT / "configs/marketbot/7.23.0.yaml"
+STRUCTURE_RECOVERY_DEFINITION = ROOT / "configs/marketbot/7.24.0.yaml"
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -199,6 +209,43 @@ def test_countertrend_opportunity_definition_preserves_v4_and_selects_v5() -> No
     )
     assert assembly.definition.version == "7.22.0"
     assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).strategy.version == "5.0.0"
+
+
+def test_confirmed_entry_definition_versions_causal_buy_analysis() -> None:
+    previous = MarketBotAssembly.from_path(COUNTERTREND_OPPORTUNITY_DEFINITION)
+    assembly = MarketBotAssembly.from_path(CONFIRMED_ENTRY_DEFINITION)
+
+    assert isinstance(previous.build_swing(), SwingEngineV6)
+    assert isinstance(previous.build_4hgeri(), Swing4HGeriEngineV13)
+    assert isinstance(previous.build_swing_trade(), SwingTradeEngine)
+    assert assembly.definition.version == "7.23.0"
+    assert isinstance(assembly.build_swing(), SwingEngineV7)
+    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV14)
+    assert isinstance(assembly.build_swing_trade(), SwingTradeEngineV11)
+    assert assembly.spec(EngineSlot.GERI_4H).strategy.version == "1.0.0"
+    assert assembly.spec(EngineSlot.SWING_TRADE).strategy.version == "1.1.0"
+
+
+def test_structure_recovery_definition_adds_independent_swing_entry_lane() -> None:
+    previous = MarketBotAssembly.from_path(CONFIRMED_ENTRY_DEFINITION)
+    assembly = MarketBotAssembly.from_path(STRUCTURE_RECOVERY_DEFINITION)
+
+    assert isinstance(previous.build_swing(), SwingEngineV7)
+    assert isinstance(
+        previous.build_entry_watcher(store=InMemoryEntryWatchStore()),
+        EntryWatcherV54,
+    )
+    assert assembly.definition.version == "7.24.0"
+    assert isinstance(assembly.build_swing(), SwingEngineV8)
+    assert isinstance(
+        assembly.build_entry_watcher(store=InMemoryEntryWatchStore()),
+        EntryWatcherV55,
+    )
+    assert assembly.spec(EngineSlot.SWING).strategy.version == "3.0.0"
+    swing = assembly.build_swing()
+    assert swing._recovery_enabled is True
+    assert swing._recovery_daily_lookback_days == 5
+    assert swing._recovery_minimum_reward_risk == Decimal("1.5")
 
 
 def test_default_definition_declares_every_engine_slot_and_strategy() -> None:

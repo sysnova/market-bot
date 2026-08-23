@@ -15,7 +15,8 @@ from app.contracts import (
     SwingTradeMaturity,
     TradeSide,
 )
-from app.swing_trade_engine import SwingTradeContext, SwingTradeEngine
+from app.swing_trade_engine import SwingTradeContext, SwingTradeEngine, SwingTradeEngineV11
+from app.swing_trade_engine.engine import _session_normalized_rvol
 
 START = datetime(2026, 5, 1, 20, tzinfo=UTC)
 
@@ -328,3 +329,171 @@ def test_st4_rejects_wrong_side_invalidated_nonoverlap_or_nonstandalone_geri(
 
     assert result.maturity is SwingTradeMaturity.ST3
     assert result.geri_confluence is False
+
+
+def _confirmation_bars(
+    bars: tuple[MarketBar, ...], *, current_volume: str = "2000"
+) -> tuple[MarketBar, ...]:
+    session = bars[-1].timestamp + timedelta(days=1)
+    history = tuple(
+        MarketBar(
+            symbol="AAPL",
+            timeframe=BarTimeframe.MINUTE_15,
+            timestamp=session - timedelta(days=20 - index) + timedelta(minutes=15),
+            open=Decimal("98"),
+            high=Decimal("99"),
+            low=Decimal("97"),
+            close=Decimal("98"),
+            volume=Decimal("1000"),
+            vwap=Decimal("98"),
+            source="test",
+            feed="sip",
+            is_final=True,
+        )
+        for index in range(19)
+    )
+    touched = history[-1].model_copy(
+        update={
+            "timestamp": session,
+            "open": Decimal("98"),
+            "high": Decimal("99"),
+            "low": Decimal("96"),
+            "close": Decimal("96.5"),
+            "volume": Decimal("1000"),
+            "vwap": Decimal("97"),
+        }
+    )
+    current = touched.model_copy(
+        update={
+            "timestamp": session + timedelta(minutes=15),
+            "open": Decimal("96.6"),
+            "high": Decimal("98"),
+            "low": Decimal("96.2"),
+            "close": Decimal("97"),
+            "volume": Decimal(current_volume),
+            "vwap": Decimal("96.8"),
+        }
+    )
+    return (*history, touched, current)
+
+
+def test_v11_keeps_st3_as_location_until_rejection_volume_and_vwap_confirm() -> None:
+    bars = daily_bars()
+    confirmations = _confirmation_bars(bars, current_volume="1000")
+    as_of = confirmations[-1].timestamp + timedelta(minutes=15)
+
+    result = SwingTradeEngineV11().analyze(
+        SwingTradeContext(
+            symbol="AAPL",
+            as_of=as_of,
+            current_price=Decimal("97"),
+            daily_bars=bars,
+            confirmation_bars=confirmations,
+            current_price_at=as_of,
+        )
+    )
+    metrics = {item.name: item.value for item in result.metrics}
+
+    assert result.maturity is SwingTradeMaturity.ST2
+    assert metrics["entry_rejection_confirmed"] is True
+    assert metrics["intraday_rvol_confirmed"] is False
+
+
+def test_v11_promotes_st3_only_after_rejection_volume_and_vwap_confirm() -> None:
+    bars = daily_bars()
+    confirmations = _confirmation_bars(bars)
+    as_of = confirmations[-1].timestamp + timedelta(minutes=15)
+
+    result = SwingTradeEngineV11().analyze(
+        SwingTradeContext(
+            symbol="AAPL",
+            as_of=as_of,
+            current_price=Decimal("97"),
+            daily_bars=bars,
+            confirmation_bars=confirmations,
+            current_price_at=as_of,
+        )
+    )
+
+    assert result.maturity is SwingTradeMaturity.ST3
+
+
+def test_v11_rejects_future_daily_or_geri_evidence() -> None:
+    bars = daily_bars()
+    as_of = bars[-2].timestamp
+
+    with pytest.raises(ValueError, match="later than as_of"):
+        SwingTradeEngineV11().analyze(
+            SwingTradeContext(
+                symbol="AAPL",
+                as_of=as_of,
+                current_price=Decimal("97"),
+                daily_bars=bars,
+                current_price_at=as_of,
+            )
+        )
+
+
+def test_v11_requires_geri_reaction_before_st4() -> None:
+    bars = daily_bars()
+    confirmations = _confirmation_bars(bars)
+    as_of = confirmations[-1].timestamp + timedelta(minutes=15)
+    armed = geri(bars)
+    reacted = armed.model_copy(
+        update={
+            "maturity": GeriMaturity.L2_4H,
+            "fast_confirmation": True,
+        }
+    )
+
+    location_only = SwingTradeEngineV11().analyze(
+        SwingTradeContext(
+            symbol="AAPL",
+            as_of=as_of,
+            current_price=Decimal("97"),
+            daily_bars=bars,
+            geri=armed,
+            confirmation_bars=confirmations,
+            current_price_at=as_of,
+        )
+    )
+    confirmed = SwingTradeEngineV11().analyze(
+        SwingTradeContext(
+            symbol="AAPL",
+            as_of=as_of,
+            current_price=Decimal("97"),
+            daily_bars=bars,
+            geri=reacted,
+            confirmation_bars=confirmations,
+            current_price_at=as_of,
+        )
+    )
+
+    assert location_only.maturity is SwingTradeMaturity.ST3
+    assert confirmed.maturity is SwingTradeMaturity.ST4
+
+
+def test_v11_rvol_compares_the_same_new_york_slot_across_dst() -> None:
+    baseline = MarketBar(
+        symbol="AAPL",
+        timeframe=BarTimeframe.MINUTE_15,
+        timestamp=datetime(2026, 3, 6, 14, 45, tzinfo=UTC),
+        open=Decimal("100"),
+        high=Decimal("101"),
+        low=Decimal("99"),
+        close=Decimal("100"),
+        volume=Decimal("1000"),
+        source="test",
+        feed="sip",
+        is_final=True,
+    )
+    current = baseline.model_copy(
+        update={
+            "timestamp": datetime(2026, 3, 9, 13, 45, tzinfo=UTC),
+            "volume": Decimal("1500"),
+        }
+    )
+
+    assert _session_normalized_rvol((baseline, current), minimum_samples=1) == Decimal(
+        "1.5000"
+    )

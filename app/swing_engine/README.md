@@ -2,7 +2,21 @@
 
 ## Versiones
 
-La composicion activa usa `SwingEngineV6`. La invalidacion tactica parte del minimo real de las
+La composicion activa usa `SwingEngineV6`. La definicion candidata `7.23.0` agrega
+`SwingEngineV7`: devuelve `INSUFFICIENT_DATA` de forma segura con historia parcial y decide si la
+ultima rueda diaria debe participar de la resistencia segun su fecha de mercado respecto de
+`as_of`. Durante mercado abierto, la rueda completa anterior ya no queda excluida por posicion.
+
+La definicion candidata `7.24.0` agrega `SwingEngineV8` y conserva sin cambios el carril
+`TREND_CONTINUATION`. El segundo carril `STRUCTURE_RECOVERY` permite evaluar una recuperacion aun
+cuando SMA20/50 y el stop estructural sigan reflejando dano. No compra el minimo: exige un selloff
+reciente de al menos un ATR, rechazo diario con minimo y cierre posteriores mas altos, reclaim del
+AVWAP del pivot, cuatro barras intradia de la misma rueda, piso ascendente, cierre alcista sobre
+VWAP y ruptura de los tres maximos intradia previos. La invalidacion accionable se ubica bajo el
+minimo de recuperacion con buffer de ATR; la invalidacion estructural original se conserva como
+`structural_invalidation`. Ambos carriles exigen al menos `1.5R` hasta resistencia.
+
+La invalidacion tactica parte del minimo real de las
 ultimas diez ruedas y nunca usa un AVWAP como soporte automatico. La resistencia operativa usa
 cierres diarios; el maximo de mecha se publica por separado como `liquidity_high`. Un breakout que
 vuelve bajo el nivel roto dentro de cinco ruedas entra en una maquina de estados auditable. El veto
@@ -19,6 +33,12 @@ sesenta ruedas o confirmacion de una base nueva. V1-V5 permanecen disponibles pa
 - `SwingEngineV6`: conserva los gates de V5 y agrega el ciclo `ACTIVE`,
   `NEW_BREAKOUT_PENDING`, `RECOVERED`, `STRUCTURE_INVALIDATED`,
   `VOLATILITY_INVALIDATED`, `EXPIRED` y `SUPERSEDED`.
+- `SwingEngineV7`: conserva V6, corrige la ventana de resistencia en evaluaciones live y hace
+  explicita la inclusion de la ultima rueda mediante
+  `resistance_latest_completed_bar_included`.
+- `SwingEngineV8`: conserva V7 y publica `entry_lane`,
+  `continuation_entry_gate_passed` y `recovery_entry_gate_passed`; una recuperacion confirmada usa
+  clasificacion `recovery` y separa riesgo tactico de riesgo estructural.
 
 V2 solo marca estructura rota cuando el precio esta al menos `1.5 ATR` bajo SMA50, la pendiente de
 SMA20 es negativa, ADX confirma tendencia y `-DI > +DI`. Una correccion normal puede continuar como
@@ -34,6 +54,12 @@ mecha maxima como advertencia sin convertirla en resistencia ni target operativo
 `SwingEngine.analyze()` retorna el contrato compartido `AnalysisResult` con `horizon=SWING`.
 `evaluate()` retorna el detalle propio del engine. Ambos son puros; Alpaca, NATS, persistencia,
 presentacion de alertas y ejecucion pertenecen a adaptadores externos.
+
+El backtest integrado publica `four_swing_model_comparison`, que alinea causalmente Swing diario,
+Swing Channel 4H, 4HGERI y SwingTrade. Tambien publica `swing_model_confirmation_summary`: separa
+`FAVORABLE`, `swing_entry_gate_passed`, conteos por `entry_lane`, confirmaciones completas, razones
+de rechazo y banderas de riesgo dentro de la ventana simulada; los resultados de bootstrap quedan
+fuera de esos conteos.
 
 Ejecutar la suite focalizada con:
 

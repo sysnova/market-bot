@@ -38,6 +38,7 @@ from app.entry_watcher import (
     EntryWatcherV52,
     EntryWatcherV53,
     EntryWatcherV54,
+    EntryWatcherV55,
 )
 from app.entry_watcher.strategy import configure_engine as configure_watcher
 from app.entry_watcher.strategy import validate_strategy as validate_watcher
@@ -76,7 +77,10 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV11,
     Swing4HGeriEngineV12,
     Swing4HGeriEngineV13,
+    Swing4HGeriEngineV14,
 )
+from app.swing_4h_geri_engine.strategy import configure_engine as configure_geri_4h
+from app.swing_4h_geri_engine.strategy import validate_strategy as validate_geri_4h
 from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
 from app.swing_engine import (
     SwingEngine,
@@ -85,10 +89,12 @@ from app.swing_engine import (
     SwingEngineV4,
     SwingEngineV5,
     SwingEngineV6,
+    SwingEngineV7,
+    SwingEngineV8,
 )
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
-from app.swing_trade_engine import SwingTradeEngine
+from app.swing_trade_engine import SwingTradeEngine, SwingTradeEngineV11
 from app.swing_trade_engine.strategy import configure_engine as configure_swing_trade
 from app.swing_trade_engine.strategy import validate_strategy as validate_swing_trade
 from app.volume_structure_engine import VolumeStructureEngine, VolumeStructureEngineV11
@@ -114,6 +120,8 @@ def default_engine_registry() -> EngineRegistry:
                     "4.0.0": SwingEngineV4,
                     "5.0.0": SwingEngineV5,
                     "6.0.0": SwingEngineV6,
+                    "7.0.0": SwingEngineV7,
+                    "8.0.0": SwingEngineV8,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,
@@ -126,17 +134,23 @@ def default_engine_registry() -> EngineRegistry:
                 },
                 required_since="7.14.0",
             ),
-            EngineSlot.GERI_4H: simple(
+            EngineSlot.GERI_4H: EngineRegistration(
                 implementations={
                     "1.0.0": Swing4HGeriEngine,
                     "1.1.0": Swing4HGeriEngineV11,
                     "1.2.0": Swing4HGeriEngineV12,
                     "1.3.0": Swing4HGeriEngineV13,
+                    "1.4.0": Swing4HGeriEngineV14,
                 },
                 required_since="7.15.0",
+                configure=configure_geri_4h,
+                validate_strategy=validate_geri_4h,
             ),
             EngineSlot.SWING_TRADE: EngineRegistration(
-                implementations={"1.0.0": SwingTradeEngine},
+                implementations={
+                    "1.0.0": SwingTradeEngine,
+                    "1.1.0": SwingTradeEngineV11,
+                },
                 required_since="7.20.0",
                 configure=configure_swing_trade,
                 validate_strategy=validate_swing_trade,
@@ -163,6 +177,7 @@ def default_engine_registry() -> EngineRegistry:
                     "5.2.0": EntryWatcherV52,
                     "5.3.0": EntryWatcherV53,
                     "5.4.0": EntryWatcherV54,
+                    "5.5.0": EntryWatcherV55,
                 },
                 required_since="0.0.0",
                 configure=configure_watcher,

@@ -83,6 +83,10 @@ class SwingTradeRuntime:
         self._geri: dict[str, GeriAssessment] = {}
         self._latest: dict[str, SwingTradeAssessment] = {}
         self._evaluated: set[tuple[str, datetime]] = set()
+        self._rejected_evaluations: dict[str, int] = {}
+
+    def diagnostics(self) -> dict[str, int]:
+        return dict(self._rejected_evaluations)
 
     async def restore_assessment(self, envelope: EventEnvelope) -> None:
         if envelope.event_type != SWING_TRADE_ASSESSMENT_EVENT:
@@ -109,6 +113,7 @@ class SwingTradeRuntime:
             if bar.timeframe is BarTimeframe.DAY_1:
                 self._bars.add(bar)
             elif bar.timeframe is BarTimeframe.MINUTE_15 and is_regular_session(bar.timestamp):
+                self._bars.add(bar)
                 latest_fifteen[bar.symbol] = bar
         published = 0
         for bar in latest_fifteen.values():
@@ -147,9 +152,18 @@ class SwingTradeRuntime:
                     current_price=bar.close,
                     daily_bars=daily,
                     geri=self._geri.get(bar.symbol),
+                    confirmation_bars=self._bars.history(
+                        bar.symbol,
+                        BarTimeframe.MINUTE_15,
+                        limit=160,
+                        final_only=True,
+                    ),
+                    current_price_at=bar.timestamp + timedelta(minutes=15),
                 )
             ).model_copy(update={"assessed_at": self._clock.now()})
-        except ValueError:
+        except ValueError as error:
+            reason = str(error) or type(error).__name__
+            self._rejected_evaluations[reason] = self._rejected_evaluations.get(reason, 0) + 1
             return False
         previous = self._latest.get(bar.symbol)
         if previous is not None and not _material_change(previous, assessment):
@@ -322,6 +336,7 @@ async def run_swing_trade_process(
             "universe_source": universe_source,
             "historical_bars": len(bars),
             "assessments_published": published,
+            "rejected_evaluations": runtime.diagnostics(),
             "evaluation_bar": "15Min_FINAL_RTH",
             "places_orders": False,
         }

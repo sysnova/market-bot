@@ -16,3 +16,5 @@ class SwingTradeContext:
     current_price: Decimal
     daily_bars: tuple[MarketBar, ...]
     geri: GeriAssessment | None = None
+    confirmation_bars: tuple[MarketBar, ...] = ()
+    current_price_at: datetime | None = None

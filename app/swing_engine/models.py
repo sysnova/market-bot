@@ -69,6 +69,7 @@ class SwingContext(FrozenModel):
 class SwingClassification(StrEnum):
     BREAKOUT = "breakout"
     PULLBACK = "pullback"
+    RECOVERY = "recovery"
     SETUP = "setup"
     EXTENDED = "extended"
     AVOID = "avoid"

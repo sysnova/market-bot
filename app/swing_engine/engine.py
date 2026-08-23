@@ -231,6 +231,7 @@ class SwingEngine:
         score += {
             SwingClassification.BREAKOUT: Decimal("30"),
             SwingClassification.PULLBACK: Decimal("28"),
+            SwingClassification.RECOVERY: Decimal("28"),
             SwingClassification.SETUP: Decimal("14"),
             SwingClassification.EXTENDED: Decimal("12"),
             SwingClassification.AVOID: ZERO,
@@ -268,6 +269,8 @@ class SwingEngine:
             reasons.append("bearish_daily_trend")
         if classification is SwingClassification.PULLBACK:
             reasons.append("pullback_near_20d")
+        if classification is SwingClassification.RECOVERY:
+            reasons.append("structure_recovery_confirmed")
         if indicators.breakout_location:
             reasons.append("above_20d_resistance")
         if indicators.volume_confirmed:
@@ -321,7 +324,11 @@ class SwingEngine:
             return AnalysisVerdict.AVOID
         if classification is SwingClassification.EXTENDED:
             return AnalysisVerdict.CAUTION
-        if classification in {SwingClassification.BREAKOUT, SwingClassification.PULLBACK}:
+        if classification in {
+            SwingClassification.BREAKOUT,
+            SwingClassification.PULLBACK,
+            SwingClassification.RECOVERY,
+        }:
             if levels and levels.risk_ok:
                 return AnalysisVerdict.FAVORABLE
             return AnalysisVerdict.CAUTION

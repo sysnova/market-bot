@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
+from zoneinfo import ZoneInfo
 
 from app.contracts import (
     BarTimeframe,
@@ -24,6 +25,7 @@ from .models import SwingTradeContext
 
 ZERO = Decimal("0")
 FOUR = Decimal("0.0001")
+_NEW_YORK = ZoneInfo("America/New_York")
 
 
 class SwingTradeEngine:
@@ -221,7 +223,7 @@ def _geri_confluence(
     geri = context.geri
     if (
         geri is None
-        or geri.engine_version not in {"1.2.0", "1.3.0"}
+        or geri.engine_version not in {"1.2.0", "1.3.0", "1.4.0"}
         or not geri.standalone_swing
     ):
         return False, False
@@ -324,3 +326,219 @@ def _context_hash(bars: tuple[MarketBar, ...], price: Decimal, geri: GeriAssessm
 
 def _rounded(value: Decimal) -> Decimal:
     return value.quantize(FOUR, rounding=ROUND_HALF_UP)
+
+
+class SwingTradeEngineV11(SwingTradeEngine):
+    """Require a causal 15-minute rejection, normalized volume and VWAP for ST3."""
+
+    engine_version = "1.1.0"
+
+    def __init__(
+        self,
+        *,
+        fibonacci_lookback_sessions: int = 60,
+        movement_lookback_sessions: int = 20,
+        fibonacci_50_ratio: Decimal = Decimal("0.500"),
+        fibonacci_618_ratio: Decimal = Decimal("0.618"),
+        fibonacci_1618_ratio: Decimal = Decimal("1.618"),
+        support_band_atr: Decimal = Decimal("0.25"),
+        invalidation_atr: Decimal = Decimal("0.50"),
+        minimum_reward_risk: Decimal = Decimal("1.50"),
+        maximum_distance_to_zone_atr: Decimal = Decimal("3"),
+        geri_freshness_sessions: int = 2,
+        tracking_ttl_sessions: int = 10,
+        trade_ttl_sessions: int = 10,
+        minimum_intraday_rvol: Decimal = Decimal("1.20"),
+        minimum_rvol_samples: int = 5,
+        require_vwap_gate: bool = True,
+        strategy_version: str = "1.1.0",
+    ) -> None:
+        super().__init__(
+            fibonacci_lookback_sessions=fibonacci_lookback_sessions,
+            movement_lookback_sessions=movement_lookback_sessions,
+            fibonacci_50_ratio=fibonacci_50_ratio,
+            fibonacci_618_ratio=fibonacci_618_ratio,
+            fibonacci_1618_ratio=fibonacci_1618_ratio,
+            support_band_atr=support_band_atr,
+            invalidation_atr=invalidation_atr,
+            minimum_reward_risk=minimum_reward_risk,
+            maximum_distance_to_zone_atr=maximum_distance_to_zone_atr,
+            geri_freshness_sessions=geri_freshness_sessions,
+            tracking_ttl_sessions=tracking_ttl_sessions,
+            trade_ttl_sessions=trade_ttl_sessions,
+            strategy_version=strategy_version,
+        )
+        if minimum_intraday_rvol <= ZERO:
+            raise ValueError("minimum intraday RVOL must be positive")
+        if minimum_rvol_samples < 1:
+            raise ValueError("minimum RVOL samples must be positive")
+        self._minimum_intraday_rvol = minimum_intraday_rvol
+        self._minimum_rvol_samples = minimum_rvol_samples
+        self._require_vwap_gate = require_vwap_gate
+
+    def analyze(self, context: SwingTradeContext) -> SwingTradeAssessment:
+        _validate_v11_context(context)
+        result = super().analyze(context)
+        confirmations = context.confirmation_bars
+        rejection = _long_rejection_confirmed(
+            confirmations,
+            zone_low=result.zone_low,
+            zone_high=result.zone_high,
+        )
+        current = confirmations[-1] if confirmations else None
+        vwap_passed = bool(
+            not self._require_vwap_gate
+            or (
+                current is not None
+                and current.vwap is not None
+                and current.close > current.vwap
+            )
+        )
+        rvol = _session_normalized_rvol(
+            confirmations,
+            minimum_samples=self._minimum_rvol_samples,
+        )
+        rvol_passed = rvol is not None and rvol >= self._minimum_intraday_rvol
+        trigger = rejection and vwap_passed and rvol_passed
+        geri_reaction = bool(
+            context.geri is not None
+            and context.geri.maturity
+            in {GeriMaturity.L2_4H, GeriMaturity.L3, GeriMaturity.L4}
+        )
+
+        maturity = result.maturity
+        if maturity is SwingTradeMaturity.ST4 and not geri_reaction:
+            maturity = SwingTradeMaturity.ST3
+        if maturity in {SwingTradeMaturity.ST3, SwingTradeMaturity.ST4} and not trigger:
+            maturity = (
+                SwingTradeMaturity.ST2
+                if result.support_confluence
+                else SwingTradeMaturity.ST1
+            )
+
+        reasons = list(result.reasons)
+        if result.spot_in_fibonacci_zone and not trigger:
+            reasons.append("swing_trade_entry_trigger_pending")
+        if not rejection:
+            reasons.append("entry_rejection_pending")
+        if not vwap_passed:
+            reasons.append("entry_vwap_gate_pending")
+        if not rvol_passed:
+            reasons.append("entry_session_rvol_pending")
+        if result.geri_confluence and not geri_reaction:
+            reasons.append("geri_reaction_confirmation_pending")
+
+        return result.model_copy(
+            update={
+                "engine_version": self.engine_version,
+                "maturity": maturity,
+                "eligible": maturity is not None,
+                "reasons": tuple(dict.fromkeys(reasons)),
+                "metrics": _upsert_metrics(
+                    result,
+                    NamedValue(name="entry_rejection_confirmed", value=rejection),
+                    NamedValue(name="entry_vwap_gate_passed", value=vwap_passed),
+                    NamedValue(name="intraday_rvol20_same_slot", value=rvol),
+                    NamedValue(name="intraday_rvol_confirmed", value=rvol_passed),
+                    NamedValue(name="minimum_intraday_rvol", value=self._minimum_intraday_rvol),
+                    NamedValue(name="geri_reaction_confirmed", value=geri_reaction),
+                    NamedValue(name="swing_trade_entry_trigger_passed", value=trigger),
+                ),
+            }
+        )
+
+
+def _validate_v11_context(context: SwingTradeContext) -> None:
+    if context.as_of.tzinfo is None or context.as_of.utcoffset() != timedelta(0):
+        raise ValueError("SwingTrade as_of must be timezone-aware UTC")
+    if context.current_price_at is None:
+        raise ValueError("SwingTrade v1.1 requires current_price_at")
+    if (
+        context.current_price_at.tzinfo is None
+        or context.current_price_at.utcoffset() != timedelta(0)
+    ):
+        raise ValueError("SwingTrade current_price_at must be timezone-aware UTC")
+    if context.current_price_at > context.as_of:
+        raise ValueError("SwingTrade current_price_at is later than as_of")
+    symbol = context.symbol.strip().upper()
+    evidence = (*context.daily_bars, *context.confirmation_bars)
+    if any(bar.timestamp > context.as_of for bar in evidence):
+        raise ValueError("SwingTrade evidence is later than as_of")
+    if any(bar.symbol != symbol for bar in evidence):
+        raise ValueError("SwingTrade evidence must belong to the requested symbol")
+    if any(not bar.is_final for bar in evidence):
+        raise ValueError("SwingTrade v1.1 requires final evidence")
+    if any(bar.timeframe is not BarTimeframe.DAY_1 for bar in context.daily_bars):
+        raise ValueError("SwingTrade structural bars must use 1Day")
+    if any(bar.timeframe is not BarTimeframe.MINUTE_15 for bar in context.confirmation_bars):
+        raise ValueError("SwingTrade confirmation bars must use 15Min")
+    if any(
+        current.timestamp <= previous.timestamp
+        for values in (context.daily_bars, context.confirmation_bars)
+        for previous, current in pairwise(values)
+    ):
+        raise ValueError("SwingTrade evidence must be chronological")
+    if any(bar.timestamp > context.current_price_at for bar in context.daily_bars) or any(
+        bar.timestamp + timedelta(minutes=15) > context.current_price_at
+        for bar in context.confirmation_bars
+    ):
+        raise ValueError("SwingTrade evidence is later than current_price_at")
+    if context.geri is not None:
+        if context.geri.symbol != symbol:
+            raise ValueError("SwingTrade GERI evidence must belong to the requested symbol")
+        if context.geri.occurred_at > context.as_of:
+            raise ValueError("SwingTrade GERI evidence is later than as_of")
+        if context.geri.occurred_at > context.current_price_at:
+            raise ValueError("SwingTrade GERI evidence is later than current_price_at")
+
+
+def _long_rejection_confirmed(
+    bars: tuple[MarketBar, ...],
+    *,
+    zone_low: Decimal,
+    zone_high: Decimal,
+) -> bool:
+    if len(bars) < 2:
+        return False
+    touched, current = bars[-2:]
+    touched_zone = touched.low <= zone_high and touched.high >= zone_low
+    return bool(
+        touched_zone
+        and current.low > touched.low
+        and current.close > current.open
+        and current.close > touched.close
+        and current.close >= zone_low
+    )
+
+
+def _session_normalized_rvol(
+    bars: tuple[MarketBar, ...], *, minimum_samples: int
+) -> Decimal | None:
+    if not bars:
+        return None
+    current = bars[-1]
+    current_local = current.timestamp.astimezone(_NEW_YORK)
+    slot = (current_local.hour, current_local.minute)
+    baseline_values = tuple(
+        bar.volume
+        for bar in bars[:-1]
+        if (
+            bar.timestamp.astimezone(_NEW_YORK).hour,
+            bar.timestamp.astimezone(_NEW_YORK).minute,
+        )
+        == slot
+        and bar.timestamp.astimezone(_NEW_YORK).date() != current_local.date()
+    )[-20:]
+    if len(baseline_values) < minimum_samples:
+        return None
+    baseline = sum(baseline_values, ZERO) / Decimal(len(baseline_values))
+    if baseline <= ZERO:
+        return None
+    return _rounded(current.volume / baseline)
+
+
+def _upsert_metrics(
+    result: SwingTradeAssessment, *items: NamedValue
+) -> tuple[NamedValue, ...]:
+    names = {item.name for item in items}
+    return (*(item for item in result.metrics if item.name not in names), *items)

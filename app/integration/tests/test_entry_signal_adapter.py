@@ -181,6 +181,27 @@ def test_fusion_confirmation_becomes_its_own_signal_family() -> None:
     assert signal.maturity is None
 
 
+def test_fusion_with_invalidation_inside_entry_zone_is_not_published() -> None:
+    transition = FusionTransition(
+        assessment_id=new_uuid7(),
+        symbol="NVO",
+        occurred_at=NOW,
+        engine_version="0.5.0",
+        previous_state=FusionState.ARMED,
+        state=FusionState.BUY_CONFIRMED,
+        score=Decimal("81"),
+        trigger_price=Decimal("53"),
+        entry_price=Decimal("52.50"),
+        invalidation=Decimal("52.75"),
+        target_price=Decimal("58"),
+        reward_risk_ratio=Decimal("2.2"),
+        reasons=("all_gates_confirmed",),
+        context_hash="sha256:" + "a" * 64,
+    )
+
+    assert entry_signal_from_fusion(transition) is None
+
+
 def _alert(
     *,
     kind: AlertKind,

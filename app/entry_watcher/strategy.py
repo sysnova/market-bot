@@ -10,7 +10,15 @@ from app.common.strategy import StrategySource
 
 from .engine import EntryWatcherPolicy
 
-_CONFIGURED_IMPLEMENTATIONS = {"4.0.0", "5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0"}
+_CONFIGURED_IMPLEMENTATIONS = {
+    "4.0.0",
+    "5.0.0",
+    "5.1.0",
+    "5.2.0",
+    "5.3.0",
+    "5.4.0",
+    "5.5.0",
+}
 
 
 def validate_strategy(implementation: str, source: StrategySource) -> None:
@@ -21,17 +29,17 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
     behavior.positive_int("trigger_rearm_cooldown_minutes")
     behavior.boolean("strong_confirmation_required")
     behavior.boolean("five_minute_higher_low_required")
-    if implementation in {"5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0"}:
+    if implementation in {"5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0"}:
         behavior.boolean("no_retest_higher_low_continuation")
-    if implementation in {"5.1.0", "5.2.0", "5.3.0", "5.4.0"}:
+    if implementation in {"5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0"}:
         behavior.decimal("zone_exit_buffer_percent")
-    if implementation in {"5.2.0", "5.3.0", "5.4.0"}:
+    if implementation in {"5.2.0", "5.3.0", "5.4.0", "5.5.0"}:
         behavior.decimal("initial_arm_min_score")
         behavior.decimal("initial_arm_max_distance_percent")
         behavior.decimal("initial_arm_max_distance_atr")
-    if implementation in {"5.3.0", "5.4.0"}:
+    if implementation in {"5.3.0", "5.4.0", "5.5.0"}:
         behavior.boolean("trigger_on_first_mature_confirmation")
-    if implementation == "5.4.0":
+    if implementation in {"5.4.0", "5.5.0"}:
         for name in (
             "early_entry_max_extension_percent",
             "early_entry_max_extension_atr",
@@ -76,15 +84,15 @@ def configure_engine(
             "five_minute_higher_low_required"
         ),
     )
-    if implementation in {"5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0"}:
+    if implementation in {"5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0"}:
         kwargs["no_retest_higher_low_enabled"] = behavior.boolean(
             "no_retest_higher_low_continuation"
         )
-    if implementation in {"5.1.0", "5.2.0", "5.3.0", "5.4.0"}:
+    if implementation in {"5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0"}:
         kwargs["zone_exit_buffer_percent"] = behavior.decimal(
             "zone_exit_buffer_percent"
         )
-    if implementation in {"5.2.0", "5.3.0", "5.4.0"}:
+    if implementation in {"5.2.0", "5.3.0", "5.4.0", "5.5.0"}:
         kwargs.update(
             initial_arm_min_score=behavior.decimal("initial_arm_min_score"),
             initial_arm_max_distance_percent=behavior.decimal(
@@ -94,11 +102,11 @@ def configure_engine(
                 "initial_arm_max_distance_atr"
             ),
         )
-    if implementation in {"5.3.0", "5.4.0"}:
+    if implementation in {"5.3.0", "5.4.0", "5.5.0"}:
         kwargs["trigger_on_first_mature_confirmation"] = behavior.boolean(
             "trigger_on_first_mature_confirmation"
         )
-    if implementation == "5.4.0":
+    if implementation in {"5.4.0", "5.5.0"}:
         kwargs.update(
             early_entry_max_extension_percent=behavior.decimal(
                 "early_entry_max_extension_percent"

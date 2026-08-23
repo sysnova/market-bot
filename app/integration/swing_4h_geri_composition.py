@@ -81,7 +81,11 @@ class Swing4HGeriRuntime:
         emit_countertrend_signals: bool = False,
     ) -> None:
         self._engine = engine
-        self._standalone = getattr(engine, "engine_version", "") in {"1.2.0", "1.3.0"}
+        self._standalone = getattr(engine, "engine_version", "") in {
+            "1.2.0",
+            "1.3.0",
+            "1.4.0",
+        }
         self._publisher = publisher
         self._clock = clock or SystemClock()
         self._emit_countertrend_signals = emit_countertrend_signals
@@ -90,6 +94,7 @@ class Swing4HGeriRuntime:
         self._four_hour = RegularSessionFourHourAggregator()
         self._symbols: set[str] = set()
         self._prices: dict[str, Decimal] = {}
+        self._price_at: dict[str, datetime] = {}
         self._daily_swing: dict[str, AnalysisResult] = {}
         self._existing_maturity: dict[str, EntryMaturityLevel] = {}
         self._opportunity_at: dict[str, datetime] = {}
@@ -118,9 +123,11 @@ class Swing4HGeriRuntime:
             if bar.timeframe is BarTimeframe.HOUR_4:
                 self._bars.add(bar)
                 self._prices[bar.symbol] = bar.close
+                self._price_at[bar.symbol] = bar.timestamp
             elif bar.timeframe is BarTimeframe.MINUTE_15 and is_regular_session(bar.timestamp):
                 self._bars.add(bar)
                 self._prices[bar.symbol] = bar.close
+                self._price_at[bar.symbol] = bar.timestamp + timedelta(minutes=15)
                 for aggregated in self._four_hour.add(bar):
                     self._bars.add(aggregated)
         published = 0
@@ -141,6 +148,7 @@ class Swing4HGeriRuntime:
         if bar.timeframe is BarTimeframe.HOUR_4:
             self._bars.add(bar)
             self._prices[bar.symbol] = bar.close
+            self._price_at[bar.symbol] = bar.timestamp
             await self.evaluate(
                 bar.symbol,
                 market_at=bar.timestamp if is_regular_session(bar.timestamp) else None,
@@ -155,6 +163,7 @@ class Swing4HGeriRuntime:
         aggregated = self._minute.add(bar)
         if is_regular_session(bar.timestamp):
             self._prices[bar.symbol] = bar.close
+            self._price_at[bar.symbol] = bar.timestamp
             for fifteen in aggregated:
                 if is_regular_session(fifteen.timestamp):
                     await self._accept_fifteen(fifteen, evaluate=False)
@@ -213,7 +222,8 @@ class Swing4HGeriRuntime:
         normalized = symbol.strip().upper()
         bars = self._bars.history(normalized, BarTimeframe.HOUR_4, limit=60, final_only=True)
         value = current_price if current_price is not None else self._prices.get(normalized)
-        if value is None or not bars:
+        price_at = self._price_at.get(normalized)
+        if value is None or price_at is None or not bars:
             return False
         try:
             assessment = self._engine.analyze(
@@ -230,6 +240,8 @@ class Swing4HGeriRuntime:
                     daily_swing=self._daily_swing.get(normalized),
                     existing_maturity=self._existing_maturity.get(normalized),
                     active_structure=self._latest.get(normalized),
+                    as_of=self._clock.now(),
+                    current_price_at=price_at,
                 )
             )
         except ValueError:
@@ -251,6 +263,7 @@ class Swing4HGeriRuntime:
     async def _accept_fifteen(self, bar: MarketBar, *, evaluate: bool = True) -> None:
         self._bars.add(bar)
         self._prices[bar.symbol] = bar.close
+        self._price_at[bar.symbol] = bar.timestamp + timedelta(minutes=15)
         for aggregated in self._four_hour.add(bar):
             self._bars.add(aggregated)
         if evaluate:
@@ -516,7 +529,7 @@ async def run_swing_4h_geri_process(
                 "marketbot-4hgeri-restore-v1",
             ),
         )
-        if engine_version not in {"1.2.0", "1.3.0"}:
+        if engine_version not in {"1.2.0", "1.3.0", "1.4.0"}:
             replay_specs += (
                 (
                     "marketbot.v1.analysis.result.SWING.>",

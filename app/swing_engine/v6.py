@@ -155,9 +155,7 @@ class SwingEngineV6(SwingEngineV3):
         if invalidation >= context.price:
             invalidation = _rounded(context.price - atr14)
 
-        resistance_bars = context.daily_bars[-(self._resistance_lookback_days + 1) : -1]
-        if not resistance_bars:
-            resistance_bars = context.daily_bars[-self._resistance_lookback_days :]
+        resistance_bars = self._resistance_bars(context)
         body_resistance = max(bar.close for bar in resistance_bars)
         liquidity_high = max(bar.high for bar in resistance_bars)
 
@@ -321,6 +319,12 @@ class SwingEngineV6(SwingEngineV3):
                 ),
             }
         )
+
+    def _resistance_bars(self, context: SwingContext) -> tuple[MarketBar, ...]:
+        """Preserve the v6 convention of always excluding the latest daily bar."""
+
+        values = context.daily_bars[-(self._resistance_lookback_days + 1) : -1]
+        return values or context.daily_bars[-self._resistance_lookback_days :]
 
 
 def _failed_breakout_lifecycle(

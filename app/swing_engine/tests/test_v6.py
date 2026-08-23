@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 
 from app.contracts import BarTimeframe, MarketBar
-from app.swing_engine import SwingContext, SwingEngineV6
+from app.swing_engine import SwingContext, SwingEngineV6, SwingEngineV7
 from app.swing_engine.v6 import (
     FailedBreakoutAssessment,
     FailedBreakoutState,
@@ -210,3 +210,40 @@ def test_v6_analysis_emits_terminal_state_without_retaining_failed_breakout_veto
     assert metrics["failed_breakout_reset_reason"] == "STRUCTURE_INVALIDATED"
     assert "failed_breakout" not in metrics["risk_flags"]
     assert "failed_breakout_structure_invalidated" in result.reasons
+
+
+@pytest.mark.unit
+def test_v7_returns_insufficient_data_instead_of_crashing_with_partial_daily_history() -> None:
+    bars = [_bar(index, close=str(100 + index / 10)) for index in range(40)]
+
+    result = SwingEngineV7().analyze(_context(bars))
+
+    assert result.engine_version == "7.0.0"
+    assert result.verdict.value == "INSUFFICIENT_DATA"
+    assert result.reasons == ("insufficient_history", "insufficient_history")
+
+
+@pytest.mark.unit
+def test_v7_includes_latest_completed_prior_session_in_close_resistance() -> None:
+    bars = [_bar(index, close=str(90 + index / 10)) for index in range(60)]
+    latest = bars[-1]
+    bars[-1] = latest.model_copy(
+        update={
+            "open": Decimal("119"),
+            "high": Decimal("121"),
+            "low": Decimal("118"),
+            "close": Decimal("120"),
+        }
+    )
+    context = _context(bars).model_copy(
+        update={
+            "as_of": bars[-1].timestamp + timedelta(days=1),
+            "price": Decimal("100"),
+        }
+    )
+
+    result = SwingEngineV7().analyze(context)
+    metrics = {item.name: item.value for item in result.metrics}
+
+    assert metrics["resistance"] == Decimal("120.0000")
+    assert metrics["resistance_latest_completed_bar_included"] is True

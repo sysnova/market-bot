@@ -107,6 +107,7 @@ def test_distributed_process_commands_are_explicit() -> None:
 def test_market_backtest_parses_isolated_run_configuration() -> None:
     async def fake_backtest(config: object) -> dict[str, object]:
         assert config.source_date == date(2026, 8, 5)
+        assert config.source_end_date == date(2026, 8, 7)
         assert config.simulated_date == date(2026, 8, 10)
         assert config.cadence_seconds == 0.25
         assert config.symbols == ("AAPL", "MSFT")
@@ -125,6 +126,8 @@ def test_market_backtest_parses_isolated_run_configuration() -> None:
                 "market",
                 "backtest",
                 "2026-08-05",
+                "--source-end-date",
+                "2026-08-07",
                 "--simulated-date",
                 "2026-08-10",
                 "--symbols",
