@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Mapping
 from datetime import datetime
 from typing import Protocol
@@ -94,6 +95,7 @@ class MarketDataStream(Protocol):
         daily_bars: bool = True,
         trade_symbols: tuple[str, ...] | None = None,
         quote_symbols: tuple[str, ...] | None = None,
+        connected_event: asyncio.Event | None = None,
     ) -> AsyncIterator[Mapping[str, object]]: ...
 
     async def update_subscriptions(

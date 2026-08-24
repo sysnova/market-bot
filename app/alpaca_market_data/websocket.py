@@ -23,16 +23,20 @@ class AlpacaMarketDataStream:
         base_url: str,
         feed: str,
         connector: WebSocketConnector,
+        handshake_timeout_seconds: float = 20.0,
     ) -> None:
         if not api_key_id.strip() or not api_secret_key.strip():
             raise ValueError("Alpaca credentials cannot be blank")
         parsed_url = urlsplit(base_url)
         if parsed_url.scheme != "wss" or parsed_url.hostname != "stream.data.alpaca.markets":
             raise ValueError("Alpaca stream must use the Stock Market Data endpoint")
+        if handshake_timeout_seconds <= 0:
+            raise ValueError("handshake timeout must be positive")
         self._api_key_id = api_key_id
         self._api_secret_key = api_secret_key
         self._url = f"{base_url.rstrip('/')}/{feed}"
         self._connector = connector
+        self._handshake_timeout_seconds = handshake_timeout_seconds
         self._subscription_lock = asyncio.Lock()
         self._active_socket: WebSocketConnection | None = None
         self._subscriptions: dict[str, tuple[str, ...]] = {}
@@ -48,6 +52,7 @@ class AlpacaMarketDataStream:
         daily_bars: bool = True,
         trade_symbols: tuple[str, ...] | None = None,
         quote_symbols: tuple[str, ...] | None = None,
+        connected_event: asyncio.Event | None = None,
     ) -> AsyncIterator[Mapping[str, object]]:
         normalized_symbols = _normalize_symbols(symbols)
         if not any((trades, quotes, bars, updated_bars, daily_bars)):
@@ -55,7 +60,7 @@ class AlpacaMarketDataStream:
 
         socket = await self._connector.connect(self._url)
         try:
-            connected = await _receive_batch(socket)
+            connected = await self._receive_handshake_batch(socket, phase="connection")
             if not any(
                 message.get("T") == "success" and message.get("msg") == "connected"
                 for message in connected
@@ -69,7 +74,7 @@ class AlpacaMarketDataStream:
                     "secret": self._api_secret_key,
                 },
             )
-            auth = await _receive_batch(socket)
+            auth = await self._receive_handshake_batch(socket, phase="authentication")
             if not any(
                 message.get("T") == "success" and message.get("msg") == "authenticated"
                 for message in auth
@@ -92,16 +97,27 @@ class AlpacaMarketDataStream:
                         "Alpaca market-data stream already has an active session"
                     )
                 await _send_subscription_request(socket, "subscribe", subscriptions)
+                confirmation = await self._receive_handshake_batch(
+                    socket, phase="subscription"
+                )
+                _raise_provider_error(confirmation)
+                if not any(message.get("T") == "subscription" for message in confirmation):
+                    raise AlpacaMarketDataError(
+                        "Alpaca WebSocket subscription acknowledgement failed"
+                    )
                 self._active_socket = socket
                 self._subscriptions = subscriptions
+                if connected_event is not None:
+                    connected_event.set()
+
+            for message in confirmation:
+                if message.get("T") not in _CONTROL_TYPES:
+                    yield message
 
             while True:
                 for message in await _receive_batch(socket):
                     message_type = message.get("T")
-                    if message_type == "error":
-                        raise AlpacaMarketDataError(
-                            f"Alpaca WebSocket error: {message.get('msg', 'unknown')}"
-                        )
+                    _raise_provider_error((message,))
                     if message_type not in _CONTROL_TYPES:
                         yield message
         finally:
@@ -110,6 +126,21 @@ class AlpacaMarketDataStream:
                     self._active_socket = None
                     self._subscriptions = {}
             await socket.close()
+
+    async def _receive_handshake_batch(
+        self,
+        socket: WebSocketConnection,
+        *,
+        phase: str,
+    ) -> tuple[Mapping[str, object], ...]:
+        try:
+            return await asyncio.wait_for(
+                _receive_batch(socket), timeout=self._handshake_timeout_seconds
+            )
+        except TimeoutError as error:
+            raise AlpacaMarketDataError(
+                f"Alpaca WebSocket handshake timed out during {phase}"
+            ) from error
 
     async def update_subscriptions(
         self,
@@ -224,3 +255,11 @@ async def _receive_batch(socket: WebSocketConnection) -> tuple[Mapping[str, obje
             raise AlpacaMarketDataError("Alpaca WebSocket message must be an object")
         messages.append(cast("Mapping[str, object]", item))
     return tuple(messages)
+
+
+def _raise_provider_error(messages: tuple[Mapping[str, object], ...]) -> None:
+    error = next((message for message in messages if message.get("T") == "error"), None)
+    if error is not None:
+        raise AlpacaMarketDataError(
+            f"Alpaca WebSocket error: {error.get('msg', 'unknown')}"
+        )

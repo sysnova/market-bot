@@ -67,6 +67,11 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.alpaca_data_feed == "sip"
     assert settings.alpaca_adjustment == "split"
     assert settings.alpaca_rest_batch_size == 20
+    assert settings.alpaca_stream_handshake_timeout_seconds == 20
+    assert settings.alpaca_stream_reconnect_initial_seconds == 1
+    assert settings.alpaca_stream_reconnect_max_seconds == 300
+    assert settings.alpaca_stream_stable_seconds == 60
+    assert settings.alpaca_stream_recovery_buffer_bars == 100_000
     assert settings.microstructure_max_symbols == 40
     assert settings.intraday_paper_notional == Decimal("1000")
     assert settings.market_history_refresh_seconds == 3600
@@ -81,6 +86,15 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     serialized = json.dumps(settings.redacted())
     assert "paper-key-id" not in serialized
     assert "paper-secret-key" not in serialized
+
+
+def test_alpaca_reconnect_maximum_cannot_be_below_initial_delay() -> None:
+    with pytest.raises(ValidationError, match="maximum reconnect"):
+        AppSettings(
+            _env_file=None,
+            alpaca_stream_reconnect_initial_seconds=10,
+            alpaca_stream_reconnect_max_seconds=5,
+        )
 
 
 @pytest.mark.parametrize(

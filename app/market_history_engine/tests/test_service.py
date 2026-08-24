@@ -250,6 +250,26 @@ async def test_registered_requirements_are_merged_for_hourly_refresh() -> None:
     assert rest.calls[0]["start"] == NOW + timedelta(hours=1) - timedelta(days=400)
 
 
+async def test_transient_recovery_is_synced_but_not_registered_for_hourly_refresh() -> None:
+    rest = FakeRest()
+    service = MarketHistoryService(
+        rest=rest,
+        repository=FakeRepository({}),
+        feed="sip",
+        batch_size=20,
+    )
+    transient = request(BarTimeframe.MINUTE_1, timedelta(minutes=10), 20).model_copy(
+        update={"force_refresh": True}
+    )
+
+    response = await service.ensure(transient)
+    rest.calls.clear()
+
+    assert response.persisted_bars == 2
+    assert await service.refresh_registered(as_of=NOW + timedelta(hours=1)) == ()
+    assert rest.calls == []
+
+
 async def test_hourly_refresh_does_not_expand_deep_history_to_unneeded_symbols() -> None:
     rest = FakeRest()
     repository = FakeRepository({})

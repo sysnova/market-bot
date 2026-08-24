@@ -42,6 +42,7 @@ def build_alpaca_market_data_engine(
             base_url=str(settings.alpaca_market_data_stream_url),
             feed=feed,
             connector=WebsocketsConnector(),
+            handshake_timeout_seconds=settings.alpaca_stream_handshake_timeout_seconds,
         ),
         publisher=publisher,
         backfill_publisher=backfill_publisher,

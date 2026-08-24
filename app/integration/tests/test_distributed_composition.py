@@ -11,6 +11,7 @@ from app.contracts import (
     BarTimeframe,
     EventEnvelope,
     ServiceHealth,
+    ServiceStatus,
 )
 from app.integration.distributed_composition import (
     _alert_durable_name,
@@ -167,6 +168,17 @@ async def test_health_is_published_as_a_stable_contract() -> None:
     assert envelope.event_type == SERVICE_HEALTH_EVENT
     assert isinstance(envelope.payload, ServiceHealth)
     assert envelope.payload.service == "swing"
+
+    await _publish_health(
+        publisher,
+        "alpaca-market-stream",
+        {"connection": "disconnected"},
+        now,
+        status=ServiceStatus.DEGRADED,
+    )
+    degraded = publisher.events[1][1].payload
+    assert isinstance(degraded, ServiceHealth)
+    assert degraded.status is ServiceStatus.DEGRADED
 
 
 @pytest.mark.unit

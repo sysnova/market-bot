@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -99,18 +100,34 @@ class AlpacaMarketDataEngine:
         daily_bars: bool = True,
         trade_symbols: tuple[str, ...] | None = None,
         quote_symbols: tuple[str, ...] | None = None,
+        connected_event: asyncio.Event | None = None,
     ) -> int:
         count = 0
-        async for raw in self._stream.messages(
-            symbols,
-            trades=trades,
-            quotes=quotes,
-            bars=bars,
-            updated_bars=updated_bars,
-            daily_bars=daily_bars,
-            trade_symbols=trade_symbols,
-            quote_symbols=quote_symbols,
-        ):
+        iterator = (
+            self._stream.messages(
+                symbols,
+                trades=trades,
+                quotes=quotes,
+                bars=bars,
+                updated_bars=updated_bars,
+                daily_bars=daily_bars,
+                trade_symbols=trade_symbols,
+                quote_symbols=quote_symbols,
+            )
+            if connected_event is None
+            else self._stream.messages(
+                symbols,
+                trades=trades,
+                quotes=quotes,
+                bars=bars,
+                updated_bars=updated_bars,
+                daily_bars=daily_bars,
+                trade_symbols=trade_symbols,
+                quote_symbols=quote_symbols,
+                connected_event=connected_event,
+            )
+        )
+        async for raw in iterator:
             await self._publish(self._normalizer.stream_message(raw))
             count += 1
         return count

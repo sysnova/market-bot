@@ -71,10 +71,13 @@ class MarketHistoryService:
         self._sync_lock = asyncio.Lock()
 
     async def ensure(self, request: MarketHistoryRequest) -> MarketHistoryResponse:
-        previous = self._registered.get(request.engine_id)
-        self._registered[request.engine_id] = (
-            request if previous is None else _merge_engine_request(previous, request)
-        )
+        # Forced tail repairs are one-shot. Registering their dynamic lookback would
+        # permanently widen hourly refresh and PostgreSQL retention after a long outage.
+        if not request.force_refresh:
+            previous = self._registered.get(request.engine_id)
+            self._registered[request.engine_id] = (
+                request if previous is None else _merge_engine_request(previous, request)
+            )
         async with self._sync_lock:
             persisted = await self._sync(request)
         return MarketHistoryResponse(

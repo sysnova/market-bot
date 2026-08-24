@@ -215,6 +215,20 @@ therefore re-download at most that recent gap. PostgreSQL retention is bounded p
 timeframe (currently 750 one-minute, 250 fifteen-minute, 650 hourly, 650 daily, and 500 weekly bars,
 or a larger registered engine requirement plus margin).
 
+The Alpaca ingress also repairs in-process connection losses. A connection is considered ready only
+after the WebSocket connection, authentication, and subscription acknowledgements complete. While a
+reconnected socket is receiving, final and updating bar events are held in a bounded buffer; trades
+and quotes remain live. Market History then performs a transient forced one-minute reconciliation,
+the ingress publishes only bars newer than its per-symbol cursors, removes overlaps with the buffered
+socket bars, and finally releases the buffer in order. Forced recovery requests are one-shot and do
+not enlarge the hourly history registry. Reconnect attempts are indefinite, use exponential backoff up to five minutes,
+and reset to one second only after a stable 60-second session. These values can be adjusted with
+`MARKETBOT_ALPACA_STREAM_HANDSHAKE_TIMEOUT_SECONDS`,
+`MARKETBOT_ALPACA_STREAM_RECONNECT_INITIAL_SECONDS`,
+`MARKETBOT_ALPACA_STREAM_RECONNECT_MAX_SECONDS`,
+`MARKETBOT_ALPACA_STREAM_STABLE_SECONDS`, and
+`MARKETBOT_ALPACA_STREAM_RECOVERY_BUFFER_BARS`.
+
 Entry Opportunity persists its latest processed one-minute timestamp and, on restart, forces
 Market History to reconcile the missing REST tail before replaying PostgreSQL bars after that
 cursor. Its JetStream subscription is opened first in buffer mode so live bars arriving during

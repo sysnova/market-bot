@@ -41,6 +41,11 @@ class AppSettings(BaseSettings):
     alpaca_data_feed: Literal["iex", "sip", "delayed_sip", "boats", "overnight"] = "iex"
     alpaca_adjustment: Literal["raw", "split", "dividend", "all"] = "split"
     alpaca_rest_batch_size: int = Field(default=20, ge=1, le=100)
+    alpaca_stream_handshake_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    alpaca_stream_reconnect_initial_seconds: float = Field(default=1.0, gt=0, le=60)
+    alpaca_stream_reconnect_max_seconds: float = Field(default=300.0, ge=1, le=3600)
+    alpaca_stream_stable_seconds: float = Field(default=60.0, gt=0, le=3600)
+    alpaca_stream_recovery_buffer_bars: int = Field(default=100_000, ge=1000, le=1_000_000)
     microstructure_max_symbols: int = Field(default=40, ge=1, le=200)
     intraday_paper_notional: Decimal = Field(
         default=Decimal("1000"), ge=Decimal("100"), le=Decimal("1000000")
@@ -87,6 +92,10 @@ class AppSettings(BaseSettings):
         )
         if key_configured != secret_configured:
             raise ValueError("Alpaca API key and secret must be configured together")
+        if self.alpaca_stream_reconnect_max_seconds < (
+            self.alpaca_stream_reconnect_initial_seconds
+        ):
+            raise ValueError("Alpaca maximum reconnect delay cannot be below initial delay")
         if self.sec_enabled and not self.sec_configured:
             raise ValueError("SEC user agent must include an identifiable contact email")
         return self

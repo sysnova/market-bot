@@ -10,7 +10,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
-from time import perf_counter
+from time import monotonic, perf_counter
 from typing import Protocol, cast
 
 import httpx
@@ -91,6 +91,12 @@ from .entry_watch_store import PostgresEntryWatchStore
 from .intraday_worker import IntradayWorker
 from .long_term_worker import LongTermWorker
 from .market_history_composition import load_market_history, load_market_history_profiled
+from .market_stream_recovery import (
+    BufferedMarketDataPublisher,
+    ReconnectBackoff,
+    pending_recovery_bars,
+    recovery_requirement,
+)
 from .outbox_relay import OutboxRelay
 from .postgres_universe import (
     PostgresUniverseClient,
@@ -445,6 +451,7 @@ async def run_market_stream_process(
     clock = SystemClock()
     http_client = httpx.AsyncClient()
     bus: NatsJetStreamEventBus | None = None
+    database: AsyncEngine | None = None
     engine: AlpacaMarketDataEngine | None = None
     rotation_subscription: Subscription | None = None
     rotation_refresh = asyncio.Event()
@@ -455,7 +462,15 @@ async def run_market_stream_process(
     ).macro_symbols
     try:
         bus = await _connect_nats(settings)
-        engine = _build_stream_engine(settings, bus)
+        database = create_database_engine(
+            settings.database_url.get_secret_value(),
+            require_ssl=settings.environment is Environment.PRODUCTION,
+        )
+        market_publisher = BufferedMarketDataPublisher(
+            bus,
+            max_buffered_bars=settings.alpaca_stream_recovery_buffer_bars,
+        )
+        engine = _build_stream_engine(settings, market_publisher)
         universe_publisher = UniverseEventPublisher(bus)
 
         async def handle_rotation(envelope: EventEnvelope) -> None:
@@ -479,9 +494,17 @@ async def run_market_stream_process(
                     ack_wait_seconds=60,
                 ),
             )
-        backoff = 1.0
+        reconnect = ReconnectBackoff(
+            initial_seconds=settings.alpaca_stream_reconnect_initial_seconds,
+            maximum_seconds=settings.alpaca_stream_reconnect_max_seconds,
+            stable_seconds=settings.alpaca_stream_stable_seconds,
+        )
+        recovery_started_at: datetime | None = None
+        has_connected = False
         while True:
             stream_task: asyncio.Task[int] | None = None
+            stable_session_started: float | None = None
+            delay = settings.alpaca_stream_reconnect_initial_seconds
             try:
                 rotation_refresh.clear()
                 universe = await _resolve_universe(settings, symbols)
@@ -512,6 +535,52 @@ async def run_market_stream_process(
                     holdings.symbols,
                     max_symbols=settings.microstructure_max_symbols,
                 )
+                market_publisher.begin_recovery()
+                connected_event = asyncio.Event()
+                stream_task = asyncio.create_task(
+                    engine.stream_once(
+                        stream_symbols,
+                        **market_stream_subscription_options(),
+                        trade_symbols=microstructure_symbols,
+                        quote_symbols=microstructure_symbols,
+                        connected_event=connected_event,
+                    )
+                )
+                await _wait_for_stream_connection(stream_task, connected_event)
+                connected_at = clock.now()
+                recovered_bars = 0
+                if recovery_started_at is not None:
+                    assert database is not None
+                    requirement = recovery_requirement(recovery_started_at, connected_at)
+                    history = await load_market_history(
+                        settings,
+                        database,
+                        engine_id="alpaca-market-stream-recovery",
+                        symbols=stream_symbols,
+                        requirements=(requirement,),
+                        as_of=connected_at,
+                        force_refresh=True,
+                    )
+                    missing = pending_recovery_bars(
+                        history,
+                        cursors=market_publisher.final_bar_cursors,
+                        recovery_started_at=recovery_started_at,
+                        connected_at=connected_at,
+                    )
+                    recovered_bars = len(missing)
+                    released_bars = await market_publisher.finish_recovery(missing)
+                    await logger.ainfo(
+                        "alpaca_stream_gap_recovered",
+                        recovered_bars=recovered_bars,
+                        released_buffered_bars=released_bars - recovered_bars,
+                        recovery_started_at=recovery_started_at.isoformat(),
+                        recovered_through=connected_at.isoformat(),
+                    )
+                else:
+                    await market_publisher.finish_recovery(())
+                recovery_started_at = None
+                has_connected = True
+                stable_session_started = monotonic()
                 await _publish_health(
                     bus,
                     "alpaca-market-stream",
@@ -521,16 +590,10 @@ async def run_market_stream_process(
                         "portfolio_symbols": len(holdings.symbols),
                         "microstructure_symbols": len(microstructure_symbols),
                         "universe_source": universe.source,
+                        "connection": "connected",
+                        "recovered_bars": recovered_bars,
                     },
-                    clock.now(),
-                )
-                stream_task = asyncio.create_task(
-                    engine.stream_once(
-                        stream_symbols,
-                        **market_stream_subscription_options(),
-                        trade_symbols=microstructure_symbols,
-                        quote_symbols=microstructure_symbols,
-                    )
+                    connected_at,
                 )
                 while True:
                     refresh_task = asyncio.create_task(rotation_refresh.wait())
@@ -542,8 +605,8 @@ async def run_market_stream_process(
                     refresh_task.cancel()
                     await asyncio.gather(refresh_task, return_exceptions=True)
                     if stream_task in done:
-                        count = await stream_task
-                        break
+                        await stream_task
+                        raise RuntimeError("Alpaca market-data stream ended unexpectedly")
 
                     rotation_refresh.clear()
                     try:
@@ -617,27 +680,49 @@ async def run_market_stream_process(
                         microstructure_symbols=len(microstructure_symbols),
                         universe_source=universe.source,
                     )
-                if count > 0:
-                    backoff = 1.0
             except asyncio.CancelledError:
                 raise
             except Exception as error:
+                session_uptime = (
+                    0.0
+                    if stable_session_started is None
+                    else monotonic() - stable_session_started
+                )
+                delay = reconnect.failure_delay(session_uptime_seconds=session_uptime)
+                with contextlib.suppress(Exception):
+                    await _publish_health(
+                        bus,
+                        "alpaca-market-stream",
+                        {
+                            "connection": "disconnected",
+                            "error_type": type(error).__name__,
+                            "reconnect_seconds": delay,
+                        },
+                        clock.now(),
+                        status=ServiceStatus.DEGRADED,
+                    )
                 await logger.aexception(
                     "alpaca_stream_disconnected",
                     error_type=type(error).__name__,
-                    reconnect_seconds=backoff,
+                    reconnect_seconds=delay,
+                    session_uptime_seconds=round(session_uptime, 3),
                 )
             finally:
                 if stream_task is not None and not stream_task.done():
                     stream_task.cancel()
                     await asyncio.gather(stream_task, return_exceptions=True)
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 30.0)
+                if has_connected and recovery_started_at is None:
+                    recovery_started_at = (clock.now() - timedelta(minutes=5)).replace(
+                        second=0, microsecond=0
+                    )
+            await asyncio.sleep(delay)
     finally:
         if rotation_subscription is not None:
             await rotation_subscription.unsubscribe()
         if engine is not None:
             await engine.close()
+        if database is not None:
+            await database.dispose()
         await http_client.aclose()
         if bus is not None:
             await bus.close()
@@ -647,6 +732,24 @@ def _stream_symbols(
     universe_symbols: tuple[str, ...], macro_symbols: tuple[str, ...]
 ) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*universe_symbols, *macro_symbols)))
+
+
+async def _wait_for_stream_connection(
+    stream_task: asyncio.Task[int], connected_event: asyncio.Event
+) -> None:
+    ready_task = asyncio.create_task(connected_event.wait())
+    try:
+        done, _ = await asyncio.wait(
+            (stream_task, ready_task), return_when=asyncio.FIRST_COMPLETED
+        )
+        if stream_task in done:
+            await stream_task
+            raise RuntimeError("Alpaca market-data stream ended before becoming ready")
+        await ready_task
+    finally:
+        if not ready_task.done():
+            ready_task.cancel()
+            await asyncio.gather(ready_task, return_exceptions=True)
 
 
 def _microstructure_symbols(
@@ -1308,6 +1411,7 @@ def _build_stream_engine(
             base_url=str(settings.alpaca_market_data_stream_url),
             feed=feed,
             connector=WebsocketsConnector(),
+            handshake_timeout_seconds=settings.alpaca_stream_handshake_timeout_seconds,
         ),
         publisher=publisher,
         normalizer=AlpacaEventNormalizer(feed=feed),
@@ -1343,10 +1447,12 @@ async def _publish_health(
     service: str,
     details: Mapping[str, object],
     observed_at: datetime,
+    *,
+    status: ServiceStatus = ServiceStatus.HEALTHY,
 ) -> None:
     health = ServiceHealth(
         service=service,
-        status=ServiceStatus.HEALTHY,
+        status=status,
         observed_at=observed_at,
         version="2.0.0",
         details=tuple(NamedValue(name=key, value=value) for key, value in sorted(details.items())),

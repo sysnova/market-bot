@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -67,6 +68,56 @@ async def test_stream_authenticates_subscribes_and_yields_market_data() -> None:
         },
     ]
     assert message["T"] == "t"
+    assert socket.closed is True
+
+
+@pytest.mark.asyncio
+async def test_stream_signals_readiness_only_after_subscription_is_acknowledged() -> None:
+    socket = FakeSocket(
+        [
+            '[{"T":"success","msg":"connected"}]',
+            '[{"T":"success","msg":"authenticated"}]',
+            '[{"T":"subscription","bars":["AAPL"]}]',
+            '[{"T":"b","S":"AAPL","o":1,"h":1,"l":1,"c":1,"v":1,'
+            '"t":"2026-07-24T14:30:00Z"}]',
+        ]
+    )
+    ready = asyncio.Event()
+    stream = AlpacaMarketDataStream(
+        api_key_id="key",
+        api_secret_key="secret",
+        base_url="wss://stream.data.alpaca.markets/v2",
+        feed="sip",
+        connector=FakeConnector(socket),
+    )
+
+    iterator = stream.messages(("AAPL",), connected_event=ready)
+    assert ready.is_set() is False
+    await anext(iterator)
+    await iterator.aclose()
+
+    assert ready.is_set() is True
+
+
+@pytest.mark.asyncio
+async def test_stream_times_out_when_alpaca_never_completes_handshake() -> None:
+    class HangingSocket(FakeSocket):
+        async def recv(self) -> str:
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+    socket = HangingSocket([])
+    stream = AlpacaMarketDataStream(
+        api_key_id="key",
+        api_secret_key="secret",
+        base_url="wss://stream.data.alpaca.markets/v2",
+        feed="sip",
+        connector=FakeConnector(socket),
+        handshake_timeout_seconds=0.01,
+    )
+
+    with pytest.raises(RuntimeError, match="handshake timed out"):
+        await anext(stream.messages(("AAPL",)))
     assert socket.closed is True
 
 
