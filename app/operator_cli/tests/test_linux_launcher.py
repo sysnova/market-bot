@@ -181,6 +181,21 @@ def test_linux_launcher_allows_large_history_bootstrap() -> None:
     assert "Readiness timeout (default: 1800)." in script
 
 
+def test_linux_launcher_bounds_process_logs() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    control = script.split("run_control()", 1)[1].split("launch_tmux()", 1)[0]
+
+    assert 'LOG_MAX_BYTES="${MARKETBOT_LOG_MAX_BYTES:-52428800}"' in script
+    assert 'LOG_BACKUP_COUNT="${MARKETBOT_LOG_BACKUP_COUNT:-3}"' in script
+    assert (
+        'LOG_ROTATION_INTERVAL_SECONDS="${MARKETBOT_LOG_ROTATION_INTERVAL_SECONDS:-60}"'
+        in script
+    )
+    assert "rotate_runtime_logs" in control
+    assert "log_rotation_loop" in control
+    assert '>>"$LOG_ROOT/$name.out.log" 2>>"$LOG_ROOT/$name.err.log"' in control
+
+
 def test_linux_launcher_cleanup_signals_groups_and_direct_children() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     cleanup = script.split("cleanup()", 1)[1].split("start_background()", 1)[0]

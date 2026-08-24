@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
+
+from app.common.logging import get_logger
 from app.contracts import BarTimeframe, MarketBar
 
 from .normalizer import AlpacaEventNormalizer, Publication
@@ -35,6 +39,13 @@ class AlpacaMarketDataEngine:
         self._backfill_publisher = publisher if backfill_publisher is None else backfill_publisher
         self._normalizer = normalizer
         self._rest_batch_size = rest_batch_size
+        self._discarded_stream_messages = 0
+
+    @property
+    def discarded_stream_messages(self) -> int:
+        """Count provider records rejected without ending the live session."""
+
+        return self._discarded_stream_messages
 
     async def publish_bars(
         self,
@@ -128,7 +139,12 @@ class AlpacaMarketDataEngine:
             )
         )
         async for raw in iterator:
-            await self._publish(self._normalizer.stream_message(raw))
+            try:
+                publication = self._normalizer.stream_message(raw)
+            except ValidationError as error:
+                await self._record_discarded_stream_message(raw, error)
+                continue
+            await self._publish(publication)
             count += 1
         return count
 
@@ -155,6 +171,25 @@ class AlpacaMarketDataEngine:
 
     async def _publish(self, publication: Publication) -> None:
         await self._publish_to(self._publisher, publication)
+
+    async def _record_discarded_stream_message(
+        self,
+        raw: Mapping[str, object],
+        error: ValidationError,
+    ) -> None:
+        self._discarded_stream_messages += 1
+        count = self._discarded_stream_messages
+        if count not in {1, 10, 100} and count % 1000:
+            return
+        details = error.errors(include_url=False, include_context=False, include_input=False)
+        reason = str(details[0].get("msg", "validation failed")) if details else "validation failed"
+        await get_logger("alpaca-market-data").awarning(
+            "alpaca_stream_message_discarded",
+            discarded_messages=count,
+            message_type=str(raw.get("T", "unknown")),
+            symbol=str(raw.get("S", "unknown")),
+            reason=reason,
+        )
 
     @staticmethod
     async def _publish_to(publisher: EventPublisher, publication: Publication) -> None:

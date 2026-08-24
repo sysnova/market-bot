@@ -229,6 +229,14 @@ and reset to one second only after a stable 60-second session. These values can 
 `MARKETBOT_ALPACA_STREAM_STABLE_SECONDS`, and
 `MARKETBOT_ALPACA_STREAM_RECOVERY_BUFFER_BARS`.
 
+Live quote, trade, correction, and cancellation subjects remain intentionally ephemeral on Core
+NATS. One malformed provider record is discarded and rate-limited in diagnostics without ending
+the WebSocket session; durable recovery continues to apply only to completed bars and downstream
+analytical state. The Linux launcher bounds each redirected process log to 50 MiB by default,
+keeps three tail snapshots, and checks once per minute. Override those values with
+`MARKETBOT_LOG_MAX_BYTES`, `MARKETBOT_LOG_BACKUP_COUNT`, and
+`MARKETBOT_LOG_ROTATION_INTERVAL_SECONDS`.
+
 Entry Opportunity persists its latest processed one-minute timestamp and, on restart, forces
 Market History to reconcile the missing REST tail before replaying PostgreSQL bars after that
 cursor. Its JetStream subscription is opened first in buffer mode so live bars arriving during

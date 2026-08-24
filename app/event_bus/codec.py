@@ -9,7 +9,9 @@ from app.contracts import EventEnvelope
 def encode_envelope(envelope: EventEnvelope) -> bytes:
     """Encode a stable snapshot instead of retaining mutable nested values."""
 
-    return canonical_json(envelope)
+    return canonical_json(
+        envelope.model_dump(mode="python", exclude_computed_fields=True)
+    )
 
 
 def decode_envelope(payload: bytes) -> EventEnvelope:

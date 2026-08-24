@@ -50,6 +50,28 @@ class FakeStream:
         }
 
 
+class InvalidThenValidQuoteStream:
+    async def messages(self, *args: object, **kwargs: object) -> AsyncIterator[dict[str, object]]:
+        yield {
+            "T": "q",
+            "S": "AAPL",
+            "bp": 100.70,
+            "bs": 2,
+            "ap": 100.60,
+            "as": 3,
+            "t": "2026-07-24T14:31:00Z",
+        }
+        yield {
+            "T": "q",
+            "S": "AAPL",
+            "bp": 100.60,
+            "bs": 2,
+            "ap": 100.70,
+            "as": 3,
+            "t": "2026-07-24T14:31:01Z",
+        }
+
+
 class WeeklyFakeRest(FakeRest):
     async def fetch_bars(
         self, *args: object, **kwargs: object
@@ -142,6 +164,23 @@ async def test_stream_only_engine_never_requires_a_rest_adapter() -> None:
 
     assert count == 1
     assert len(publisher.events) == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_discards_one_invalid_quote_without_ending_the_session() -> None:
+    publisher = FakePublisher()
+    engine = AlpacaMarketDataEngine(
+        rest=None,
+        stream=InvalidThenValidQuoteStream(),
+        publisher=publisher,
+        normalizer=AlpacaEventNormalizer(feed="sip"),
+    )
+
+    count = await engine.stream_once(("AAPL",), trades=False, bars=False)
+
+    assert count == 1
+    assert engine.discarded_stream_messages == 1
+    assert [subject for subject, _ in publisher.events] == ["market.data.quote.aapl"]
 
 
 @pytest.mark.asyncio

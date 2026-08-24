@@ -15,6 +15,9 @@ DETACH=0
 READY_TIMEOUT=1800
 SESSION="marketbot"
 STOCK_ANALYZER_ENV="${MARKETBOT_STOCK_ANALYZER_ENV:-$PROJECT_ROOT/../stock-analyzer/apps/alert-runner/.env}"
+LOG_MAX_BYTES="${MARKETBOT_LOG_MAX_BYTES:-52428800}"
+LOG_BACKUP_COUNT="${MARKETBOT_LOG_BACKUP_COUNT:-3}"
+LOG_ROTATION_INTERVAL_SECONDS="${MARKETBOT_LOG_ROTATION_INTERVAL_SECONDS:-60}"
 
 load_shared_openai_key() {
   [[ -z "${MARKETBOT_OPENAI_API_KEY:-}" && -f "$STOCK_ANALYZER_ENV" ]] || return 0
@@ -316,11 +319,53 @@ run_control() {
   # group when startup fails.
   MARKETBOT_CHILD_PIDS=()
   MARKETBOT_CHILD_NAMES=()
+  LOG_ROTATOR_PID=""
+
+  validate_log_rotation_settings() {
+    local name value
+    for name in LOG_MAX_BYTES LOG_BACKUP_COUNT LOG_ROTATION_INTERVAL_SECONDS; do
+      value="${!name}"
+      if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+        echo "$name must be a positive integer, got: $value" >&2
+        return 2
+      fi
+    done
+  }
+
+  rotate_runtime_logs() {
+    local path size index source target
+    local -a paths=("$LOG_ROOT"/*.out.log "$LOG_ROOT"/*.err.log)
+    for path in "${paths[@]}"; do
+      [[ -f "$path" ]] || continue
+      size="$(stat -c %s -- "$path")"
+      ((size > LOG_MAX_BYTES)) || continue
+      rm -f -- "$path.$LOG_BACKUP_COUNT"
+      for ((index = LOG_BACKUP_COUNT - 1; index >= 1; index--)); do
+        source="$path.$index"
+        target="$path.$((index + 1))"
+        [[ -f "$source" ]] && mv -f -- "$source" "$target"
+      done
+      tail -c "$LOG_MAX_BYTES" -- "$path" >"$path.1.tmp"
+      mv -f -- "$path.1.tmp" "$path.1"
+      : >"$path"
+    done
+  }
+
+  log_rotation_loop() {
+    while :; do
+      sleep "$LOG_ROTATION_INTERVAL_SECONDS"
+      rotate_runtime_logs
+    done
+  }
 
   cleanup() {
     trap - EXIT INT TERM
     echo
     echo "Stopping every MarketBot process..."
+    if [[ -n "$LOG_ROTATOR_PID" ]]; then
+      kill -TERM "$LOG_ROTATOR_PID" 2>/dev/null || true
+      wait "$LOG_ROTATOR_PID" 2>/dev/null || true
+    fi
     for pid in "${MARKETBOT_CHILD_PIDS[@]}"; do
       kill -TERM -- "-$pid" 2>/dev/null || true
       kill -TERM "$pid" 2>/dev/null || true
@@ -355,7 +400,7 @@ run_control() {
       return 2
     fi
     setsid "$MARKETBOT_EXECUTABLE" "${@:3}" \
-      >"$LOG_ROOT/$name.out.log" 2>"$LOG_ROOT/$name.err.log" &
+      >>"$LOG_ROOT/$name.out.log" 2>>"$LOG_ROOT/$name.err.log" &
     MARKETBOT_CHILD_PIDS+=("$!")
     MARKETBOT_CHILD_NAMES+=("$name")
     echo "Started $name (PID $!)"
@@ -373,6 +418,10 @@ run_control() {
   }
 
   mkdir -p "$STATUS_ROOT" "$LOG_ROOT"
+  validate_log_rotation_settings
+  rotate_runtime_logs
+  log_rotation_loop &
+  LOG_ROTATOR_PID="$!"
   write_runtime_plan
   if [[ "${MARKETBOT_LINUX_READINESS_CLEARED:-0}" != "1" ]]; then
     clear_runtime_readiness
