@@ -18,6 +18,7 @@ STOCK_ANALYZER_ENV="${MARKETBOT_STOCK_ANALYZER_ENV:-$PROJECT_ROOT/../stock-analy
 LOG_MAX_BYTES="${MARKETBOT_LOG_MAX_BYTES:-52428800}"
 LOG_BACKUP_COUNT="${MARKETBOT_LOG_BACKUP_COUNT:-3}"
 LOG_ROTATION_INTERVAL_SECONDS="${MARKETBOT_LOG_ROTATION_INTERVAL_SECONDS:-60}"
+MANUAL_START_PROCESSES=("order-flow" "scalp" "intraday-opportunity")
 
 load_shared_openai_key() {
   [[ -z "${MARKETBOT_OPENAI_API_KEY:-}" && -f "$STOCK_ANALYZER_ENV" ]] || return 0
@@ -51,6 +52,13 @@ Options:
   --ready-timeout SEC   Readiness timeout (default: 1800).
   --session NAME        tmux session name (default: marketbot).
   -h, --help            Show this help.
+
+Manual components (run from the repository root):
+  ./scripts/linux/start-market-bot.sh --role order-flow
+  ./scripts/linux/start-market-bot.sh --role scalp-engine
+  ./scripts/linux/start-market-bot.sh --role intraday-opportunity-engine
+  ./scripts/linux/start-market-bot.sh --role scalping
+  ./scripts/linux/start-market-bot.sh --role intraday-ops
 EOF
 }
 
@@ -109,6 +117,15 @@ engine_is_active() {
     "$PLAN_PATH" "$slot")
 }
 
+process_starts_manually() {
+  local name="$1"
+  local manual_name
+  for manual_name in "${MANUAL_START_PROCESSES[@]}"; do
+    [[ "$name" == "$manual_name" ]] && return 0
+  done
+  return 1
+}
+
 plan_startup_batches() {
   (cd "$PROJECT_ROOT" && uv run python -c \
     'import json,sys; plan=json.load(open(sys.argv[1], encoding="utf-8")); print("\n".join("\t".join(batch) for batch in plan["startup_batches"]))' \
@@ -135,14 +152,17 @@ plan_all_ready_paths() {
 }
 
 runtime_matches_plan() {
-  (cd "$PROJECT_ROOT" && uv run python - "$PLAN_PATH" <<'PY'
+  (cd "$PROJECT_ROOT" && uv run python - "$PLAN_PATH" "${MANUAL_START_PROCESSES[@]}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 plan = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+manual_processes = set(sys.argv[2:])
 version = plan["definition_version"]
 for process in plan["processes"]:
+    if process["name"] in manual_processes:
+        continue
     ready_path = process.get("ready_path")
     if ready_path is None:
         continue
@@ -174,6 +194,15 @@ exec_marketbot() {
   fi
   shift 2
   exec "$MARKETBOT_EXECUTABLE" "$@"
+}
+
+run_manual_plan_process() {
+  local name="$1"
+  local -a process_arguments=()
+  ensure_runtime_plan
+  mapfile -d '' -t process_arguments < <(plan_process_arguments "$name")
+  cd "$PROJECT_ROOT"
+  exec_marketbot "${process_arguments[@]}"
 }
 
 run_analysis() {
@@ -433,19 +462,28 @@ run_control() {
 
   local batch_line name
   local -a batch_names=()
+  local -a automatic_batch_names=()
   local -a process_arguments=()
   local -a batch_ready_paths=()
   while IFS= read -r batch_line; do
     IFS=$'\t' read -r -a batch_names <<<"$batch_line"
+    automatic_batch_names=()
     for name in "${batch_names[@]}"; do
+      if process_starts_manually "$name"; then
+        echo "Leaving manual process stopped: $name"
+        continue
+      fi
+      automatic_batch_names+=("$name")
       mapfile -d '' -t process_arguments < <(plan_process_arguments "$name")
       start_background "$name" "${process_arguments[@]}"
     done
-    mapfile -d '' -t batch_ready_paths < <(plan_ready_paths "${batch_names[@]}")
+    mapfile -d '' -t batch_ready_paths < <(
+      plan_ready_paths "${automatic_batch_names[@]}"
+    )
     ((${#batch_ready_paths[@]} == 0)) || wait_ready "${batch_ready_paths[@]}"
   done < <(plan_startup_batches)
 
-  echo "All engines ready. Logs: $LOG_ROOT"
+  echo "All automatic processes ready. Logs: $LOG_ROOT"
   echo "Press Ctrl+C here to stop every process."
 
   while :; do
@@ -475,13 +513,11 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed opportunities scalping intraday_ops long_portfolio news swing_channel_4h geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
+  local control analysis confirmed opportunities long_portfolio news swing_channel_4h geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
   printf -v opportunities '%q ' "${base[@]}" --role opportunities
-  printf -v scalping '%q ' "${base[@]}" --role scalping
-  printf -v intraday_ops '%q ' "${base[@]}" --role intraday-ops
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
   printf -v news '%q ' "${base[@]}" --role news
   printf -v swing_channel_4h '%q ' "${base[@]}" --role swing-channel-4h
@@ -506,18 +542,6 @@ launch_tmux() {
       tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
       tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
       tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
-    fi
-    if engine_is_active scalp && \
-      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Scalping'; then
-      tmux new-window -d -t "$SESSION" -n Scalping "$scalping"
-      tmux set-window-option -t "$SESSION":Scalping remain-on-exit on
-      tmux select-pane -t "$SESSION":Scalping.0 -T 'SCALPING — ORDER FLOW + SETUPS'
-    fi
-    if engine_is_active intraday-opportunity && \
-      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'IntradayOps'; then
-      tmux new-window -d -t "$SESSION" -n IntradayOps "$intraday_ops"
-      tmux set-window-option -t "$SESSION":IntradayOps remain-on-exit on
-      tmux select-pane -t "$SESSION":IntradayOps.0 -T 'INTRADAY OPS — PAPER P/L'
     fi
     if engine_is_active long-portfolio && \
       ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Portfolio2026'; then
@@ -621,16 +645,6 @@ launch_tmux() {
     tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
     tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
   fi
-  if engine_is_active scalp; then
-    tmux new-window -d -t "$SESSION" -n Scalping "$scalping"
-    tmux set-window-option -t "$SESSION":Scalping remain-on-exit on
-    tmux select-pane -t "$SESSION":Scalping.0 -T 'SCALPING — ORDER FLOW + SETUPS'
-  fi
-  if engine_is_active intraday-opportunity; then
-    tmux new-window -d -t "$SESSION" -n IntradayOps "$intraday_ops"
-    tmux set-window-option -t "$SESSION":IntradayOps remain-on-exit on
-    tmux select-pane -t "$SESSION":IntradayOps.0 -T 'INTRADAY OPS — PAPER P/L'
-  fi
   if engine_is_active long-portfolio; then
     tmux new-window -d -t "$SESSION" -n Portfolio2026 "$long_portfolio"
     tmux set-window-option -t "$SESSION":Portfolio2026 remain-on-exit on
@@ -695,6 +709,9 @@ case "$ROLE" in
   analysis) run_analysis ;;
   confirmed) run_confirmed ;;
   opportunities) run_opportunities ;;
+  order-flow) run_manual_plan_process order-flow ;;
+  scalp-engine) run_manual_plan_process scalp ;;
+  intraday-opportunity-engine) run_manual_plan_process intraday-opportunity ;;
   scalping) run_scalping_monitor ;;
   intraday-ops) run_intraday_ops_monitor ;;
   long-portfolio) run_long_portfolio_monitor ;;

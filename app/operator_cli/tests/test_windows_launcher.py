@@ -29,6 +29,19 @@ NATS_WIREGUARD_SCRIPT_PATH = (
 POWERSHELL = shutil.which("powershell")
 
 
+def test_windows_launcher_keeps_scalp_pipeline_engines_manual() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert (
+        '$ManualStartProcessNames = @("order-flow", "scalp", "intraday-opportunity")'
+        in script
+    )
+    assert "$AutomaticBatchNames" in script
+    assert "-notin $ManualStartProcessNames" in script
+    assert "Start-ConfiguredMarketBotProcess -Name $Name" in script
+    assert "Wait-ConfiguredMarketBotReadiness -Names $AutomaticBatchNames" in script
+
+
 def test_windows_launcher_stops_complete_child_process_trees() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 

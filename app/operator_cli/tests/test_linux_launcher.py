@@ -58,19 +58,36 @@ def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
     assert "list-windows" in script
 
 
-def test_linux_launcher_adds_scalping_and_intraday_paper_windows() -> None:
+def test_linux_launcher_keeps_scalp_pipeline_engines_manual() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
+    control = script.split("run_control()", 1)[1].split("launch_tmux()", 1)[0]
+    launcher = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
 
+    assert (
+        'MANUAL_START_PROCESSES=("order-flow" "scalp" "intraday-opportunity")'
+        in script
+    )
+    assert 'process_starts_manually "$name"' in control
+    assert 'automatic_batch_names+=("$name")' in control
+    assert 'plan_ready_paths "${automatic_batch_names[@]}"' in control
+    assert '"${MANUAL_START_PROCESSES[@]}"' in script
+    assert "--role order-flow" in script
+    assert "--role scalp-engine" in script
+    assert "--role intraday-opportunity-engine" in script
+    assert "order-flow) run_manual_plan_process order-flow ;;" in script
+    assert "scalp-engine) run_manual_plan_process scalp ;;" in script
+    assert (
+        "intraday-opportunity-engine) "
+        "run_manual_plan_process intraday-opportunity ;;" in script
+    )
     assert "run marketbot monitor scalping" in script
     assert "run marketbot monitor intraday-opportunity" in script
-    assert "--role scalping" in script
-    assert "--role intraday-ops" in script
+    assert "scalping) run_scalping_monitor ;;" in script
+    assert "intraday-ops) run_intraday_ops_monitor ;;" in script
     assert "scalping-monitor.ready.json" in script
     assert "intraday-opportunity-monitor.ready.json" in script
-    assert '-n Scalping "$scalping"' in script
-    assert '-n IntradayOps "$intraday_ops"' in script
-    assert "SCALPING — ORDER FLOW + SETUPS" in script
-    assert "INTRADAY OPS — PAPER P/L" in script
+    assert '-n Scalping "$scalping"' not in launcher
+    assert '-n IntradayOps "$intraday_ops"' not in launcher
 
 
 def test_linux_launcher_adds_independent_alpaca_news_window() -> None:
@@ -159,7 +176,7 @@ def test_linux_launcher_uses_canonical_batches_and_readiness_paths() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
     assert 'done < <(plan_startup_batches)' in script
-    assert 'plan_ready_paths "${batch_names[@]}"' in script
+    assert 'plan_ready_paths "${automatic_batch_names[@]}"' in script
     assert 'wait_ready "${batch_ready_paths[@]}"' in script
     assert "start_background market-history-v1 run marketbot market history" not in script
 

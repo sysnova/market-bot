@@ -110,6 +110,7 @@ finally {
 
 $ActiveEngineSlots = @($RuntimePlan.active_engine_slots)
 $ProcessSpecs = @($RuntimePlan.processes)
+$ManualStartProcessNames = @("order-flow", "scalp", "intraday-opportunity")
 foreach ($Spec in $ProcessSpecs) {
     $Arguments = @($Spec.arguments)
     if ($Arguments.Count -ge 2 -and $Arguments[0] -eq "run" -and $Arguments[1] -eq "marketbot") {
@@ -422,14 +423,17 @@ try {
     Write-Host "Runtime: $ResolvedRuntimeRoot"
     foreach ($Batch in $RuntimePlan.startup_batches) {
         $BatchNames = @($Batch)
-        foreach ($Name in $BatchNames) {
+        $AutomaticBatchNames = @(
+            $BatchNames | Where-Object { $_ -notin $ManualStartProcessNames }
+        )
+        foreach ($Name in $AutomaticBatchNames) {
             $Child = Start-ConfiguredMarketBotProcess -Name $Name
             if ($null -ne $Child) {
                 $Children.Add($Child)
                 Write-Host "Started $($Child.name) (PID $($Child.process.Id))"
             }
         }
-        Wait-ConfiguredMarketBotReadiness -Names $BatchNames
+        Wait-ConfiguredMarketBotReadiness -Names $AutomaticBatchNames
     }
 
     foreach ($MonitorSpec in @($ProcessSpecs | Where-Object { $_.operator_monitor })) {
