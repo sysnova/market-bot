@@ -72,6 +72,19 @@ class Publisher(Protocol):
     async def publish(self, subject: str, envelope: EventEnvelope) -> None: ...
 
 
+def swing_trade_replay_subjects(engine_version: str) -> tuple[str, ...]:
+    """Return only the durable analytical inputs used by the selected implementation."""
+
+    subjects = (
+        "marketbot.v1.swing-trade.assessment.>",
+        "marketbot.v1.4hgeri.assessment.>",
+        "marketbot.v1.support-confirmation.assessment.>",
+    )
+    if engine_version == "1.5.0":
+        return (*subjects, "marketbot.v1.order-flow.support.>")
+    return subjects
+
+
 class SwingTradeRuntime:
     """Evaluate exactly once per completed 15-minute Watchlist bar."""
 
@@ -334,28 +347,27 @@ async def run_swing_trade_process(
             universe_source = "operator-watchlist-override"
         bus = await connect_nats(settings)
         runtime = SwingTradeRuntime(engine=assembly.build_swing_trade(), publisher=bus)
-        for subject, handler, durable in (
-            (
-                "marketbot.v1.swing-trade.assessment.>",
+        replay_handlers = {
+            "marketbot.v1.swing-trade.assessment.>": (
                 runtime.restore_assessment,
                 "marketbot-swing-trade-restore-v1",
             ),
-            (
-                "marketbot.v1.4hgeri.assessment.>",
+            "marketbot.v1.4hgeri.assessment.>": (
                 runtime.restore_geri,
                 "marketbot-swing-trade-geri-v1",
             ),
-            (
-                "marketbot.v1.support-confirmation.assessment.>",
+            "marketbot.v1.support-confirmation.assessment.>": (
                 runtime.restore_support,
                 "marketbot-swing-trade-support-v1",
             ),
-            (
-                "marketbot.v1.order-flow.support.>",
+            "marketbot.v1.order-flow.support.>": (
                 runtime.restore_order_flow_support,
                 "marketbot-swing-trade-order-flow-support-v1",
             ),
-        ):
+        }
+        engine_version = assembly.spec(EngineSlot.SWING_TRADE).implementation
+        for subject in swing_trade_replay_subjects(engine_version):
+            handler, durable = replay_handlers[subject]
             subscription = await bus.subscribe(
                 subject,
                 handler,

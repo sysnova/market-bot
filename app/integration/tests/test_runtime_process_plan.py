@@ -51,7 +51,6 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     assert geri.dependencies == (
         "market-history-v1",
         "support-confirmation-v0",
-        "order-flow",
     )
 
     confirmed = plan.process("confirmed-buy-monitor")
@@ -87,7 +86,7 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     assert positions["news-intelligence-v1"] < positions["alpaca-market-stream"]
     assert positions["support-confirmation-v0"] < positions["order-flow"]
     for consumer in ("swing", "4hgeri", "swing-trade"):
-        assert positions["order-flow"] < positions[consumer]
+        assert "order-flow" not in plan.process(consumer).dependencies
     assert plan.process("leveraged-thesis").dependencies == (
         "intraday",
         "order-flow",

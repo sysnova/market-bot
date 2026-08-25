@@ -21,6 +21,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV5,
     EntryOpportunityEngineV6,
     EntryOpportunityEngineV7,
+    EntryOpportunityEngineV8,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_recovery_engine import EntryRecoveryEngineV11
@@ -122,6 +123,41 @@ ACTIONABLE_SUPPORT_DEFINITION = ROOT / "configs/marketbot/7.29.0.yaml"
 SUPPORT_ENRICHED_SWING_DEFINITION = ROOT / "configs/marketbot/7.30.0.yaml"
 STABLE_SWING_THESIS_DEFINITION = ROOT / "configs/marketbot/7.31.0.yaml"
 MICROSTRUCTURE_DEFINITION = ROOT / "configs/marketbot/7.32.0.yaml"
+ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.34.0.yaml"
+PREENTRY_STABILITY_DEFINITION = ROOT / "configs/marketbot/7.35.0.yaml"
+NO_SWING_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.36.0.yaml"
+
+
+def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:
+    previous = MarketBotAssembly.from_path(PREENTRY_STABILITY_DEFINITION)
+    assembly = MarketBotAssembly.from_path(NO_SWING_ORDER_FLOW_DEFINITION)
+
+    assert isinstance(previous.build_swing(), SwingEngineV13)
+    assert isinstance(previous.build_4hgeri(), Swing4HGeriEngineV17)
+    assert isinstance(previous.build_swing_trade(), SwingTradeEngineV15)
+    assert isinstance(assembly.build_swing(), SwingEngineV12)
+    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV16)
+    assert isinstance(assembly.build_swing_trade(), SwingTradeEngineV14)
+    assert isinstance(
+        assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV8,
+    )
+    assert assembly.definition.version == "7.36.0"
+
+
+def test_preentry_stability_definition_versions_entry_opportunity_only() -> None:
+    previous = MarketBotAssembly.from_path(ORDER_FLOW_DEFINITION)
+    assembly = MarketBotAssembly.from_path(PREENTRY_STABILITY_DEFINITION)
+
+    assert isinstance(
+        previous.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV7,
+    )
+    assert isinstance(
+        assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV8,
+    )
+    assert assembly.definition.version == "7.35.0"
 
 
 def test_microstructure_definition_adds_operational_engines() -> None:

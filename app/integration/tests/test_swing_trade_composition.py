@@ -16,7 +16,10 @@ from app.contracts import (
     SwingTradeAssessment,
     SwingTradeTransition,
 )
-from app.integration.swing_trade_composition import SwingTradeRuntime
+from app.integration.swing_trade_composition import (
+    SwingTradeRuntime,
+    swing_trade_replay_subjects,
+)
 from app.swing_trade_engine import SwingTradeEngine
 from app.swing_trade_engine.tests.test_engine import analyze, daily_bars
 
@@ -43,6 +46,13 @@ class RejectingEngine:
     def analyze(self, context: object) -> SwingTradeAssessment:
         del context
         raise ValueError("no valid impulse")
+
+
+def test_swing_trade_replay_excludes_order_flow_before_v15() -> None:
+    order_flow_subject = "marketbot.v1.order-flow.support.>"
+
+    assert order_flow_subject not in swing_trade_replay_subjects("1.4.0")
+    assert order_flow_subject in swing_trade_replay_subjects("1.5.0")
 
 
 def minute(at: datetime, *, final: bool = True) -> MarketBar:

@@ -8,6 +8,7 @@ from .engine import (
     EntryOpportunityEngineV5,
     EntryOpportunityEngineV6,
     EntryOpportunityEngineV7,
+    EntryOpportunityEngineV8,
 )
 from .memory import InMemoryEntryOpportunityStore
 from .ports import EntryOpportunityStore
@@ -23,6 +24,7 @@ __all__ = [
     "EntryOpportunityEngineV5",
     "EntryOpportunityEngineV6",
     "EntryOpportunityEngineV7",
+    "EntryOpportunityEngineV8",
     "EntryOpportunityManager",
     "EntryOpportunityStore",
     "InMemoryEntryOpportunityStore",

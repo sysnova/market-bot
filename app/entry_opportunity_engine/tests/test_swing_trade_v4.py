@@ -6,8 +6,10 @@ import pytest
 from app.contracts import (
     AnalysisHorizon,
     BarTimeframe,
+    EntryCheckpointStatus,
     EntryLegStatus,
     EntryMaturityLevel,
+    EntryOpportunityStatus,
     EntrySignal,
     EntrySignalFamily,
     MarketBar,
@@ -18,6 +20,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV5,
     EntryOpportunityEngineV6,
     EntryOpportunityEngineV7,
+    EntryOpportunityEngineV8,
     InMemoryEntryOpportunityStore,
 )
 
@@ -150,24 +153,138 @@ async def test_swing_trade_accepts_structural_invalidation_inside_fibonacci_zone
 
 
 @pytest.mark.asyncio
-async def test_preentry_thesis_loss_closes_tracking_but_not_open_trade() -> None:
+async def test_v7_preentry_thesis_loss_closes_legacy_tracking() -> None:
     store = InMemoryEntryOpportunityStore()
-    engine = EntryOpportunityEngineV4(store=store)
+    engine = EntryOpportunityEngineV7(store=store)
     await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST1))
-    await engine.ingest_signal(swing_signal(None, at=NOW + timedelta(minutes=15)))
+
+    closed = await engine.ingest_signal(
+        swing_signal(None, at=NOW + timedelta(minutes=15), price="99")
+    )
+
+    assert closed[0].reasons[0] == "swing_trade_preentry_ineligible"
+    assert closed[0].opportunity.status is EntryOpportunityStatus.CLOSED
     assert await store.load_active("AAPL") is None
+
+
+@pytest.mark.asyncio
+async def test_preentry_thesis_loss_suspends_tracking_and_same_setup_resumes() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV8(store=store)
+    created = await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST1))
+    opportunity_id = created[0].opportunity.opportunity_id
+
+    suspended = await engine.ingest_signal(
+        swing_signal(None, at=NOW + timedelta(minutes=15), price="99")
+    )
+
+    assert suspended[0].reasons[0] == "swing_trade_preentry_ineligible_deferred"
+    tracking = await store.load_active("AAPL")
+    assert tracking is not None
+    assert tracking.opportunity_id == opportunity_id
+    assert tracking.status is EntryOpportunityStatus.CONFIRMING
+    assert tracking.current_price == Decimal("99")
+    assert tracking.legs[0].status is EntryLegStatus.WATCHING
+    assert tracking.checkpoints[0].status is EntryCheckpointStatus.OPEN
+    assert tracking.signal_references[0].current_st is None
+    assert tracking.signal_references[0].peak_st is SwingTradeMaturity.ST1
+
+    resumed = await engine.ingest_signal(
+        swing_signal(SwingTradeMaturity.ST1, at=NOW + timedelta(minutes=30), price="97")
+    )
+
+    assert len(resumed) == 1
+    tracking = await store.load_active("AAPL")
+    assert tracking is not None
+    assert tracking.opportunity_id == opportunity_id
+    assert len(tracking.legs) == 1
+    assert len(tracking.checkpoints) == 1
+    assert tracking.signal_references[0].current_st is SwingTradeMaturity.ST1
+
+
+@pytest.mark.asyncio
+async def test_v8_keeps_parallel_preentry_snapshot_while_another_leg_is_open() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV8(store=store)
+    opened_setup = "swing-trade:AAPL:L1:H:1.2.0"
+    watching_setup = "swing-trade:AAPL:L2:H:1.2.0"
+    await engine.ingest_signal(
+        swing_signal(SwingTradeMaturity.ST3, setup_id=opened_setup)
+    )
+    await engine.ingest_signal(
+        swing_signal(
+            SwingTradeMaturity.ST1,
+            at=NOW + timedelta(minutes=15),
+            setup_id=watching_setup,
+        )
+    )
+
+    suspended = await engine.ingest_signal(
+        swing_signal(
+            None,
+            at=NOW + timedelta(minutes=30),
+            setup_id=watching_setup,
+            price="99",
+        )
+    )
+
+    assert suspended[0].reasons[0] == "swing_trade_preentry_ineligible_deferred"
+    opportunity = await store.load_active("AAPL")
+    assert opportunity is not None
+    assert opportunity.status is EntryOpportunityStatus.OPEN
+    assert opportunity.legs[0].status is EntryLegStatus.OPEN
+    watching_reference = next(
+        item
+        for item in opportunity.signal_references
+        if item.setup_id == "swing-trade:AAPL:L2:H"
+    )
+    assert watching_reference.current_st is None
+    assert watching_reference.peak_st is SwingTradeMaturity.ST1
+    watching_checkpoint = next(
+        item
+        for item in opportunity.checkpoints
+        if item.setup_id == "swing-trade:AAPL:L2:H"
+    )
+    assert watching_checkpoint.status is EntryCheckpointStatus.OPEN
+
+
+@pytest.mark.asyncio
+async def test_v8_ignores_ineligibility_for_an_untracked_swing_setup() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV8(store=store)
+    created = await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST1))
+    opportunity_id = created[0].opportunity.opportunity_id
+
+    events = await engine.ingest_signal(
+        swing_signal(
+            None,
+            at=NOW + timedelta(minutes=15),
+            setup_id="swing-trade:AAPL:OTHER:ANCHOR:1.2.0",
+        )
+    )
+
+    assert events == ()
+    opportunity = await store.load_active("AAPL")
+    assert opportunity is not None
+    assert opportunity.opportunity_id == opportunity_id
+    assert opportunity.status is EntryOpportunityStatus.CONFIRMING
+
+
+@pytest.mark.asyncio
+async def test_thesis_loss_does_not_close_open_trade() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV8(store=store)
 
     await engine.ingest_signal(
         swing_signal(
             SwingTradeMaturity.ST3,
-            at=NOW + timedelta(minutes=30),
             setup_id="swing-trade:AAPL:L2:H2:1.0.0",
         )
     )
     await engine.ingest_signal(
         swing_signal(
             None,
-            at=NOW + timedelta(minutes=45),
+            at=NOW + timedelta(minutes=15),
             setup_id="swing-trade:AAPL:L2:H2:1.0.0",
         )
     )

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alpaca-dataframe-connector"
+version = "0.2.1"
+description = "Read-only Alpaca REST connector returning multi-timeframe OHLCV DataFrames"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "MarketBot contributors" }]
+dependencies = [
+  "httpx>=0.28,<1",
+  "pandas>=1.5,<4",
+  "tomli>=2,<3; python_version < '3.11'",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=9,<10",
+  "ruff>=0.14,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alpaca_dataframe_connector"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["alpaca_dataframe_connector"]

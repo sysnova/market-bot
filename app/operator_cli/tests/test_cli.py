@@ -205,14 +205,14 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.34.0"
-    assert payload["engines"]["swing"]["implementation"] == "13.0.0"
+    assert payload["version"] == "7.36.0"
+    assert payload["engines"]["swing"]["implementation"] == "12.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "3.3.0"
     assert payload["engines"]["swing-channel-4h"]["implementation"] == "1.1.0"
-    assert payload["engines"]["4hgeri"]["implementation"] == "1.7.0"
+    assert payload["engines"]["4hgeri"]["implementation"] == "1.6.0"
     assert payload["engines"]["entry-watcher"]["implementation"] == "5.5.0"
-    assert payload["engines"]["entry-opportunity"]["implementation"] == "7.0.0"
-    assert payload["engines"]["swing-trade"]["implementation"] == "1.5.0"
+    assert payload["engines"]["entry-opportunity"]["implementation"] == "8.0.0"
+    assert payload["engines"]["swing-trade"]["implementation"] == "1.4.0"
     assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
     assert payload["engines"]["order-flow"]["implementation"] == "1.1.0"
     assert payload["engines"]["order-flow"]["strategy"]["version"] == "1.1.0"
@@ -252,7 +252,7 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.34.0"
+    assert payload["definition_version"] == "7.36.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
@@ -266,15 +266,15 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
     assert processes["4hgeri"]["dependencies"] == [
         "market-history-v1",
         "support-confirmation-v0",
-        "order-flow",
     ]
     assert processes["swing-trade"]["dependencies"] == [
         "market-history-v1",
         "4hgeri",
         "entry-opportunity",
         "support-confirmation-v0",
-        "order-flow",
     ]
+    for consumer in ("swing", "4hgeri", "swing-trade"):
+        assert "order-flow" not in processes[consumer]["dependencies"]
 
 
 def test_single_dash_analyzer_alias_passes_the_received_ticker() -> None:

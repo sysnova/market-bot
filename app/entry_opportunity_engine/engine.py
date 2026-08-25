@@ -1860,6 +1860,47 @@ class EntryOpportunityEngineV7(EntryOpportunityEngineV6):
         ), "swing_trade_equivalent_thesis_updated"
 
 
+class EntryOpportunityEngineV8(EntryOpportunityEngineV7):
+    """Preserve SwingTrade structure while pre-entry policy gates fluctuate."""
+
+    engine_version = "8.0.0"
+
+    def _apply_swing_trade(
+        self, active: EntryOpportunity, signal: EntrySignal
+    ) -> tuple[EntryOpportunity | None, str]:
+        canonical_signal = _canonical_swing_trade_signal(signal)
+        if canonical_signal.swing_trade_maturity is not None:
+            return super()._apply_swing_trade(active, signal)
+
+        normalized = _consolidate_swing_trade_theses(active)
+        previous = _signal_reference_for_setup(normalized, canonical_signal)
+        if previous is None:
+            return None, "untracked_swing_trade_ineligible"
+
+        reference = _swing_trade_reference(canonical_signal, previous)
+        updated = normalized.model_copy(
+            update={
+                "signal_references": _replace_signal_reference(
+                    normalized.signal_references, reference
+                ),
+                "source_analysis_ids": _bounded_source_analysis_ids(
+                    normalized.source_analysis_ids,
+                    _signal_source_ids(canonical_signal),
+                ),
+                "current_price": canonical_signal.entry_price,
+                "updated_at": max(normalized.updated_at, canonical_signal.created_at),
+                "revision": active.revision + 1,
+            }
+        )
+        if self._swing_trade_paper_open(
+            normalized, setup_id=canonical_signal.setup_id
+        ):
+            return updated, "swing_trade_tracking_lost_after_entry"
+        if normalized.primary_signal_family is EntrySignalFamily.SWING_TRADE:
+            return updated, "swing_trade_preentry_ineligible_deferred"
+        return updated, "swing_trade_confluence_removed"
+
+
 _SEMVER_SUFFIX = re.compile(r"\d+\.\d+\.\d+")
 
 
