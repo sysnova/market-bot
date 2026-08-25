@@ -1,0 +1,214 @@
+"""Bounded terminal dashboard for durable Order Flow state."""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
+from pathlib import Path
+from typing import TextIO
+from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel
+
+from app.common.clock import SystemClock
+from app.common.settings import AppSettings
+from app.contracts import (
+    ORDER_FLOW_STATE_EVENT,
+    EventEnvelope,
+    OrderFlowState,
+    OrderFlowWindow,
+    Subscription,
+    SubscriptionOptions,
+    order_flow_state_subject,
+)
+from app.event_bus import NatsJetStreamEventBus
+
+from .distributed_composition import write_ready
+from .engine_assembly import EngineSlot, MarketBotAssembly
+
+_CLEAR_SCREEN = "\033[2J\033[H"
+_FOUR_PLACES = Decimal("0.0001")
+_ONE_PLACE = Decimal("0.1")
+_NEW_YORK = ZoneInfo("America/New_York")
+_DISPLAY_WINDOWS = (5, 15, 60, 300)
+
+
+def order_flow_monitor_subjects(symbols: tuple[str, ...]) -> tuple[str, ...]:
+    """Return exact durable state subjects for the configured bounded scope."""
+
+    return tuple(order_flow_state_subject(symbol) for symbol in symbols)
+
+
+class OrderFlowDashboard:
+    """Keep the newest compact state for every configured symbol."""
+
+    def __init__(self, *, symbols: tuple[str, ...]) -> None:
+        normalized = tuple(
+            dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
+        )
+        if not normalized:
+            raise ValueError("symbols must not be empty")
+        self.symbols = normalized
+        self._states: dict[str, OrderFlowState] = {}
+
+    def merge(self, state: OrderFlowState) -> bool:
+        if state.symbol not in self.symbols:
+            raise ValueError(f"unexpected Order Flow symbol: {state.symbol}")
+        current = self._states.get(state.symbol)
+        if current is not None and state.occurred_at < current.occurred_at:
+            return False
+        changed = current != state
+        self._states[state.symbol] = state
+        return changed
+
+    def items(self) -> tuple[tuple[str, OrderFlowState | None], ...]:
+        return tuple((symbol, self._states.get(symbol)) for symbol in self.symbols)
+
+
+def format_order_flow_dashboard(
+    dashboard: OrderFlowDashboard, *, refreshed_at: datetime
+) -> str:
+    """Render compact L1 pressure, quote and canonical rolling-window telemetry."""
+
+    lines = [
+        f"ORDER FLOW | SIP L1 | {len(dashboard.symbols)} SYMBOLS | "
+        f"REFRESH {refreshed_at.astimezone(_NEW_YORK):%Y-%m-%d %H:%M:%S %Z}",
+        "Estados durables; sin ordenes de broker",
+    ]
+    for symbol, state in dashboard.items():
+        if state is None:
+            lines.append(f"\n{symbol} | PENDIENTE")
+            continue
+        freshness = "FRESH" if state.quote_fresh else "STALE"
+        lines.append(
+            f"\n{symbol} | {state.state.value} | CONF {_percent(state.confidence)} "
+            f"| Q {_percent(state.data_quality)} | PX {_number(state.current_price)} "
+            f"| {freshness} {_number(state.quote_age_ms)}ms"
+        )
+        lines.append(
+            f"  BID {_number(state.bid_price)} | ASK {_number(state.ask_price)} "
+            f"| SPREAD {_number(state.spread_bps)}bps | CVD {_signed(state.cumulative_delta)}"
+        )
+        windows = {window.window_seconds: window for window in state.windows}
+        lines.append(
+            "  "
+            + " | ".join(
+                _format_window(windows[seconds])
+                for seconds in _DISPLAY_WINDOWS
+                if seconds in windows
+            )
+        )
+        lines.append(f"  RAZONES {','.join(state.reasons[-4:])}")
+    return "\n".join(lines) + "\n"
+
+
+async def run_order_flow_monitor(  # pragma: no cover - long-running NATS process
+    *,
+    ready_path: Path | None = None,
+    refresh_interval: timedelta = timedelta(seconds=1),
+    stream: TextIO | None = None,
+) -> None:
+    """Show the latest durable Order Flow states for the exact configured symbols."""
+
+    import sys
+
+    if refresh_interval <= timedelta():
+        raise ValueError("refresh_interval must be positive")
+    output = stream or sys.stdout
+    settings = AppSettings()
+    assembly = MarketBotAssembly.from_settings(settings)
+    engine = assembly.build_order_flow()
+    symbols = engine.tracked_symbols
+    if not symbols:
+        raise RuntimeError("Order Flow monitor requires a bounded symbol strategy")
+    bus = await NatsJetStreamEventBus.connect(
+        servers=[settings.nats_url.get_secret_value()], prefix="marketbot", stream="MARKETBOT"
+    )
+    dashboard = OrderFlowDashboard(symbols=symbols)
+    clock = SystemClock()
+    changed = asyncio.Event()
+    lock = asyncio.Lock()
+    subscriptions: list[Subscription] = []
+
+    def render() -> None:
+        print(
+            _CLEAR_SCREEN + format_order_flow_dashboard(dashboard, refreshed_at=clock.now()),
+            file=output,
+            end="",
+            flush=True,
+        )
+
+    async def handle(envelope: EventEnvelope) -> None:
+        if envelope.event_type != ORDER_FLOW_STATE_EVENT:
+            return
+        state = _payload(envelope, OrderFlowState)
+        async with lock:
+            if dashboard.merge(state):
+                changed.set()
+
+    subjects = order_flow_monitor_subjects(symbols)
+    try:
+        for subject in subjects:
+            subscriptions.append(
+                await bus.subscribe(
+                    subject,
+                    handle,
+                    options=SubscriptionOptions(
+                        replay_latest_per_subject=True,
+                        ack_wait_seconds=60,
+                    ),
+                )
+            )
+        render()
+        if ready_path is not None:
+            spec = assembly.spec(EngineSlot.ORDER_FLOW)
+            write_ready(
+                ready_path,
+                {
+                    "service": "order-flow-monitor",
+                    "symbols": symbols,
+                    "subjects": subjects,
+                    "mode": "ANALYTICAL_ONLY",
+                    "marketbot_definition_version": assembly.definition.version,
+                    "engine_implementation": spec.implementation,
+                    "engine_strategy_version": spec.strategy.version,
+                },
+            )
+        while True:
+            await changed.wait()
+            await asyncio.sleep(refresh_interval.total_seconds())
+            changed.clear()
+            async with lock:
+                render()
+    finally:
+        for subscription in subscriptions:
+            await subscription.unsubscribe()
+        await bus.close()
+
+
+def _payload[Model: BaseModel](envelope: EventEnvelope, model: type[Model]) -> Model:
+    if isinstance(envelope.payload, model):
+        return envelope.payload
+    return model.model_validate(envelope.payload, strict=False)
+
+
+def _format_window(window: OrderFlowWindow) -> str:
+    return (
+        f"{window.window_seconds}s D{_signed(window.delta)} "
+        f"T{window.trade_count} P{_signed(window.price_change_bps)}bps"
+    )
+
+
+def _number(value: Decimal | None) -> str:
+    if value is None:
+        return "-"
+    return str(value.quantize(_FOUR_PLACES, rounding=ROUND_HALF_UP))
+
+
+def _signed(value: Decimal) -> str:
+    return f"{value.quantize(_FOUR_PLACES, rounding=ROUND_HALF_UP):+}"
+
+
+def _percent(value: Decimal) -> str:
+    return f"{(value * Decimal('100')).quantize(_ONE_PLACE, rounding=ROUND_HALF_UP)}%"

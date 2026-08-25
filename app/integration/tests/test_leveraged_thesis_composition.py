@@ -6,6 +6,7 @@ from app.contracts import (
     AlertKind,
     AlertSeverity,
     AnalysisHorizon,
+    EntryCloseReason,
     EntryLegStatus,
     EntryOpportunityStatus,
     EntrySignalFamily,
@@ -51,6 +52,16 @@ def test_confirmed_and_early_states_materialize_distinct_human_alerts() -> None:
 
 def test_non_actionable_state_does_not_create_buy_notice() -> None:
     assert build_leveraged_alert(_assessment(LeveragedThesisState.BLOCKED)) is None
+
+
+def test_cancelled_short_materializes_a_critical_cancellation_notice() -> None:
+    cancelled = build_leveraged_alert(_assessment(LeveragedThesisState.CANCELLED))
+
+    assert cancelled is not None
+    assert cancelled.symbol == "ASTN"
+    assert cancelled.kind is AlertKind.LEVERAGED_THESIS_CANCELLED
+    assert cancelled.severity is AlertSeverity.CRITICAL
+    assert "CANCELACIÓN" in cancelled.title
 
 
 def test_confirmed_leveraged_buy_becomes_a_trackable_instrument_entry_signal() -> None:
@@ -118,6 +129,33 @@ async def test_confirmed_leveraged_signal_opens_and_tracks_a_standard_opportunit
     assert opportunity.legs[0].target == Decimal("5.2152")
 
 
+async def test_sweep_reclaim_cancellation_closes_the_leveraged_opportunity() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV2(store=store)
+    signal = entry_signal_from_leveraged_thesis(
+        _assessment(LeveragedThesisState.BUY_CONFIRMED)
+    )
+    assert signal is not None
+    await engine.ingest_signal(signal)
+    cancellation = _assessment(LeveragedThesisState.CANCELLED).model_copy(
+        update={
+            "occurred_at": NOW + timedelta(minutes=1),
+            "expires_at": NOW + timedelta(minutes=6),
+            "instrument_bid": Decimal("5.10"),
+            "instrument_ask": Decimal("5.12"),
+            "reasons": ("daily_support_sweep_reclaim_confirmed",),
+        }
+    )
+
+    events = await engine.ingest_leveraged_cancellation(cancellation)
+
+    assert len(events) == 1
+    assert events[0].opportunity.status is EntryOpportunityStatus.CLOSED
+    assert events[0].opportunity.close_reason is EntryCloseReason.SWEEP_RECLAIM_CANCELLED
+    assert events[0].opportunity.legs[0].status is EntryLegStatus.THESIS_BROKEN
+    assert await store.load_active("ASTN") is None
+
+
 def test_runtime_starts_thesis_after_intraday_and_order_flow() -> None:
     assembly = MarketBotAssembly.from_path(DEFINITION)
     plan = build_runtime_process_plan(assembly.definition, runtime_root=Path(".runtime"))
@@ -148,6 +186,7 @@ def _assessment(state: LeveragedThesisState) -> LeveragedThesisAssessment:
         LeveragedThesisState.EARLY_FLOW,
         LeveragedThesisState.STRUCTURE_ARMED,
         LeveragedThesisState.BUY_CONFIRMED,
+        LeveragedThesisState.CANCELLED,
     }
     return LeveragedThesisAssessment(
         underlying_symbol="ASTS",

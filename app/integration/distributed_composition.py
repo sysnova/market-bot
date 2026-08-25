@@ -40,6 +40,7 @@ from app.contracts import (
     ENTRY_SETUP_ASSESSMENT_EVENT,
     ENTRY_SIGNAL_EVENT,
     ENTRY_WATCH_TRANSITION_EVENT,
+    LEVERAGED_THESIS_ASSESSMENT_EVENT,
     LOCAL_ALERT_EVENT,
     MARKET_ROTATION_EVENT,
     MARKET_ROTATION_SUBJECT,
@@ -54,6 +55,8 @@ from app.contracts import (
     EntrySignal,
     EntryWatchTransition,
     EventEnvelope,
+    LeveragedThesisAssessment,
+    LeveragedThesisState,
     LocalAlert,
     MarketBar,
     MarketHistoryRequirement,
@@ -64,6 +67,7 @@ from app.contracts import (
     Subscription,
     SubscriptionOptions,
     UniverseChanged,
+    leveraged_thesis_assessment_subject,
     service_health_subject,
     universe_changed_subject,
 )
@@ -1027,7 +1031,7 @@ async def run_alert_process(
             name="alert-checkpoint",
         )
     try:
-        details = {
+        details: dict[str, object] = {
             "service": "alert",
             "marketbot_definition_version": assembly.definition.version,
             "engine_implementation": alert_spec.implementation,
@@ -1175,12 +1179,15 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
         engine = assembly.build_entry_opportunity(store=store)
         leveraged_opportunity_symbols: tuple[str, ...] = ()
+        leveraged_underlyings: tuple[str, ...] = ()
         if (
             EngineSlot.LEVERAGED_THESIS in assembly.definition.engines
             and assembly.spec(EngineSlot.LEVERAGED_THESIS).mode is EngineMode.ACTIVE
         ):
-            leveraged_opportunity_symbols = (
-                assembly.build_leveraged_thesis().required_symbols
+            leveraged_engine = assembly.build_leveraged_thesis()
+            leveraged_opportunity_symbols = leveraged_engine.required_symbols
+            leveraged_underlyings = tuple(
+                pair.underlying_symbol for pair in leveraged_engine.pairs
             )
         bus = await _connect_nats(settings)
         active_opportunities = await store.list_active()
@@ -1252,6 +1259,19 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
             await engine.ingest_signal(signal)
 
+        async def handle_leveraged_assessment(envelope: EventEnvelope) -> None:
+            if envelope.event_type != LEVERAGED_THESIS_ASSESSMENT_EVENT:
+                return
+            if not isinstance(engine, EntryOpportunityEngineV2):
+                return
+            assessment = (
+                envelope.payload
+                if isinstance(envelope.payload, LeveragedThesisAssessment)
+                else LeveragedThesisAssessment.model_validate(envelope.payload, strict=False)
+            )
+            if assessment.state is LeveragedThesisState.CANCELLED:
+                await engine.ingest_leveraged_cancellation(assessment)
+
         subscriptions.append(
             await bus.subscribe(
                 "marketbot.v1.market.bar.1Min.>",
@@ -1293,6 +1313,14 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
         ]
         if isinstance(engine, EntryOpportunityEngineV2):
             handlers.append(("marketbot.v1.entry-signal.>", handle_signal, "entry-signal"))
+            handlers.extend(
+                (
+                    leveraged_thesis_assessment_subject(symbol),
+                    handle_leveraged_assessment,
+                    f"leveraged-cancellation-{index}",
+                )
+                for index, symbol in enumerate(leveraged_underlyings, start=1)
+            )
         else:
             handlers.append(("marketbot.v1.alert.local.>", handle_alert, "alerts"))
         for subject, handler, suffix in handlers:
@@ -1303,7 +1331,10 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                     options=SubscriptionOptions(
                         durable_name=f"marketbot-{service}-{suffix}-v1",
                         replay_all=False,
-                        replay_latest_per_subject=(suffix == "entry-signal"),
+                        replay_latest_per_subject=(
+                            suffix == "entry-signal"
+                            or suffix.startswith("leveraged-cancellation-")
+                        ),
                         ack_wait_seconds=60,
                     ),
                 )
@@ -1331,7 +1362,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                     )
 
         reconcile_task = asyncio.create_task(reconcile_opportunities())
-        details = {
+        details: dict[str, object] = {
             "service": service,
             "engine_version": spec.implementation,
             "engine_strategy_version": spec.strategy.version,
@@ -1350,6 +1381,10 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
         if isinstance(engine, EntryOpportunityEngineV2):
             details.pop("maturity_subject")
             details["entry_signal_subject"] = "marketbot.v1.entry-signal.>"
+            details["leveraged_cancellation_subjects"] = tuple(
+                leveraged_thesis_assessment_subject(symbol)
+                for symbol in leveraged_underlyings
+            )
         await _publish_health(bus, service, details, clock.now())
         if ready_path is not None:
             _write_ready(ready_path, details)

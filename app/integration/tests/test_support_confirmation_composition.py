@@ -23,6 +23,7 @@ from app.contracts import (
 )
 from app.integration import support_confirmation_monitor
 from app.integration.support_confirmation_composition import (
+    SUPPORT_LIVE_SUBJECTS,
     SupportConfirmationRuntime,
     load_support_holdings,
     load_support_universe,
@@ -49,6 +50,14 @@ class _Universe:
     async def get_universe(self) -> SimpleNamespace:
         self.universe_calls += 1
         return SimpleNamespace(symbols=("TGT", "MSFT", "WATCH_ONLY"))
+
+
+def test_support_live_inputs_include_hourly_evidence_for_sweep_reclaims() -> None:
+    assert SUPPORT_LIVE_SUBJECTS == (
+        "marketbot.v1.market.bar.1Hour.>",
+        "marketbot.v1.market.bar.1Day.>",
+        "marketbot.v1.market.bar.1Week.>",
+    )
 
 
 async def test_support_universe_is_strictly_positive_holdings() -> None:

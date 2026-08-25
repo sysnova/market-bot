@@ -53,6 +53,11 @@ SUPPORT_HISTORY_REQUESTS = (
         timeframe=BarTimeframe.HOUR_1, lookback=timedelta(days=90), max_bars_per_symbol=500
     ),
 )
+SUPPORT_LIVE_SUBJECTS = (
+    "marketbot.v1.market.bar.1Hour.>",
+    "marketbot.v1.market.bar.1Day.>",
+    "marketbot.v1.market.bar.1Week.>",
+)
 
 
 class HoldingsProvider(Protocol):
@@ -343,13 +348,7 @@ async def run_support_confirmation_process(
         }
         if once:
             return summary
-        for index, subject in enumerate(
-            (
-                "marketbot.v1.market.bar.1Day.>",
-                "marketbot.v1.market.bar.1Week.>",
-            ),
-            start=1,
-        ):
+        for index, subject in enumerate(SUPPORT_LIVE_SUBJECTS, start=1):
             subscriptions.append(
                 await bus.subscribe(
                     subject,

@@ -15,7 +15,11 @@ from app.contracts import (
     SupportState,
     SupportZonePosition,
 )
-from app.contracts.leveraged_thesis import LeveragedExposure, LeveragedThesisState
+from app.contracts.leveraged_thesis import (
+    LeveragedExposure,
+    LeveragedThesisAssessment,
+    LeveragedThesisState,
+)
 from app.leveraged_thesis_engine import (
     LeveragedPair,
     LeveragedThesisContext,
@@ -169,7 +173,7 @@ def test_repeated_state_does_not_emit_duplicate_transition() -> None:
     assert repeated.transition is None
 
 
-def test_nearby_unbroken_support_blocks_bearish_arming() -> None:
+def test_bearish_structure_arms_against_the_daily_support_snapshot() -> None:
     assessment = (
         LeveragedThesisEngine()
         .evaluate(
@@ -196,11 +200,13 @@ def test_nearby_unbroken_support_blocks_bearish_arming() -> None:
         .assessment
     )
 
-    assert assessment.state is LeveragedThesisState.BLOCKED
-    assert "nearby_support_blocks_short" in assessment.reasons
+    assert assessment.state is LeveragedThesisState.STRUCTURE_ARMED
+    assert assessment.support_zone_low == Decimal("60")
+    assert assessment.support_zone_high == Decimal("61")
+    assert "daily_support_break_pending" in assessment.reasons
 
 
-def test_nearby_support_blocks_even_an_early_bearish_flow_notice() -> None:
+def test_early_bearish_flow_keeps_the_daily_support_snapshot_visible() -> None:
     assessment = (
         LeveragedThesisEngine()
         .evaluate(
@@ -221,8 +227,164 @@ def test_nearby_support_blocks_even_an_early_bearish_flow_notice() -> None:
         .assessment
     )
 
-    assert assessment.state is LeveragedThesisState.BLOCKED
-    assert "nearby_support_blocks_short" in assessment.reasons
+    assert assessment.state is LeveragedThesisState.EARLY_FLOW
+    assert assessment.support_zone_low == Decimal("60")
+    assert "structure_confirmation_pending" in assessment.reasons
+
+
+def test_short_confirms_on_original_support_break_and_ignores_a_new_lower_zone() -> None:
+    engine = LeveragedThesisEngine()
+    original_support = _support(
+        "ASTS",
+        state=SupportState.WATCH_KEY_SUPPORT,
+        zone_low=Decimal("60"),
+        zone_high=Decimal("61"),
+        invalidation=Decimal("59"),
+        position=SupportZonePosition.ABOVE_ZONE,
+    )
+    first_context = _context(
+        pair=_asts_pair(),
+        analysis=_analysis(
+            direction=PatternDirection.BEARISH,
+            setup="bearish_breakdown",
+            regime="bearish_trend",
+            quality="strong",
+            score=Decimal("82"),
+        ),
+        underlying_flow=_flow(
+            "ASTS", OrderFlowStateKind.SELL_PRESSURE, price=Decimal("62")
+        ),
+        support=original_support,
+    )
+    armed = engine.evaluate(first_context).assessment
+    moved_support = _support(
+        "ASTS",
+        state=SupportState.WATCH_KEY_SUPPORT,
+        zone_low=Decimal("54"),
+        zone_high=Decimal("55"),
+        invalidation=Decimal("53"),
+        position=SupportZonePosition.ABOVE_ZONE,
+        assessed_at=NOW + timedelta(seconds=1),
+    )
+
+    confirmed = engine.evaluate(
+        _context(
+            pair=_asts_pair(),
+            as_of=NOW + timedelta(seconds=1),
+            analysis=first_context.analysis,
+            underlying_flow=_flow(
+                "ASTS",
+                OrderFlowStateKind.SELL_PRESSURE,
+                price=Decimal("59.50"),
+                occurred_at=NOW + timedelta(seconds=1),
+            ),
+            support=moved_support,
+            previous_assessment=armed,
+            instrument_occurred_at=NOW + timedelta(seconds=1),
+        )
+    ).assessment
+
+    assert confirmed.state is LeveragedThesisState.BUY_CONFIRMED
+    assert confirmed.support_zone_low == Decimal("60")
+    assert confirmed.support_zone_high == Decimal("61")
+    assert confirmed.source_support_assessment_id == original_support.assessment_id
+    assert "daily_support_snapshot_broken" in confirmed.reasons
+
+
+def test_only_confirmed_sweep_reclaim_of_original_support_cancels_short() -> None:
+    engine = LeveragedThesisEngine()
+    original_support = _support(
+        "ASTS",
+        state=SupportState.WATCH_KEY_SUPPORT,
+        zone_low=Decimal("60"),
+        zone_high=Decimal("61"),
+        invalidation=Decimal("59"),
+        position=SupportZonePosition.ABOVE_ZONE,
+    )
+    confirmed = engine.evaluate(
+        _context(
+            pair=_asts_pair(),
+            analysis=_analysis(
+                direction=PatternDirection.BEARISH,
+                setup="bearish_breakdown",
+                regime="bearish_trend",
+                quality="strong",
+                score=Decimal("82"),
+            ),
+            underlying_flow=_flow(
+                "ASTS", OrderFlowStateKind.SELL_PRESSURE, price=Decimal("58.50")
+            ),
+            support=original_support,
+        )
+    ).assessment
+    lower_reclaim = _support(
+        "ASTS",
+        state=SupportState.RECLAIMED,
+        zone_low=Decimal("54"),
+        zone_high=Decimal("55"),
+        invalidation=Decimal("53"),
+        position=SupportZonePosition.ABOVE_ZONE,
+        liquidity_sweep=True,
+        assessed_at=NOW + timedelta(seconds=1),
+    )
+    still_confirmed = engine.evaluate(
+        _context(
+            pair=_asts_pair(),
+            as_of=NOW + timedelta(seconds=1),
+            analysis=_analysis(
+                direction=PatternDirection.BEARISH,
+                setup="bearish_breakdown",
+                regime="bearish_trend",
+                quality="strong",
+                score=Decimal("82"),
+            ),
+            underlying_flow=_flow(
+                "ASTS",
+                OrderFlowStateKind.SELL_PRESSURE,
+                price=Decimal("59.50"),
+                occurred_at=NOW + timedelta(seconds=1),
+            ),
+            support=lower_reclaim,
+            previous_assessment=confirmed,
+            instrument_occurred_at=NOW + timedelta(seconds=1),
+        )
+    ).assessment
+    original_reclaim = _support(
+        "ASTS",
+        state=SupportState.RECLAIMED,
+        zone_low=Decimal("60"),
+        zone_high=Decimal("61"),
+        invalidation=Decimal("59"),
+        position=SupportZonePosition.ABOVE_ZONE,
+        liquidity_sweep=True,
+        assessed_at=NOW + timedelta(seconds=2),
+    )
+    cancelled = engine.evaluate(
+        _context(
+            pair=_asts_pair(),
+            as_of=NOW + timedelta(seconds=2),
+            analysis=_analysis(
+                direction=PatternDirection.BEARISH,
+                setup="bearish_breakdown",
+                regime="bearish_trend",
+                quality="strong",
+                score=Decimal("82"),
+            ),
+            underlying_flow=_flow(
+                "ASTS",
+                OrderFlowStateKind.BUY_PRESSURE,
+                price=Decimal("61.20"),
+                occurred_at=NOW + timedelta(seconds=2),
+            ),
+            support=original_reclaim,
+            previous_assessment=still_confirmed,
+            instrument_occurred_at=NOW + timedelta(seconds=2),
+        )
+    ).assessment
+
+    assert still_confirmed.state is LeveragedThesisState.BUY_CONFIRMED
+    assert cancelled.state is LeveragedThesisState.CANCELLED
+    assert "daily_support_sweep_reclaim_confirmed" in cancelled.reasons
 
 
 def test_long_first_touch_arms_watch_but_cannot_confirm_buy() -> None:
@@ -301,6 +463,9 @@ def _context(
     bearish_flow_kind: OrderFlowStateKind = OrderFlowStateKind.BUY_PRESSURE,
     support: SupportAssessment | None = None,
     include_default_support: bool = True,
+    as_of: datetime = NOW,
+    previous_assessment: LeveragedThesisAssessment | None = None,
+    instrument_occurred_at: datetime = NOW,
 ) -> LeveragedThesisContext:
     if include_default_support and support is None:
         support = (
@@ -324,7 +489,7 @@ def _context(
         )
     return LeveragedThesisContext(
         pair=pair,
-        as_of=NOW,
+        as_of=as_of,
         session=MarketSession.REGULAR,
         analysis=analysis,
         underlying_flow=underlying_flow,
@@ -335,14 +500,17 @@ def _context(
                 OrderFlowStateKind.BUY_PRESSURE,
                 bid=Decimal("11.50"),
                 ask=Decimal("11.52"),
+                occurred_at=instrument_occurred_at,
             ),
             bearish_symbol: _flow(
                 bearish_symbol,
                 bearish_flow_kind,
                 bid=Decimal("4.91"),
                 ask=Decimal("4.92"),
+                occurred_at=instrument_occurred_at,
             ),
         },
+        previous_assessment=previous_assessment,
     )
 
 
@@ -381,6 +549,8 @@ def _flow(
     *,
     bid: Decimal | None = None,
     ask: Decimal | None = None,
+    price: Decimal | None = None,
+    occurred_at: datetime = NOW,
 ) -> OrderFlowState:
     windows = tuple(
         OrderFlowWindow(
@@ -414,10 +584,11 @@ def _flow(
     )
     return OrderFlowState(
         symbol=symbol,
-        occurred_at=NOW,
+        occurred_at=occurred_at,
         engine_version="1.1.0" if bid is not None else "1.0.0",
         state=kind,
-        current_price=Decimal("62") if symbol in {"ASTS", "NBIS"} else Decimal("5"),
+        current_price=price
+        or (Decimal("62") if symbol in {"ASTS", "NBIS"} else Decimal("5")),
         mid_price=midpoint or (Decimal("62") if symbol in {"ASTS", "NBIS"} else Decimal("5")),
         bid_price=bid,
         ask_price=ask,
@@ -443,12 +614,14 @@ def _support(
     invalidation: Decimal,
     position: SupportZonePosition,
     reaction_score: Decimal = Decimal("75"),
+    liquidity_sweep: bool = False,
+    assessed_at: datetime = NOW,
 ) -> SupportAssessment:
     return SupportAssessment(
         symbol=symbol,
-        occurred_at=NOW,
-        data_as_of=NOW,
-        assessed_at=NOW,
+        occurred_at=assessed_at,
+        data_as_of=assessed_at,
+        assessed_at=assessed_at,
         engine_version="0.3.0",
         state=state,
         current_price=Decimal("62"),
@@ -460,6 +633,7 @@ def _support(
         reaction_score=reaction_score,
         reversal_score=Decimal("65"),
         confidence=Decimal("0.8"),
+        liquidity_sweep=liquidity_sweep,
         zone_position=position,
         zone_distance_percent=Decimal("1"),
         zone_distance_atr=Decimal("0.8"),

@@ -265,13 +265,19 @@ def build_leveraged_alert(assessment: LeveragedThesisAssessment) -> LocalAlert |
     if assessment.state not in {
         LeveragedThesisState.EARLY_FLOW,
         LeveragedThesisState.BUY_CONFIRMED,
+        LeveragedThesisState.CANCELLED,
     }:
         return None
     if assessment.instrument_symbol is None or assessment.source_analysis_id is None:
         return None
     confirmed = assessment.state is LeveragedThesisState.BUY_CONFIRMED
+    cancelled = assessment.state is LeveragedThesisState.CANCELLED
     direction = "alcista" if assessment.direction is PatternDirection.BULLISH else "bajista"
-    stage = "COMPRA CONFIRMADA" if confirmed else "FLUJO TEMPRANO"
+    stage = (
+        "CANCELACIÓN POR SWEEP-RECLAIM"
+        if cancelled
+        else ("COMPRA CONFIRMADA" if confirmed else "FLUJO TEMPRANO")
+    )
     price = assessment.instrument_ask or assessment.instrument_bid
     execution = (
         f"Ask {price}; spread {assessment.spread_bps} bps."
@@ -280,9 +286,18 @@ def build_leveraged_alert(assessment: LeveragedThesisAssessment) -> LocalAlert |
     )
     support = _support_summary(assessment)
     message = (
-        f"{assessment.underlying_symbol} {direction}; candidato {assessment.instrument_symbol} "
-        f"{assessment.exposure.value}. {support} {execution} "
-        f"Caduca {assessment.expires_at.isoformat()}. Sin ejecución automática."
+        (
+            f"Cancelar tesis y seguimiento de {assessment.instrument_symbol}: "
+            f"{assessment.underlying_symbol} recuperó con sweep confirmado la zona diaria. "
+        )
+        if cancelled
+        else (
+            f"{assessment.underlying_symbol} {direction}; candidato "
+            f"{assessment.instrument_symbol} {assessment.exposure.value}. "
+        )
+    ) + (
+        f"{support} {execution} Caduca {assessment.expires_at.isoformat()}. "
+        "Sin ejecución automática."
     )
     score = assessment.structure_score or (
         (assessment.underlying_flow_confidence or Decimal("0")) * Decimal("100")
@@ -291,7 +306,11 @@ def build_leveraged_alert(assessment: LeveragedThesisAssessment) -> LocalAlert |
         symbol=assessment.instrument_symbol,
         created_at=assessment.occurred_at,
         expires_at=assessment.expires_at,
-        severity=AlertSeverity.ACTION if confirmed else AlertSeverity.WATCH,
+        severity=(
+            AlertSeverity.CRITICAL
+            if cancelled
+            else (AlertSeverity.ACTION if confirmed else AlertSeverity.WATCH)
+        ),
         title=f"{assessment.instrument_symbol} | {stage} | {assessment.underlying_symbol}",
         message=message,
         horizons=(AnalysisHorizon.INTRADAY,),
@@ -342,7 +361,15 @@ def build_leveraged_alert(assessment: LeveragedThesisAssessment) -> LocalAlert |
             f"{assessment.instrument_symbol}:{assessment.state.value}:"
             f"{assessment.context_hash}"
         ),
-        kind=(AlertKind.LEVERAGED_THESIS_BUY if confirmed else AlertKind.LEVERAGED_THESIS_EARLY),
+        kind=(
+            AlertKind.LEVERAGED_THESIS_CANCELLED
+            if cancelled
+            else (
+                AlertKind.LEVERAGED_THESIS_BUY
+                if confirmed
+                else AlertKind.LEVERAGED_THESIS_EARLY
+            )
+        ),
     )
 
 

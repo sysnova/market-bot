@@ -969,6 +969,28 @@ def entry_opportunity_monitor(
     )
 
 
+@monitor.command("order-flow")
+def order_flow_monitor(
+    refresh_seconds: Annotated[
+        int,
+        typer.Option(min=1, max=60, help="Terminal refresh interval in seconds."),
+    ] = 1,
+    ready_path: Annotated[
+        Path, typer.Option(help="Readiness file written after exact NATS subscriptions exist.")
+    ] = Path(".runtime/status/order-flow-monitor.ready.json"),
+) -> None:
+    """Run the bounded Order Flow terminal monitor process."""
+
+    from app.integration.order_flow_monitor import run_order_flow_monitor
+
+    _run_async(
+        run_order_flow_monitor(
+            ready_path=ready_path,
+            refresh_interval=timedelta(seconds=refresh_seconds),
+        )
+    )
+
+
 @monitor.command("swing-channel-4h")
 def swing_channel_4h_monitor(
     ready_path: Annotated[

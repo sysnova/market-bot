@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from app.common.canonical import sha256_digest
 from app.contracts import (
@@ -62,6 +64,19 @@ _NO_NEARBY_SUPPORT_STATES = {
     SupportState.NO_KEY_SUPPORT,
     SupportState.NO_NEARBY_SUPPORT,
 }
+_NEW_YORK = ZoneInfo("America/New_York")
+
+
+@dataclass(frozen=True, slots=True)
+class _SupportSnapshot:
+    state: SupportState
+    zone_position: SupportZonePosition | None
+    zone_low: Decimal | None
+    zone_high: Decimal | None
+    invalidation: Decimal | None
+    actionability_score: Decimal | None
+    source_assessment_id: UUID | None
+    assessed_at: datetime | None
 
 
 class LeveragedThesisEngine:
@@ -123,6 +138,10 @@ class LeveragedThesisEngine:
 
     def evaluate(self, context: LeveragedThesisContext) -> LeveragedThesisEvaluation:
         direction, direction_reasons = self._direction(context)
+        previous_short = self._same_day_short(context.previous_assessment, context.as_of)
+        if previous_short is not None:
+            direction = PatternDirection.BEARISH
+            direction_reasons = ("daily_short_support_snapshot_active",)
         instrument, exposure = self._instrument(context.pair, direction)
         instrument_flow = (
             context.instrument_flows.get(instrument) if instrument is not None else None
@@ -131,10 +150,33 @@ class LeveragedThesisEngine:
         state = LeveragedThesisState.OBSERVING
         support_gate = "NOT_EVALUATED"
         support_reasons: tuple[str, ...] = ()
+        support_snapshot = self._support_snapshot(context, direction)
         if direction is not PatternDirection.NEUTRAL:
-            support_gate, support_reasons = self._support_gate(context, direction)
+            support_gate, support_reasons = self._support_gate(
+                context,
+                direction,
+                support_snapshot,
+            )
 
-        if direction is PatternDirection.NEUTRAL:
+        if (
+            previous_short is not None
+            and previous_short.state is LeveragedThesisState.CANCELLED
+        ):
+            state = LeveragedThesisState.CANCELLED
+            reasons.append("daily_short_thesis_already_cancelled")
+        elif previous_short is not None and self._confirmed_snapshot_reclaim(
+            context,
+            support_snapshot,
+        ):
+            state = LeveragedThesisState.CANCELLED
+            reasons.append("daily_support_sweep_reclaim_confirmed")
+        elif (
+            previous_short is not None
+            and previous_short.state is LeveragedThesisState.BUY_CONFIRMED
+        ):
+            state = LeveragedThesisState.BUY_CONFIRMED
+            reasons.append("daily_short_thesis_remains_confirmed")
+        elif direction is PatternDirection.NEUTRAL:
             reasons.append("no_directional_order_flow")
         elif context.session is not MarketSession.REGULAR:
             state = LeveragedThesisState.BLOCKED
@@ -152,13 +194,13 @@ class LeveragedThesisEngine:
         elif support_gate == "PENDING":
             state = LeveragedThesisState.OBSERVING
             reasons.extend(support_reasons)
-        elif support_gate in {"LONG_BLOCKED", "SHORT_BLOCKED"}:
+        elif support_gate == "LONG_BLOCKED":
             state = LeveragedThesisState.BLOCKED
             reasons.extend(support_reasons)
         elif not self._structure_ready(context, direction):
             state = LeveragedThesisState.EARLY_FLOW
             reasons.extend((*support_reasons, "structure_confirmation_pending"))
-        elif support_gate == "LONG_CONTEXT":
+        elif support_gate in {"SHORT_PENDING_BREAK", "LONG_CONTEXT"}:
             state = LeveragedThesisState.STRUCTURE_ARMED
             reasons.extend(support_reasons)
         elif instrument_flow is None or not self._flow_ready(
@@ -209,6 +251,7 @@ class LeveragedThesisEngine:
             LeveragedThesisState.EARLY_FLOW: timedelta(seconds=90),
             LeveragedThesisState.STRUCTURE_ARMED: timedelta(minutes=2),
             LeveragedThesisState.BUY_CONFIRMED: timedelta(minutes=3),
+            LeveragedThesisState.CANCELLED: timedelta(minutes=5),
             LeveragedThesisState.BLOCKED: timedelta(seconds=30),
         }[state]
         assessment = LeveragedThesisAssessment(
@@ -231,25 +274,28 @@ class LeveragedThesisEngine:
             instrument_flow_confidence=(
                 instrument_flow.confidence if instrument_flow is not None else None
             ),
-            support_state=(context.support.state if context.support is not None else None),
+            support_state=(support_snapshot.state if support_snapshot is not None else None),
             support_zone_position=(
-                context.support.zone_position if context.support is not None else None
+                self._snapshot_position(support_snapshot, context.underlying_flow.current_price)
+                if support_snapshot is not None
+                else None
             ),
-            support_zone_low=(context.support.zone_low if context.support is not None else None),
-            support_zone_high=(context.support.zone_high if context.support is not None else None),
+            support_zone_low=(support_snapshot.zone_low if support_snapshot is not None else None),
+            support_zone_high=(
+                support_snapshot.zone_high if support_snapshot is not None else None
+            ),
             support_invalidation=(
-                context.support.invalidation if context.support is not None else None
+                support_snapshot.invalidation if support_snapshot is not None else None
             ),
             support_distance_percent=(
-                self._support_distance_percent(
-                    context.support,
-                    context.underlying_flow.current_price,
+                self._snapshot_distance_percent(
+                    support_snapshot, context.underlying_flow.current_price
                 )
-                if context.support is not None
+                if support_snapshot is not None
                 else None
             ),
             support_actionability_score=(
-                context.support.actionability_score if context.support is not None else None
+                support_snapshot.actionability_score if support_snapshot is not None else None
             ),
             structure_score=context.analysis.score if context.analysis is not None else None,
             source_analysis_id=(
@@ -260,7 +306,7 @@ class LeveragedThesisEngine:
                 instrument_flow.state_id if instrument_flow is not None else None
             ),
             source_support_assessment_id=(
-                context.support.assessment_id if context.support is not None else None
+                support_snapshot.source_assessment_id if support_snapshot is not None else None
             ),
             reasons=tuple(dict.fromkeys(reasons)),
             context_hash=f"sha256:{digest}",
@@ -346,36 +392,39 @@ class LeveragedThesisEngine:
         self,
         context: LeveragedThesisContext,
         direction: PatternDirection,
+        snapshot: _SupportSnapshot | None,
     ) -> tuple[str, tuple[str, ...]]:
-        support = context.support
-        if support is None:
+        if snapshot is None:
             return "PENDING", ("support_assessment_pending",)
-        assessed_at = support.assessed_at or support.occurred_at
-        if _age_ms(context.as_of, assessed_at) > self._maximum_support_age_ms:
+        if (
+            snapshot.assessed_at is not None
+            and _age_ms(context.as_of, snapshot.assessed_at) > self._maximum_support_age_ms
+        ):
             return "PENDING", ("support_assessment_stale",)
-        if support.state is SupportState.EXPIRED:
+        if snapshot.state is SupportState.EXPIRED:
             return "PENDING", ("support_assessment_expired",)
 
         spot = context.underlying_flow.current_price
         broken = (
-            support.state is SupportState.INVALIDATED
-            or support.zone_position is SupportZonePosition.BELOW_ZONE
-            or (support.invalidation is not None and spot <= support.invalidation)
+            snapshot.state is SupportState.INVALIDATED
+            or snapshot.zone_position is SupportZonePosition.BELOW_ZONE
+            or (snapshot.zone_low is not None and spot < snapshot.zone_low)
         )
-        distance = self._support_distance_percent(support, spot)
+        distance = self._snapshot_distance_percent(snapshot, spot)
         near = distance is not None and distance <= self._maximum_support_distance_percent
-        if support.zone_distance_atr is not None:
-            near = near and support.zone_distance_atr <= Decimal("1.5")
 
         if direction is PatternDirection.BEARISH:
-            if support.state in _NO_NEARBY_SUPPORT_STATES:
-                return "SHORT_CLEAR", ("no_nearby_support_for_short",)
+            if snapshot.state in _NO_NEARBY_SUPPORT_STATES:
+                return "SHORT_CLEAR", ("daily_snapshot_has_no_key_support",)
             if broken:
-                return "SHORT_CLEAR", ("support_zone_broken_for_short",)
-            if near:
-                return "SHORT_BLOCKED", ("nearby_support_blocks_short",)
-            return "SHORT_CLEAR", ("key_support_not_near_spot",)
+                return "SHORT_CLEAR", ("daily_support_snapshot_broken",)
+            return "SHORT_PENDING_BREAK", ("daily_support_break_pending",)
 
+        support = context.support
+        if support is None:
+            return "PENDING", ("support_assessment_pending",)
+        if support.zone_distance_atr is not None:
+            near = near and support.zone_distance_atr <= Decimal("1.5")
         if direction is not PatternDirection.BULLISH:
             return "PENDING", ("support_direction_not_evaluated",)
         if support.state in _NO_NEARBY_SUPPORT_STATES:
@@ -405,6 +454,116 @@ class LeveragedThesisEngine:
         ):
             return "LONG_CONTEXT", ("support_reaction_pending",)
         return "LONG_BLOCKED", ("support_not_actionable_for_long",)
+
+    def _support_snapshot(
+        self,
+        context: LeveragedThesisContext,
+        direction: PatternDirection,
+    ) -> _SupportSnapshot | None:
+        previous = context.previous_assessment
+        if (
+            direction is PatternDirection.BEARISH
+            and self._same_day_short(previous, context.as_of) is not None
+            and previous is not None
+            and previous.support_state is not None
+        ):
+            return _SupportSnapshot(
+                state=previous.support_state,
+                zone_position=previous.support_zone_position,
+                zone_low=previous.support_zone_low,
+                zone_high=previous.support_zone_high,
+                invalidation=previous.support_invalidation,
+                actionability_score=previous.support_actionability_score,
+                source_assessment_id=previous.source_support_assessment_id,
+                assessed_at=None,
+            )
+        support = context.support
+        if support is None:
+            return None
+        return _SupportSnapshot(
+            state=support.state,
+            zone_position=support.zone_position,
+            zone_low=support.zone_low,
+            zone_high=support.zone_high,
+            invalidation=support.invalidation,
+            actionability_score=support.actionability_score,
+            source_assessment_id=support.assessment_id,
+            assessed_at=support.assessed_at or support.occurred_at,
+        )
+
+    @staticmethod
+    def _same_day_short(
+        previous: LeveragedThesisAssessment | None,
+        as_of: datetime,
+    ) -> LeveragedThesisAssessment | None:
+        if (
+            previous is None
+            or previous.direction is not PatternDirection.BEARISH
+            or previous.instrument_symbol is None
+            or previous.state
+            not in {
+                LeveragedThesisState.EARLY_FLOW,
+                LeveragedThesisState.STRUCTURE_ARMED,
+                LeveragedThesisState.BUY_CONFIRMED,
+                LeveragedThesisState.CANCELLED,
+            }
+            or previous.occurred_at.astimezone(_NEW_YORK).date()
+            != as_of.astimezone(_NEW_YORK).date()
+        ):
+            return None
+        return previous
+
+    @staticmethod
+    def _confirmed_snapshot_reclaim(
+        context: LeveragedThesisContext,
+        snapshot: _SupportSnapshot | None,
+    ) -> bool:
+        support = context.support
+        if (
+            snapshot is None
+            or snapshot.zone_low is None
+            or snapshot.zone_high is None
+            or support is None
+            or not support.liquidity_sweep
+            or support.state
+            not in {
+                SupportState.RECLAIMED,
+                SupportState.STRUCTURE_CONFIRMED,
+                SupportState.RETEST_CONFIRMED,
+            }
+            or support.zone_low is None
+            or support.zone_high is None
+        ):
+            return False
+        same_zone = max(snapshot.zone_low, support.zone_low) <= min(
+            snapshot.zone_high, support.zone_high
+        )
+        return same_zone and context.underlying_flow.current_price >= snapshot.zone_high
+
+    @staticmethod
+    def _snapshot_position(
+        snapshot: _SupportSnapshot,
+        spot: Decimal,
+    ) -> SupportZonePosition | None:
+        if snapshot.zone_low is None or snapshot.zone_high is None:
+            return snapshot.zone_position
+        if spot < snapshot.zone_low:
+            return SupportZonePosition.BELOW_ZONE
+        if spot <= snapshot.zone_high:
+            return SupportZonePosition.IN_ZONE
+        return SupportZonePosition.ABOVE_ZONE
+
+    @staticmethod
+    def _snapshot_distance_percent(
+        snapshot: _SupportSnapshot,
+        spot: Decimal,
+    ) -> Decimal | None:
+        if snapshot.zone_low is None or snapshot.zone_high is None:
+            return None
+        if snapshot.zone_low <= spot <= snapshot.zone_high:
+            return Decimal("0")
+        level = snapshot.zone_low if spot < snapshot.zone_low else snapshot.zone_high
+        return (abs(spot - level) / spot * Decimal("100")).quantize(Decimal("0.0001"))
 
     @staticmethod
     def _support_distance_percent(

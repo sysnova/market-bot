@@ -179,7 +179,7 @@ clear_runtime_readiness() {
   local -a all_ready_paths=()
   mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
   ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
-  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,swing-trade-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,order-flow-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,swing-trade-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 }
 
 exec_marketbot() {
@@ -219,6 +219,13 @@ run_opportunities() {
   cd "$PROJECT_ROOT"
   exec_marketbot run marketbot monitor entry-opportunity \
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
+}
+
+run_order_flow_monitor() {
+  cd "$PROJECT_ROOT"
+  wait_ready "$STATUS_ROOT/order-flow.ready.json"
+  exec_marketbot run marketbot monitor order-flow \
+    --ready-path "$STATUS_ROOT/order-flow-monitor.ready.json"
 }
 
 run_news() {
@@ -496,11 +503,12 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed opportunities long_portfolio news swing_channel_4h geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
+  local control analysis confirmed opportunities order_flow long_portfolio news swing_channel_4h geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
   printf -v opportunities '%q ' "${base[@]}" --role opportunities
+  printf -v order_flow '%q ' "${base[@]}" --role order-flow-monitor
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
   printf -v news '%q ' "${base[@]}" --role news
   printf -v swing_channel_4h '%q ' "${base[@]}" --role swing-channel-4h
@@ -525,6 +533,12 @@ launch_tmux() {
       tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
       tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
       tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
+    fi
+    if engine_is_active order-flow && \
+      ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'OrderFlow'; then
+      tmux new-window -d -t "$SESSION" -n OrderFlow "$order_flow"
+      tmux set-window-option -t "$SESSION":OrderFlow remain-on-exit on
+      tmux select-pane -t "$SESSION":OrderFlow.0 -T 'ORDER FLOW — ASTS/ASTX/ASTN/NBIS/NBIZ'
     fi
     if engine_is_active long-portfolio && \
       ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Portfolio2026'; then
@@ -628,6 +642,11 @@ launch_tmux() {
     tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
     tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
   fi
+  if engine_is_active order-flow; then
+    tmux new-window -d -t "$SESSION" -n OrderFlow "$order_flow"
+    tmux set-window-option -t "$SESSION":OrderFlow remain-on-exit on
+    tmux select-pane -t "$SESSION":OrderFlow.0 -T 'ORDER FLOW — ASTS/ASTX/ASTN/NBIS/NBIZ'
+  fi
   if engine_is_active long-portfolio; then
     tmux new-window -d -t "$SESSION" -n Portfolio2026 "$long_portfolio"
     tmux set-window-option -t "$SESSION":Portfolio2026 remain-on-exit on
@@ -692,6 +711,7 @@ case "$ROLE" in
   analysis) run_analysis ;;
   confirmed) run_confirmed ;;
   opportunities) run_opportunities ;;
+  order-flow-monitor) run_order_flow_monitor ;;
   order-flow) run_manual_plan_process order-flow ;;
   long-portfolio) run_long_portfolio_monitor ;;
   news) run_news ;;

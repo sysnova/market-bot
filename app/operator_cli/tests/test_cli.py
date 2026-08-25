@@ -94,6 +94,7 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("alerts", "patreon-caps"),
         ("monitor", "patreon-caps"),
         ("monitor", "entry-opportunity"),
+        ("monitor", "order-flow"),
         ("monitor", "swing-channel-4h"),
         ("monitor", "4hgeri"),
         ("monitor", "swing-trade"),

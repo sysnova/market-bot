@@ -40,6 +40,7 @@ class LeveragedThesisState(StrEnum):
     EARLY_FLOW = "EARLY_FLOW"
     STRUCTURE_ARMED = "STRUCTURE_ARMED"
     BUY_CONFIRMED = "BUY_CONFIRMED"
+    CANCELLED = "CANCELLED"
     BLOCKED = "BLOCKED"
 
 
@@ -101,6 +102,7 @@ class LeveragedThesisAssessment(StrictFrozenModel):
             LeveragedThesisState.EARLY_FLOW,
             LeveragedThesisState.STRUCTURE_ARMED,
             LeveragedThesisState.BUY_CONFIRMED,
+            LeveragedThesisState.CANCELLED,
         }
         if directional and (
             self.direction is PatternDirection.NEUTRAL

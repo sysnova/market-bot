@@ -26,6 +26,7 @@ from .alert_sounds import (
     play_aggressive_flow_sound,
     play_buy_maturity_sound,
     play_early_intraday_sound,
+    play_entry_close_sound,
     play_solid_buy_sound,
 )
 from .confirmed_signal_projection import project_confirmed_signal
@@ -91,6 +92,7 @@ async def run_confirmed_buy_monitor(
             AlertKind.PORTFOLIO_FLOW_BUY,
             AlertKind.LEVERAGED_THESIS_EARLY,
             AlertKind.LEVERAGED_THESIS_BUY,
+            AlertKind.LEVERAGED_THESIS_CANCELLED,
         }:
             return
         sink.emit(alert)
@@ -102,6 +104,8 @@ async def run_confirmed_buy_monitor(
             play_early_intraday_sound(fallback=output)
         elif alert.kind is AlertKind.LEVERAGED_THESIS_BUY:
             play_solid_buy_sound(fallback=output)
+        elif alert.kind is AlertKind.LEVERAGED_THESIS_CANCELLED:
+            play_entry_close_sound(fallback=output)
 
     subscriptions = (
         await bus.subscribe(

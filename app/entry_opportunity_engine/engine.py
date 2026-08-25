@@ -32,6 +32,8 @@ from app.contracts import (
     EntryWatchStatus,
     EntryWatchTransition,
     GeriCountertrendMaturity,
+    LeveragedThesisAssessment,
+    LeveragedThesisState,
     LocalAlert,
     MarketBar,
     PatternDirection,
@@ -61,6 +63,7 @@ _TERMINAL_LEGS = {
 }
 _MAX_SOURCE_ANALYSIS_IDS = 32
 _WATCHER_SOURCE = "ENTRY_WATCHER"
+_LEVERAGED_CANCELLATION_SOURCE = "LEVERAGED_THESIS_CANCELLATION"
 _L2_RETEST_ATR_TOLERANCE = Decimal("0.5")
 
 
@@ -1024,6 +1027,55 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
             event_id=signal.signal_id,
         )
         await self._store.save(changed, event)
+        return (event,)
+
+    async def ingest_leveraged_cancellation(
+        self,
+        assessment: LeveragedThesisAssessment,
+    ) -> tuple[EntryOpportunityEvent, ...]:
+        """Close only the matching leveraged daily thesis after its support reclaim."""
+
+        if (
+            assessment.state is not LeveragedThesisState.CANCELLED
+            or assessment.instrument_symbol is None
+            or assessment.instrument_bid is None
+        ):
+            return ()
+        if await self._store.event_seen(assessment.assessment_id):
+            return ()
+        active = await self._store.load_active(assessment.instrument_symbol)
+        if active is None or active.primary_signal_family is not EntrySignalFamily.LEVERAGED_THESIS:
+            return ()
+        setup_id = (
+            f"leveraged-thesis:{assessment.underlying_symbol}:"
+            f"{assessment.instrument_symbol}:{assessment.occurred_at.date().isoformat()}"
+        )
+        if not any(
+            reference.family is EntrySignalFamily.LEVERAGED_THESIS
+            and reference.setup_id == setup_id
+            for reference in active.signal_references
+        ):
+            return ()
+        closed = self._close_opportunity(
+            active,
+            price=assessment.instrument_bid,
+            now=assessment.occurred_at,
+            reason=EntryCloseReason.SWEEP_RECLAIM_CANCELLED,
+            leg_status=EntryLegStatus.THESIS_BROKEN,
+        )
+        closed = _with_source_cursor(
+            closed,
+            source=_LEVERAGED_CANCELLATION_SOURCE,
+            occurred_at=assessment.occurred_at,
+            event_id=assessment.assessment_id,
+        )
+        event = self._event(
+            closed,
+            occurred_at=assessment.occurred_at,
+            reasons=("leveraged_daily_support_sweep_reclaim", *assessment.reasons),
+            event_id=assessment.assessment_id,
+        )
+        await self._store.save(closed, event)
         return (event,)
 
     async def ingest_alert(self, alert: LocalAlert) -> tuple[EntryOpportunityEvent, ...]:

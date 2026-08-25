@@ -70,6 +70,16 @@ def test_linux_launcher_starts_order_flow_from_the_runtime_plan() -> None:
     assert "order-flow) run_manual_plan_process order-flow ;;" in script
 
 
+def test_linux_launcher_adds_order_flow_dashboard_window() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "run marketbot monitor order-flow" in script
+    assert "--role order-flow-monitor" in script
+    assert "order-flow-monitor.ready.json" in script
+    assert '-n OrderFlow "$order_flow"' in script
+    assert "ORDER FLOW — ASTS/ASTX/ASTN/NBIS/NBIZ" in script
+
+
 def test_linux_launcher_adds_independent_alpaca_news_window() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
