@@ -318,4 +318,7 @@ def _symbol_token(symbol: str) -> str:
         or any(not character.isalnum() and character not in ".-" for character in normalized)
     ):
         raise ValueError("symbol is not safe for an event subject")
-    return normalized.replace(".", "_")
+    # Alpaca Core publishes ephemeral market-data subjects with lowercase,
+    # hyphenated symbol tokens. NATS subjects are case-sensitive, so the exact
+    # bounded Order Flow subscriptions must use the same wire representation.
+    return normalized.lower().replace(".", "-")

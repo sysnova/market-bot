@@ -255,12 +255,12 @@ def _order_flow_state_payload() -> dict[str, object]:
 
 
 def test_subjects_keep_hot_market_data_separate_from_durable_analytics() -> None:
-    assert market_trade_subject("BRK.B") == "marketbot.market.data.trade.BRK_B"
-    assert market_quote_subject("BRK.B") == "marketbot.market.data.quote.BRK_B"
+    assert market_trade_subject("BRK.B") == "marketbot.market.data.trade.brk-b"
+    assert market_quote_subject("BRK.B") == "marketbot.market.data.quote.brk-b"
     assert market_trade_correction_subject("BRK.B") == (
-        "marketbot.market.data.trade-correction.BRK_B"
+        "marketbot.market.data.trade-correction.brk-b"
     )
-    assert market_trade_cancel_subject("BRK.B") == "marketbot.market.data.trade-cancel.BRK_B"
+    assert market_trade_cancel_subject("BRK.B") == "marketbot.market.data.trade-cancel.brk-b"
     assert order_flow_state_subject("BRK.B") == "marketbot.v1.order-flow.state.BRK_B"
     assert order_flow_transition_subject(OrderFlowStateKind.BUY_PRESSURE, "BRK.B") == (
         "marketbot.v1.order-flow.transition.BUY_PRESSURE.BRK_B"
