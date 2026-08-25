@@ -15,7 +15,9 @@ from app.contracts import (
 )
 from app.integration.distributed_composition import (
     _alert_durable_name,
+    _analytical_symbols,
     _build_worker,
+    _entry_opportunity_symbols,
     _entry_watcher_subscription_options,
     _horizon_durable_name,
     _microstructure_symbols,
@@ -110,6 +112,33 @@ def test_microstructure_universe_prioritizes_holdings_then_caps_watchlist() -> N
         ("TSLA", "RIOT"),
         max_symbols=4,
     ) == ("TSLA", "RIOT", "AAPL", "MSFT")
+
+
+@pytest.mark.unit
+def test_microstructure_universe_reserves_required_thesis_symbols() -> None:
+    assert _microstructure_symbols(
+        ("AAPL", "MSFT", "NVDA"),
+        ("TSLA",),
+        required_symbols=("ASTS", "ASTX", "ASTN", "NBIS", "NBIZ"),
+        max_symbols=7,
+    ) == ("TSLA", "ASTS", "ASTX", "ASTN", "NBIS", "NBIZ", "AAPL")
+
+
+@pytest.mark.unit
+def test_fixed_thesis_underlyings_join_core_analysis_without_etfs() -> None:
+    assert _analytical_symbols(("AAPL", "ASTS"), ("ASTS", "NBIS")) == (
+        "AAPL",
+        "ASTS",
+        "NBIS",
+    )
+
+
+@pytest.mark.unit
+def test_leveraged_instruments_remain_eligible_for_opportunity_tracking() -> None:
+    assert _entry_opportunity_symbols(
+        ("AAPL", "ASTS"),
+        ("ASTS", "ASTX", "ASTN", "NBIS", "NBIZ"),
+    ) == ("AAPL", "ASTS", "ASTX", "ASTN", "NBIS", "NBIZ")
 
 
 @pytest.mark.unit

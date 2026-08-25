@@ -26,6 +26,7 @@ from app.integration.support_confirmation_composition import (
     SupportConfirmationRuntime,
     load_support_holdings,
     load_support_universe,
+    support_analysis_symbols,
 )
 from app.integration.support_confirmation_monitor import (
     _format_assessment,
@@ -79,6 +80,13 @@ async def test_support_enrichment_universe_includes_watchlist_symbols() -> None:
     assert snapshot.symbols == ("TGT", "MSFT", "WATCH_ONLY")
     assert provider.universe_calls == 1
     assert provider.holdings_calls == 0
+
+
+def test_support_universe_always_includes_fixed_thesis_underlyings() -> None:
+    assert support_analysis_symbols(
+        ("TGT", "asts"),
+        ("ASTS", "NBIS"),
+    ) == ("TGT", "ASTS", "NBIS")
 
 
 def test_tmux_launcher_has_a_sibling_support_confirmation_window() -> None:

@@ -74,6 +74,8 @@ def _events_for(subject: str) -> tuple[EventEnvelope, ...]:
         return (
             _alert_event(AlertKind.PORTFOLIO_FLOW_BUY, "BUY FLOW TGT"),
             _alert_event(AlertKind.PORTFOLIO_PROTECT, "PROTECT TGT"),
+            _alert_event(AlertKind.LEVERAGED_THESIS_EARLY, "EARLY ASTN"),
+            _alert_event(AlertKind.LEVERAGED_THESIS_BUY, "BUY ASTN"),
             _alert_event(AlertKind.ENTRY_OPPORTUNITY_PROGRESS, "ENTRY PROGRESS TGT"),
         )
     return ()
@@ -142,6 +144,8 @@ async def test_monitor_projects_final_signals_and_only_manual_flow_alerts(
     assert "L4" not in rendered
     assert "BUY FLOW TGT" in rendered
     assert "PROTECT TGT" in rendered
+    assert "EARLY ASTN" in rendered
+    assert "BUY ASTN" in rendered
     assert "ENTRY PROGRESS TGT" not in rendered
 
     bus = _MonitorBus.instance

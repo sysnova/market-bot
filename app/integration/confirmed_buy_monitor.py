@@ -25,6 +25,7 @@ from app.event_bus import NatsJetStreamEventBus
 from .alert_sounds import (
     play_aggressive_flow_sound,
     play_buy_maturity_sound,
+    play_early_intraday_sound,
     play_solid_buy_sound,
 )
 from .confirmed_signal_projection import project_confirmed_signal
@@ -85,11 +86,22 @@ async def run_confirmed_buy_monitor(
             if isinstance(envelope.payload, LocalAlert)
             else LocalAlert.model_validate(envelope.payload, strict=False)
         )
-        if alert.kind not in {AlertKind.PORTFOLIO_PROTECT, AlertKind.PORTFOLIO_FLOW_BUY}:
+        if alert.kind not in {
+            AlertKind.PORTFOLIO_PROTECT,
+            AlertKind.PORTFOLIO_FLOW_BUY,
+            AlertKind.LEVERAGED_THESIS_EARLY,
+            AlertKind.LEVERAGED_THESIS_BUY,
+        }:
             return
         sink.emit(alert)
-        if bell and alert.kind is AlertKind.PORTFOLIO_FLOW_BUY:
+        if not bell:
+            return
+        if alert.kind is AlertKind.PORTFOLIO_FLOW_BUY:
             play_aggressive_flow_sound(fallback=output)
+        elif alert.kind is AlertKind.LEVERAGED_THESIS_EARLY:
+            play_early_intraday_sound(fallback=output)
+        elif alert.kind is AlertKind.LEVERAGED_THESIS_BUY:
+            play_solid_buy_sound(fallback=output)
 
     subscriptions = (
         await bus.subscribe(
@@ -117,7 +129,7 @@ async def run_confirmed_buy_monitor(
                 },
             )
         print(
-            "COMPRAS CONFIRMADAS + GESTION MANUAL PORTFOLIO FLOW - esperando NATS...",
+            "COMPRAS CONFIRMADAS + TESIS APALANCADAS + PORTFOLIO FLOW - esperando NATS...",
             file=output,
             flush=True,
         )

@@ -33,7 +33,7 @@ class AppSettings(BaseSettings):
     entry_watcher_enabled: bool = True
     entry_watch_ttl_days: int = Field(default=56, ge=7, le=365)
     alert_checkpoint_interval_seconds: int = Field(default=30, ge=5, le=300)
-    definition_path: Path = Path("configs/marketbot/7.32.0.yaml")
+    definition_path: Path = Path("configs/marketbot/7.34.0.yaml")
     entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0", "5.0.0"] | None = None
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     alpaca_api_key_id: SecretStr | None = None
@@ -47,9 +47,6 @@ class AppSettings(BaseSettings):
     alpaca_stream_stable_seconds: float = Field(default=60.0, gt=0, le=3600)
     alpaca_stream_recovery_buffer_bars: int = Field(default=100_000, ge=1000, le=1_000_000)
     microstructure_max_symbols: int = Field(default=40, ge=1, le=200)
-    intraday_paper_notional: Decimal = Field(
-        default=Decimal("1000"), ge=Decimal("100"), le=Decimal("1000000")
-    )
     market_history_refresh_seconds: int = Field(default=3600, ge=60, le=86400)
     market_history_request_timeout_seconds: int = Field(default=1800, ge=10, le=3600)
     alpaca_data_base_url: HttpUrl = HttpUrl("https://data.alpaca.markets")

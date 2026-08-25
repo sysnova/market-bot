@@ -53,7 +53,7 @@ from app.intraday_engine import (
 )
 from app.intraday_engine.strategy import configure_engine as configure_intraday
 from app.intraday_engine.strategy import validate_strategy as validate_intraday
-from app.intraday_opportunity_engine import IntradayOpportunityEngine
+from app.leveraged_thesis_engine import LeveragedThesisEngine
 from app.long_portfolio_engine import LongPortfolioEngine
 from app.long_portfolio_engine.strategy import configure_engine as configure_long_portfolio
 from app.long_portfolio_engine.strategy import resolve_strategy as resolve_long_portfolio
@@ -62,7 +62,9 @@ from app.long_term_engine import LongTermEngine, LongTermEngineV2
 from app.market_rotation_engine import RotationEngine
 from app.news_intelligence_engine import NewsIntelligenceEngine
 from app.options_gamma_engine import OptionsGammaEngine
-from app.order_flow_engine import OrderFlowEngine
+from app.order_flow_engine import OrderFlowEngine, OrderFlowEngineV11
+from app.order_flow_engine.strategy import configure_engine as configure_order_flow
+from app.order_flow_engine.strategy import validate_strategy as validate_order_flow
 from app.patreon_caps_engine import PatreonCapsEngine
 from app.patreon_caps_engine.strategy import configure_engine as configure_patreon_caps
 from app.patreon_caps_engine.strategy import resolve_strategy as resolve_patreon_caps
@@ -71,7 +73,6 @@ from app.peter_lynch_engine import PeterLynchEngine
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.portfolio_flow_engine.strategy import configure_engine as configure_portfolio_flow
 from app.portfolio_flow_engine.strategy import validate_strategy as validate_portfolio_flow
-from app.scalp_engine import ScalpEngine
 from app.signal_fusion_engine import (
     SignalFusionEngine,
     SignalFusionEngineV04,
@@ -202,17 +203,18 @@ def default_engine_registry() -> EngineRegistry:
                 configure=configure_intraday,
                 validate_strategy=validate_intraday,
             ),
-            EngineSlot.ORDER_FLOW: simple(
-                implementations={"1.0.0": OrderFlowEngine},
+            EngineSlot.ORDER_FLOW: EngineRegistration(
+                implementations={
+                    "1.0.0": OrderFlowEngine,
+                    "1.1.0": OrderFlowEngineV11,
+                },
                 required_since="7.32.0",
+                configure=configure_order_flow,
+                validate_strategy=validate_order_flow,
             ),
-            EngineSlot.SCALP: simple(
-                implementations={"1.0.0": ScalpEngine},
-                required_since="7.32.0",
-            ),
-            EngineSlot.INTRADAY_OPPORTUNITY: simple(
-                implementations={"1.0.0": IntradayOpportunityEngine},
-                required_since="7.32.0",
+            EngineSlot.LEVERAGED_THESIS: simple(
+                implementations={"1.0.0": LeveragedThesisEngine},
+                required_since="7.33.0",
             ),
             EngineSlot.ENTRY_WATCHER: EngineRegistration(
                 implementations={

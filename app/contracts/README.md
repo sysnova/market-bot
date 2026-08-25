@@ -7,8 +7,8 @@ activar simbolos nuevos, sin conocer versiones de implementacion del productor.
 
 `EntrySignal` es la decision analitica de entrada independiente del productor. Los consumidores usan
 la familia, la madurez core opcional, los niveles y la procedencia de politica/eventos. Solo
-`CORE_ENTRY` y `CORE_RECOVERY` usan L1-L4; Patreon Caps, Long Portfolio, Signal Fusion y Portfolio
-Flow conservan familias distintas y no se promocionan artificialmente a L4 core.
+`CORE_ENTRY` y `CORE_RECOVERY` usan L1-L4; Patreon Caps, Long Portfolio, Signal Fusion, Portfolio
+Flow y Leveraged Thesis conservan familias distintas y no se promocionan artificialmente a L4 core.
 
 `EntrySetupAssessment` transporta evidencia de un setup sin decidir compra ni asignar L1-L4.
 Entry Recovery 1.1 publica `CORE_RECOVERY` por este contrato; Alert 3.2 aplica su artefacto de
@@ -33,6 +33,13 @@ alertas y servicios. No contiene ejecución de reglas, registry ni persistencia.
   versiones de Python que aún no ofrecen `uuid.uuid7()`.
 
 ## Superficie pública
+
+`LeveragedThesisAssessment` y `LeveragedThesisTransition` describen candidatos
+direccionales intraday entre un subyacente y un instrumento diario apalancado o
+inverso. Son avisos para decisión humana y no contienen cantidad, orden ni acción
+de broker. La assessment conserva también el estado, zona, invalidación,
+distancia al spot y procedencia del `SupportAssessment` usado para habilitar o
+bloquear el armado.
 
 Importar desde `app.contracts`, no desde módulos internos.
 
@@ -97,7 +104,10 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   tupla vacia; los consumidores no deben usarlo como version del engine productor.
   `primary_signal_family` y `signal_references` registran setups por familia/politica sin guardar
   identidad ni version del engine productor. Solo referencias core llevan `maturity`; Patreon
-  Caps, Long Portfolio, Signal Fusion y Portfolio Flow conservan `maturity=None`.
+  Caps, Long Portfolio, Signal Fusion, Portfolio Flow y Leveraged Thesis conservan
+  `maturity=None`. Un `EntrySignal(LEVERAGED_THESIS)` representa una compra paper del
+  instrumento seleccionado; los estados tempranos permanecen como `LocalAlert` y no abren una
+  Opportunity.
 
 - Swing Channel 4H publica `SwingChannelAssessment` y `SwingChannelTransition` en subjects
   `marketbot.v1.swing-channel-4h.*`. Su maduracion `ARMED -> IN_ZONE_4H -> L2_4H -> L3/L4`
@@ -113,10 +123,8 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   `MarketTradeCorrection` y `MarketTradeCancel` tipan el hot path efimero de Alpaca.
   `OrderFlowState` y `OrderFlowTransition` publican inteligencia compacta durable sin autoridad
   de ejecucion. `OrderFlowSupportAssessment` vincula evidencia fresca con una zona propiedad de
-  Support, sin crear ni mover geometria Swing. `ScalpAssessment` y `ScalpTransition` describen
-  maduracion analitica de la rueda
-  actual, mientras `IntradayOpportunity` y sus eventos auditan fills paper, P/L y excursiones.
-  Ninguno de estos contratos representa una orden real ni depende de una tesis LONG.
+  Support, sin crear ni mover geometria Swing. Ninguno de estos contratos representa una orden
+  real ni depende de una tesis LONG.
 
 ## Invariantes comprobadas
 

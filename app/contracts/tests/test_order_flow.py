@@ -144,6 +144,9 @@ def test_order_flow_state_requires_the_canonical_five_windows() -> None:
         state=OrderFlowStateKind.BUY_PRESSURE,
         current_price=Decimal("100.05"),
         mid_price=Decimal("100.05"),
+        bid_price=Decimal("100.00"),
+        ask_price=Decimal("100.10"),
+        spread_bps=Decimal("9.9950"),
         cumulative_delta=Decimal("250"),
         confidence=Decimal("0.8"),
         data_quality=Decimal("0.9"),
@@ -157,9 +160,24 @@ def test_order_flow_state_requires_the_canonical_five_windows() -> None:
 
     assert state.state_id.version == 7
     assert state.windows[-1].window_seconds == 300
+    assert state.bid_price == Decimal("100.00")
+    assert state.ask_price == Decimal("100.10")
     with pytest.raises(ValidationError, match="canonical"):
         OrderFlowState(
             **{**state.model_dump(), "windows": windows[:-1]},
+        )
+
+
+def test_order_flow_quote_evidence_is_optional_but_atomic() -> None:
+    state = OrderFlowState.model_validate(_order_flow_state_payload())
+
+    assert state.bid_price is None
+    with pytest.raises(ValidationError, match="quote evidence"):
+        OrderFlowState.model_validate(
+            {
+                **_order_flow_state_payload(),
+                "bid_price": Decimal("100"),
+            }
         )
 
 
@@ -199,6 +217,41 @@ def test_transition_must_change_state() -> None:
 def _state_id() -> UUID:
     state = _trade().event_id
     return state
+
+
+def _order_flow_state_payload() -> dict[str, object]:
+    windows = tuple(
+        OrderFlowWindow(
+            window_seconds=seconds,
+            trade_count=1,
+            buy_volume=Decimal("100"),
+            sell_volume=Decimal("0"),
+            neutral_volume=Decimal("0"),
+            unknown_volume=Decimal("0"),
+            delta=Decimal("100"),
+            volume_velocity=Decimal("1"),
+            large_buy_volume=Decimal("0"),
+            large_sell_volume=Decimal("0"),
+            price_change_bps=Decimal("1"),
+        )
+        for seconds in (1, 5, 15, 60, 300)
+    )
+    return {
+        "symbol": "AAPL",
+        "occurred_at": NOW,
+        "engine_version": "1.0.0",
+        "state": OrderFlowStateKind.BUY_PRESSURE,
+        "current_price": Decimal("100"),
+        "mid_price": Decimal("100"),
+        "confidence": Decimal("0.8"),
+        "data_quality": Decimal("0.9"),
+        "quote_age_ms": Decimal("10"),
+        "quote_fresh": True,
+        "unknown_trade_ratio": Decimal("0"),
+        "windows": windows,
+        "reasons": ("buy_pressure",),
+        "context_hash": HASH,
+    }
 
 
 def test_subjects_keep_hot_market_data_separate_from_durable_analytics() -> None:

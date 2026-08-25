@@ -11,7 +11,7 @@ from app.contracts.order_flow import (
     OrderFlowStateKind,
     TradeAggressor,
 )
-from app.order_flow_engine import OrderFlowEngine, OrderFlowPolicy
+from app.order_flow_engine import OrderFlowEngine, OrderFlowEngineV11, OrderFlowPolicy
 
 NOW = datetime(2026, 8, 24, 14, 30, tzinfo=UTC)
 
@@ -72,6 +72,24 @@ def test_unknown_without_quote_or_previous_tick_reduces_data_quality() -> None:
     assert update.aggressor is TradeAggressor.UNKNOWN
     assert update.state.unknown_trade_ratio == Decimal("1")
     assert update.state.data_quality < Decimal("0.5")
+
+
+def test_v11_lifts_executable_quote_evidence_into_the_durable_assessment() -> None:
+    engine = OrderFlowEngineV11(
+        OrderFlowPolicy(
+            tracked_symbols=("AAPL",),
+            minimum_trades=1,
+            minimum_volume=Decimal("1"),
+        )
+    )
+    engine.ingest_quote(_quote(bid="99.90", ask="100.10"))
+
+    state = engine.ingest_trade(_trade("quoted")).state
+
+    assert state.engine_version == "1.1.0"
+    assert state.bid_price == Decimal("99.90")
+    assert state.ask_price == Decimal("100.10")
+    assert state.spread_bps == Decimal("20.0000")
 
 
 def test_builds_canonical_rolling_windows_and_expires_old_trades() -> None:

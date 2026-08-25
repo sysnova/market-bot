@@ -28,7 +28,7 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     assert "volume-structure-v1" in names
     assert "options-gamma-v1" in names
     assert "news-intelligence-v1" in names
-    assert {"order-flow", "scalp", "intraday-opportunity"} <= names
+    assert {"order-flow", "leveraged-thesis"} <= names
     assert "swing-channel-4h" in names
     assert "4hgeri" in names
     assert "patreon-caps-v1" not in names
@@ -85,12 +85,16 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     )
     assert positions["entry-opportunity"] < positions["news-intelligence-v1"]
     assert positions["news-intelligence-v1"] < positions["alpaca-market-stream"]
-    assert positions["order-flow"] < positions["scalp"]
     assert positions["support-confirmation-v0"] < positions["order-flow"]
     for consumer in ("swing", "4hgeri", "swing-trade"):
         assert positions["order-flow"] < positions[consumer]
-    assert positions["scalp"] < positions["intraday-opportunity"]
-    assert positions["intraday-opportunity"] < positions["alpaca-market-stream"]
+    assert plan.process("leveraged-thesis").dependencies == (
+        "intraday",
+        "order-flow",
+        "support-confirmation-v0",
+    )
+    assert positions["intraday"] < positions["leveraged-thesis"]
+    assert positions["order-flow"] < positions["leveraged-thesis"]
 
 
 def test_v727_starts_support_before_the_enriched_swing_engines() -> None:

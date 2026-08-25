@@ -80,7 +80,7 @@ from .alert_sounds import (
     play_entry_zone_watch_sound,
     play_swing_setup_watch_sound,
 )
-from .engine_assembly import EngineSlot, MarketBotAssembly
+from .engine_assembly import EngineMode, EngineSlot, MarketBotAssembly
 from .entry_opportunity_bar_recovery import (
     entry_opportunity_history_requirements,
     replay_pending_entry_opportunity_bars,
@@ -460,6 +460,17 @@ async def run_market_stream_process(
         "PatreonCapsPolicy",
         assembly.resolve_strategy(EngineSlot.PATREON_CAPS),
     ).macro_symbols
+    leveraged_symbols: tuple[str, ...] = ()
+    leveraged_underlyings: tuple[str, ...] = ()
+    if (
+        EngineSlot.LEVERAGED_THESIS in assembly.definition.engines
+        and assembly.spec(EngineSlot.LEVERAGED_THESIS).mode is EngineMode.ACTIVE
+    ):
+        leveraged_engine = assembly.build_leveraged_thesis()
+        leveraged_symbols = leveraged_engine.required_symbols
+        leveraged_underlyings = tuple(
+            pair.underlying_symbol for pair in leveraged_engine.pairs
+        )
     try:
         bus = await _connect_nats(settings)
         database = create_database_engine(
@@ -509,30 +520,36 @@ async def run_market_stream_process(
                 rotation_refresh.clear()
                 universe = await _resolve_universe(settings, symbols)
                 holdings = await _resolve_holdings(settings)
-                if universe.symbols != previous_core_symbols:
+                core_symbols = _analytical_symbols(
+                    universe.symbols, leveraged_underlyings
+                )
+                if core_symbols != previous_core_symbols:
                     await universe_publisher.publish_universe_changed(
                         UniverseChanged(
                             occurred_at=clock.now(),
-                            source=universe.source,
+                            source=f"{universe.source}+leveraged-thesis-fixed",
                             previous_symbols=previous_core_symbols,
-                            symbols=universe.symbols,
+                            symbols=core_symbols,
                             added_symbols=tuple(
                                 value
-                                for value in universe.symbols
+                                for value in core_symbols
                                 if value not in previous_core_symbols
                             ),
                             removed_symbols=tuple(
                                 value
                                 for value in previous_core_symbols
-                                if value not in universe.symbols
+                                if value not in core_symbols
                             ),
                         )
                     )
-                    previous_core_symbols = universe.symbols
-                stream_symbols = _stream_symbols(universe.symbols, macro_symbols)
+                    previous_core_symbols = core_symbols
+                stream_symbols = _stream_symbols(
+                    core_symbols, macro_symbols, leveraged_symbols
+                )
                 microstructure_symbols = _microstructure_symbols(
-                    universe.symbols,
+                    core_symbols,
                     holdings.symbols,
+                    required_symbols=leveraged_symbols,
                     max_symbols=settings.microstructure_max_symbols,
                 )
                 market_publisher.begin_recovery()
@@ -624,12 +641,16 @@ async def run_market_stream_process(
                     ):
                         continue
 
+                    refreshed_core_symbols = _analytical_symbols(
+                        refreshed_universe.symbols, leveraged_underlyings
+                    )
                     refreshed_stream_symbols = _stream_symbols(
-                        refreshed_universe.symbols, macro_symbols
+                        refreshed_core_symbols, macro_symbols, leveraged_symbols
                     )
                     refreshed_microstructure_symbols = _microstructure_symbols(
-                        refreshed_universe.symbols,
+                        refreshed_core_symbols,
                         refreshed_holdings.symbols,
+                        required_symbols=leveraged_symbols,
                         max_symbols=settings.microstructure_max_symbols,
                     )
                     await engine.update_stream_subscriptions(
@@ -637,27 +658,31 @@ async def run_market_stream_process(
                         trade_symbols=refreshed_microstructure_symbols,
                         quote_symbols=refreshed_microstructure_symbols,
                     )
-                    if refreshed_universe.symbols != universe.symbols:
+                    if refreshed_core_symbols != core_symbols:
                         await universe_publisher.publish_universe_changed(
                             UniverseChanged(
                                 occurred_at=clock.now(),
-                                source=refreshed_universe.source,
-                                previous_symbols=universe.symbols,
-                                symbols=refreshed_universe.symbols,
+                                source=(
+                                    f"{refreshed_universe.source}"
+                                    "+leveraged-thesis-fixed"
+                                ),
+                                previous_symbols=core_symbols,
+                                symbols=refreshed_core_symbols,
                                 added_symbols=tuple(
                                     value
-                                    for value in refreshed_universe.symbols
-                                    if value not in universe.symbols
+                                    for value in refreshed_core_symbols
+                                    if value not in core_symbols
                                 ),
                                 removed_symbols=tuple(
                                     value
-                                    for value in universe.symbols
-                                    if value not in refreshed_universe.symbols
+                                    for value in core_symbols
+                                    if value not in refreshed_core_symbols
                                 ),
                             )
                         )
-                        previous_core_symbols = refreshed_universe.symbols
+                        previous_core_symbols = refreshed_core_symbols
                     universe = refreshed_universe
+                    core_symbols = refreshed_core_symbols
                     holdings = refreshed_holdings
                     stream_symbols = refreshed_stream_symbols
                     microstructure_symbols = refreshed_microstructure_symbols
@@ -729,9 +754,27 @@ async def run_market_stream_process(
 
 
 def _stream_symbols(
-    universe_symbols: tuple[str, ...], macro_symbols: tuple[str, ...]
+    universe_symbols: tuple[str, ...],
+    macro_symbols: tuple[str, ...],
+    required_symbols: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
-    return tuple(dict.fromkeys((*universe_symbols, *macro_symbols)))
+    return tuple(dict.fromkeys((*universe_symbols, *macro_symbols, *required_symbols)))
+
+
+def _analytical_symbols(
+    universe_symbols: tuple[str, ...], required_underlyings: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Keep fixed thesis underlyings in Core analytical workers."""
+
+    return tuple(dict.fromkeys((*universe_symbols, *required_underlyings)))
+
+
+def _entry_opportunity_symbols(
+    universe_symbols: tuple[str, ...], required_symbols: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Keep fixed leveraged instruments eligible while their paper entries are tracked."""
+
+    return tuple(dict.fromkeys((*universe_symbols, *required_symbols)))
 
 
 async def _wait_for_stream_connection(
@@ -756,20 +799,35 @@ def _microstructure_symbols(
     universe_symbols: tuple[str, ...],
     holding_symbols: tuple[str, ...],
     *,
+    required_symbols: tuple[str, ...] = (),
     max_symbols: int,
 ) -> tuple[str, ...]:
     """Return the bounded live trade/quote universe, prioritizing held risk."""
 
     if isinstance(max_symbols, bool) or max_symbols < 1:
         raise ValueError("max_symbols must be positive")
-    normalized = tuple(
+    required = tuple(
+        dict.fromkeys(symbol.strip().upper() for symbol in required_symbols if symbol.strip())
+    )
+    if len(required) > max_symbols:
+        raise ValueError("required microstructure symbols exceed configured capacity")
+    holdings = tuple(
         dict.fromkeys(
             symbol.strip().upper()
-            for symbol in (*holding_symbols, *universe_symbols)
-            if symbol.strip()
+            for symbol in holding_symbols
+            if symbol.strip() and symbol.strip().upper() not in required
         )
     )
-    return normalized[:max_symbols]
+    selected_holdings = holdings[: max_symbols - len(required)]
+    prioritized = tuple(dict.fromkeys((*selected_holdings, *required)))
+    universe = tuple(
+        dict.fromkeys(
+            symbol.strip().upper()
+            for symbol in universe_symbols
+            if symbol.strip() and symbol.strip().upper() not in prioritized
+        )
+    )
+    return (*prioritized, *universe)[:max_symbols]
 
 
 async def run_alert_process(
@@ -1116,6 +1174,14 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 "20260807010000_entry_opportunity_lifecycle.sql"
             )
         engine = assembly.build_entry_opportunity(store=store)
+        leveraged_opportunity_symbols: tuple[str, ...] = ()
+        if (
+            EngineSlot.LEVERAGED_THESIS in assembly.definition.engines
+            and assembly.spec(EngineSlot.LEVERAGED_THESIS).mode is EngineMode.ACTIVE
+        ):
+            leveraged_opportunity_symbols = (
+                assembly.build_leveraged_thesis().required_symbols
+            )
         bus = await _connect_nats(settings)
         active_opportunities = await store.list_active()
         recovery_as_of = clock.now()
@@ -1249,7 +1315,13 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 await asyncio.sleep(60)
                 try:
                     universe = await universe_client.get_universe()
-                    await engine.reconcile(now=clock.now(), active_symbols=universe.symbols)
+                    await engine.reconcile(
+                        now=clock.now(),
+                        active_symbols=_entry_opportunity_symbols(
+                            universe.symbols,
+                            leveraged_opportunity_symbols,
+                        ),
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:

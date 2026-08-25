@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
-DEFINITION_PATH="${MARKETBOT_DEFINITION_PATH:-$PROJECT_ROOT/configs/marketbot/7.32.0.yaml}"
+DEFINITION_PATH="${MARKETBOT_DEFINITION_PATH:-$PROJECT_ROOT/configs/marketbot/7.34.0.yaml}"
 export MARKETBOT_DEFINITION_PATH="$DEFINITION_PATH"
 MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
@@ -18,7 +18,7 @@ STOCK_ANALYZER_ENV="${MARKETBOT_STOCK_ANALYZER_ENV:-$PROJECT_ROOT/../stock-analy
 LOG_MAX_BYTES="${MARKETBOT_LOG_MAX_BYTES:-52428800}"
 LOG_BACKUP_COUNT="${MARKETBOT_LOG_BACKUP_COUNT:-3}"
 LOG_ROTATION_INTERVAL_SECONDS="${MARKETBOT_LOG_ROTATION_INTERVAL_SECONDS:-60}"
-MANUAL_START_PROCESSES=("order-flow" "scalp" "intraday-opportunity")
+MANUAL_START_PROCESSES=()
 
 load_shared_openai_key() {
   [[ -z "${MARKETBOT_OPENAI_API_KEY:-}" && -f "$STOCK_ANALYZER_ENV" ]] || return 0
@@ -55,10 +55,6 @@ Options:
 
 Manual components (run from the repository root):
   ./scripts/linux/start-market-bot.sh --role order-flow
-  ./scripts/linux/start-market-bot.sh --role scalp-engine
-  ./scripts/linux/start-market-bot.sh --role intraday-opportunity-engine
-  ./scripts/linux/start-market-bot.sh --role scalping
-  ./scripts/linux/start-market-bot.sh --role intraday-ops
 EOF
 }
 
@@ -94,7 +90,6 @@ prepare_runtime() {
     echo "MarketBot executable was not installed in $UV_PROJECT_ENVIRONMENT." >&2
     return 1
   }
-  (cd "$PROJECT_ROOT" && uv run python -m app.integration.local_schema_bootstrap)
 }
 
 write_runtime_plan() {
@@ -184,7 +179,7 @@ clear_runtime_readiness() {
   local -a all_ready_paths=()
   mapfile -d '' -t all_ready_paths < <(plan_all_ready_paths)
   ((${#all_ready_paths[@]} == 0)) || rm -f -- "${all_ready_paths[@]}"
-  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,scalping-monitor,intraday-opportunity-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,swing-trade-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
+  rm -f "$STATUS_ROOT"/{entry-opportunity-monitor,long-portfolio-monitor,news-monitor,swing-channel-4h-monitor,4hgeri-monitor,swing-trade-monitor,patreon-caps-analysis,patreon-caps-alerts,elliott-wave-analysis,support-confirmation-analysis,signal-fusion-analysis,signal-fusion-buys}.ready.json
 }
 
 exec_marketbot() {
@@ -224,18 +219,6 @@ run_opportunities() {
   cd "$PROJECT_ROOT"
   exec_marketbot run marketbot monitor entry-opportunity \
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
-}
-
-run_scalping_monitor() {
-  cd "$PROJECT_ROOT"
-  exec_marketbot run marketbot monitor scalping \
-    --ready-path "$STATUS_ROOT/scalping-monitor.ready.json"
-}
-
-run_intraday_ops_monitor() {
-  cd "$PROJECT_ROOT"
-  exec_marketbot run marketbot monitor intraday-opportunity \
-    --ready-path "$STATUS_ROOT/intraday-opportunity-monitor.ready.json"
 }
 
 run_news() {
@@ -710,10 +693,6 @@ case "$ROLE" in
   confirmed) run_confirmed ;;
   opportunities) run_opportunities ;;
   order-flow) run_manual_plan_process order-flow ;;
-  scalp-engine) run_manual_plan_process scalp ;;
-  intraday-opportunity-engine) run_manual_plan_process intraday-opportunity ;;
-  scalping) run_scalping_monitor ;;
-  intraday-ops) run_intraday_ops_monitor ;;
   long-portfolio) run_long_portfolio_monitor ;;
   news) run_news ;;
   swing-channel-4h) run_swing_channel_4h ;;

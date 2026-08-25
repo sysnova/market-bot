@@ -1,0 +1,7 @@
+rule_version: 1.1.0
+tracked_symbols:
+  - ASTS
+  - ASTX
+  - ASTN
+  - NBIS
+  - NBIZ

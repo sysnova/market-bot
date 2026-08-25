@@ -1,5 +1,5 @@
 definition_id: marketbot
-version: 7.32.0
+version: 7.33.0
 engines:
   long-term:
     implementation: 2.0.0
@@ -26,6 +26,10 @@ engines:
     mode: active
     strategy: {kind: artifact, version: 1.0.0, artifact: ../rules/intraday/1.0.0.yaml}
   order-flow:
+    implementation: 1.0.0
+    mode: active
+    strategy: {kind: embedded, version: 1.0.0}
+  leveraged-thesis:
     implementation: 1.0.0
     mode: active
     strategy: {kind: embedded, version: 1.0.0}

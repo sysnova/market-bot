@@ -28,7 +28,8 @@ exclusivamente con `Decimal`:
 - large trades por lado;
 - variación de precio en basis points;
 - CVD acumulado de la sesión;
-- frescura del quote, proporción desconocida, calidad y confianza.
+- frescura del quote, proporción desconocida, calidad y confianza;
+- desde 1.1, bid, ask y spread en bps dentro del propio `OrderFlowState`.
 
 Los estados compactos son presión compradora/vendedora, exhaustion, absorption, divergencia y
 neutral. Sólo se genera `OrderFlowTransition` cuando cambia el estado. `reset_symbol()` debe ser
@@ -36,7 +37,13 @@ invocado por la composición al iniciar una nueva rueda para reiniciar el CVD in
 
 ## Límites operativos
 
-- Es inteligencia operativa: publica evidencia para Scalp y Swing, pero no envía órdenes.
+- La política 1.1 limita el hot path a `ASTS`, `ASTX`, `ASTN`, `NBIS` y `NBIZ`.
+  La composición crea veinte subscriptions NATS exactas (quote/trade/correction/cancel) y no
+  escucha wildcards. El rollback 1.0 conserva el comportamiento anterior.
+- Los consumidores reciben estados sólo de esos cinco símbolos porque Order Flow no calcula ni
+  publica el resto de la watchlist.
+- Es inteligencia operativa: publica evidencia para Leveraged Thesis y consumidores estructurales,
+  pero no envía órdenes.
 - Usa SIP top-of-book; absorption y divergence son inferencias L1, no profundidad de libro.
 - Los últimos cinco minutos se conservan para ventanas; el ledger mínimo de contribuciones se
   mantiene durante la sesión para poder revertir correcciones tardías.

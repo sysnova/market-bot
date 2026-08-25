@@ -21,7 +21,7 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.entry_watcher_enabled is True
     assert settings.entry_watch_ttl_days == 56
     assert settings.alert_checkpoint_interval_seconds == 30
-    assert settings.definition_path == Path("configs/marketbot/7.32.0.yaml")
+    assert settings.definition_path == Path("configs/marketbot/7.34.0.yaml")
     assert settings.news_intelligence_model == "gpt-5.4-nano-2026-03-17"
     assert settings.news_intelligence_refresh_seconds == 300
     assert settings.openai_configured is False
@@ -73,7 +73,6 @@ def test_alpaca_settings_load_as_paired_redacted_secrets(
     assert settings.alpaca_stream_stable_seconds == 60
     assert settings.alpaca_stream_recovery_buffer_bars == 100_000
     assert settings.microstructure_max_symbols == 40
-    assert settings.intraday_paper_notional == Decimal("1000")
     assert settings.market_history_refresh_seconds == 3600
     assert settings.market_history_request_timeout_seconds == 1800
     assert settings.options_gamma_refresh_seconds == 600

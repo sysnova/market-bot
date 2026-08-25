@@ -29,11 +29,11 @@ NATS_WIREGUARD_SCRIPT_PATH = (
 POWERSHELL = shutil.which("powershell")
 
 
-def test_windows_launcher_keeps_scalp_pipeline_engines_manual() -> None:
+def test_windows_launcher_keeps_order_flow_manual() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
     assert (
-        '$ManualStartProcessNames = @("order-flow", "scalp", "intraday-opportunity")'
+        '$ManualStartProcessNames = @("order-flow")'
         in script
     )
     assert "$AutomaticBatchNames" in script
@@ -382,8 +382,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "swing-trade",
         "intraday",
         "order-flow",
-        "scalp",
-        "intraday-opportunity",
+        "leveraged-thesis",
         "market-rotation-v1",
         "portfolio-flow-v1",
         "support-confirmation-v0",

@@ -32,6 +32,7 @@ _TEN_THOUSAND = Decimal("10000")
 class OrderFlowPolicy:
     """Version-one thresholds; every calculation remains Decimal based."""
 
+    tracked_symbols: tuple[str, ...] = ()
     quote_max_age: timedelta = timedelta(seconds=2)
     minimum_trades: int = 3
     minimum_volume: Decimal = Decimal("100")
@@ -42,6 +43,18 @@ class OrderFlowPolicy:
     divergence_minimum_price_change_bps: Decimal = Decimal("5")
 
     def __post_init__(self) -> None:
+        normalized = tuple(
+            dict.fromkeys(
+                symbol.strip().upper()
+                for symbol in self.tracked_symbols
+                if symbol.strip()
+            )
+        )
+        if len(normalized) != len(self.tracked_symbols):
+            raise ValueError("tracked_symbols must be normalized, non-empty and unique")
+        if any(len(symbol) > 16 for symbol in normalized):
+            raise ValueError("tracked_symbols contains an invalid symbol")
+        object.__setattr__(self, "tracked_symbols", normalized)
         if self.quote_max_age <= timedelta(0):
             raise ValueError("quote_max_age must be positive")
         if self.minimum_trades < 1 or self.absorption_minimum_trades < 1:
@@ -96,6 +109,12 @@ class OrderFlowEngine:
     def __init__(self, policy: OrderFlowPolicy | None = None) -> None:
         self._policy = policy or OrderFlowPolicy()
         self._books: dict[str, _SymbolBook] = defaultdict(_SymbolBook)
+
+    @property
+    def tracked_symbols(self) -> tuple[str, ...]:
+        """Return the integration-owned hot-path scope; empty preserves v1 wildcard mode."""
+
+        return self._policy.tracked_symbols
 
     def ingest_quote(self, quote: MarketQuote) -> None:
         """Retain the newest quote; delayed older quotes never rewrite causal state."""
@@ -204,6 +223,14 @@ class OrderFlowEngine:
 
         self._books.pop(symbol, None)
 
+    def _quote_evidence(
+        self, quote: MarketQuote | None
+    ) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+        """Keep the 1.0 implementation payload stable for rollback."""
+
+        del quote
+        return None, None, None
+
     def _evaluate(
         self,
         symbol: str,
@@ -245,6 +272,7 @@ class OrderFlowEngine:
             cumulative_delta=book.cumulative_delta,
             windows=windows,
         )
+        bid_price, ask_price, spread_bps = self._quote_evidence(quote)
         state = OrderFlowState(
             state_id=_stable_uuid7(as_of, f"state:{context_hash}"),
             symbol=symbol,
@@ -253,6 +281,9 @@ class OrderFlowEngine:
             state=kind,
             current_price=current_price,
             mid_price=quote.mid_price if quote is not None else None,
+            bid_price=bid_price,
+            ask_price=ask_price,
+            spread_bps=spread_bps,
             cumulative_delta=book.cumulative_delta,
             confidence=confidence,
             data_quality=data_quality,

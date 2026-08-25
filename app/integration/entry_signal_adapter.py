@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from app.alert_engine.confirmed import BuyMaturity, buy_maturity
@@ -18,6 +18,8 @@ from app.contracts import (
     EventEnvelope,
     FusionState,
     FusionTransition,
+    LeveragedThesisAssessment,
+    LeveragedThesisState,
     LocalAlert,
     entry_signal_subject,
     new_uuid7,
@@ -43,6 +45,9 @@ _ANALYTICAL_FAMILIES = {
         "2.0.0",
     ),
 }
+_FOUR_PLACES = Decimal("0.0001")
+_LEVERAGED_STOP_FRACTION = Decimal("0.03")
+_LEVERAGED_REWARD_RISK = Decimal("2")
 
 
 def entry_signal_from_alert_watch(transition: EntryWatchTransition) -> EntrySignal | None:
@@ -187,6 +192,85 @@ def entry_signal_from_fusion(transition: FusionTransition) -> EntrySignal | None
         policy_version="1.0.0",
         reasons=transition.reasons,
         source_event_ids=(transition.transition_id, transition.assessment_id),
+    )
+
+
+def entry_signal_from_leveraged_thesis(
+    assessment: LeveragedThesisAssessment,
+) -> EntrySignal | None:
+    """Turn a confirmed ETF purchase into the canonical paper-tracking input."""
+
+    if (
+        assessment.state is not LeveragedThesisState.BUY_CONFIRMED
+        or assessment.instrument_symbol is None
+        or assessment.instrument_bid is None
+        or assessment.instrument_ask is None
+    ):
+        return None
+    entry = assessment.instrument_ask
+    zone_low = assessment.instrument_bid
+    zone_high = entry
+    invalidation = (entry * (Decimal("1") - _LEVERAGED_STOP_FRACTION)).quantize(
+        _FOUR_PLACES,
+        rounding=ROUND_HALF_UP,
+    )
+    if invalidation >= zone_low:
+        invalidation = (zone_low * Decimal("0.99")).quantize(
+            _FOUR_PLACES,
+            rounding=ROUND_HALF_UP,
+        )
+    risk = entry - invalidation
+    target = (entry + risk * _LEVERAGED_REWARD_RISK).quantize(
+        _FOUR_PLACES,
+        rounding=ROUND_HALF_UP,
+    )
+    evidence_ids = tuple(
+        dict.fromkeys(
+            value
+            for value in (
+                assessment.assessment_id,
+                assessment.source_analysis_id,
+                assessment.source_underlying_flow_state_id,
+                assessment.source_instrument_flow_state_id,
+                assessment.source_support_assessment_id,
+            )
+            if value is not None
+        )
+    )
+    support = (
+        f"support:{assessment.support_state.value}"
+        if assessment.support_state is not None
+        else "support:unavailable"
+    )
+    return EntrySignal(
+        family=EntrySignalFamily.LEVERAGED_THESIS,
+        symbol=assessment.instrument_symbol,
+        created_at=assessment.occurred_at,
+        setup_id=(
+            f"leveraged-thesis:{assessment.underlying_symbol}:"
+            f"{assessment.instrument_symbol}:{assessment.occurred_at.date().isoformat()}"
+        ),
+        entry_price=entry,
+        horizons=(AnalysisHorizon.INTRADAY,),
+        zone_low=zone_low,
+        zone_high=zone_high,
+        invalidation=invalidation,
+        targets=(target,),
+        policy_id="leveraged-thesis",
+        policy_version="1.0.0",
+        reasons=tuple(
+            dict.fromkeys(
+                (
+                    *assessment.reasons,
+                    f"underlying:{assessment.underlying_symbol}",
+                    f"direction:{assessment.direction.value}",
+                    f"exposure:{assessment.exposure.value}",
+                    support,
+                    "instrument_risk_envelope:3pct_stop_2r_target",
+                )
+            )
+        ),
+        source_event_ids=evidence_ids,
     )
 
 

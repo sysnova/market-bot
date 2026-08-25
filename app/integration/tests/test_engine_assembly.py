@@ -49,10 +49,6 @@ from app.integration.marketbot_definition import (
     load_marketbot_definition as load_definition_model,
 )
 from app.intraday_engine import IntradayEngineV3, IntradayEngineV4
-from app.intraday_opportunity_engine import (
-    InMemoryIntradayOpportunityStore,
-    IntradayOpportunityEngine,
-)
 from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, PortfolioAllocation
 from app.long_term_engine import LongTermEngineV2
 from app.news_intelligence_engine import NewsIntelligenceEngine
@@ -60,7 +56,6 @@ from app.options_gamma_engine import OptionsGammaEngine
 from app.order_flow_engine import OrderFlowEngine
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
-from app.scalp_engine import ScalpEngine
 from app.signal_fusion_engine import SignalFusionEngineV05
 from app.support_confirmation_engine import (
     SupportConfirmationEngine,
@@ -129,19 +124,14 @@ STABLE_SWING_THESIS_DEFINITION = ROOT / "configs/marketbot/7.31.0.yaml"
 MICROSTRUCTURE_DEFINITION = ROOT / "configs/marketbot/7.32.0.yaml"
 
 
-def test_microstructure_definition_adds_operational_paper_engines() -> None:
+def test_microstructure_definition_adds_operational_engines() -> None:
     assembly = MarketBotAssembly.from_path(MICROSTRUCTURE_DEFINITION)
 
     assert assembly.definition.version == "7.32.0"
     assert isinstance(assembly.build_order_flow(), OrderFlowEngine)
-    assert isinstance(assembly.build_scalp(), ScalpEngine)
     assert isinstance(assembly.build_swing(), SwingEngineV13)
     assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV17)
     assert isinstance(assembly.build_swing_trade(), SwingTradeEngineV15)
-    assert isinstance(
-        assembly.build_intraday_opportunity(store=InMemoryIntradayOpportunityStore()),
-        IntradayOpportunityEngine,
-    )
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -386,8 +376,7 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
         EngineSlot.GERI_4H,
         EngineSlot.SWING_TRADE,
         EngineSlot.ORDER_FLOW,
-        EngineSlot.SCALP,
-        EngineSlot.INTRADAY_OPPORTUNITY,
+        EngineSlot.LEVERAGED_THESIS,
     }
     assert definition.version == "7.2.0"
     assert all(item.strategy.version for item in definition.engines.values())
@@ -409,8 +398,7 @@ def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
         EngineSlot.GERI_4H,
         EngineSlot.SWING_TRADE,
         EngineSlot.ORDER_FLOW,
-        EngineSlot.SCALP,
-        EngineSlot.INTRADAY_OPPORTUNITY,
+        EngineSlot.LEVERAGED_THESIS,
     }
     assert definition.version == "7.3.0"
     assert definition.engines[EngineSlot.VOLUME_STRUCTURE].implementation == "1.0.0"

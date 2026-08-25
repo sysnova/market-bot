@@ -32,6 +32,8 @@ GERI_TRANSITION_EVENT: Final = "4hgeri.transitioned"
 SWING_TRADE_ASSESSMENT_EVENT: Final = "swing-trade.assessed"
 SWING_TRADE_TRANSITION_EVENT: Final = "swing-trade.transitioned"
 OPTIONS_GAMMA_ASSESSMENT_EVENT: Final = "options-gamma.assessed"
+LEVERAGED_THESIS_ASSESSMENT_EVENT: Final = "leveraged-thesis.assessed"
+LEVERAGED_THESIS_TRANSITION_EVENT: Final = "leveraged-thesis.transitioned"
 UNIVERSE_CHANGED_EVENT: Final = "universe.changed"
 FUSION_ASSESSMENT_EVENT: Final = "signal-fusion.assessed"
 FUSION_TRANSITION_EVENT: Final = "signal-fusion.transitioned"
@@ -138,6 +140,17 @@ def swing_trade_transition_subject(maturity: object | None, symbol: str) -> str:
 
 def options_gamma_assessment_subject(symbol: str) -> str:
     return f"marketbot.v1.options-gamma.assessment.{_symbol_token(symbol)}"
+
+
+def leveraged_thesis_assessment_subject(symbol: str) -> str:
+    return f"marketbot.v1.leveraged-thesis.assessment.{_symbol_token(symbol)}"
+
+
+def leveraged_thesis_transition_subject(state: object, symbol: str) -> str:
+    value = getattr(state, "value", state)
+    if not isinstance(value, str) or not value:
+        raise ValueError("leveraged thesis state is invalid")
+    return f"marketbot.v1.leveraged-thesis.transition.{value}.{_symbol_token(symbol)}"
 
 
 def fusion_assessment_subject(symbol: str) -> str:

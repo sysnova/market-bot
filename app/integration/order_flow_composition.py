@@ -29,9 +29,14 @@ from app.contracts import (
     OrderFlowState,
     SubscriptionOptions,
     SupportAssessment,
+    market_quote_subject,
+    market_trade_cancel_subject,
+    market_trade_correction_subject,
+    market_trade_subject,
     order_flow_state_subject,
     order_flow_support_subject,
     order_flow_transition_subject,
+    support_assessment_subject,
 )
 from app.event_bus import NatsJetStreamEventBus
 from app.event_bus.codec import decode_envelope
@@ -48,6 +53,21 @@ class _CoreMessage(Protocol):
 
 _STATE_PUBLISH_INTERVAL = timedelta(seconds=1)
 _SUPPORT_REFRESH_INTERVAL = timedelta(seconds=15)
+
+
+def order_flow_input_subjects(symbols: tuple[str, ...]) -> tuple[str, ...]:
+    """Return exact Core NATS subjects for the bounded microstructure scope."""
+
+    return tuple(
+        subject
+        for symbol in symbols
+        for subject in (
+            market_quote_subject(symbol),
+            market_trade_subject(symbol),
+            market_trade_correction_subject(symbol),
+            market_trade_cancel_subject(symbol),
+        )
+    )
 
 
 async def run_order_flow_process(  # pragma: no cover - long-running NATS process
@@ -171,17 +191,28 @@ async def run_order_flow_process(  # pragma: no cover - long-running NATS proces
         if update is not None:
             await publish_update(update, causation_id=envelope.event_id)
 
-    subscriptions = [
-        await core.subscribe("marketbot.market.data.quote.>", cb=handle),
-        await core.subscribe("marketbot.market.data.trade.>", cb=handle),
-        await core.subscribe("marketbot.market.data.trade-correction.>", cb=handle),
-        await core.subscribe("marketbot.market.data.trade-cancel.>", cb=handle),
-    ]
-    support_subscription = await durable.subscribe(
-        "marketbot.v1.support-confirmation.assessment.>",
-        handle_support,
-        options=SubscriptionOptions(replay_latest_per_subject=True),
+    hot_subjects = order_flow_input_subjects(engine.tracked_symbols)
+    if not hot_subjects:
+        hot_subjects = (
+            "marketbot.market.data.quote.>",
+            "marketbot.market.data.trade.>",
+            "marketbot.market.data.trade-correction.>",
+            "marketbot.market.data.trade-cancel.>",
+        )
+    subscriptions = [await core.subscribe(subject, cb=handle) for subject in hot_subjects]
+    support_subjects = (
+        tuple(support_assessment_subject(symbol) for symbol in engine.tracked_symbols)
+        if engine.tracked_symbols
+        else ("marketbot.v1.support-confirmation.assessment.>",)
     )
+    support_subscriptions = [
+        await durable.subscribe(
+            subject,
+            handle_support,
+            options=SubscriptionOptions(replay_latest_per_subject=True),
+        )
+        for subject in support_subjects
+    ]
     try:
         if ready_path is not None:
             spec = assembly.spec(EngineSlot.ORDER_FLOW)
@@ -192,6 +223,8 @@ async def run_order_flow_process(  # pragma: no cover - long-running NATS proces
                     "service": "order-flow",
                     "ephemeral_input": True,
                     "output": "durable-compact-state",
+                    "tracked_symbols": engine.tracked_symbols,
+                    "hot_subject_count": len(hot_subjects),
                     "mode": "ACTIVE",
                     "marketbot_definition_version": assembly.definition.version,
                     "engine_implementation": spec.implementation,
@@ -202,7 +235,8 @@ async def run_order_flow_process(  # pragma: no cover - long-running NATS proces
     finally:
         for subscription in subscriptions:
             await subscription.unsubscribe()
-        await support_subscription.unsubscribe()
+        for subscription in support_subscriptions:
+            await subscription.unsubscribe()
         await core.drain()
         await durable.close()
 

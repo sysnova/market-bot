@@ -110,7 +110,7 @@ finally {
 
 $ActiveEngineSlots = @($RuntimePlan.active_engine_slots)
 $ProcessSpecs = @($RuntimePlan.processes)
-$ManualStartProcessNames = @("order-flow", "scalp", "intraday-opportunity")
+$ManualStartProcessNames = @("order-flow")
 foreach ($Spec in $ProcessSpecs) {
     $Arguments = @($Spec.arguments)
     if ($Arguments.Count -ge 2 -and $Arguments[0] -eq "run" -and $Arguments[1] -eq "marketbot") {

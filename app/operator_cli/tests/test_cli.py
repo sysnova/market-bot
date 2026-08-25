@@ -47,7 +47,6 @@ def test_root_help_lists_operator_groups() -> None:
         "alerts",
         "entry-watch",
         "entry-opportunity",
-        "intraday-opportunity",
         "outbox",
         "monitor",
         "connector",
@@ -95,8 +94,6 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("alerts", "patreon-caps"),
         ("monitor", "patreon-caps"),
         ("monitor", "entry-opportunity"),
-        ("monitor", "scalping"),
-        ("monitor", "intraday-opportunity"),
         ("monitor", "swing-channel-4h"),
         ("monitor", "4hgeri"),
         ("monitor", "swing-trade"),
@@ -207,7 +204,7 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.32.0"
+    assert payload["version"] == "7.34.0"
     assert payload["engines"]["swing"]["implementation"] == "13.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "3.3.0"
     assert payload["engines"]["swing-channel-4h"]["implementation"] == "1.1.0"
@@ -216,9 +213,9 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
     assert payload["engines"]["entry-opportunity"]["implementation"] == "7.0.0"
     assert payload["engines"]["swing-trade"]["implementation"] == "1.5.0"
     assert payload["engines"]["intraday"]["implementation"] == "4.0.0"
-    assert payload["engines"]["order-flow"]["implementation"] == "1.0.0"
-    assert payload["engines"]["scalp"]["mode"] == "active"
-    assert payload["engines"]["intraday-opportunity"]["mode"] == "active"
+    assert payload["engines"]["order-flow"]["implementation"] == "1.1.0"
+    assert payload["engines"]["order-flow"]["strategy"]["version"] == "1.1.0"
+    assert payload["engines"]["leveraged-thesis"]["mode"] == "active"
     assert payload["engines"]["portfolio-flow"]["strategy"]["version"] == "2.0.0"
     assert payload["engines"]["options-gamma"]["mode"] == "active"
     assert payload["engines"]["patreon-caps"]["mode"] == "on-demand"
@@ -254,7 +251,7 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.32.0"
+    assert payload["definition_version"] == "7.34.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
@@ -416,29 +413,6 @@ def test_entry_opportunity_history_cleanup_defaults_to_dry_run() -> None:
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["applied"] is False
-
-
-def test_intraday_opportunity_report_prints_weekly_paper_effectiveness() -> None:
-    async def fake_load(*, days: int) -> dict[str, object]:
-        assert days == 7
-        return {
-            "mode": "PAPER",
-            "closed": 4,
-            "wins": 3,
-            "effectiveness_rate_percent": "75.0000",
-            "operations": (),
-        }
-
-    with patch(
-        "app.integration.intraday_opportunity_report.load_intraday_opportunity_report",
-        new=fake_load,
-    ):
-        result = runner.invoke(app, ["intraday-opportunity", "report"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["mode"] == "PAPER"
-    assert payload["effectiveness_rate_percent"] == "75.0000"
 
 
 def test_entry_opportunity_audit_defaults_to_human_output() -> None:

@@ -32,10 +32,7 @@ if TYPE_CHECKING:
     from app.entry_watcher import EntryWatcher, EntryWatcherPolicy
     from app.entry_watcher.ports import EntryWatchStore
     from app.intraday_engine import IntradayEngine
-    from app.intraday_opportunity_engine import (
-        IntradayOpportunityEngine,
-        IntradayOpportunityStore,
-    )
+    from app.leveraged_thesis_engine import LeveragedThesisEngine
     from app.long_portfolio_engine import (
         LongPortfolioEngine,
         LongPortfolioState,
@@ -48,7 +45,6 @@ if TYPE_CHECKING:
     from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsWatch
     from app.peter_lynch_engine import PeterLynchEngine
     from app.portfolio_flow_engine import PortfolioFlowEngineV1
-    from app.scalp_engine import ScalpEngine
     from app.signal_fusion_engine import SignalFusionEngine
     from app.support_confirmation_engine import SupportConfirmationEngine
     from app.swing_4h_geri_engine import Swing4HGeriEngine
@@ -171,17 +167,10 @@ class MarketBotAssembly:
     def build_order_flow(self) -> OrderFlowEngine:
         return cast("OrderFlowEngine", self.build(EngineSlot.ORDER_FLOW))
 
-    def build_scalp(self) -> ScalpEngine:
-        return cast("ScalpEngine", self.build(EngineSlot.SCALP))
-
-    def build_intraday_opportunity(
-        self,
-        *,
-        store: IntradayOpportunityStore,
-    ) -> IntradayOpportunityEngine:
+    def build_leveraged_thesis(self) -> LeveragedThesisEngine:
         return cast(
-            "IntradayOpportunityEngine",
-            self.build(EngineSlot.INTRADAY_OPPORTUNITY, store=store),
+            "LeveragedThesisEngine",
+            self.build(EngineSlot.LEVERAGED_THESIS),
         )
 
     def build_entry_watcher(

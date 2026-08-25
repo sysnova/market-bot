@@ -14,6 +14,8 @@ from app.contracts import (
     entry_watch_transition_subject,
     geri_assessment_subject,
     geri_transition_subject,
+    leveraged_thesis_assessment_subject,
+    leveraged_thesis_transition_subject,
     local_alert_subject,
     market_bar_subject,
     patreon_caps_assessment_subject,
@@ -30,6 +32,12 @@ def test_stable_analysis_subjects_are_partitioned_by_kind_and_symbol() -> None:
     )
     assert analysis_result_subject(AnalysisHorizon.SWING, "AAPL") == (
         "marketbot.v1.analysis.result.SWING.AAPL"
+    )
+    assert leveraged_thesis_assessment_subject("asts") == (
+        "marketbot.v1.leveraged-thesis.assessment.ASTS"
+    )
+    assert leveraged_thesis_transition_subject("BUY_CONFIRMED", "astn") == (
+        "marketbot.v1.leveraged-thesis.transition.BUY_CONFIRMED.ASTN"
     )
     assert local_alert_subject(AlertSeverity.ACTION, "NVDA") == (
         "marketbot.v1.alert.local.ACTION.NVDA"

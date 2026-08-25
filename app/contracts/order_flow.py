@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Final, Literal
 from uuid import UUID
@@ -225,6 +225,9 @@ class OrderFlowState(StrictFrozenModel):
     state: OrderFlowStateKind
     current_price: PositiveDecimal
     mid_price: PositiveDecimal | None = None
+    bid_price: PositiveDecimal | None = None
+    ask_price: PositiveDecimal | None = None
+    spread_bps: NonNegativeDecimal | None = None
     cumulative_delta: Decimal = Decimal("0")
     confidence: UnitInterval
     data_quality: UnitInterval
@@ -245,6 +248,20 @@ class OrderFlowState(StrictFrozenModel):
             raise ValueError("windows must use the canonical 1/5/15/60/300 second order")
         if self.quote_fresh and (self.mid_price is None or self.quote_age_ms is None):
             raise ValueError("fresh quote state requires mid_price and quote_age_ms")
+        quote_evidence = (self.bid_price, self.ask_price, self.spread_bps)
+        if any(value is not None for value in quote_evidence) and any(
+            value is None for value in quote_evidence
+        ):
+            raise ValueError("order-flow quote evidence must be complete")
+        if self.bid_price is not None and self.ask_price is not None:
+            if self.bid_price > self.ask_price:
+                raise ValueError("bid_price cannot exceed ask_price")
+            midpoint = (self.bid_price + self.ask_price) / Decimal("2")
+            expected_spread = (
+                (self.ask_price - self.bid_price) / midpoint * Decimal("10000")
+            ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+            if self.spread_bps != expected_spread:
+                raise ValueError("spread_bps must match bid_price and ask_price")
         if len(self.source_event_ids) != len(set(self.source_event_ids)):
             raise ValueError("source_event_ids must be unique")
         if any(event_id.version != 7 for event_id in self.source_event_ids):

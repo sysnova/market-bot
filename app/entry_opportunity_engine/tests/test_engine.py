@@ -927,6 +927,7 @@ async def test_v2_recovery_gets_a_distinct_l4_checkpoint_and_outcome_setup() -> 
         EntrySignalFamily.LONG_PORTFOLIO,
         EntrySignalFamily.SIGNAL_FUSION,
         EntrySignalFamily.PORTFOLIO_FLOW,
+        EntrySignalFamily.LEVERAGED_THESIS,
     ),
 )
 async def test_v2_registers_analytical_families_without_core_maturity(

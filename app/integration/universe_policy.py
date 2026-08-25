@@ -58,16 +58,12 @@ OPTIONS_GAMMA = UniversePolicyDetails(
     warmup_policy="startup-universe-snapshot-then-periodic-options-refresh",
 )
 MICROSTRUCTURE = UniversePolicyDetails(
-    universe_policy="bounded-active-watchlist-plus-positive-holdings",
+    universe_policy="fixed-order-flow-strategy-symbols-only",
     warmup_policy="live-quote-and-trade-window-before-state-publication",
 )
-SCALP_DERIVED = UniversePolicyDetails(
-    universe_policy="derived-from-fresh-order-flow-state",
-    warmup_policy="latest-order-flow-and-completed-intraday-bar-context",
-)
-INTRADAY_OPPORTUNITY = UniversePolicyDetails(
-    universe_policy="derived-from-scalp-transitions-and-active-paper-positions",
-    warmup_policy="durable-paper-state-restore-before-live-transitions",
+LEVERAGED_THESIS = UniversePolicyDetails(
+    universe_policy="fixed-underlying-and-directional-instrument-pairs",
+    warmup_policy="latest-intraday-and-order-flow-assessments-from-nats",
 )
 NEWS_INTELLIGENCE = UniversePolicyDetails(
     universe_policy="active-watchlist-plus-positive-holdings",
@@ -94,8 +90,7 @@ ENGINE_UNIVERSE_POLICIES: dict[str, UniversePolicyDetails] = {
     "swing-trade": SWING_TRADE,
     "intraday": CORE_DYNAMIC,
     "order-flow": MICROSTRUCTURE,
-    "scalp": SCALP_DERIVED,
-    "intraday-opportunity": INTRADAY_OPPORTUNITY,
+    "leveraged-thesis": LEVERAGED_THESIS,
     "volume-structure": VOLUME_STRUCTURE,
     "options-gamma": OPTIONS_GAMMA,
     "news-intelligence": NEWS_INTELLIGENCE,

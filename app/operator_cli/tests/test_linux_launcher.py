@@ -24,14 +24,13 @@ def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:
     assert "tmux kill-pane -a" not in script
 
 
-def test_linux_launcher_prepares_current_definition_environment_and_database() -> None:
+def test_linux_launcher_prepares_current_definition_environment() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     launcher = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
 
-    assert "configs/marketbot/7.32.0.yaml" in script
+    assert "configs/marketbot/7.34.0.yaml" in script
     assert 'export MARKETBOT_DEFINITION_PATH="$DEFINITION_PATH"' in script
     assert "uv sync --frozen" in script
-    assert "app.integration.local_schema_bootstrap" in script
     assert launcher.index("prepare_runtime") < launcher.index("write_runtime_plan")
 
 
@@ -58,36 +57,17 @@ def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
     assert "list-windows" in script
 
 
-def test_linux_launcher_keeps_scalp_pipeline_engines_manual() -> None:
+def test_linux_launcher_starts_order_flow_from_the_runtime_plan() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     control = script.split("run_control()", 1)[1].split("launch_tmux()", 1)[0]
-    launcher = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
 
-    assert (
-        'MANUAL_START_PROCESSES=("order-flow" "scalp" "intraday-opportunity")'
-        in script
-    )
+    assert "MANUAL_START_PROCESSES=()" in script
     assert 'process_starts_manually "$name"' in control
     assert 'automatic_batch_names+=("$name")' in control
     assert 'plan_ready_paths "${automatic_batch_names[@]}"' in control
     assert '"${MANUAL_START_PROCESSES[@]}"' in script
     assert "--role order-flow" in script
-    assert "--role scalp-engine" in script
-    assert "--role intraday-opportunity-engine" in script
     assert "order-flow) run_manual_plan_process order-flow ;;" in script
-    assert "scalp-engine) run_manual_plan_process scalp ;;" in script
-    assert (
-        "intraday-opportunity-engine) "
-        "run_manual_plan_process intraday-opportunity ;;" in script
-    )
-    assert "run marketbot monitor scalping" in script
-    assert "run marketbot monitor intraday-opportunity" in script
-    assert "scalping) run_scalping_monitor ;;" in script
-    assert "intraday-ops) run_intraday_ops_monitor ;;" in script
-    assert "scalping-monitor.ready.json" in script
-    assert "intraday-opportunity-monitor.ready.json" in script
-    assert '-n Scalping "$scalping"' not in launcher
-    assert '-n IntradayOps "$intraday_ops"' not in launcher
 
 
 def test_linux_launcher_adds_independent_alpaca_news_window() -> None:
@@ -302,8 +282,6 @@ def test_market_stream_is_gated_only_by_headless_engine_readiness() -> None:
     for monitor in (
         "confirmed-buy-monitor",
         "entry-opportunity-monitor",
-        "scalping-monitor",
-        "intraday-opportunity-monitor",
         "swing-channel-4h-monitor",
         "4hgeri-monitor",
         "swing-trade-monitor",

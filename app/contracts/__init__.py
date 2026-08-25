@@ -17,6 +17,8 @@ from .analysis_events import (
     FUSION_TRANSITION_EVENT,
     GERI_ASSESSMENT_EVENT,
     GERI_TRANSITION_EVENT,
+    LEVERAGED_THESIS_ASSESSMENT_EVENT,
+    LEVERAGED_THESIS_TRANSITION_EVENT,
     LOCAL_ALERT_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
@@ -45,6 +47,8 @@ from .analysis_events import (
     fusion_transition_subject,
     geri_assessment_subject,
     geri_transition_subject,
+    leveraged_thesis_assessment_subject,
+    leveraged_thesis_transition_subject,
     local_alert_subject,
     market_bar_subject,
     options_gamma_assessment_subject,
@@ -122,16 +126,11 @@ from .enums import (
 )
 from .event_bus import EventBus, EventHandler, Subscription, SubscriptionOptions
 from .geri_4h import GeriAssessment, GeriStructuralLevel, GeriTransition
-from .intraday_opportunity import (
-    IntradayCloseReason,
-    IntradayFill,
-    IntradayFillRole,
-    IntradayOpportunity,
-    IntradayOpportunityEvent,
-    IntradayOpportunityEventKind,
-    IntradayOpportunityStatus,
-    IntradaySide,
-    IntradayTradeAction,
+from .leveraged_thesis import (
+    LeveragedExposure,
+    LeveragedThesisAssessment,
+    LeveragedThesisState,
+    LeveragedThesisTransition,
 )
 from .market_analysis import AnalysisResult, LocalAlert, MarketBar
 from .market_history import (
@@ -143,7 +142,6 @@ from .market_history import (
 )
 from .market_rotation import MarketRotationReport, RotationSector
 from .microstructure_events import (
-    INTRADAY_OPPORTUNITY_TRANSITION_EVENT,
     MARKET_QUOTE_EVENT,
     MARKET_TRADE_CANCEL_EVENT,
     MARKET_TRADE_CORRECTION_EVENT,
@@ -151,14 +149,9 @@ from .microstructure_events import (
     ORDER_FLOW_STATE_EVENT,
     ORDER_FLOW_SUPPORT_ASSESSMENT_EVENT,
     ORDER_FLOW_TRANSITION_EVENT,
-    SCALP_ASSESSMENT_EVENT,
-    SCALP_TRANSITION_EVENT,
-    intraday_opportunity_subject,
     order_flow_state_subject,
     order_flow_support_subject,
     order_flow_transition_subject,
-    scalp_assessment_subject,
-    scalp_transition_subject,
 )
 from .options_gamma import (
     GammaAssessment,
@@ -198,14 +191,6 @@ from .rules import (
     RulePackManifest,
     RuleResult,
 )
-from .scalp import (
-    ScalpAssessment,
-    ScalpDirection,
-    ScalpExitReason,
-    ScalpSetup,
-    ScalpState,
-    ScalpTransition,
-)
 from .signal_fusion import FusionAssessment, FusionTransition
 from .strategy import (
     CompiledStrategy,
@@ -239,7 +224,8 @@ __all__ = [
     "FUSION_TRANSITION_EVENT",
     "GERI_ASSESSMENT_EVENT",
     "GERI_TRANSITION_EVENT",
-    "INTRADAY_OPPORTUNITY_TRANSITION_EVENT",
+    "LEVERAGED_THESIS_ASSESSMENT_EVENT",
+    "LEVERAGED_THESIS_TRANSITION_EVENT",
     "LOCAL_ALERT_EVENT",
     "MARKET_BAR_EVENT",
     "MARKET_BAR_UPDATED_EVENT",
@@ -257,8 +243,6 @@ __all__ = [
     "ORDER_FLOW_WINDOWS",
     "PATREON_CAPS_ASSESSMENT_EVENT",
     "PATREON_CAPS_TRANSITION_EVENT",
-    "SCALP_ASSESSMENT_EVENT",
-    "SCALP_TRANSITION_EVENT",
     "SERVICE_HEALTH_EVENT",
     "SUPPORT_ASSESSMENT_EVENT",
     "SUPPORT_TRANSITION_EVENT",
@@ -314,15 +298,10 @@ __all__ = [
     "GeriStructuralLevel",
     "GeriTransition",
     "Identifier",
-    "IntradayCloseReason",
-    "IntradayFill",
-    "IntradayFillRole",
-    "IntradayOpportunity",
-    "IntradayOpportunityEvent",
-    "IntradayOpportunityEventKind",
-    "IntradayOpportunityStatus",
-    "IntradaySide",
-    "IntradayTradeAction",
+    "LeveragedExposure",
+    "LeveragedThesisAssessment",
+    "LeveragedThesisState",
+    "LeveragedThesisTransition",
     "LocalAlert",
     "MacroRegime",
     "MarketBar",
@@ -365,12 +344,6 @@ __all__ = [
     "RuleTraceStatus",
     "RuleTraceStep",
     "RuleType",
-    "ScalpAssessment",
-    "ScalpDirection",
-    "ScalpExitReason",
-    "ScalpSetup",
-    "ScalpState",
-    "ScalpTransition",
     "ScoringPolicy",
     "ScoringWeight",
     "SemVer",
@@ -413,7 +386,8 @@ __all__ = [
     "fusion_transition_subject",
     "geri_assessment_subject",
     "geri_transition_subject",
-    "intraday_opportunity_subject",
+    "leveraged_thesis_assessment_subject",
+    "leveraged_thesis_transition_subject",
     "local_alert_subject",
     "market_bar_subject",
     "market_quote_subject",
@@ -427,8 +401,6 @@ __all__ = [
     "order_flow_transition_subject",
     "patreon_caps_assessment_subject",
     "patreon_caps_transition_subject",
-    "scalp_assessment_subject",
-    "scalp_transition_subject",
     "service_health_subject",
     "support_assessment_subject",
     "support_transition_subject",

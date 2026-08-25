@@ -244,14 +244,9 @@ def build_runtime_process_plan(
             ("run", "marketbot", "engine", "order-flow"),
         ),
         (
-            "scalp",
-            EngineSlot.SCALP,
-            ("run", "marketbot", "engine", "scalp"),
-        ),
-        (
-            "intraday-opportunity",
-            EngineSlot.INTRADAY_OPPORTUNITY,
-            ("run", "marketbot", "engine", "intraday-opportunity"),
+            "leveraged-thesis",
+            EngineSlot.LEVERAGED_THESIS,
+            ("run", "marketbot", "engine", "leveraged-thesis"),
         ),
         (
             "market-rotation-v1",
@@ -320,10 +315,12 @@ def build_runtime_process_plan(
                 if EngineSlot.SUPPORT_CONFIRMATION in active
                 else ()
             )
-        elif slot is EngineSlot.SCALP:
-            dependencies = ("order-flow",)
-        elif slot is EngineSlot.INTRADAY_OPPORTUNITY:
-            dependencies = ("outbox-relay", "scalp")
+        elif slot is EngineSlot.LEVERAGED_THESIS:
+            dependencies = ("intraday", "order-flow") + (
+                ("support-confirmation-v0",)
+                if EngineSlot.SUPPORT_CONFIRMATION in active
+                else ()
+            )
         elif slot is EngineSlot.SUPPORT_CONFIRMATION:
             dependencies = ("market-history-v1",)
         elif (

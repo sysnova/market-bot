@@ -87,6 +87,21 @@ async def load_support_universe(provider: HoldingsProvider) -> UniverseSnapshot:
     return snapshot
 
 
+def support_analysis_symbols(
+    tracked_symbols: Iterable[str],
+    thesis_underlyings: Iterable[str] = (),
+) -> tuple[str, ...]:
+    """Merge the shared universe with fixed leveraged-thesis underlyings."""
+
+    return tuple(
+        dict.fromkeys(
+            symbol.strip().upper()
+            for symbol in (*tracked_symbols, *thesis_underlyings)
+            if symbol.strip()
+        )
+    )
+
+
 class SupportConfirmationRuntime:
     def __init__(
         self,
@@ -264,21 +279,28 @@ async def run_support_confirmation_process(
             if enrichment_mode
             else await load_support_holdings(provider)
         )
+        leveraged_spec = assembly.definition.engines.get(EngineSlot.LEVERAGED_THESIS)
+        thesis_underlyings = (
+            tuple(pair.underlying_symbol for pair in assembly.build_leveraged_thesis().pairs)
+            if leveraged_spec is not None and leveraged_spec.mode is EngineMode.ACTIVE
+            else ()
+        )
+        eligible_symbols = support_analysis_symbols(universe.symbols, thesis_underlyings)
         requested = symbol.strip().upper() if symbol is not None else None
-        if requested is not None and requested not in universe.symbols:
+        if requested is not None and requested not in eligible_symbols:
             return {
                 "service": "support-confirmation-v0",
                 "mode": "ACTIVE",
                 "requested_symbol": requested,
                 "eligible": False,
                 "reason": (
-                    "tracked_swing_symbol_required"
+                    "tracked_or_thesis_symbol_required"
                     if enrichment_mode
                     else "positive_holding_required"
                 ),
                 "assessments_published": 0,
             }
-        selected_symbols = (requested,) if requested is not None else universe.symbols
+        selected_symbols = (requested,) if requested is not None else eligible_symbols
         bus = await connect_nats(settings)
         runtime = SupportConfirmationRuntime(
             engine=assembly.build_support_confirmation(), publisher=bus
@@ -313,6 +335,7 @@ async def run_support_confirmation_process(
             "mode": "ACTIVE",
             "universe": ("shared-swing-universe" if enrichment_mode else "positive-holdings-only"),
             "universe_source": universe.source,
+            "fixed_thesis_underlyings": list(thesis_underlyings),
             "symbols": list(selected_symbols),
             "assessments_published": published,
             "persistence": "nats-jetstream-7d",

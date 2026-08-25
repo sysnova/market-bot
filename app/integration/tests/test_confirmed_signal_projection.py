@@ -89,6 +89,7 @@ def test_recovery_uses_its_real_alert_assigned_maturity() -> None:
         (EntrySignalFamily.PATREON_CAPS, "PATREON CAPS CONFIRMED"),
         (EntrySignalFamily.LONG_PORTFOLIO, "LONG PORTFOLIO BUY"),
         (EntrySignalFamily.SIGNAL_FUSION, "SIGNAL FUSION CONFIRMED"),
+        (EntrySignalFamily.LEVERAGED_THESIS, "LEVERAGED THESIS BUY"),
     ],
 )
 def test_final_analytical_families_are_confirmed_without_fake_l4(
