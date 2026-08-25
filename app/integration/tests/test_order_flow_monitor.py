@@ -23,7 +23,7 @@ def test_order_flow_monitor_uses_only_exact_bounded_state_subjects() -> None:
 
 
 def test_order_flow_dashboard_renders_states_and_pending_symbols() -> None:
-    dashboard = OrderFlowDashboard(symbols=SYMBOLS)
+    dashboard = OrderFlowDashboard(symbols=SYMBOLS, expected_engine_version="1.1.0")
     state = _state()
 
     assert dashboard.merge(state) is True
@@ -31,11 +31,34 @@ def test_order_flow_dashboard_renders_states_and_pending_symbols() -> None:
     rendered = format_order_flow_dashboard(dashboard, refreshed_at=NOW)
 
     assert "ORDER FLOW | SIP L1 | 5 SYMBOLS" in rendered
+    assert "ENGINE 1.1.0" in rendered
+    assert "ESTADO | RECIBIENDO ASSESSMENTS" in rendered
     assert "ASTS | BUY_PRESSURE" in rendered
     assert "BID 99.9900 | ASK 100.0100 | SPREAD 2.0000bps" in rendered
     assert "CVD +300.0000" in rendered
     assert "5s D+60.0000 T12 P+4.0000bps" in rendered
     assert "ASTX | PENDIENTE" in rendered
+
+
+def test_empty_order_flow_dashboard_explains_that_it_is_waiting_for_market_events() -> None:
+    rendered = format_order_flow_dashboard(
+        OrderFlowDashboard(symbols=SYMBOLS, expected_engine_version="1.1.0"),
+        refreshed_at=NOW,
+    )
+
+    assert "ESTADO | ESPERANDO EVENTOS DE MERCADO" in rendered
+    assert "Todavia no se recibio ningun assessment de Order Flow" in rendered
+    assert "ASTS | PENDIENTE" in rendered
+
+
+def test_dashboard_ignores_replayed_states_from_an_old_engine_version() -> None:
+    dashboard = OrderFlowDashboard(symbols=SYMBOLS, expected_engine_version="1.1.0")
+
+    assert dashboard.merge(_state().model_copy(update={"engine_version": "1.0.0"})) is True
+    rendered = format_order_flow_dashboard(dashboard, refreshed_at=NOW)
+
+    assert "IGNORADOS | assessment incompatible 1.0.0" in rendered
+    assert "ASTS | PENDIENTE" in rendered
 
 
 def _state() -> OrderFlowState:

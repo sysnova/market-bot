@@ -3,8 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
-DEFINITION_PATH="${MARKETBOT_DEFINITION_PATH:-$PROJECT_ROOT/configs/marketbot/7.34.0.yaml}"
-export MARKETBOT_DEFINITION_PATH="$DEFINITION_PATH"
+DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.34.0.yaml"
 MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
 ROLE="launcher"
@@ -47,6 +46,8 @@ Usage: ./scripts/linux/start-market-bot.sh [options]
 Options:
   --symbols AAPL,MSFT   Override the PostgreSQL universe for this run.
   --runtime-root PATH   Runtime directory (default: .runtime).
+  --definition-path PATH
+                        Explicit immutable MarketBot definition (default: 7.34.0).
   --no-bell             Disable alert bells.
   --detach              Create the tmux runtime without attaching a client.
   --ready-timeout SEC   Readiness timeout (default: 1800).
@@ -63,6 +64,7 @@ while (($#)); do
     --role) ROLE="$2"; shift 2 ;;
     --symbols) SYMBOLS="$2"; shift 2 ;;
     --runtime-root) RUNTIME_ROOT="$2"; shift 2 ;;
+    --definition-path) DEFINITION_PATH="$2"; shift 2 ;;
     --no-bell) NO_BELL=1; shift ;;
     --detach) DETACH=1; shift ;;
     --ready-timeout) READY_TIMEOUT="$2"; shift 2 ;;
@@ -75,6 +77,10 @@ done
 if [[ "$RUNTIME_ROOT" != /* ]]; then
   RUNTIME_ROOT="$PROJECT_ROOT/$RUNTIME_ROOT"
 fi
+if [[ "$DEFINITION_PATH" != /* ]]; then
+  DEFINITION_PATH="$PROJECT_ROOT/$DEFINITION_PATH"
+fi
+export MARKETBOT_DEFINITION_PATH="$DEFINITION_PATH"
 
 STATUS_ROOT="$RUNTIME_ROOT/status"
 LOG_ROOT="$RUNTIME_ROOT/logs"
@@ -221,9 +227,46 @@ run_opportunities() {
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
 }
 
+validate_order_flow_readiness() {
+  "$UV_PROJECT_ENVIRONMENT/bin/python" - \
+    "$DEFINITION_PATH" "$STATUS_ROOT/order-flow.ready.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+import yaml
+
+definition_path = Path(sys.argv[1])
+ready_path = Path(sys.argv[2])
+definition = yaml.safe_load(definition_path.read_text(encoding="utf-8"))
+ready = json.loads(ready_path.read_text(encoding="utf-8"))
+spec = definition["engines"]["order-flow"]
+expected = {
+    "marketbot_definition_version": definition["version"],
+    "engine_implementation": spec["implementation"],
+    "engine_strategy_version": spec["strategy"]["version"],
+}
+mismatches = {
+    key: {"expected": value, "actual": ready.get(key)}
+    for key, value in expected.items()
+    if ready.get(key) != value
+}
+if mismatches:
+    print("Order Flow readiness does not match the selected definition:", file=sys.stderr)
+    print(json.dumps(mismatches, indent=2, sort_keys=True), file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
 run_order_flow_monitor() {
   cd "$PROJECT_ROOT"
+  printf '\033[2J\033[H'
+  echo 'ORDER FLOW | INICIANDO'
+  echo
+  echo 'Esperando que el engine Order Flow publique readiness...'
+  echo 'Luego se mostraran ASTS/ASTX/ASTN/NBIS/NBIZ al recibir eventos de mercado.'
   wait_ready "$STATUS_ROOT/order-flow.ready.json"
+  validate_order_flow_readiness
   exec_marketbot run marketbot monitor order-flow \
     --ready-path "$STATUS_ROOT/order-flow-monitor.ready.json"
 }
@@ -449,6 +492,7 @@ run_control() {
   echo "Starting independent MarketBot processes..."
   echo "Project: $PROJECT_ROOT"
   echo "Runtime: $RUNTIME_ROOT"
+  echo "Definition: $DEFINITION_PATH"
 
   local batch_line name
   local -a batch_names=()
@@ -500,7 +544,7 @@ launch_tmux() {
   export MARKETBOT_LINUX_READY_TIMEOUT="$READY_TIMEOUT"
   export MARKETBOT_LINUX_SESSION="$SESSION"
 
-  local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
+  local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --definition-path "$DEFINITION_PATH" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
   local control analysis confirmed opportunities order_flow long_portfolio news swing_channel_4h geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys

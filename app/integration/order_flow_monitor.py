@@ -43,18 +43,31 @@ def order_flow_monitor_subjects(symbols: tuple[str, ...]) -> tuple[str, ...]:
 class OrderFlowDashboard:
     """Keep the newest compact state for every configured symbol."""
 
-    def __init__(self, *, symbols: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        *,
+        symbols: tuple[str, ...],
+        expected_engine_version: str,
+    ) -> None:
         normalized = tuple(
             dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
         )
         if not normalized:
             raise ValueError("symbols must not be empty")
+        if not expected_engine_version.strip():
+            raise ValueError("expected_engine_version must not be empty")
         self.symbols = normalized
+        self.expected_engine_version = expected_engine_version.strip()
+        self.ignored_versions: set[str] = set()
         self._states: dict[str, OrderFlowState] = {}
 
     def merge(self, state: OrderFlowState) -> bool:
         if state.symbol not in self.symbols:
             raise ValueError(f"unexpected Order Flow symbol: {state.symbol}")
+        if state.engine_version != self.expected_engine_version:
+            previous_count = len(self.ignored_versions)
+            self.ignored_versions.add(state.engine_version)
+            return len(self.ignored_versions) != previous_count
         current = self._states.get(state.symbol)
         if current is not None and state.occurred_at < current.occurred_at:
             return False
@@ -71,12 +84,30 @@ def format_order_flow_dashboard(
 ) -> str:
     """Render compact L1 pressure, quote and canonical rolling-window telemetry."""
 
+    items = dashboard.items()
+    has_assessment = any(state is not None for _, state in items)
     lines = [
         f"ORDER FLOW | SIP L1 | {len(dashboard.symbols)} SYMBOLS | "
+        f"ENGINE {dashboard.expected_engine_version} | "
         f"REFRESH {refreshed_at.astimezone(_NEW_YORK):%Y-%m-%d %H:%M:%S %Z}",
+        (
+            "ESTADO | RECIBIENDO ASSESSMENTS"
+            if has_assessment
+            else "ESTADO | ESPERANDO EVENTOS DE MERCADO"
+        ),
         "Estados durables; sin ordenes de broker",
     ]
-    for symbol, state in dashboard.items():
+    if dashboard.ignored_versions:
+        lines.append(
+            "IGNORADOS | assessment incompatible "
+            + ",".join(sorted(dashboard.ignored_versions))
+        )
+    if not has_assessment:
+        lines.append(
+            "Todavia no se recibio ningun assessment de Order Flow; "
+            "el panel se actualizara con el primer trade/quote util."
+        )
+    for symbol, state in items:
         if state is None:
             lines.append(f"\n{symbol} | PENDIENTE")
             continue
@@ -125,7 +156,10 @@ async def run_order_flow_monitor(  # pragma: no cover - long-running NATS proces
     bus = await NatsJetStreamEventBus.connect(
         servers=[settings.nats_url.get_secret_value()], prefix="marketbot", stream="MARKETBOT"
     )
-    dashboard = OrderFlowDashboard(symbols=symbols)
+    dashboard = OrderFlowDashboard(
+        symbols=symbols,
+        expected_engine_version=engine.engine_version,
+    )
     clock = SystemClock()
     changed = asyncio.Event()
     lock = asyncio.Lock()

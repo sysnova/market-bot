@@ -247,10 +247,15 @@ class OrderFlowEngine:
         quote = book.quote
         quote_age_ms: Decimal | None = None
         quote_fresh = False
+        quote_reason = "quote_unavailable"
         if quote is not None:
             age = as_of - quote.occurred_at
-            quote_age_ms = max(_ZERO, self._timedelta_decimal_seconds(age) * Decimal("1000"))
-            quote_fresh = timedelta(0) <= age <= self._policy.quote_max_age
+            if age < timedelta(0):
+                quote_reason = "quote_timestamp_ahead_of_trade"
+            else:
+                quote_age_ms = self._timedelta_decimal_seconds(age) * Decimal("1000")
+                quote_fresh = age <= self._policy.quote_max_age
+                quote_reason = "quote_fresh" if quote_fresh else "quote_stale"
 
         total = windows[-1].total_volume
         unknown_ratio = windows[-1].unknown_volume / total if total else _ZERO
@@ -261,7 +266,7 @@ class OrderFlowEngine:
         )
         kind = self._state_kind(windows)
         confidence = self._confidence(primary, data_quality)
-        reasons = (kind.value.lower(),)
+        reasons = (kind.value.lower(), quote_reason)
         current_price = book.latest_price
         if current_price is None:
             raise RuntimeError("cannot evaluate Order Flow without a market price")
@@ -272,7 +277,9 @@ class OrderFlowEngine:
             cumulative_delta=book.cumulative_delta,
             windows=windows,
         )
-        bid_price, ask_price, spread_bps = self._quote_evidence(quote)
+        bid_price, ask_price, spread_bps = self._quote_evidence(
+            quote if quote_fresh else None
+        )
         state = OrderFlowState(
             state_id=_stable_uuid7(as_of, f"state:{context_hash}"),
             symbol=symbol,

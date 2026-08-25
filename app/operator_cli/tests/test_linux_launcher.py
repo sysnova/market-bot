@@ -29,6 +29,10 @@ def test_linux_launcher_prepares_current_definition_environment() -> None:
     launcher = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
 
     assert "configs/marketbot/7.34.0.yaml" in script
+    assert 'DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.34.0.yaml"' in script
+    assert 'DEFINITION_PATH="${MARKETBOT_DEFINITION_PATH:-' not in script
+    assert '--definition-path "$DEFINITION_PATH"' in launcher
+    assert '--definition-path) DEFINITION_PATH="$2"; shift 2 ;;' in script
     assert 'export MARKETBOT_DEFINITION_PATH="$DEFINITION_PATH"' in script
     assert "uv sync --frozen" in script
     assert launcher.index("prepare_runtime") < launcher.index("write_runtime_plan")
@@ -78,6 +82,9 @@ def test_linux_launcher_adds_order_flow_dashboard_window() -> None:
     assert "order-flow-monitor.ready.json" in script
     assert '-n OrderFlow "$order_flow"' in script
     assert "ORDER FLOW — ASTS/ASTX/ASTN/NBIS/NBIZ" in script
+    assert "Esperando que el engine Order Flow publique readiness" in script
+    assert "validate_order_flow_readiness" in script
+    assert "Order Flow readiness does not match the selected definition" in script
 
 
 def test_linux_launcher_adds_independent_alpaca_news_window() -> None:

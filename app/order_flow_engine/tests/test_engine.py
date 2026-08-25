@@ -92,6 +92,25 @@ def test_v11_lifts_executable_quote_evidence_into_the_durable_assessment() -> No
     assert state.spread_bps == Decimal("20.0000")
 
 
+def test_v11_does_not_publish_a_future_quote_as_executable_evidence() -> None:
+    engine = OrderFlowEngineV11(
+        OrderFlowPolicy(
+            tracked_symbols=("AAPL",),
+            minimum_trades=1,
+            minimum_volume=Decimal("1"),
+        )
+    )
+    engine.ingest_quote(_quote(at=NOW + timedelta(milliseconds=10)))
+
+    state = engine.ingest_trade(_trade("before-quote", at=NOW)).state
+
+    assert state.quote_fresh is False
+    assert state.quote_age_ms is None
+    assert state.bid_price is None
+    assert state.ask_price is None
+    assert "quote_timestamp_ahead_of_trade" in state.reasons
+
+
 def test_builds_canonical_rolling_windows_and_expires_old_trades() -> None:
     engine = OrderFlowEngine(OrderFlowPolicy(minimum_trades=1, minimum_volume=Decimal("1")))
     engine.ingest_quote(_quote())
