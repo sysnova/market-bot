@@ -145,7 +145,7 @@ async def test_monitor_projects_final_signals_and_only_manual_flow_alerts(
     assert "L4" not in rendered
     assert "BUY FLOW TGT" in rendered
     assert "PROTECT TGT" in rendered
-    assert "EARLY ASTN" in rendered
+    assert "EARLY ASTN" not in rendered
     assert "BUY ASTN" in rendered
     assert "CANCEL ASTN" in rendered
     assert "ENTRY PROGRESS TGT" not in rendered

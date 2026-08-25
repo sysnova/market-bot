@@ -98,13 +98,12 @@ def test_confirmed_purchase_uses_entry_pipeline_without_duplicate_local_alert() 
     assert signal.family is EntrySignalFamily.LEVERAGED_THESIS
 
 
-def test_early_watch_remains_an_alert_without_creating_an_entry_signal() -> None:
+def test_early_watch_remains_internal_without_purchase_alert_or_entry_signal() -> None:
     alert, signal = leveraged_thesis_publications(
         _assessment(LeveragedThesisState.EARLY_FLOW)
     )
 
-    assert alert is not None
-    assert alert.kind is AlertKind.LEVERAGED_THESIS_EARLY
+    assert alert is None
     assert signal is None
 
 

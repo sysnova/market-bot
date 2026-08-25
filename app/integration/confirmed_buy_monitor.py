@@ -25,7 +25,6 @@ from app.event_bus import NatsJetStreamEventBus
 from .alert_sounds import (
     play_aggressive_flow_sound,
     play_buy_maturity_sound,
-    play_early_intraday_sound,
     play_entry_close_sound,
     play_solid_buy_sound,
 )
@@ -90,7 +89,6 @@ async def run_confirmed_buy_monitor(
         if alert.kind not in {
             AlertKind.PORTFOLIO_PROTECT,
             AlertKind.PORTFOLIO_FLOW_BUY,
-            AlertKind.LEVERAGED_THESIS_EARLY,
             AlertKind.LEVERAGED_THESIS_BUY,
             AlertKind.LEVERAGED_THESIS_CANCELLED,
         }:
@@ -100,8 +98,6 @@ async def run_confirmed_buy_monitor(
             return
         if alert.kind is AlertKind.PORTFOLIO_FLOW_BUY:
             play_aggressive_flow_sound(fallback=output)
-        elif alert.kind is AlertKind.LEVERAGED_THESIS_EARLY:
-            play_early_intraday_sound(fallback=output)
         elif alert.kind is AlertKind.LEVERAGED_THESIS_BUY:
             play_solid_buy_sound(fallback=output)
         elif alert.kind is AlertKind.LEVERAGED_THESIS_CANCELLED:

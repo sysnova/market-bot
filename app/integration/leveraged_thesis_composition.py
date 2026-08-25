@@ -376,11 +376,13 @@ def build_leveraged_alert(assessment: LeveragedThesisAssessment) -> LocalAlert |
 def leveraged_thesis_publications(
     assessment: LeveragedThesisAssessment,
 ) -> tuple[LocalAlert | None, EntrySignal | None]:
-    """Route watches to alerts and confirmed purchases to the entry pipeline."""
+    """Expose confirmed purchases and cancellations, keeping early flow internal."""
 
     signal = entry_signal_from_leveraged_thesis(assessment)
     if signal is not None:
         return None, signal
+    if assessment.state is LeveragedThesisState.EARLY_FLOW:
+        return None, None
     return build_leveraged_alert(assessment), None
 
 
