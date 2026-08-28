@@ -53,6 +53,7 @@ from app.intraday_engine import (
     IntradayEngineV3,
     IntradayEngineV4,
     IntradayEngineV5,
+    IntradayEngineV6,
 )
 from app.intraday_engine.strategy import configure_engine as configure_intraday
 from app.intraday_engine.strategy import validate_strategy as validate_intraday
@@ -204,6 +205,7 @@ def default_engine_registry() -> EngineRegistry:
                     "3.0.0": IntradayEngineV3,
                     "4.0.0": IntradayEngineV4,
                     "5.0.0": IntradayEngineV5,
+                    "6.0.0": IntradayEngineV6,
                 },
                 required_since="0.0.0",
                 configure=configure_intraday,

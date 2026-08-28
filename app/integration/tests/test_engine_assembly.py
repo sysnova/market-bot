@@ -50,7 +50,12 @@ from app.integration.marketbot_definition import (
 from app.integration.marketbot_definition import (
     load_marketbot_definition as load_definition_model,
 )
-from app.intraday_engine import IntradayEngineV3, IntradayEngineV4, IntradayEngineV5
+from app.intraday_engine import (
+    IntradayEngineV3,
+    IntradayEngineV4,
+    IntradayEngineV5,
+    IntradayEngineV6,
+)
 from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, PortfolioAllocation
 from app.long_term_engine import LongTermEngineV2
 from app.news_intelligence_engine import NewsIntelligenceEngine
@@ -129,6 +134,7 @@ ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.34.0.yaml"
 PREENTRY_STABILITY_DEFINITION = ROOT / "configs/marketbot/7.35.0.yaml"
 NO_SWING_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.36.0.yaml"
 SHORT_CONFIRMATION_DEFINITION = ROOT / "configs/marketbot/7.37.0.yaml"
+LOCAL_SHORT_TRIGGER_DEFINITION = ROOT / "configs/marketbot/7.38.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -148,6 +154,19 @@ def test_short_confirmation_definition_versions_all_three_decision_engines() -> 
     assert assembly.build_swing()._short_minimum_sma50_break_percent == Decimal("2")
     assert assembly.build_intraday()._five_minute_lower_high_required is True
     assert assembly.build_alert()._short_confirmation_enabled is True
+
+
+def test_local_short_trigger_definition_keeps_ema20_as_warning_only() -> None:
+    previous = MarketBotAssembly.from_path(SHORT_CONFIRMATION_DEFINITION)
+    assembly = MarketBotAssembly.from_path(LOCAL_SHORT_TRIGGER_DEFINITION)
+
+    assert isinstance(previous.build_intraday(), IntradayEngineV5)
+    assert isinstance(assembly.build_swing(), SwingEngineV14)
+    assert isinstance(assembly.build_intraday(), IntradayEngineV6)
+    assert isinstance(assembly.build_alert(), AlertEngineV39)
+    assert assembly.definition.version == "7.38.0"
+    assert assembly.spec(EngineSlot.INTRADAY).strategy.version == "1.2.0"
+    assert assembly.build_intraday()._short_ema20_extension_hard_gate is False
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:

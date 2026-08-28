@@ -25,11 +25,13 @@ class IntradayEngineV5(IntradayEngineV4):
         *,
         short_confirmation_enabled: bool = True,
         five_minute_lower_high_required: bool = True,
+        short_ema20_extension_required: bool = True,
         **kwargs: object,
     ) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
         self._short_confirmation_enabled = short_confirmation_enabled
         self._five_minute_lower_high_required = five_minute_lower_high_required
+        self._short_ema20_extension_required = short_ema20_extension_required
 
     def analyze(
         self,
@@ -91,7 +93,10 @@ class IntradayEngineV5(IntradayEngineV4):
         )
         efficient = (
             trigger_extension_atr <= self._maximum_trigger_extension_atr
-            and ema20_extension_atr <= self._maximum_ema20_extension_atr
+            and (
+                ema20_extension_atr <= self._maximum_ema20_extension_atr
+                or not self._short_ema20_extension_required
+            )
         )
         structure_confirmed = (
             lower_high or not self._five_minute_lower_high_required
