@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
-DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.36.0.yaml"
+DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.37.0.yaml"
 MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
 ROLE="launcher"

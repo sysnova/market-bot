@@ -14,6 +14,7 @@ from app.alert_engine import (
     AlertEngineV36,
     AlertEngineV37,
     AlertEngineV38,
+    AlertEngineV39,
 )
 from app.alert_engine.strategy import configure_engine as configure_alert
 from app.alert_engine.strategy import validate_strategy as validate_alert
@@ -51,6 +52,7 @@ from app.intraday_engine import (
     IntradayEngineV2,
     IntradayEngineV3,
     IntradayEngineV4,
+    IntradayEngineV5,
 )
 from app.intraday_engine.strategy import configure_engine as configure_intraday
 from app.intraday_engine.strategy import validate_strategy as validate_intraday
@@ -110,6 +112,7 @@ from app.swing_engine import (
     SwingEngineV11,
     SwingEngineV12,
     SwingEngineV13,
+    SwingEngineV14,
 )
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
@@ -153,6 +156,7 @@ def default_engine_registry() -> EngineRegistry:
                     "11.0.0": SwingEngineV11,
                     "12.0.0": SwingEngineV12,
                     "13.0.0": SwingEngineV13,
+                    "14.0.0": SwingEngineV14,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,
@@ -199,6 +203,7 @@ def default_engine_registry() -> EngineRegistry:
                     "2.0.0": IntradayEngineV2,
                     "3.0.0": IntradayEngineV3,
                     "4.0.0": IntradayEngineV4,
+                    "5.0.0": IntradayEngineV5,
                 },
                 required_since="0.0.0",
                 configure=configure_intraday,
@@ -268,6 +273,7 @@ def default_engine_registry() -> EngineRegistry:
                     "3.6.0": AlertEngineV36,
                     "3.7.0": AlertEngineV37,
                     "3.8.0": AlertEngineV38,
+                    "3.9.0": AlertEngineV39,
                 },
                 required_since="0.0.0",
                 configure=configure_alert,

@@ -12,6 +12,7 @@ from app.alert_engine import (
     AlertEngineV36,
     AlertEngineV37,
     AlertEngineV38,
+    AlertEngineV39,
 )
 from app.common.settings import AppSettings
 from app.entry_opportunity_engine import (
@@ -49,7 +50,7 @@ from app.integration.marketbot_definition import (
 from app.integration.marketbot_definition import (
     load_marketbot_definition as load_definition_model,
 )
-from app.intraday_engine import IntradayEngineV3, IntradayEngineV4
+from app.intraday_engine import IntradayEngineV3, IntradayEngineV4, IntradayEngineV5
 from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, PortfolioAllocation
 from app.long_term_engine import LongTermEngineV2
 from app.news_intelligence_engine import NewsIntelligenceEngine
@@ -82,6 +83,7 @@ from app.swing_engine import (
     SwingEngineV10,
     SwingEngineV12,
     SwingEngineV13,
+    SwingEngineV14,
 )
 from app.swing_trade_engine import (
     SwingTradeEngine,
@@ -126,6 +128,26 @@ MICROSTRUCTURE_DEFINITION = ROOT / "configs/marketbot/7.32.0.yaml"
 ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.34.0.yaml"
 PREENTRY_STABILITY_DEFINITION = ROOT / "configs/marketbot/7.35.0.yaml"
 NO_SWING_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.36.0.yaml"
+SHORT_CONFIRMATION_DEFINITION = ROOT / "configs/marketbot/7.37.0.yaml"
+
+
+def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
+    previous = MarketBotAssembly.from_path(NO_SWING_ORDER_FLOW_DEFINITION)
+    assembly = MarketBotAssembly.from_path(SHORT_CONFIRMATION_DEFINITION)
+
+    assert isinstance(previous.build_swing(), SwingEngineV12)
+    assert isinstance(previous.build_intraday(), IntradayEngineV4)
+    assert isinstance(previous.build_alert(), AlertEngineV38)
+    assert isinstance(assembly.build_swing(), SwingEngineV14)
+    assert isinstance(assembly.build_intraday(), IntradayEngineV5)
+    assert isinstance(assembly.build_alert(), AlertEngineV39)
+    assert assembly.definition.version == "7.37.0"
+    assert assembly.spec(EngineSlot.SWING).strategy.version == "3.4.0"
+    assert assembly.spec(EngineSlot.INTRADAY).strategy.version == "1.1.0"
+    assert assembly.spec(EngineSlot.ALERT).strategy.version == "1.4.0"
+    assert assembly.build_swing()._short_minimum_sma50_break_percent == Decimal("2")
+    assert assembly.build_intraday()._five_minute_lower_high_required is True
+    assert assembly.build_alert()._short_confirmation_enabled is True
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:
