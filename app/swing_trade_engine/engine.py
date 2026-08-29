@@ -11,15 +11,15 @@ from zoneinfo import ZoneInfo
 
 from app.contracts import (
     BarTimeframe,
-    GeriAssessment,
     GeriLevelKind,
     GeriMaturity,
     MarketBar,
     NamedValue,
-    SwingTradeAssessment,
     SwingTradeMaturity,
     TradeSide,
 )
+from app.contracts.geri_4h import GeriAssessment
+from app.contracts.swing_trade import SwingTradeAssessment
 
 from .models import SwingTradeContext
 
@@ -87,6 +87,21 @@ class SwingTradeEngine:
         self._strategy_version = strategy_version
 
     def analyze(self, context: SwingTradeContext) -> SwingTradeAssessment:
+        """Evaluate the operational thesis using its immutable extrema rule."""
+
+        return self._analyze(context, causal_geometry=False)
+
+    def analyze_geometry(self, context: SwingTradeContext) -> SwingTradeAssessment:
+        """Calculate display geometry from the widest causal low-to-later-high pair."""
+
+        return self._analyze(context, causal_geometry=True)
+
+    def _analyze(
+        self,
+        context: SwingTradeContext,
+        *,
+        causal_geometry: bool,
+    ) -> SwingTradeAssessment:
         symbol = context.symbol.strip().upper()
         bars = tuple(bar for bar in context.daily_bars if bar.is_final)[-self._fib_lookback :]
         if len(bars) < self._fib_lookback:
@@ -100,10 +115,13 @@ class SwingTradeEngine:
         if context.current_price <= ZERO:
             raise ValueError("SwingTrade spot must be positive")
 
-        low_bar = min(bars, key=lambda bar: (bar.low, bar.timestamp))
-        high_bar = max(bars, key=lambda bar: (bar.high, -bar.timestamp.timestamp()))
-        if low_bar.timestamp >= high_bar.timestamp:
-            raise ValueError("SwingTrade LONG impulse requires low before high")
+        if causal_geometry:
+            low_bar, high_bar = _widest_causal_long_impulse(bars)
+        else:
+            low_bar = min(bars, key=lambda bar: (bar.low, bar.timestamp))
+            high_bar = max(bars, key=lambda bar: (bar.high, -bar.timestamp.timestamp()))
+            if low_bar.timestamp >= high_bar.timestamp:
+                raise ValueError("SwingTrade LONG impulse requires low before high")
         impulse_range = high_bar.high - low_bar.low
         if impulse_range <= ZERO:
             raise ValueError("SwingTrade impulse range must be positive")
@@ -161,7 +179,8 @@ class SwingTradeEngine:
             minimum_rr=self._minimum_rr,
             within_distance=within_distance,
         )
-        geri = context.geri if geri_valid else None
+        context_geri = context.geri
+        geri = context_geri if geri_valid else None
         return SwingTradeAssessment(
             symbol=symbol,
             occurred_at=context.as_of,
@@ -208,8 +227,35 @@ class SwingTradeEngine:
                 NamedValue(name="trade_ttl_sessions", value=self._trade_ttl),
                 NamedValue(name="places_orders", value=False),
             ),
-            context_hash=_context_hash(bars, context.current_price, context.geri),
+            context_hash=_context_hash(bars, context.current_price, context_geri),
         )
+
+
+def _widest_causal_long_impulse(
+    bars: tuple[MarketBar, ...],
+) -> tuple[MarketBar, MarketBar]:
+    """Return the widest positive low-to-later-high range without lookahead."""
+
+    if len(bars) < 2:
+        raise ValueError("SwingTrade LONG geometry requires at least two daily bars")
+    running_low = bars[0]
+    best_low: MarketBar | None = None
+    best_high: MarketBar | None = None
+    best_range = ZERO
+    for high_bar in bars[1:]:
+        impulse_range = high_bar.high - running_low.low
+        if impulse_range > best_range:
+            best_low = running_low
+            best_high = high_bar
+            best_range = impulse_range
+        if (high_bar.low, high_bar.timestamp) < (
+            running_low.low,
+            running_low.timestamp,
+        ):
+            running_low = high_bar
+    if best_low is None or best_high is None:
+        raise ValueError("SwingTrade LONG geometry has no positive low-to-later-high range")
+    return best_low, best_high
 
 
 def _geri_confluence(
@@ -244,8 +290,15 @@ def _geri_confluence(
         or geri.zone_high is None
     ):
         return False, False
-    spot_inside = geri.zone_low <= context.current_price <= geri.zone_high
-    return True, spot_inside and _overlaps(zone_low, zone_high, geri.zone_low, geri.zone_high)
+    geri_zone_low = geri.zone_low
+    geri_zone_high = geri.zone_high
+    spot_inside = geri_zone_low <= context.current_price <= geri_zone_high
+    return True, spot_inside and _overlaps(
+        zone_low,
+        zone_high,
+        geri_zone_low,
+        geri_zone_high,
+    )
 
 
 def _reasons(
@@ -378,7 +431,7 @@ class SwingTradeEngineV11(SwingTradeEngine):
 
     def analyze(self, context: SwingTradeContext) -> SwingTradeAssessment:
         _validate_v11_context(context)
-        result = super().analyze(context)
+        result: SwingTradeAssessment = super().analyze(context)
         confirmations = context.confirmation_bars
         rejection = _long_rejection_confirmed(
             confirmations,
@@ -440,11 +493,14 @@ class SwingTradeEngineV11(SwingTradeEngine):
                     NamedValue(name="entry_vwap_gate_passed", value=vwap_passed),
                     NamedValue(name="intraday_rvol20_same_slot", value=rvol),
                     NamedValue(name="intraday_rvol_confirmed", value=rvol_passed),
-                    NamedValue(name="minimum_intraday_rvol", value=self._minimum_intraday_rvol),
+                    NamedValue(
+                        name="minimum_intraday_rvol",
+                        value=self._minimum_intraday_rvol,
+                    ),
                     NamedValue(name="geri_reaction_confirmed", value=geri_reaction),
                     NamedValue(name="swing_trade_entry_trigger_passed", value=trigger),
                 ),
-            }
+            },
         )
 
 

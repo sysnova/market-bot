@@ -77,7 +77,11 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV16,
     Swing4HGeriEngineV17,
 )
-from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
+from app.swing_channel_4h_engine import (
+    SwingChannel4HEngine,
+    SwingChannel4HEngineV11,
+    SwingChannel4HEngineV12,
+)
 from app.swing_engine import (
     SwingEngineV4,
     SwingEngineV5,
@@ -135,6 +139,7 @@ PREENTRY_STABILITY_DEFINITION = ROOT / "configs/marketbot/7.35.0.yaml"
 NO_SWING_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.36.0.yaml"
 SHORT_CONFIRMATION_DEFINITION = ROOT / "configs/marketbot/7.37.0.yaml"
 LOCAL_SHORT_TRIGGER_DEFINITION = ROOT / "configs/marketbot/7.38.0.yaml"
+STRUCTURAL_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.39.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -167,6 +172,16 @@ def test_local_short_trigger_definition_keeps_ema20_as_warning_only() -> None:
     assert assembly.definition.version == "7.38.0"
     assert assembly.spec(EngineSlot.INTRADAY).strategy.version == "1.2.0"
     assert assembly.build_intraday()._short_ema20_extension_hard_gate is False
+
+
+def test_structural_channel_definition_rejects_nearby_support_pairs() -> None:
+    previous = MarketBotAssembly.from_path(LOCAL_SHORT_TRIGGER_DEFINITION)
+    assembly = MarketBotAssembly.from_path(STRUCTURAL_CHANNEL_DEFINITION)
+
+    assert isinstance(previous.build_swing_channel_4h(), SwingChannel4HEngineV11)
+    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV12)
+    assert assembly.definition.version == "7.39.0"
+    assert assembly.spec(EngineSlot.SWING_CHANNEL_4H).implementation == "1.2.0"
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:

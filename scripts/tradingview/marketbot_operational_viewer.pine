@@ -1,0 +1,260 @@
+//@version=6
+// MarketBot Geometry Viewer
+// Dibuja niveles calculados por los módulos puros de MarketBot con barras de Alpaca.
+indicator("MarketBot · Geometrías Alpaca", overlay=true)
+plot(na, "MarketBot compiler sentinel", display=display.none)
+
+grupoImport = "MarketBot · Datos"
+configCsv = input.text_area(
+     "ticker,modoNiveles,marcoCalculo,zonaLowManual,zonaHighManual,soporteManual,invalidationManual,resistenciaManual,liquidezManual,avwapPivotManual,avwapBreakoutManual,extendedTarget,asOf,fuenteDatos,swingSma20,swingSma50,swingTarget,pivotLowAnchorAt,breakoutAnchorAt,stImpulseLow,stImpulseHigh,stImpulseLowAt,stImpulseHighAt,stFib618,stFib50,stFib1618,stZoneLow,stZoneHigh,stSupport20,stResistance20,stInvalidation,stPrimaryTarget,stExtendedTarget,channelZoneLow,channelZoneHigh,channelSupport,channelMiddle,channelResistance,channelInvalidation,geriZoneLow,geriZoneHigh,geriInvalidation,geriActiveLevelKind,geriActiveLevelPrice,channelPivotAAtMs,channelPivotAPrice,channelPivotBAtMs,channelPivotBPrice,channelPivotCAtMs,channelPivotCPrice,channelObservedAtMs,channelSlopePerBar,channelWidth,channelMaturity,channelReasons",
+     "CSV MarketBot",
+     group=grupoImport,
+     tooltip="Pegá la cabecera y las filas generadas por export_marketbot_tradingview.py. Se selecciona automáticamente el ticker abierto."
+)
+
+grupoCapas = "MarketBot · Capas"
+mostrarSwing = input.bool(true, "Swing diario", group=grupoCapas)
+mostrarFibo = input.bool(true, "SwingTrade Fibonacci", group=grupoCapas)
+mostrarChannel = input.bool(true, "Swing Channel 4H", group=grupoCapas)
+mostrarGeri = input.bool(true, "4HGERI", group=grupoCapas)
+mostrarAvwap = input.bool(true, "AVWAP", group=grupoCapas)
+mostrarMedias = input.bool(true, "SMA20 / SMA50 de MarketBot", group=grupoCapas)
+mostrarDashboard = input.bool(true, "Tabla de valores", group=grupoCapas)
+
+f_clean(string value) =>
+    str.replace_all(str.replace_all(value, "\r", ""), " ", "")
+
+f_row(string csv, string target) =>
+    array<string> selected = array.new_string()
+    array<string> rows = str.split(csv, "\n")
+    if array.size(rows) > 0
+        for i = 0 to array.size(rows) - 1
+            array<string> cols = str.split(str.replace_all(array.get(rows, i), "\r", ""), ",")
+            if array.size(cols) >= 55
+                string rowTicker = str.upper(f_clean(array.get(cols, 0)))
+                if array.size(selected) == 0 and rowTicker == str.upper(target)
+                    selected := array.copy(cols)
+    selected
+
+f_text(array<string> values, int index, string fallback) =>
+    string value = array.size(values) > index ? f_clean(array.get(values, index)) : ""
+    str.length(value) > 0 ? value : fallback
+
+f_num(array<string> values, int index) =>
+    float value = str.tonumber(f_text(values, index, "0"))
+    na(value) ? 0.0 : value
+
+f_bar_at(float timestampMs) =>
+    ta.valuewhen(timestampMs > 0 and time <= int(timestampMs) and time_close > int(timestampMs), bar_index, 0)
+
+f_valid_zone(float low, float high) => low > 0 and high >= low
+f_plot(float value, bool visible) => visible and value > 0 ? value : na
+f_range(float low, float high) => str.tostring(low, "0.0000") + " - " + str.tostring(high, "0.0000")
+
+var array<string> cfg = array.new_string()
+if barstate.isfirst
+    cfg := f_row(configCsv, syminfo.ticker)
+
+bool found = array.size(cfg) >= 55
+
+float swingZoneLow = f_num(cfg, 3)
+float swingZoneHigh = f_num(cfg, 4)
+float swingSupport = f_num(cfg, 5)
+float swingInvalidation = f_num(cfg, 6)
+float swingResistance = f_num(cfg, 7)
+float swingLiquidity = f_num(cfg, 8)
+float pivotAvwap = f_num(cfg, 9)
+float breakoutAvwap = f_num(cfg, 10)
+string asOf = f_text(cfg, 12, "SIN_DATO")
+string dataSource = f_text(cfg, 13, "SIN_DATO")
+float swingSma20 = f_num(cfg, 14)
+float swingSma50 = f_num(cfg, 15)
+float swingTarget = f_num(cfg, 16)
+string pivotAnchor = f_text(cfg, 17, "SIN_DATO")
+string breakoutAnchor = f_text(cfg, 18, "SIN_DATO")
+
+float stImpulseLow = f_num(cfg, 19)
+float stImpulseHigh = f_num(cfg, 20)
+string stImpulseLowAt = f_text(cfg, 21, "SIN_DATO")
+string stImpulseHighAt = f_text(cfg, 22, "SIN_DATO")
+float stFib618 = f_num(cfg, 23)
+float stFib50 = f_num(cfg, 24)
+float stFib1618 = f_num(cfg, 25)
+float stZoneLow = f_num(cfg, 26)
+float stZoneHigh = f_num(cfg, 27)
+float stSupport20 = f_num(cfg, 28)
+float stResistance20 = f_num(cfg, 29)
+float stInvalidation = f_num(cfg, 30)
+float stPrimaryTarget = f_num(cfg, 31)
+float stExtendedTarget = f_num(cfg, 32)
+
+float channelZoneLow = f_num(cfg, 33)
+float channelZoneHigh = f_num(cfg, 34)
+float channelSupport = f_num(cfg, 35)
+float channelMiddle = f_num(cfg, 36)
+float channelResistance = f_num(cfg, 37)
+float channelInvalidation = f_num(cfg, 38)
+
+float geriZoneLow = f_num(cfg, 39)
+float geriZoneHigh = f_num(cfg, 40)
+float geriInvalidation = f_num(cfg, 41)
+string geriLevelKind = f_text(cfg, 42, "SIN_DATO")
+float geriLevelPrice = f_num(cfg, 43)
+
+float channelPivotAAtMs = f_num(cfg, 44)
+float channelPivotAPrice = f_num(cfg, 45)
+float channelPivotBAtMs = f_num(cfg, 46)
+float channelPivotBPrice = f_num(cfg, 47)
+float channelPivotCAtMs = f_num(cfg, 48)
+float channelPivotCPrice = f_num(cfg, 49)
+float channelObservedAtMs = f_num(cfg, 50)
+float channelSlopePerBar = f_num(cfg, 51)
+float channelWidth = f_num(cfg, 52)
+string channelMaturity = f_text(cfg, 53, "SIN_DATO")
+string channelReasons = f_text(cfg, 54, "SIN_DATO")
+int channelPivotABar = f_bar_at(channelPivotAAtMs)
+int channelPivotBBar = f_bar_at(channelPivotBAtMs)
+int channelPivotCBar = f_bar_at(channelPivotCAtMs)
+int channelObservedBar = f_bar_at(channelObservedAtMs)
+
+// Swing diario: zona verde, soporte aqua, invalidación roja, resistencia violeta.
+pSwingHigh = plot(f_plot(swingZoneHigh, found and mostrarSwing), "MB Swing Zone High", color=color.lime, style=plot.style_linebr)
+pSwingLow = plot(f_plot(swingZoneLow, found and mostrarSwing), "MB Swing Zone Low", color=color.lime, style=plot.style_linebr)
+fill(pSwingHigh, pSwingLow, color=found and mostrarSwing and f_valid_zone(swingZoneLow, swingZoneHigh) ? color.new(color.lime, 84) : na, title="MB Swing Zone")
+plot(f_plot(swingSupport, found and mostrarSwing), "MB Swing Support", color=color.aqua, linewidth=2, style=plot.style_linebr)
+plot(f_plot(swingInvalidation, found and mostrarSwing), "MB Swing Invalidation", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(f_plot(swingResistance, found and mostrarSwing), "MB Swing Resistance", color=color.purple, linewidth=2, style=plot.style_linebr)
+plot(f_plot(swingLiquidity, found and mostrarSwing), "MB Swing Liquidity", color=color.fuchsia, style=plot.style_linebr)
+plot(f_plot(swingTarget, found and mostrarSwing), "MB Swing Target", color=color.green, linewidth=2, style=plot.style_linebr)
+
+// Indicadores diarios calculados por MarketBot, no por Pine.
+plot(f_plot(swingSma20, found and mostrarMedias), "MB Daily SMA20", color=color.orange, style=plot.style_linebr)
+plot(f_plot(swingSma50, found and mostrarMedias), "MB Daily SMA50", color=color.blue, style=plot.style_linebr)
+
+// SwingTrade: zona Fibonacci azul entre 61.8% y 50%; extensión 161.8% en teal.
+pStHigh = plot(f_plot(stZoneHigh, found and mostrarFibo), "MB SwingTrade F50", color=color.rgb(70, 130, 255), linewidth=2, style=plot.style_linebr)
+pStLow = plot(f_plot(stZoneLow, found and mostrarFibo), "MB SwingTrade F61.8", color=color.rgb(70, 130, 255), linewidth=2, style=plot.style_linebr)
+fill(pStHigh, pStLow, color=found and mostrarFibo and f_valid_zone(stZoneLow, stZoneHigh) ? color.new(color.blue, 84) : na, title="MB SwingTrade Fibonacci Zone")
+plot(f_plot(stImpulseLow, found and mostrarFibo), "MB SwingTrade Impulse Low", color=color.gray, style=plot.style_linebr)
+plot(f_plot(stImpulseHigh, found and mostrarFibo), "MB SwingTrade Impulse High", color=color.silver, style=plot.style_linebr)
+plot(f_plot(stSupport20, found and mostrarFibo), "MB SwingTrade Support20", color=color.new(color.aqua, 20), linewidth=2, style=plot.style_linebr)
+plot(f_plot(stInvalidation, found and mostrarFibo), "MB SwingTrade Invalidation", color=color.new(color.red, 25), linewidth=2, style=plot.style_linebr)
+plot(f_plot(stResistance20, found and mostrarFibo), "MB SwingTrade Resistance20", color=color.new(color.green, 25), style=plot.style_linebr)
+plot(f_plot(stPrimaryTarget, found and mostrarFibo), "MB SwingTrade Primary Target", color=color.green, linewidth=2, style=plot.style_linebr)
+plot(f_plot(stFib1618, found and mostrarFibo), "MB SwingTrade F161.8", color=color.teal, linewidth=2, style=plot.style_linebr)
+
+// Canal 4H ascendente: rectas paralelas en el eje de barras del gráfico.
+// Los extremos son A y el soporte proyectado por el motor en la observación actual.
+var line channelZoneHighLine = na
+var line channelZoneLowLine = na
+var line channelSupportLine = na
+var line channelMiddleLine = na
+var line channelResistanceLine = na
+var line channelInvalidationLine = na
+var linefill channelZoneFill = na
+var label channelPivotALabel = na
+var label channelPivotBLabel = na
+var label channelPivotCLabel = na
+
+if barstate.islast
+    if not na(channelZoneFill)
+        linefill.delete(channelZoneFill)
+    if not na(channelZoneHighLine)
+        line.delete(channelZoneHighLine)
+    if not na(channelZoneLowLine)
+        line.delete(channelZoneLowLine)
+    if not na(channelSupportLine)
+        line.delete(channelSupportLine)
+    if not na(channelMiddleLine)
+        line.delete(channelMiddleLine)
+    if not na(channelResistanceLine)
+        line.delete(channelResistanceLine)
+    if not na(channelInvalidationLine)
+        line.delete(channelInvalidationLine)
+    if not na(channelPivotALabel)
+        label.delete(channelPivotALabel)
+    if not na(channelPivotBLabel)
+        label.delete(channelPivotBLabel)
+    if not na(channelPivotCLabel)
+        label.delete(channelPivotCLabel)
+
+    bool drawChannel = found and mostrarChannel and f_valid_zone(channelZoneLow, channelZoneHigh) and not na(channelPivotABar) and not na(channelObservedBar) and channelObservedBar > channelPivotABar and channelPivotAPrice > 0 and channelSlopePerBar > 0 and channelWidth > 0
+    if drawChannel
+        int xA = channelPivotABar
+        int xNow = channelObservedBar
+        bool channelInvalidated = channelMaturity == "INVALIDATED"
+        string channelStyle = channelInvalidated ? line.style_dashed : line.style_solid
+        color channelColor = channelInvalidated ? color.new(color.orange, 25) : color.orange
+        float zonePadding = (channelZoneHigh - channelZoneLow) / 2.0
+        float invalidationPadding = channelSupport - channelInvalidation
+        float aZoneHigh = channelPivotAPrice + zonePadding
+        float aZoneLow = channelPivotAPrice - zonePadding
+        float aMiddle = channelPivotAPrice + channelWidth / 2.0
+        float aResistance = channelPivotAPrice + channelWidth
+        float aInvalidation = channelPivotAPrice - invalidationPadding
+
+        channelZoneHighLine := line.new(xA, aZoneHigh, xNow, channelZoneHigh, xloc=xloc.bar_index, extend=extend.right, color=channelColor, style=channelStyle)
+        channelZoneLowLine := line.new(xA, aZoneLow, xNow, channelZoneLow, xloc=xloc.bar_index, extend=extend.right, color=channelColor, style=channelStyle)
+        channelSupportLine := line.new(xA, channelPivotAPrice, xNow, channelSupport, xloc=xloc.bar_index, extend=extend.right, color=channelColor, style=channelStyle, width=2)
+        channelMiddleLine := line.new(xA, aMiddle, xNow, channelMiddle, xloc=xloc.bar_index, extend=extend.right, color=color.new(channelColor, 35), style=channelStyle)
+        channelResistanceLine := line.new(xA, aResistance, xNow, channelResistance, xloc=xloc.bar_index, extend=extend.right, color=color.new(channelColor, 10), style=channelStyle, width=2)
+        channelInvalidationLine := line.new(xA, aInvalidation, xNow, channelInvalidation, xloc=xloc.bar_index, extend=extend.right, color=color.new(color.red, 25), style=channelStyle, width=2)
+        channelZoneFill := linefill.new(channelZoneHighLine, channelZoneLowLine, color.new(color.orange, channelInvalidated ? 92 : 86))
+
+        channelPivotALabel := label.new(xA, channelPivotAPrice, "A · " + channelMaturity, xloc=xloc.bar_index, style=label.style_label_up, color=channelColor, textcolor=color.black, size=size.tiny)
+        if not na(channelPivotBBar) and channelPivotBPrice > 0
+            channelPivotBLabel := label.new(channelPivotBBar, channelPivotBPrice, "B", xloc=xloc.bar_index, style=label.style_label_up, color=color.orange, textcolor=color.black, size=size.tiny)
+        if not na(channelPivotCBar) and channelPivotCPrice > 0
+            channelPivotCLabel := label.new(channelPivotCBar, channelPivotCPrice, "C", xloc=xloc.bar_index, style=label.style_label_down, color=color.new(color.orange, 10), textcolor=color.black, size=size.tiny)
+
+// 4HGERI: zona púrpura; nivel estructural aqua si es soporte o fuchsia si es resistencia.
+pGeriHigh = plot(f_plot(geriZoneHigh, found and mostrarGeri), "MB GERI Zone High", color=color.rgb(190, 100, 255), style=plot.style_linebr)
+pGeriLow = plot(f_plot(geriZoneLow, found and mostrarGeri), "MB GERI Zone Low", color=color.rgb(190, 100, 255), style=plot.style_linebr)
+fill(pGeriHigh, pGeriLow, color=found and mostrarGeri and f_valid_zone(geriZoneLow, geriZoneHigh) ? color.new(color.purple, 86) : na, title="MB GERI Zone")
+plot(f_plot(geriInvalidation, found and mostrarGeri), "MB GERI Invalidation", color=color.new(color.red, 55), linewidth=2, style=plot.style_linebr)
+plot(f_plot(geriLevelPrice, found and mostrarGeri), "MB GERI Active Structural Level", color=geriLevelKind == "SUPPORT" ? color.aqua : color.fuchsia, linewidth=3, style=plot.style_linebr)
+
+// AVWAP: pivote amarillo y breakout naranja.
+plot(f_plot(pivotAvwap, found and mostrarAvwap), "MB Pivot Low AVWAP", color=color.yellow, linewidth=2, style=plot.style_linebr)
+plot(f_plot(breakoutAvwap, found and mostrarAvwap), "MB Breakout AVWAP", color=color.rgb(255, 145, 0), linewidth=2, style=plot.style_linebr)
+
+bool enteredSwing = found and f_valid_zone(swingZoneLow, swingZoneHigh) and close >= swingZoneLow and close <= swingZoneHigh and not (close[1] >= swingZoneLow and close[1] <= swingZoneHigh) and barstate.isconfirmed
+bool enteredFibo = found and f_valid_zone(stZoneLow, stZoneHigh) and close >= stZoneLow and close <= stZoneHigh and not (close[1] >= stZoneLow and close[1] <= stZoneHigh) and barstate.isconfirmed
+plotshape(enteredSwing, title="Ingreso en zona Swing calculada", style=shape.labelup, location=location.belowbar, color=color.lime, text="SWING", textcolor=color.black, size=size.tiny)
+plotshape(enteredFibo, title="Ingreso en zona Fibonacci calculada", style=shape.labelup, location=location.belowbar, color=color.blue, text="FIBO", textcolor=color.white, size=size.tiny)
+
+var table panel = table.new(position.bottom_right, 2, 14, bgcolor=color.new(color.black, 10), border_width=1, border_color=color.rgb(65, 65, 65))
+if barstate.islast and mostrarDashboard
+    color labelBg = color.rgb(35, 40, 50)
+    color valueBg = color.rgb(23, 23, 23)
+    table.cell(panel, 0, 0, "MB GEOMETRÍAS", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 0, found ? syminfo.ticker : "SIN DATOS", text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 1, "FUENTE / AS OF", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 1, dataSource + " / " + asOf, text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 2, "SWING ZONA", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 2, f_range(swingZoneLow, swingZoneHigh), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 3, "SWING SOP / INV", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 3, str.tostring(swingSupport, "0.0000") + " / " + str.tostring(swingInvalidation, "0.0000"), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 4, "RESIST / LIQ", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 4, str.tostring(swingResistance, "0.0000") + " / " + str.tostring(swingLiquidity, "0.0000"), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 5, "AVWAP P / B", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 5, str.tostring(pivotAvwap, "0.0000") + " / " + str.tostring(breakoutAvwap, "0.0000"), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 6, "SMA20 / SMA50", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 6, str.tostring(swingSma20, "0.0000") + " / " + str.tostring(swingSma50, "0.0000"), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 7, "IMPULSO FIBO", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 7, f_range(stImpulseLow, stImpulseHigh), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 8, "ZONA F61.8-F50", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 8, f_range(stFib618, stFib50), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 9, "TARGET / F161.8", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 9, str.tostring(stPrimaryTarget, "0.0000") + " / " + str.tostring(stExtendedTarget, "0.0000"), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 10, "CANAL " + channelMaturity, text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 10, channelSupport > 0 ? str.tostring(channelSupport, "0.0000") + " / " + str.tostring(channelMiddle, "0.0000") + " / " + str.tostring(channelResistance, "0.0000") : "SIN CANAL 4H VÁLIDO", text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 11, "GERI NIVEL", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 11, geriLevelKind + " " + str.tostring(geriLevelPrice, "0.0000"), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 12, "ANCLAS / IMPULSO", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 12, pivotAnchor + " · " + breakoutAnchor + " · " + stImpulseLowAt + " → " + stImpulseHighAt, text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 13, "CANAL MOTIVO", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 13, channelReasons, text_color=color.white, bgcolor=valueBg)
+
+if barstate.islast and not mostrarDashboard
+    table.clear(panel, 0, 0, 1, 13)

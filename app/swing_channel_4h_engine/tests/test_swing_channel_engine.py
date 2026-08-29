@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.contracts import (
     AnalysisHorizon,
     AnalysisResult,
@@ -16,6 +18,7 @@ from app.swing_channel_4h_engine import (
     SwingChannel4HContext,
     SwingChannel4HEngine,
     SwingChannel4HEngineV11,
+    SwingChannel4HEngineV12,
 )
 
 START = datetime(2026, 7, 20, 13, 30, tzinfo=UTC)
@@ -52,6 +55,33 @@ def channel_bars(*, bounce: bool = False) -> tuple[MarketBar, ...]:
     ]
     if bounce:
         values.append(("104.2", "108", "107.5"))
+    return tuple(
+        bar(index, low=low, high=high, close=close)
+        for index, (low, high, close) in enumerate(values)
+    )
+
+
+def structural_channel_bars() -> tuple[MarketBar, ...]:
+    values = [
+        ("101", "105", "103"),
+        ("98", "103", "101"),
+        ("94", "100", "98"),
+        ("97", "104", "102"),
+        ("101", "108", "106"),
+        ("104", "112", "110"),
+        ("103", "111", "108"),
+        ("102", "109", "106"),
+        ("101", "107", "105"),
+        ("100", "105", "103"),
+        ("98", "104", "102"),
+        ("101", "110", "108"),
+        ("104", "114", "112"),
+        ("106", "116", "114"),
+        ("105", "113", "111"),
+        ("106", "115", "113"),
+        ("107", "117", "115"),
+        ("108", "118", "116"),
+    ]
     return tuple(
         bar(index, low=low, high=high, close=close)
         for index, (low, high, close) in enumerate(values)
@@ -202,3 +232,68 @@ def test_v11_does_not_reuse_an_invalidated_channel() -> None:
 
     assert rebuilt.context_hash == armed.context_hash
     assert rebuilt.maturity is SwingChannelMaturity.ARMED
+
+
+def test_v12_rejects_two_nearby_support_pivots_as_a_channel() -> None:
+    bars = channel_bars()
+
+    with pytest.raises(ValueError, match="structurally separated"):
+        SwingChannel4HEngineV12().analyze(
+            SwingChannel4HContext(
+                symbol="AAPL",
+                bars=bars,
+                current_price=Decimal("108"),
+            )
+        )
+
+
+def test_v12_anchors_the_channel_after_a_separated_impulse_and_retest() -> None:
+    bars = structural_channel_bars()
+
+    result = SwingChannel4HEngineV12().analyze(
+        SwingChannel4HContext(
+            symbol="AAPL",
+            bars=bars,
+            current_price=Decimal("116"),
+        )
+    )
+
+    assert result.pivot_a_at == bars[2].timestamp
+    assert result.pivot_b_at == bars[10].timestamp
+    assert result.pivot_b_at - result.pivot_a_at == timedelta(hours=32)
+    assert result.slope_per_bar == Decimal("0.5000")
+
+
+def test_v12_rejects_a_support_line_breached_between_a_and_b() -> None:
+    bars = list(structural_channel_bars())
+    bars[6] = bars[6].model_copy(update={"low": Decimal("85")})
+
+    with pytest.raises(ValueError, match="structurally separated"):
+        SwingChannel4HEngineV12().analyze(
+            SwingChannel4HContext(
+                symbol="AAPL",
+                bars=tuple(bars),
+                current_price=Decimal("116"),
+            )
+        )
+
+
+def test_v12_rechecks_an_active_channel_created_by_an_older_engine() -> None:
+    bars = channel_bars()
+    legacy = SwingChannel4HEngineV11().analyze(
+        SwingChannel4HContext(
+            symbol="AAPL",
+            bars=bars,
+            current_price=Decimal("108"),
+        )
+    )
+
+    with pytest.raises(ValueError, match="structurally separated"):
+        SwingChannel4HEngineV12().analyze(
+            SwingChannel4HContext(
+                symbol="AAPL",
+                bars=bars,
+                current_price=Decimal("108"),
+                active_channel=legacy,
+            )
+        )

@@ -10,6 +10,13 @@ different pivot pair from the rolling history. A replacement geometry may be sel
 the pinned channel is genuinely `INVALIDATED`; candidate replacements must also pass minimum
 containment and ATR-width quality gates.
 
+Version `1.2.0` only admits A/B support pivots separated by at least eight completed 4H bars
+(four RTH sessions). Between A and B there must be a material ATR-normalized impulse followed by
+a pullback into the confirmed higher low B, and price cannot pierce the candidate support line by
+more than its invalidation buffer. This prevents two nearby local lows from defining a long-lived
+projected channel. Active geometry from an older implementation is re-evaluated before it can be
+pinned under this stricter rule.
+
 Maturity:
 
 - `ARMED`: a valid ascending channel exists.

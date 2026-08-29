@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
 
@@ -412,6 +412,143 @@ class SwingChannel4HEngineV11(SwingChannel4HEngine):
                 bars, context.current_price, context.daily_swing
             ),
         )
+
+
+class SwingChannel4HEngineV12(SwingChannel4HEngineV11):
+    """Require a separated impulse and retest before projecting a channel."""
+
+    engine_version = "1.2.0"
+
+    def __init__(
+        self,
+        *,
+        pivot_radius: int = 1,
+        minimum_bars: int = 8,
+        channel_lookback_bars: int = 60,
+        zone_atr: Decimal = Decimal("0.25"),
+        invalidation_atr: Decimal = Decimal("0.50"),
+        minimum_containment: Decimal = Decimal("0.50"),
+        minimum_width_atr: Decimal = Decimal("0.25"),
+        minimum_pivot_separation_bars: int = 8,
+        minimum_impulse_atr: Decimal = Decimal("1.50"),
+        minimum_pullback_atr: Decimal = Decimal("0.75"),
+    ) -> None:
+        super().__init__(
+            pivot_radius=pivot_radius,
+            minimum_bars=minimum_bars,
+            channel_lookback_bars=channel_lookback_bars,
+            zone_atr=zone_atr,
+            invalidation_atr=invalidation_atr,
+            minimum_containment=minimum_containment,
+            minimum_width_atr=minimum_width_atr,
+        )
+        if minimum_pivot_separation_bars < pivot_radius * 2 + 2:
+            raise ValueError("minimum pivot separation is too short")
+        if minimum_impulse_atr <= ZERO:
+            raise ValueError("minimum channel impulse ATR must be positive")
+        if minimum_pullback_atr <= ZERO:
+            raise ValueError("minimum channel pullback ATR must be positive")
+        self._minimum_pivot_separation_bars = minimum_pivot_separation_bars
+        self._minimum_impulse_atr = minimum_impulse_atr
+        self._minimum_pullback_atr = minimum_pullback_atr
+
+    def analyze(self, context: SwingChannel4HContext) -> SwingChannelAssessment:
+        active = context.active_channel
+        if (
+            active is not None
+            and active.engine_version == self.engine_version
+            and active.maturity is not SwingChannelMaturity.INVALIDATED
+        ):
+            return self._analyze_active(context, active)
+        result = SwingChannel4HEngine.analyze(
+            self,
+            replace(context, active_channel=None),
+        )
+        if result.containment_ratio < self._minimum_containment:
+            raise ValueError("ascending channel containment is too low")
+        if result.width_atr < self._minimum_width_atr:
+            raise ValueError("ascending channel width is too narrow")
+        return result.model_copy(
+            update={
+                "metrics": (
+                    *result.metrics,
+                    NamedValue(
+                        name="channel_structure_rule",
+                        value="separated_impulse_retest",
+                    ),
+                    NamedValue(
+                        name="minimum_pivot_separation_bars",
+                        value=self._minimum_pivot_separation_bars,
+                    ),
+                    NamedValue(
+                        name="minimum_impulse_atr",
+                        value=self._minimum_impulse_atr,
+                    ),
+                    NamedValue(
+                        name="minimum_pullback_atr",
+                        value=self._minimum_pullback_atr,
+                    ),
+                )
+            }
+        )
+
+    def _geometry(self, bars: tuple[MarketBar, ...]) -> _Geometry:
+        lows = _pivot_lows(bars, self._pivot_radius)
+        atr14 = _atr(bars)
+        tolerance = atr14 * Decimal("0.25")
+        invalidation_padding = atr14 * self._invalidation_atr
+        candidates: list[tuple[Decimal, int, int, Decimal, _Geometry]] = []
+        for a in lows[:-1]:
+            if len(bars) - a < self._minimum_bars:
+                continue
+            for b in lows:
+                separation = b - a
+                if (
+                    separation < self._minimum_pivot_separation_bars
+                    or b >= len(bars) - 1
+                    or bars[b].low <= bars[a].low
+                ):
+                    continue
+                impulse_high = max(bar.high for bar in bars[a + 1 : b])
+                if (impulse_high - bars[a].low) / atr14 < self._minimum_impulse_atr:
+                    continue
+                if (impulse_high - bars[b].low) / atr14 < self._minimum_pullback_atr:
+                    continue
+                slope = (bars[b].low - bars[a].low) / Decimal(separation)
+                c = max(range(b + 1, len(bars)), key=lambda index: bars[index].high)
+                width = bars[c].high - (
+                    bars[a].low + slope * Decimal(c - a)
+                )
+                if slope <= ZERO or width <= ZERO:
+                    continue
+                geometry = _Geometry(a=a, b=b, c=c, slope=slope, width=width)
+                if any(
+                    bars[index].low
+                    < _line(geometry, bars, index) - invalidation_padding
+                    for index in range(a, b + 1)
+                ):
+                    continue
+                containment = _containment(bars, geometry, tolerance)
+                width_atr = width / atr14
+                if containment < self._minimum_containment:
+                    continue
+                if width_atr < self._minimum_width_atr:
+                    continue
+                touches = len(
+                    _support_touches(
+                        bars,
+                        geometry,
+                        start=b,
+                        padding=atr14 * self._zone_atr,
+                        invalidation_padding=invalidation_padding,
+                    )
+                )
+                candidates.append(
+                    (containment, touches, separation, -slope, geometry)
+                )
+        if not candidates:
+            raise ValueError("no structurally separated ascending channel geometry")
+        return max(candidates, key=lambda item: item[:-1])[-1]
 
 
 def _pivot_lows(bars: tuple[MarketBar, ...], radius: int) -> tuple[int, ...]:

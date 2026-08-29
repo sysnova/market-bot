@@ -98,7 +98,11 @@ from app.swing_4h_geri_engine import (
 )
 from app.swing_4h_geri_engine.strategy import configure_engine as configure_geri_4h
 from app.swing_4h_geri_engine.strategy import validate_strategy as validate_geri_4h
-from app.swing_channel_4h_engine import SwingChannel4HEngine, SwingChannel4HEngineV11
+from app.swing_channel_4h_engine import (
+    SwingChannel4HEngine,
+    SwingChannel4HEngineV11,
+    SwingChannel4HEngineV12,
+)
 from app.swing_engine import (
     SwingEngine,
     SwingEngineV2,
@@ -167,6 +171,7 @@ def default_engine_registry() -> EngineRegistry:
                 implementations={
                     "1.0.0": SwingChannel4HEngine,
                     "1.1.0": SwingChannel4HEngineV11,
+                    "1.2.0": SwingChannel4HEngineV12,
                 },
                 required_since="7.14.0",
             ),

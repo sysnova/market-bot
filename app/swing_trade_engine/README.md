@@ -7,6 +7,11 @@ The engine uses completed daily bars for a parameterized Fibonacci impulse
 (60 sessions initially), support/resistance over 20 sessions and ATR14 risk.
 It evaluates only completed 15-minute bars and publishes hierarchical maturity:
 
+`analyze_geometry()` is the non-operational visualization path. When the absolute
+60-session high precedes the absolute low, it selects the widest positive causal
+low-to-later-high pair. It uses the same configured ratios, ATR, support window,
+invalidation and targets without changing the versioned operational thesis rule.
+
 - `ST1`: valid impulse, distance and strict primary R/R greater than 1.5.
 - `ST2`: 20-session support band intersects the Fibonacci entry zone.
 - `ST3`: spot is inside the Fibonacci zone and opens the paper Swing leg.

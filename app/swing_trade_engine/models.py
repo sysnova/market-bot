@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from app.contracts import GeriAssessment, MarketBar, SupportAssessment
+from app.contracts.geri_4h import GeriAssessment
+from app.contracts.market_analysis import MarketBar
 from app.contracts.order_flow_support import OrderFlowSupportAssessment
+from app.contracts.support_confirmation import SupportAssessment
 
 
 @dataclass(frozen=True, slots=True)

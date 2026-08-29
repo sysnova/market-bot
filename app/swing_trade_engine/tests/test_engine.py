@@ -287,6 +287,27 @@ def test_engine_rejects_long_impulse_when_global_high_precedes_low() -> None:
         )
 
 
+def test_geometry_mode_uses_widest_causal_pair_when_global_extrema_are_reversed() -> None:
+    bars = list(daily_bars())
+    bars[0] = bars[0].model_copy(update={"low": Decimal("100"), "high": Decimal("130")})
+    last = bars[-1]
+    bars[-1] = last.model_copy(update={"low": Decimal("70"), "high": Decimal("119")})
+
+    result = SwingTradeEngine().analyze_geometry(
+        SwingTradeContext(
+            symbol="AAPL",
+            as_of=last.timestamp + timedelta(minutes=15),
+            current_price=Decimal("97"),
+            daily_bars=tuple(bars),
+        )
+    )
+
+    assert result.impulse_low == Decimal("95.0000")
+    assert result.impulse_low_at == bars[-20].timestamp
+    assert result.impulse_high == Decimal("119.0000")
+    assert result.impulse_high_at == bars[-1].timestamp
+
+
 def test_st4_rejects_stale_geri() -> None:
     bars = daily_bars()
     stale = geri(bars).model_copy(update={"occurred_at": bars[-4].timestamp})
