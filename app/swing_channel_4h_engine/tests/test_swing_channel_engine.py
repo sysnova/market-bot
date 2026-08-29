@@ -113,6 +113,44 @@ def broken_historical_channel_bars() -> tuple[MarketBar, ...]:
     )
 
 
+def restarted_channel_bars() -> tuple[MarketBar, ...]:
+    values = [
+        ("85", "89", "87"),
+        ("83", "88", "86"),
+        ("80", "86", "84"),
+        ("82", "90", "88"),
+        ("84", "95", "92"),
+        ("85", "110", "107"),
+        ("86", "98", "95"),
+        ("87", "97", "94"),
+        ("88", "96", "93"),
+        ("89", "95", "92"),
+        ("91", "96", "94"),
+        ("92", "97", "95"),
+        ("91", "96", "94"),
+        ("92", "97", "95"),
+        ("90", "96", "94"),
+        ("93", "98", "96"),
+        ("70", "80", "75"),
+        ("73", "85", "82"),
+        ("75", "90", "87"),
+        ("77", "100", "96"),
+        ("78", "95", "92"),
+        ("79", "94", "91"),
+        ("78", "92", "89"),
+        ("76", "88", "85"),
+        ("74", "86", "82"),
+        ("77", "89", "86"),
+        ("78", "91", "88"),
+        ("79", "92", "89"),
+        ("80", "93", "90"),
+    ]
+    return tuple(
+        bar(index, low=low, high=high, close=close)
+        for index, (low, high, close) in enumerate(values)
+    )
+
+
 def daily_swing(*, low: str = "103", high: str = "106") -> AnalysisResult:
     return AnalysisResult(
         symbol="AAPL",
@@ -358,3 +396,19 @@ def test_v13_preserves_a_broken_channel_as_invalidated_geometry() -> None:
     assert result.middle > result.support
     assert result.resistance > result.middle
     assert "projected_support_invalidation_breached" in result.reasons
+
+
+def test_v13_prefers_a_recent_mature_retest_after_an_old_channel_breaks() -> None:
+    bars = restarted_channel_bars()
+
+    result = SwingChannel4HEngineV13().analyze(
+        SwingChannel4HContext(
+            symbol="AAPL",
+            bars=bars,
+            current_price=bars[-1].close,
+        )
+    )
+
+    assert result.pivot_a_at == bars[16].timestamp
+    assert result.pivot_c_at == bars[19].timestamp
+    assert result.pivot_b_at == bars[24].timestamp

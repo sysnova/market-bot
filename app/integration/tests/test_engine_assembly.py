@@ -76,6 +76,7 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV14,
     Swing4HGeriEngineV16,
     Swing4HGeriEngineV17,
+    Swing4HGeriEngineV18,
 )
 from app.swing_channel_4h_engine import (
     SwingChannel4HEngine,
@@ -142,6 +143,7 @@ SHORT_CONFIRMATION_DEFINITION = ROOT / "configs/marketbot/7.37.0.yaml"
 LOCAL_SHORT_TRIGGER_DEFINITION = ROOT / "configs/marketbot/7.38.0.yaml"
 STRUCTURAL_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.39.0.yaml"
 PROJECTED_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.40.0.yaml"
+REBASED_GERI_DEFINITION = ROOT / "configs/marketbot/7.41.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -194,6 +196,17 @@ def test_projected_channel_definition_preserves_broken_geometry() -> None:
     assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV13)
     assert assembly.definition.version == "7.40.0"
     assert assembly.spec(EngineSlot.SWING_CHANNEL_4H).implementation == "1.3.0"
+
+
+def test_rebased_geri_definition_replaces_structurally_detached_chains() -> None:
+    previous = MarketBotAssembly.from_path(PROJECTED_CHANNEL_DEFINITION)
+    assembly = MarketBotAssembly.from_path(REBASED_GERI_DEFINITION)
+
+    assert isinstance(previous.build_4hgeri(), Swing4HGeriEngineV16)
+    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV18)
+    assert assembly.definition.version == "7.41.0"
+    assert assembly.spec(EngineSlot.GERI_4H).implementation == "1.8.0"
+    assert assembly.build_4hgeri()._structural_rebase_atr == Decimal("3.00")
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:

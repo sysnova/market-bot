@@ -6,7 +6,7 @@ plot(na, "MarketBot compiler sentinel", display=display.none)
 
 grupoImport = "MarketBot · Datos"
 configCsv = input.text_area(
-     "ticker,modoNiveles,marcoCalculo,zonaLowManual,zonaHighManual,soporteManual,invalidationManual,resistenciaManual,liquidezManual,avwapPivotManual,avwapBreakoutManual,extendedTarget,asOf,fuenteDatos,swingSma20,swingSma50,swingTarget,pivotLowAnchorAt,breakoutAnchorAt,stImpulseLow,stImpulseHigh,stImpulseLowAt,stImpulseHighAt,stFib618,stFib50,stFib1618,stZoneLow,stZoneHigh,stSupport20,stResistance20,stInvalidation,stPrimaryTarget,stExtendedTarget,channelZoneLow,channelZoneHigh,channelSupport,channelMiddle,channelResistance,channelInvalidation,geriZoneLow,geriZoneHigh,geriInvalidation,geriActiveLevelKind,geriActiveLevelPrice,channelPivotAAtMs,channelPivotAPrice,channelPivotBAtMs,channelPivotBPrice,channelPivotCAtMs,channelPivotCPrice,channelObservedAtMs,channelSlopePerBar,channelWidth,channelMaturity,channelReasons",
+     "ticker,modoNiveles,marcoCalculo,zonaLowManual,zonaHighManual,soporteManual,invalidationManual,resistenciaManual,liquidezManual,avwapPivotManual,avwapBreakoutManual,extendedTarget,asOf,fuenteDatos,swingSma20,swingSma50,swingTarget,pivotLowAnchorAt,breakoutAnchorAt,stImpulseLow,stImpulseHigh,stImpulseLowAt,stImpulseHighAt,stFib618,stFib50,stFib1618,stZoneLow,stZoneHigh,stSupport20,stResistance20,stInvalidation,stPrimaryTarget,stExtendedTarget,channelZoneLow,channelZoneHigh,channelSupport,channelMiddle,channelResistance,channelInvalidation,geriZoneLow,geriZoneHigh,geriInvalidation,geriActiveLevelKind,geriActiveLevelPrice,channelPivotAAtMs,channelPivotAPrice,channelPivotBAtMs,channelPivotBPrice,channelPivotCAtMs,channelPivotCPrice,channelObservedAtMs,channelSlopePerBar,channelWidth,channelMaturity,channelReasons,geriN1Kind,geriN1Price,geriN2Kind,geriN2Price,geriN3Kind,geriN3Price",
      "CSV MarketBot",
      group=grupoImport,
      tooltip="Pegá la cabecera y las filas generadas por export_marketbot_tradingview.py. Se selecciona automáticamente el ticker abierto."
@@ -30,7 +30,7 @@ f_row(string csv, string target) =>
     if array.size(rows) > 0
         for i = 0 to array.size(rows) - 1
             array<string> cols = str.split(str.replace_all(array.get(rows, i), "\r", ""), ",")
-            if array.size(cols) >= 55
+            if array.size(cols) >= 61
                 string rowTicker = str.upper(f_clean(array.get(cols, 0)))
                 if array.size(selected) == 0 and rowTicker == str.upper(target)
                     selected := array.copy(cols)
@@ -55,7 +55,7 @@ var array<string> cfg = array.new_string()
 if barstate.isfirst
     cfg := f_row(configCsv, syminfo.ticker)
 
-bool found = array.size(cfg) >= 55
+bool found = array.size(cfg) >= 61
 
 float swingZoneLow = f_num(cfg, 3)
 float swingZoneHigh = f_num(cfg, 4)
@@ -112,6 +112,12 @@ float channelSlopePerBar = f_num(cfg, 51)
 float channelWidth = f_num(cfg, 52)
 string channelMaturity = f_text(cfg, 53, "SIN_DATO")
 string channelReasons = f_text(cfg, 54, "SIN_DATO")
+string geriN1Kind = f_text(cfg, 55, "SIN_DATO")
+float geriN1Price = f_num(cfg, 56)
+string geriN2Kind = f_text(cfg, 57, "SIN_DATO")
+float geriN2Price = f_num(cfg, 58)
+string geriN3Kind = f_text(cfg, 59, "SIN_DATO")
+float geriN3Price = f_num(cfg, 60)
 int channelPivotABar = f_bar_at(channelPivotAAtMs)
 int channelPivotBBar = f_bar_at(channelPivotBAtMs)
 int channelPivotCBar = f_bar_at(channelPivotCAtMs)
@@ -212,6 +218,9 @@ pGeriHigh = plot(f_plot(geriZoneHigh, found and mostrarGeri), "MB GERI Zone High
 pGeriLow = plot(f_plot(geriZoneLow, found and mostrarGeri), "MB GERI Zone Low", color=color.rgb(190, 100, 255), style=plot.style_linebr)
 fill(pGeriHigh, pGeriLow, color=found and mostrarGeri and f_valid_zone(geriZoneLow, geriZoneHigh) ? color.new(color.purple, 86) : na, title="MB GERI Zone")
 plot(f_plot(geriInvalidation, found and mostrarGeri), "MB GERI Invalidation", color=color.new(color.red, 55), linewidth=2, style=plot.style_linebr)
+plot(f_plot(geriN1Price, found and mostrarGeri), "MB GERI N1", color=geriN1Kind == "SUPPORT" ? color.new(color.aqua, 55) : color.new(color.fuchsia, 55), linewidth=1, style=plot.style_linebr)
+plot(f_plot(geriN2Price, found and mostrarGeri), "MB GERI N2", color=geriN2Kind == "SUPPORT" ? color.new(color.aqua, 30) : color.new(color.fuchsia, 30), linewidth=2, style=plot.style_linebr)
+plot(f_plot(geriN3Price, found and mostrarGeri), "MB GERI N3", color=geriN3Kind == "SUPPORT" ? color.aqua : color.fuchsia, linewidth=3, style=plot.style_linebr)
 plot(f_plot(geriLevelPrice, found and mostrarGeri), "MB GERI Active Structural Level", color=geriLevelKind == "SUPPORT" ? color.aqua : color.fuchsia, linewidth=3, style=plot.style_linebr)
 
 // AVWAP: pivote amarillo y breakout naranja.
@@ -249,8 +258,8 @@ if barstate.islast and mostrarDashboard
     table.cell(panel, 1, 9, str.tostring(stPrimaryTarget, "0.0000") + " / " + str.tostring(stExtendedTarget, "0.0000"), text_color=color.white, bgcolor=valueBg)
     table.cell(panel, 0, 10, "CANAL " + channelMaturity, text_color=color.white, bgcolor=labelBg)
     table.cell(panel, 1, 10, channelSupport > 0 ? str.tostring(channelSupport, "0.0000") + " / " + str.tostring(channelMiddle, "0.0000") + " / " + str.tostring(channelResistance, "0.0000") : "SIN CANAL 4H VÁLIDO", text_color=color.white, bgcolor=valueBg)
-    table.cell(panel, 0, 11, "GERI NIVEL", text_color=color.white, bgcolor=labelBg)
-    table.cell(panel, 1, 11, geriLevelKind + " " + str.tostring(geriLevelPrice, "0.0000"), text_color=color.white, bgcolor=valueBg)
+    table.cell(panel, 0, 11, "GERI N1 / N2 / N3", text_color=color.white, bgcolor=labelBg)
+    table.cell(panel, 1, 11, geriN1Kind + " " + str.tostring(geriN1Price, "0.0000") + " / " + geriN2Kind + " " + str.tostring(geriN2Price, "0.0000") + " / " + geriN3Kind + " " + str.tostring(geriN3Price, "0.0000"), text_color=color.white, bgcolor=valueBg)
     table.cell(panel, 0, 12, "ANCLAS / IMPULSO", text_color=color.white, bgcolor=labelBg)
     table.cell(panel, 1, 12, pivotAnchor + " · " + breakoutAnchor + " · " + stImpulseLowAt + " → " + stImpulseHighAt, text_color=color.white, bgcolor=valueBg)
     table.cell(panel, 0, 13, "CANAL MOTIVO", text_color=color.white, bgcolor=labelBg)

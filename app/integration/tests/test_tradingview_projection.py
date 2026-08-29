@@ -71,6 +71,11 @@ def test_projection_exports_every_calculated_price_layer() -> None:
             "invalidation": "77.9000",
             "active_level_kind": "SUPPORT",
             "active_level_price": "80.0000",
+            "levels": [
+                {"sequence": 1, "kind": "SUPPORT", "price": "83.9400"},
+                {"sequence": 2, "kind": "RESISTANCE", "price": "88.1200"},
+                {"sequence": 3, "kind": "SUPPORT", "price": "76.0300"},
+            ],
         },
     )
 
@@ -92,6 +97,12 @@ def test_projection_exports_every_calculated_price_layer() -> None:
     assert row["channelMaturity"] == "ARMED"
     assert row["channelReasons"] == "ascending_channel_armed"
     assert row["geriActiveLevelPrice"] == "80.0000"
+    assert row["geriN1Kind"] == "SUPPORT"
+    assert row["geriN1Price"] == "83.9400"
+    assert row["geriN2Kind"] == "RESISTANCE"
+    assert row["geriN2Price"] == "88.1200"
+    assert row["geriN3Kind"] == "SUPPORT"
+    assert row["geriN3Price"] == "76.0300"
     assert row["swingTarget"] == "121.5000"
     assert "currentMaturity" not in row
     assert "entryWatchStatus" not in row
@@ -110,6 +121,8 @@ def test_projection_uses_zero_only_when_a_geometry_was_not_calculated() -> None:
     assert row["stFib618"] == "0"
     assert row["stFib50"] == "0"
     assert row["geriActiveLevelKind"] == "SIN_DATO"
+    assert row["geriN1Kind"] == "SIN_DATO"
+    assert row["geriN3Price"] == "0"
     assert assessment.errors == {"swing_trade": "no valid LONG impulse"}
 
 

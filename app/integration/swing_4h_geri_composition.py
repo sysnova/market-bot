@@ -92,6 +92,7 @@ class Swing4HGeriRuntime:
             "1.5.0",
             "1.6.0",
             "1.7.0",
+            "1.8.0",
         }
         self._publisher = publisher
         self._clock = clock or SystemClock()
@@ -601,7 +602,7 @@ async def run_swing_4h_geri_process(
                 "marketbot-4hgeri-restore-v1",
             ),
         )
-        if engine_version in {"1.5.0", "1.6.0", "1.7.0"}:
+        if engine_version in {"1.5.0", "1.6.0", "1.7.0", "1.8.0"}:
             replay_specs += (
                 (
                     "marketbot.v1.support-confirmation.assessment.>",
@@ -624,6 +625,7 @@ async def run_swing_4h_geri_process(
             "1.5.0",
             "1.6.0",
             "1.7.0",
+            "1.8.0",
         }:
             replay_specs += (
                 (

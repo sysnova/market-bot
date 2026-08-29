@@ -694,7 +694,7 @@ class SwingChannel4HEngineV13(SwingChannel4HEngineV12):
                     )
                 )
                 candidates.append(
-                    (separation, b, containment, touches, -slope, geometry)
+                    (b, separation, containment, touches, -slope, geometry)
                 )
         if not candidates:
             raise ValueError("no projected impulse/retest channel geometry")

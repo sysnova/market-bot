@@ -87,6 +87,12 @@ TRADINGVIEW_COLUMNS = (
     "channelWidth",
     "channelMaturity",
     "channelReasons",
+    "geriN1Kind",
+    "geriN1Price",
+    "geriN2Kind",
+    "geriN2Price",
+    "geriN3Kind",
+    "geriN3Price",
 )
 
 
@@ -116,6 +122,9 @@ def project_tradingview_row(assessment: TradingViewAssessment) -> dict[str, str]
     channel = _mapping(assessment.swing_channel)
     geri = _mapping(assessment.geri)
     drawable_geri_zone = geri if _drawable_geri_long_zone(geri) else {}
+    geri_n1 = _geri_level(geri, 1)
+    geri_n2 = _geri_level(geri, 2)
+    geri_n3 = _geri_level(geri, 3)
 
     row = {
         "ticker": normalized,
@@ -177,6 +186,12 @@ def project_tradingview_row(assessment: TradingViewAssessment) -> dict[str, str]
         "channelWidth": _number(channel.get("width")),
         "channelMaturity": _text(channel.get("maturity")),
         "channelReasons": _joined_text(channel.get("reasons")),
+        "geriN1Kind": _text(geri_n1.get("kind")),
+        "geriN1Price": _number(geri_n1.get("price")),
+        "geriN2Kind": _text(geri_n2.get("kind")),
+        "geriN2Price": _number(geri_n2.get("price")),
+        "geriN3Kind": _text(geri_n3.get("kind")),
+        "geriN3Price": _number(geri_n3.get("price")),
     }
     return {column: row[column] for column in TRADINGVIEW_COLUMNS}
 
@@ -484,6 +499,17 @@ def _metrics(payload: Mapping[str, object]) -> dict[str, object]:
         if isinstance(name, str):
             result[name] = item.get("value")
     return result
+
+
+def _geri_level(payload: Mapping[str, object], sequence: int) -> dict[str, object]:
+    raw_levels = payload.get("levels")
+    if not isinstance(raw_levels, (list, tuple)):
+        return {}
+    for raw in cast(list[object] | tuple[object, ...], raw_levels):
+        level = _mapping(raw)
+        if str(level.get("sequence")) == str(sequence):
+            return level
+    return {}
 
 
 def _mapping(value: object) -> dict[str, object]:

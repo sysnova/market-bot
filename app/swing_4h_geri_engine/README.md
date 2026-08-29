@@ -49,3 +49,10 @@ valid. Its parameters live in `configs/rules/geri_4h/1.0.0.yaml`.
 The confirmed-buy monitor keeps `CT0` and `CT1` as tracking only and surfaces `CT2`, `CT3` and
 `CT4` as `GERI REACTION` entries. Repeated observations at the same maturity are deduplicated, but
 a downgrade or reclaim-required state resets the latch so a later reaction can confirm again.
+
+Version `1.8.0`, selected by MarketBot definition `7.41.0`, prevents an old completed chain from
+remaining the operational structure after price has moved more than `3.00 ATR` beyond its active
+level. It evaluates causal suffixes of the same completed 4H history and rebases to the most recent
+non-detached N1/N2/N3 chain; a complete actionable chain is preferred over a still-building one.
+The assessment records the replaced level and both ATR distances in metrics. The legacy pinned
+implementations remain available for replay and comparison.
