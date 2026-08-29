@@ -19,6 +19,7 @@ from app.swing_channel_4h_engine import (
     SwingChannel4HEngine,
     SwingChannel4HEngineV11,
     SwingChannel4HEngineV12,
+    SwingChannel4HEngineV13,
 )
 
 START = datetime(2026, 7, 20, 13, 30, tzinfo=UTC)
@@ -81,6 +82,30 @@ def structural_channel_bars() -> tuple[MarketBar, ...]:
         ("106", "115", "113"),
         ("107", "117", "115"),
         ("108", "118", "116"),
+    ]
+    return tuple(
+        bar(index, low=low, high=high, close=close)
+        for index, (low, high, close) in enumerate(values)
+    )
+
+
+def broken_historical_channel_bars() -> tuple[MarketBar, ...]:
+    values = [
+        ("101", "105", "103"),
+        ("98", "103", "101"),
+        ("94", "100", "98"),
+        ("97", "104", "102"),
+        ("100", "110", "108"),
+        ("103", "112", "110"),
+        ("102", "109", "107"),
+        ("101", "108", "106"),
+        ("100", "106", "104"),
+        ("99", "105", "103"),
+        ("98", "104", "102"),
+        ("101", "108", "106"),
+        ("104", "112", "110"),
+        ("105", "113", "111"),
+        ("90", "100", "91"),
     ]
     return tuple(
         bar(index, low=low, high=high, close=close)
@@ -297,3 +322,39 @@ def test_v12_rechecks_an_active_channel_created_by_an_older_engine() -> None:
                 active_channel=legacy,
             )
         )
+
+
+def test_v13_anchors_the_impulse_peak_between_separated_supports() -> None:
+    bars = broken_historical_channel_bars()
+
+    result = SwingChannel4HEngineV13().analyze(
+        SwingChannel4HContext(
+            symbol="AAPL",
+            bars=bars,
+            current_price=bars[-1].close,
+        )
+    )
+
+    assert result.pivot_a_at == bars[2].timestamp
+    assert result.pivot_c_at == bars[5].timestamp
+    assert result.pivot_b_at == bars[10].timestamp
+    assert result.pivot_a_at < result.pivot_c_at < result.pivot_b_at
+    assert result.slope_per_bar == Decimal("0.5000")
+
+
+def test_v13_preserves_a_broken_channel_as_invalidated_geometry() -> None:
+    bars = broken_historical_channel_bars()
+
+    result = SwingChannel4HEngineV13().analyze(
+        SwingChannel4HContext(
+            symbol="AAPL",
+            bars=bars,
+            current_price=bars[-1].close,
+        )
+    )
+
+    assert result.maturity is SwingChannelMaturity.INVALIDATED
+    assert result.support == Decimal("100.0000")
+    assert result.middle > result.support
+    assert result.resistance > result.middle
+    assert "projected_support_invalidation_breached" in result.reasons

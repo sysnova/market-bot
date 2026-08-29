@@ -33,7 +33,7 @@ class AppSettings(BaseSettings):
     entry_watcher_enabled: bool = True
     entry_watch_ttl_days: int = Field(default=56, ge=7, le=365)
     alert_checkpoint_interval_seconds: int = Field(default=30, ge=5, le=300)
-    definition_path: Path = Path("configs/marketbot/7.39.0.yaml")
+    definition_path: Path = Path("configs/marketbot/7.40.0.yaml")
     entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0", "5.0.0"] | None = None
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     alpaca_api_key_id: SecretStr | None = None

@@ -81,6 +81,7 @@ from app.swing_channel_4h_engine import (
     SwingChannel4HEngine,
     SwingChannel4HEngineV11,
     SwingChannel4HEngineV12,
+    SwingChannel4HEngineV13,
 )
 from app.swing_engine import (
     SwingEngineV4,
@@ -140,6 +141,7 @@ NO_SWING_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.36.0.yaml"
 SHORT_CONFIRMATION_DEFINITION = ROOT / "configs/marketbot/7.37.0.yaml"
 LOCAL_SHORT_TRIGGER_DEFINITION = ROOT / "configs/marketbot/7.38.0.yaml"
 STRUCTURAL_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.39.0.yaml"
+PROJECTED_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.40.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -182,6 +184,16 @@ def test_structural_channel_definition_rejects_nearby_support_pairs() -> None:
     assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV12)
     assert assembly.definition.version == "7.39.0"
     assert assembly.spec(EngineSlot.SWING_CHANNEL_4H).implementation == "1.2.0"
+
+
+def test_projected_channel_definition_preserves_broken_geometry() -> None:
+    previous = MarketBotAssembly.from_path(STRUCTURAL_CHANNEL_DEFINITION)
+    assembly = MarketBotAssembly.from_path(PROJECTED_CHANNEL_DEFINITION)
+
+    assert isinstance(previous.build_swing_channel_4h(), SwingChannel4HEngineV12)
+    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV13)
+    assert assembly.definition.version == "7.40.0"
+    assert assembly.spec(EngineSlot.SWING_CHANNEL_4H).implementation == "1.3.0"
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:

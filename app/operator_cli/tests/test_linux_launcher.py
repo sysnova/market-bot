@@ -28,8 +28,8 @@ def test_linux_launcher_prepares_current_definition_environment() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     launcher = script.split("launch_tmux()", 1)[1].split('case "$ROLE"', 1)[0]
 
-    assert "configs/marketbot/7.39.0.yaml" in script
-    assert 'DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.39.0.yaml"' in script
+    assert "configs/marketbot/7.40.0.yaml" in script
+    assert 'DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.40.0.yaml"' in script
     assert 'DEFINITION_PATH="${MARKETBOT_DEFINITION_PATH:-' not in script
     assert '--definition-path "$DEFINITION_PATH"' in launcher
     assert '--definition-path) DEFINITION_PATH="$2"; shift 2 ;;' in script

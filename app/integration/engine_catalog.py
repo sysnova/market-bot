@@ -102,6 +102,7 @@ from app.swing_channel_4h_engine import (
     SwingChannel4HEngine,
     SwingChannel4HEngineV11,
     SwingChannel4HEngineV12,
+    SwingChannel4HEngineV13,
 )
 from app.swing_engine import (
     SwingEngine,
@@ -172,6 +173,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.0.0": SwingChannel4HEngine,
                     "1.1.0": SwingChannel4HEngineV11,
                     "1.2.0": SwingChannel4HEngineV12,
+                    "1.3.0": SwingChannel4HEngineV13,
                 },
                 required_since="7.14.0",
             ),

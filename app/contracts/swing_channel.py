@@ -64,8 +64,12 @@ class SwingChannelAssessment(StrictFrozenModel):
     def validate_assessment(self) -> SwingChannelAssessment:
         if self.assessment_id.version != 7:
             raise ValueError("assessment_id must be UUIDv7")
-        if not self.pivot_a_at < self.pivot_b_at < self.pivot_c_at:
-            raise ValueError("channel pivots must be chronologically ordered")
+        legacy_geometry = self.pivot_a_at < self.pivot_b_at < self.pivot_c_at
+        impulse_retest_geometry = self.pivot_a_at < self.pivot_c_at < self.pivot_b_at
+        if not (legacy_geometry or impulse_retest_geometry):
+            raise ValueError(
+                "channel pivots must describe an origin, impulse peak, and retest"
+            )
         if self.pivot_b_price <= self.pivot_a_price:
             raise ValueError("pivot B must be higher than pivot A")
         if not self.invalidation < self.zone_low <= self.support <= self.zone_high:

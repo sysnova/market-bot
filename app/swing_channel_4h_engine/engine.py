@@ -551,6 +551,156 @@ class SwingChannel4HEngineV12(SwingChannel4HEngineV11):
         return max(candidates, key=lambda item: item[:-1])[-1]
 
 
+class SwingChannel4HEngineV13(SwingChannel4HEngineV12):
+    """Project a formed impulse/retest channel even after a later break."""
+
+    engine_version = "1.3.0"
+
+    def __init__(
+        self,
+        *,
+        pivot_radius: int = 1,
+        minimum_bars: int = 8,
+        channel_lookback_bars: int = 60,
+        zone_atr: Decimal = Decimal("0.25"),
+        invalidation_atr: Decimal = Decimal("0.50"),
+        minimum_containment: Decimal = Decimal("0.50"),
+        minimum_width_atr: Decimal = Decimal("0.25"),
+        minimum_pivot_separation_bars: int = 8,
+        minimum_impulse_atr: Decimal = Decimal("1.50"),
+        minimum_pullback_atr: Decimal = Decimal("0.75"),
+        minimum_projection_bars: int = 4,
+    ) -> None:
+        super().__init__(
+            pivot_radius=pivot_radius,
+            minimum_bars=minimum_bars,
+            channel_lookback_bars=channel_lookback_bars,
+            zone_atr=zone_atr,
+            invalidation_atr=invalidation_atr,
+            minimum_containment=minimum_containment,
+            minimum_width_atr=minimum_width_atr,
+            minimum_pivot_separation_bars=minimum_pivot_separation_bars,
+            minimum_impulse_atr=minimum_impulse_atr,
+            minimum_pullback_atr=minimum_pullback_atr,
+        )
+        if minimum_projection_bars < pivot_radius * 2 + 1:
+            raise ValueError("minimum channel projection is too short")
+        self._minimum_projection_bars = minimum_projection_bars
+
+    def analyze(self, context: SwingChannel4HContext) -> SwingChannelAssessment:
+        active = context.active_channel
+        if (
+            active is not None
+            and active.engine_version == self.engine_version
+            and active.maturity is not SwingChannelMaturity.INVALIDATED
+        ):
+            return self._analyze_active(context, active)
+
+        result = SwingChannel4HEngine.analyze(
+            self,
+            replace(context, active_channel=None),
+        )
+        bars = tuple(bar for bar in context.bars[-self._lookback :] if bar.is_final)
+        by_timestamp = {bar.timestamp: index for index, bar in enumerate(bars)}
+        geometry = _Geometry(
+            a=by_timestamp[result.pivot_a_at],
+            b=by_timestamp[result.pivot_b_at],
+            c=by_timestamp[result.pivot_c_at],
+            slope=result.slope_per_bar,
+            width=result.width,
+        )
+        formation_containment = _containment_between(
+            bars,
+            geometry,
+            _atr(bars) * Decimal("0.25"),
+            end=geometry.b,
+        )
+        return result.model_copy(
+            update={
+                "containment_ratio": _rounded(formation_containment),
+                "metrics": (
+                    *result.metrics,
+                    NamedValue(
+                        name="channel_structure_rule",
+                        value="origin_impulse_peak_retest_projection",
+                    ),
+                    NamedValue(
+                        name="minimum_pivot_separation_bars",
+                        value=self._minimum_pivot_separation_bars,
+                    ),
+                    NamedValue(
+                        name="minimum_projection_bars",
+                        value=self._minimum_projection_bars,
+                    ),
+                ),
+            }
+        )
+
+    def _geometry(self, bars: tuple[MarketBar, ...]) -> _Geometry:
+        lows = _pivot_lows(bars, self._pivot_radius)
+        atr14 = _atr(bars)
+        tolerance = atr14 * Decimal("0.25")
+        invalidation_padding = atr14 * self._invalidation_atr
+        candidates: list[tuple[int, int, Decimal, int, Decimal, _Geometry]] = []
+        current_index = len(bars) - 1
+        for a in lows[:-1]:
+            if len(bars) - a < self._minimum_bars:
+                continue
+            for b in lows:
+                separation = b - a
+                if (
+                    separation < self._minimum_pivot_separation_bars
+                    or current_index - b < self._minimum_projection_bars
+                    or bars[b].low <= bars[a].low
+                ):
+                    continue
+                c = max(range(a + 1, b), key=lambda index: bars[index].high)
+                impulse_high = bars[c].high
+                if (impulse_high - bars[a].low) / atr14 < self._minimum_impulse_atr:
+                    continue
+                if (impulse_high - bars[b].low) / atr14 < self._minimum_pullback_atr:
+                    continue
+                slope = (bars[b].low - bars[a].low) / Decimal(separation)
+                width = impulse_high - (
+                    bars[a].low + slope * Decimal(c - a)
+                )
+                if slope <= ZERO or width <= ZERO:
+                    continue
+                geometry = _Geometry(a=a, b=b, c=c, slope=slope, width=width)
+                if any(
+                    bars[index].low
+                    < _line(geometry, bars, index) - invalidation_padding
+                    for index in range(a, b + 1)
+                ):
+                    continue
+                containment = _containment_between(
+                    bars,
+                    geometry,
+                    tolerance,
+                    end=b,
+                )
+                width_atr = width / atr14
+                if containment < self._minimum_containment:
+                    continue
+                if width_atr < self._minimum_width_atr:
+                    continue
+                touches = len(
+                    _support_touches(
+                        bars,
+                        geometry,
+                        start=b,
+                        padding=atr14 * self._zone_atr,
+                        invalidation_padding=invalidation_padding,
+                    )
+                )
+                candidates.append(
+                    (separation, b, containment, touches, -slope, geometry)
+                )
+        if not candidates:
+            raise ValueError("no projected impulse/retest channel geometry")
+        return max(candidates, key=lambda item: item[:-1])[-1]
+
+
 def _pivot_lows(bars: tuple[MarketBar, ...], radius: int) -> tuple[int, ...]:
     result: list[int] = []
     for index in range(radius, len(bars) - radius):
@@ -684,6 +834,23 @@ def _containment(
         and bar.high <= _line(geometry, bars, index) + geometry.width + tolerance
         for index, bar in enumerate(bars)
         if index >= geometry.a
+    )
+    return Decimal(inside) / Decimal(len(sample))
+
+
+def _containment_between(
+    bars: tuple[MarketBar, ...],
+    geometry: _Geometry,
+    tolerance: Decimal,
+    *,
+    end: int,
+) -> Decimal:
+    sample = bars[geometry.a : end + 1]
+    inside = sum(
+        bars[index].low >= _line(geometry, bars, index) - tolerance
+        and bars[index].high
+        <= _line(geometry, bars, index) + geometry.width + tolerance
+        for index in range(geometry.a, end + 1)
     )
     return Decimal(inside) / Decimal(len(sample))
 

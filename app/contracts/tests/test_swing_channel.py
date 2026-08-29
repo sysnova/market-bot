@@ -48,6 +48,15 @@ def test_swing_channel_assessment_keeps_ordered_geometry() -> None:
     assert item.support < item.middle < item.resistance
 
 
+def test_swing_channel_assessment_accepts_impulse_peak_between_supports() -> None:
+    item = assessment(
+        pivot_b_at=datetime(2026, 8, 12, 13, 30, tzinfo=UTC),
+        pivot_c_at=datetime(2026, 8, 8, 13, 30, tzinfo=UTC),
+    )
+
+    assert item.pivot_a_at < item.pivot_c_at < item.pivot_b_at
+
+
 def test_swing_channel_assessment_rejects_non_ascending_pivots() -> None:
     with pytest.raises(ValidationError, match="higher than pivot A"):
         assessment(pivot_b_price=Decimal("94"))
