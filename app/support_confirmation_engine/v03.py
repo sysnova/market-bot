@@ -91,6 +91,7 @@ class SupportConfirmationEngineV03:
         impulse_origin_at = impulse.origin_at if impulse is not None else None
         impulse_peak = impulse.peak if impulse is not None else None
         impulse_advance_percent = impulse.advance_percent if impulse is not None else None
+        fibonacci_metrics = _support_fibonacci_metrics(levels)
         if zone is None:
             return SupportAssessment(
                 symbol=symbol,
@@ -108,6 +109,7 @@ class SupportConfirmationEngineV03:
                 impulse_peak=impulse_peak,
                 impulse_advance_percent=impulse_advance_percent,
                 reasons=("no_actionable_support_within_distance",),
+                metrics=fibonacci_metrics,
                 context_hash=context_hash,
             )
 
@@ -146,7 +148,10 @@ class SupportConfirmationEngineV03:
                     "single_support_nearby_without_independent_confluence",
                     "informational_only_not_swing_confirmation",
                 ),
-                metrics=(NamedValue(name="atr14_daily", value=_rounded(atr14)),),
+                metrics=(
+                    NamedValue(name="atr14_daily", value=_rounded(atr14)),
+                    *fibonacci_metrics,
+                ),
                 context_hash=context_hash,
             )
 
@@ -227,9 +232,19 @@ class SupportConfirmationEngineV03:
                 NamedValue(name="base_building", value=combined.base_building),
                 NamedValue(name="base_breakout", value=combined.base_breakout),
                 NamedValue(name="paired_structure", value=paired_structure),
+                *fibonacci_metrics,
             ),
             context_hash=context_hash,
         )
+
+
+def _support_fibonacci_metrics(levels: tuple[_Level, ...]) -> tuple[NamedValue, ...]:
+    by_source = {level.source: level.value for level in levels}
+    return tuple(
+        NamedValue(name=f"impulse_{source}", value=_rounded(by_source[source]))
+        for source in ("fib_0500", "fib_0618", "fib_0786")
+        if source in by_source
+    )
 
 
 def _best_cluster_zone(

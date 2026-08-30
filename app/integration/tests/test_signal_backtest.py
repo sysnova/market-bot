@@ -17,9 +17,6 @@ from app.contracts import (
     MarketBar,
     NamedValue,
     PatternDirection,
-    SwingChannelAssessment,
-    SwingChannelMaturity,
-    SwingChannelTransition,
     SwingTradeAssessment,
     SwingTradeMaturity,
     SwingTradeTransition,
@@ -30,11 +27,10 @@ from app.contracts import (
 from app.event_bus import InMemoryEventBus
 from app.integration.signal_backtest import (
     SignalBacktestConfig,
-    _four_swing_model_comparison,
     _ingest_opportunity_then_publish_bar,
-    _swing_channel_outcomes,
     _swing_model_confirmation_summary,
     _swing_trade_outcomes,
+    _three_swing_model_comparison,
     load_backtest_market_data,
     replay_bars_at_cadence,
     run_signal_backtest,
@@ -210,43 +206,6 @@ async def test_cadence_waits_once_between_market_timestamps_not_between_symbols(
     assert flushes == [2, 3]
 
 
-def test_swing_channel_outcomes_measure_each_maturity_from_its_own_reference() -> None:
-    occurred_at = datetime(2026, 8, 10, 13, 30, tzinfo=UTC)
-    transition = SwingChannelTransition(
-        assessment_id=new_uuid7(),
-        symbol="AAPL",
-        occurred_at=occurred_at,
-        engine_version="1.0.0",
-        maturity=SwingChannelMaturity.IN_ZONE_4H,
-        current_price=Decimal("100"),
-        support=Decimal("100"),
-        zone_low=Decimal("99"),
-        zone_high=Decimal("101"),
-        invalidation=Decimal("98"),
-        reasons=("projected_support_touched",),
-        context_hash=f"sha256:{'a' * 64}",
-    )
-    bars = tuple(
-        _bar("AAPL", 30 + index).model_copy(
-            update={
-                "timestamp": occurred_at + timedelta(minutes=index),
-                "high": Decimal("103"),
-                "low": Decimal("98"),
-                "close": Decimal("102") if index >= 14 else Decimal("101"),
-            }
-        )
-        for index in range(20)
-    )
-
-    outcomes = _swing_channel_outcomes((transition,), {"AAPL": bars})
-
-    assert outcomes[0]["maturity"] == "IN_ZONE_4H"
-    assert outcomes[0]["mfe_percent"] == "3.00"
-    assert outcomes[0]["mae_percent"] == "-2.00"
-    assert outcomes[0]["return_15m"] == "2.00"
-    assert outcomes[0]["return_30m"] is None
-
-
 def test_swing_trade_outcome_excludes_the_bar_that_created_the_transition() -> None:
     occurred_at = datetime(2026, 8, 10, 13, 30, tzinfo=UTC)
     transition = SwingTradeTransition(
@@ -289,7 +248,7 @@ def test_swing_trade_outcome_excludes_the_bar_that_created_the_transition() -> N
     assert outcomes[0]["first_level_hit"] is None
 
 
-def test_four_swing_comparison_includes_latest_swing_trade_assessment() -> None:
+def test_three_swing_comparison_includes_latest_swing_trade_assessment() -> None:
     occurred_at = datetime(2026, 8, 10, 17, 30, tzinfo=UTC)
     daily = AnalysisResult.model_construct(
         engine_id="swing",
@@ -307,15 +266,6 @@ def test_four_swing_comparison_includes_latest_swing_trade_assessment() -> None:
             NamedValue(name="structural_invalidation", value="11.63"),
             NamedValue(name="reward_risk_to_resistance", value="2.97"),
         ),
-    )
-    channel = SwingChannelAssessment.model_construct(
-        symbol="ADUR",
-        occurred_at=occurred_at,
-        maturity=SwingChannelMaturity.L2_4H,
-        zone_low=Decimal("13.10"),
-        zone_high=Decimal("13.50"),
-        support=Decimal("13.30"),
-        invalidation=Decimal("12.80"),
     )
     geri = GeriAssessment.model_construct(
         symbol="ADUR",
@@ -341,14 +291,13 @@ def test_four_swing_comparison_includes_latest_swing_trade_assessment() -> None:
         reward_risk=Decimal("2.1"),
     )
 
-    rows = _four_swing_model_comparison((daily,), (channel,), (geri,), (trade,))
+    rows = _three_swing_model_comparison((daily,), (geri,), (trade,))
 
     latest = rows[-1]
     assert latest["daily_swing_entry_lane"] == "STRUCTURE_RECOVERY"
     assert latest["daily_swing_classification"] == "recovery"
     assert latest["daily_swing_structural_invalidation"] == "11.63"
     assert latest["daily_swing_reward_risk"] == "2.97"
-    assert latest["swing_channel_4h_maturity"] == "L2_4H"
     assert latest["4hgeri_maturity"] == "L2_4H"
     assert latest["swing_trade_maturity"] == "ST3"
     assert latest["swing_trade_eligible"] is True
@@ -405,7 +354,6 @@ def test_swing_confirmation_summary_distinguishes_buy_verdict_from_entry_gate() 
 
     summary = _swing_model_confirmation_summary(
         results,
-        (),
         (),
         (),
         window_start=as_of,
@@ -570,9 +518,6 @@ async def test_full_backtest_stays_in_memory_and_writes_a_local_artifact(
     assert report["operational_nats_used"] is False
     assert report["operational_database_used"] is False
     assert report["fusion_transitions"]
-    assert "swing_channel_4h_transitions" in report
-    assert "swing_channel_4h_outcomes" in report
-    assert "swing_channel_4h_vs_swing" in report
     assert "swing_results" in report
     assert "4hgeri_assessments" in report
     assert "4hgeri_transitions" in report
@@ -584,7 +529,6 @@ async def test_full_backtest_stays_in_memory_and_writes_a_local_artifact(
     assert "confirmed_entry_signals" in report
     assert isinstance(report["confirmed_signal_counts"], dict)
     assert "three_swing_model_comparison" in report
-    assert "four_swing_model_comparison" in report
     assert "swing_model_confirmation_summary" in report
     assert report["solid_buy_outcomes"] == []
     evidence = report["opportunity_evidence_audit"]

@@ -29,7 +29,6 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     assert "options-gamma-v1" in names
     assert "news-intelligence-v1" in names
     assert {"order-flow", "leveraged-thesis"} <= names
-    assert "swing-channel-4h" in names
     assert "4hgeri" in names
     assert "patreon-caps-v1" not in names
     assert "elliott-wave-v0" not in names
@@ -41,10 +40,6 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     assert long_term.arguments[:4] == ("run", "marketbot", "engine", "long")
     assert long_term.arguments[-2:] == ("--symbols", "HIMS,ZETA")
     assert long_term.ready_path == Path("C:/runtime root/status/long-term.ready.json")
-
-    swing_channel = plan.process("swing-channel-4h")
-    assert swing_channel.arguments[-2:] == ("--symbols", "HIMS,ZETA")
-    assert swing_channel.dependencies == ("market-history-v1", "long-portfolio-v1")
 
     geri = plan.process("4hgeri")
     assert geri.arguments[-2:] == ("--symbols", "HIMS,ZETA")

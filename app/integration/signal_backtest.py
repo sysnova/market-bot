@@ -30,8 +30,6 @@ from app.contracts import (
     GERI_ASSESSMENT_EVENT,
     GERI_TRANSITION_EVENT,
     MARKET_BAR_EVENT,
-    SWING_CHANNEL_ASSESSMENT_EVENT,
-    SWING_CHANNEL_TRANSITION_EVENT,
     SWING_TRADE_ASSESSMENT_EVENT,
     SWING_TRADE_TRANSITION_EVENT,
     AnalysisHorizon,
@@ -50,9 +48,6 @@ from app.contracts import (
     GeriTransition,
     LocalAlert,
     MarketBar,
-    SwingChannelAssessment,
-    SwingChannelMaturity,
-    SwingChannelTransition,
     SwingTradeAssessment,
     SwingTradeTransition,
     entry_opportunity_subject,
@@ -75,7 +70,6 @@ from .long_term_worker import LongTermWorker
 from .signal_fusion_composition import FUSION_SOURCE_SUBJECTS, SignalFusionRuntime
 from .support_confirmation_composition import SupportConfirmationRuntime
 from .swing_4h_geri_composition import Swing4HGeriRuntime
-from .swing_channel_4h_composition import SwingChannel4HRuntime
 from .swing_trade_composition import SwingTradeRuntime
 from .swing_worker import SwingWorker
 from .volume_structure_composition import VolumeStructureRuntime
@@ -323,11 +317,6 @@ async def run_signal_backtest(
         engine=assembly.build_volume_structure(),
         publisher=bus,
     )
-    swing_channel = SwingChannel4HRuntime(
-        engine=assembly.build_swing_channel_4h(),
-        publisher=bus,
-        clock=clock,
-    )
     geri = Swing4HGeriRuntime(
         engine=assembly.build_4hgeri(),
         publisher=bus,
@@ -343,8 +332,6 @@ async def run_signal_backtest(
     swing_results: list[AnalysisResult] = []
     volume_structure_results: list[AnalysisResult] = []
     fusion_transitions: list[FusionTransition] = []
-    swing_channel_assessments: list[SwingChannelAssessment] = []
-    swing_channel_transitions: list[SwingChannelTransition] = []
     geri_assessments: list[GeriAssessment] = []
     geri_transitions: list[GeriTransition] = []
     swing_trade_assessments: list[SwingTradeAssessment] = []
@@ -407,12 +394,6 @@ async def run_signal_backtest(
         if envelope.event_type == FUSION_TRANSITION_EVENT:
             fusion_transitions.append(_payload(envelope, FusionTransition))
 
-    async def collect_swing_channel(envelope: EventEnvelope) -> None:
-        if envelope.event_type == SWING_CHANNEL_ASSESSMENT_EVENT:
-            swing_channel_assessments.append(_payload(envelope, SwingChannelAssessment))
-        elif envelope.event_type == SWING_CHANNEL_TRANSITION_EVENT:
-            swing_channel_transitions.append(_payload(envelope, SwingChannelTransition))
-
     async def collect_geri(envelope: EventEnvelope) -> None:
         if envelope.event_type == GERI_ASSESSMENT_EVENT:
             geri_assessments.append(_payload(envelope, GeriAssessment))
@@ -455,36 +436,6 @@ async def run_signal_backtest(
             bus,
             "marketbot.v1.signal-fusion.transition.>",
             collect_fusion,
-            handler_errors,
-        )
-        await _subscribe_checked(
-            bus,
-            "marketbot.v1.swing-channel-4h.assessment.>",
-            collect_swing_channel,
-            handler_errors,
-        )
-        await _subscribe_checked(
-            bus,
-            "marketbot.v1.swing-channel-4h.transition.>",
-            collect_swing_channel,
-            handler_errors,
-        )
-        await _subscribe_checked(
-            bus,
-            "marketbot.v1.analysis.result.SWING.>",
-            swing_channel.handle_analysis,
-            handler_errors,
-        )
-        await _subscribe_checked(
-            bus,
-            "marketbot.v1.entry-opportunity.transition.>",
-            swing_channel.handle_opportunity,
-            handler_errors,
-        )
-        await _subscribe_checked(
-            bus,
-            "marketbot.v1.market.bar.1Min.>",
-            swing_channel.handle_market,
             handler_errors,
         )
         await _subscribe_checked(
@@ -562,7 +513,6 @@ async def run_signal_backtest(
         await volume_structure.bootstrap(data.warmup_bars, symbols=config.symbols)
         await support.bootstrap(data.warmup_bars, symbols=config.symbols)
         await wave.bootstrap(data.warmup_bars, symbols=config.symbols)
-        await swing_channel.bootstrap(data.warmup_bars, symbols=config.symbols)
         await geri.bootstrap(data.warmup_bars, symbols=config.symbols)
         await swing_trade.bootstrap(data.warmup_bars, symbols=config.symbols)
         await long_worker.bootstrap(data.warmup_bars, symbols=config.symbols)
@@ -587,10 +537,6 @@ async def run_signal_backtest(
         minute_bars = _minute_bars_by_symbol(data.session_bars)
         solid_buy_outcomes = evaluate_solid_buy_outcomes(
             tuple(alert_recorder.alerts),
-            minute_bars,
-        )
-        swing_channel_outcomes = _swing_channel_outcomes(
-            tuple(swing_channel_transitions),
             minute_bars,
         )
         geri_outcomes = _geri_outcomes(tuple(geri_transitions), minute_bars)
@@ -628,16 +574,6 @@ async def run_signal_backtest(
                 item.model_dump(mode="json") for item in volume_structure_results
             ],
             "fusion_transitions": [item.model_dump(mode="json") for item in fusion_transitions],
-            "swing_channel_4h_assessments": [
-                item.model_dump(mode="json") for item in swing_channel_assessments
-            ],
-            "swing_channel_4h_transitions": [
-                item.model_dump(mode="json") for item in swing_channel_transitions
-            ],
-            "swing_channel_4h_outcomes": swing_channel_outcomes,
-            "swing_channel_4h_vs_swing": _swing_channel_comparisons(
-                tuple(swing_channel_assessments)
-            ),
             "4hgeri_assessments": [item.model_dump(mode="json") for item in geri_assessments],
             "4hgeri_transitions": [item.model_dump(mode="json") for item in geri_transitions],
             "4hgeri_outcomes": geri_outcomes,
@@ -650,17 +586,12 @@ async def run_signal_backtest(
             "swing_trade_outcomes": swing_trade_outcomes,
             "swing_trade_diagnostics": swing_trade.diagnostics(),
             "three_swing_model_comparison": _three_swing_model_comparison(
-                tuple(swing_channel_assessments), tuple(geri_assessments)
-            ),
-            "four_swing_model_comparison": _four_swing_model_comparison(
                 tuple(swing_results),
-                tuple(swing_channel_assessments),
                 tuple(geri_assessments),
                 tuple(swing_trade_assessments),
             ),
             "swing_model_confirmation_summary": _swing_model_confirmation_summary(
                 tuple(swing_results),
-                tuple(swing_channel_assessments),
                 tuple(geri_assessments),
                 tuple(swing_trade_assessments),
                 window_start=target_open,
@@ -697,83 +628,6 @@ def _minute_bars_by_symbol(
         symbol: tuple(sorted(values, key=lambda item: item.timestamp))
         for symbol, values in grouped.items()
     }
-
-
-def _swing_channel_outcomes(
-    transitions: tuple[SwingChannelTransition, ...],
-    bars_by_symbol: Mapping[str, tuple[MarketBar, ...]],
-) -> list[dict[str, object]]:
-    """Measure each actionable 4h reference against later bars in the same replay."""
-
-    actionable = {
-        SwingChannelMaturity.IN_ZONE_4H,
-        SwingChannelMaturity.L2_4H,
-        SwingChannelMaturity.L3,
-        SwingChannelMaturity.L4,
-    }
-    outcomes: list[dict[str, object]] = []
-    for transition in transitions:
-        if transition.maturity not in actionable:
-            continue
-        future = tuple(
-            bar
-            for bar in bars_by_symbol.get(transition.symbol, ())
-            if bar.timestamp >= transition.occurred_at
-        )
-        entry = transition.current_price
-        outcomes.append(
-            {
-                "transition_id": str(transition.transition_id),
-                "symbol": transition.symbol,
-                "maturity": transition.maturity.value,
-                "occurred_at": transition.occurred_at.isoformat(),
-                "entry_price": str(entry),
-                "support": str(transition.support),
-                "invalidation": str(transition.invalidation),
-                "observed_bars": len(future),
-                "mfe_percent": _excursion_percent(future, entry=entry, favorable=True),
-                "mae_percent": _excursion_percent(future, entry=entry, favorable=False),
-                "return_15m": _forward_return(future, entry=entry, minutes=15),
-                "return_30m": _forward_return(future, entry=entry, minutes=30),
-                "return_60m": _forward_return(future, entry=entry, minutes=60),
-                "return_close": (str(_percent(future[-1].close, entry)) if future else None),
-            }
-        )
-    return outcomes
-
-
-def _swing_channel_comparisons(
-    assessments: tuple[SwingChannelAssessment, ...],
-) -> list[dict[str, object]]:
-    """Expose how much lower or higher the 4h support is than current Swing's zone."""
-
-    comparisons: list[dict[str, object]] = []
-    for item in assessments:
-        swing_low = item.current_swing_zone_low
-        swing_high = item.current_swing_zone_high
-        swing_center = (
-            (swing_low + swing_high) / Decimal("2")
-            if swing_low is not None and swing_high is not None
-            else None
-        )
-        comparisons.append(
-            {
-                "assessment_id": str(item.assessment_id),
-                "symbol": item.symbol,
-                "maturity": item.maturity.value,
-                "occurred_at": item.occurred_at.isoformat(),
-                "channel_zone_low": str(item.zone_low),
-                "channel_zone_high": str(item.zone_high),
-                "channel_support": str(item.support),
-                "current_swing_zone_low": str(swing_low) if swing_low is not None else None,
-                "current_swing_zone_high": (str(swing_high) if swing_high is not None else None),
-                "zones_overlap": item.daily_swing_aligned,
-                "channel_support_vs_swing_center_percent": (
-                    str(_percent(item.support, swing_center)) if swing_center is not None else None
-                ),
-            }
-        )
-    return comparisons
 
 
 def _geri_outcomes(
@@ -914,77 +768,20 @@ def _first_level_hit(
 
 
 def _three_swing_model_comparison(
-    channels: tuple[SwingChannelAssessment, ...],
-    geri_assessments: tuple[GeriAssessment, ...],
-) -> list[dict[str, object]]:
-    """Align 4HGERI support with the latest parallel channel and daily Swing zone."""
-
-    comparisons: list[dict[str, object]] = []
-    for geri in geri_assessments:
-        if geri.zone_low is None or geri.zone_high is None:
-            continue
-        channel = next(
-            (
-                item
-                for item in reversed(channels)
-                if item.symbol == geri.symbol and item.occurred_at <= geri.occurred_at
-            ),
-            None,
-        )
-        swing_low = geri.current_swing_zone_low
-        swing_high = geri.current_swing_zone_high
-        swing_center = (
-            (swing_low + swing_high) / Decimal("2")
-            if swing_low is not None and swing_high is not None
-            else None
-        )
-        comparisons.append(
-            {
-                "symbol": geri.symbol,
-                "occurred_at": geri.occurred_at.isoformat(),
-                "daily_swing_zone": (
-                    [str(swing_low), str(swing_high)]
-                    if swing_low is not None and swing_high is not None
-                    else None
-                ),
-                "parallel_4h_zone": (
-                    [str(channel.zone_low), str(channel.zone_high)] if channel is not None else None
-                ),
-                "4hgeri_zone": [str(geri.zone_low), str(geri.zone_high)],
-                "4hgeri_structural_level": geri.active_level_sequence,
-                "4hgeri_vs_daily_swing_center_percent": (
-                    str(_percent(geri.active_level_price, swing_center))
-                    if swing_center is not None
-                    else None
-                ),
-                "4hgeri_vs_parallel_support_percent": (
-                    str(_percent(geri.active_level_price, channel.support))
-                    if channel is not None
-                    else None
-                ),
-            }
-        )
-    return comparisons
-
-
-def _four_swing_model_comparison(
     swing_results: tuple[AnalysisResult, ...],
-    channels: tuple[SwingChannelAssessment, ...],
     geri_assessments: tuple[GeriAssessment, ...],
     swing_trade_assessments: tuple[SwingTradeAssessment, ...],
 ) -> list[dict[str, object]]:
-    """Align the latest causal state of all four Swing models on one timeline."""
+    """Align the latest causal state of all three remaining Swing models."""
 
     keys = {
         *((item.symbol, item.as_of) for item in swing_results),
-        *((item.symbol, item.occurred_at) for item in channels),
         *((item.symbol, item.occurred_at) for item in geri_assessments),
         *((item.symbol, item.occurred_at) for item in swing_trade_assessments),
     }
     comparisons: list[dict[str, object]] = []
     for symbol, occurred_at in sorted(keys, key=lambda item: (item[1], item[0])):
         swing = _latest_swing_result(swing_results, symbol=symbol, at=occurred_at)
-        channel = _latest_channel(channels, symbol=symbol, at=occurred_at)
         geri = _latest_geri(geri_assessments, symbol=symbol, at=occurred_at)
         swing_trade = _latest_swing_trade(
             swing_trade_assessments,
@@ -1015,18 +812,6 @@ def _four_swing_model_comparison(
                 "daily_swing_resistance": _string_value(swing_metrics.get("resistance")),
                 "daily_swing_reward_risk": _string_value(
                     swing_metrics.get("reward_risk_to_resistance")
-                ),
-                "swing_channel_4h_as_of": (
-                    channel.occurred_at.isoformat() if channel is not None else None
-                ),
-                "swing_channel_4h_maturity": (
-                    channel.maturity.value if channel is not None else None
-                ),
-                "swing_channel_4h_zone": (
-                    [str(channel.zone_low), str(channel.zone_high)] if channel is not None else None
-                ),
-                "swing_channel_4h_invalidation": (
-                    str(channel.invalidation) if channel is not None else None
                 ),
                 "4hgeri_as_of": geri.occurred_at.isoformat() if geri is not None else None,
                 "4hgeri_maturity": geri.maturity.value if geri is not None else None,
@@ -1071,7 +856,6 @@ def _four_swing_model_comparison(
 
 def _swing_model_confirmation_summary(
     swing_results: tuple[AnalysisResult, ...],
-    channels: tuple[SwingChannelAssessment, ...],
     geri_assessments: tuple[GeriAssessment, ...],
     swing_trade_assessments: tuple[SwingTradeAssessment, ...],
     *,
@@ -1084,9 +868,6 @@ def _swing_model_confirmation_summary(
         item
         for item in swing_results
         if item.engine_id == "swing" and _inside_window(item.as_of, window_start, window_end)
-    )
-    channels = tuple(
-        item for item in channels if _inside_window(item.occurred_at, window_start, window_end)
     )
     geri_assessments = tuple(
         item
@@ -1142,10 +923,6 @@ def _swing_model_confirmation_summary(
                 for item in confirmed
             ],
         },
-        "swing_channel_4h": {
-            "assessment_count": len(channels),
-            "maturity_counts": _value_counts(item.maturity.value for item in channels),
-        },
         "4hgeri": {
             "assessment_count": len(geri_assessments),
             "maturity_counts": _value_counts(item.maturity.value for item in geri_assessments),
@@ -1176,13 +953,6 @@ def _latest_swing_result(
 ) -> AnalysisResult | None:
     eligible = (item for item in items if item.symbol == symbol and item.as_of <= at)
     return max(eligible, key=lambda item: item.as_of, default=None)
-
-
-def _latest_channel(
-    items: tuple[SwingChannelAssessment, ...], *, symbol: str, at: datetime
-) -> SwingChannelAssessment | None:
-    eligible = (item for item in items if item.symbol == symbol and item.occurred_at <= at)
-    return max(eligible, key=lambda item: item.occurred_at, default=None)
 
 
 def _latest_geri(

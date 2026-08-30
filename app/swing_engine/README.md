@@ -73,8 +73,8 @@ mecha maxima como advertencia sin convertirla en resistencia ni target operativo
 `evaluate()` retorna el detalle propio del engine. Ambos son puros; Alpaca, NATS, persistencia,
 presentacion de alertas y ejecucion pertenecen a adaptadores externos.
 
-El backtest integrado publica `four_swing_model_comparison`, que alinea causalmente Swing diario,
-Swing Channel 4H, 4HGERI y SwingTrade. Tambien publica `swing_model_confirmation_summary`: separa
+El backtest integrado publica `three_swing_model_comparison`, que alinea causalmente Swing diario,
+4HGERI y SwingTrade. Tambien publica `swing_model_confirmation_summary`: separa
 `FAVORABLE`, `swing_entry_gate_passed`, conteos por `entry_lane`, confirmaciones completas, razones
 de rechazo y banderas de riesgo dentro de la ventana simulada; los resultados de bootstrap quedan
 fuera de esos conteos.

@@ -9,10 +9,6 @@ engines:
     implementation: 13.0.0
     mode: active
     strategy: {kind: artifact, version: 3.3.0, artifact: ../rules/swing/3.3.0.yaml}
-  swing-channel-4h:
-    implementation: 1.1.0
-    mode: active
-    strategy: {kind: embedded, version: 1.1.0}
   4hgeri:
     implementation: 1.7.0
     mode: active

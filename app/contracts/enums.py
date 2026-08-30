@@ -104,17 +104,6 @@ class AnalysisHorizon(ContractEnum):
     NEWS = "NEWS"
 
 
-class SwingChannelMaturity(ContractEnum):
-    """Independent 4h channel maturity; it never replaces core L1-L4 state."""
-
-    ARMED = "ARMED"
-    IN_ZONE_4H = "IN_ZONE_4H"
-    L2_4H = "L2_4H"
-    L3 = "L3"
-    L4 = "L4"
-    INVALIDATED = "INVALIDATED"
-
-
 class GeriLevelKind(ContractEnum):
     """Alternating horizontal structural level used by the 4HGERI model."""
 

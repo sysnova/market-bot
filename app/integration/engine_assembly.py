@@ -48,7 +48,6 @@ if TYPE_CHECKING:
     from app.signal_fusion_engine import SignalFusionEngine
     from app.support_confirmation_engine import SupportConfirmationEngine
     from app.swing_4h_geri_engine import Swing4HGeriEngine
-    from app.swing_channel_4h_engine import SwingChannel4HEngine
     from app.swing_engine import SwingEngine
     from app.swing_trade_engine import SwingTradeEngine
     from app.volume_structure_engine import VolumeStructureEngine
@@ -149,11 +148,6 @@ class MarketBotAssembly:
 
     def build_swing(self) -> SwingEngine:
         return cast("SwingEngine", self.build(EngineSlot.SWING))
-
-    def build_swing_channel_4h(self) -> SwingChannel4HEngine:
-        return cast(
-            "SwingChannel4HEngine", self.build(EngineSlot.SWING_CHANNEL_4H)
-        )
 
     def build_4hgeri(self) -> Swing4HGeriEngine:
         return cast("Swing4HGeriEngine", self.build(EngineSlot.GERI_4H))

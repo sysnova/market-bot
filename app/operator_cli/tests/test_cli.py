@@ -79,7 +79,6 @@ def test_distributed_process_commands_are_explicit() -> None:
     for command in (
         ("engine", "long"),
         ("engine", "swing"),
-        ("engine", "swing-channel-4h"),
         ("engine", "4hgeri"),
         ("engine", "intraday"),
         ("market", "stream"),
@@ -95,7 +94,6 @@ def test_distributed_process_commands_are_explicit() -> None:
         ("monitor", "patreon-caps"),
         ("monitor", "entry-opportunity"),
         ("monitor", "order-flow"),
-        ("monitor", "swing-channel-4h"),
         ("monitor", "4hgeri"),
         ("monitor", "swing-trade"),
     ):
@@ -208,7 +206,6 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
     assert payload["version"] == "7.41.0"
     assert payload["engines"]["swing"]["implementation"] == "14.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "3.4.0"
-    assert payload["engines"]["swing-channel-4h"]["implementation"] == "1.3.0"
     assert payload["engines"]["4hgeri"]["implementation"] == "1.8.0"
     assert payload["engines"]["entry-watcher"]["implementation"] == "5.5.0"
     assert payload["engines"]["entry-opportunity"]["implementation"] == "8.0.0"
@@ -259,10 +256,6 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
     assert processes["confirmed-buy-monitor"]["dependencies"] == ["alert"]
     assert processes["long-term"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
-    assert processes["swing-channel-4h"]["arguments"][-2:] == [
-        "--symbols",
-        "HIMS,ZETA",
-    ]
     assert processes["4hgeri"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
     assert processes["4hgeri"]["dependencies"] == [
         "market-history-v1",

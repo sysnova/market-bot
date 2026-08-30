@@ -30,8 +30,6 @@ from .analysis_events import (
     SERVICE_HEALTH_EVENT,
     SUPPORT_ASSESSMENT_EVENT,
     SUPPORT_TRANSITION_EVENT,
-    SWING_CHANNEL_ASSESSMENT_EVENT,
-    SWING_CHANNEL_TRANSITION_EVENT,
     SWING_TRADE_ASSESSMENT_EVENT,
     SWING_TRADE_TRANSITION_EVENT,
     UNIVERSE_CHANGED_EVENT,
@@ -57,8 +55,6 @@ from .analysis_events import (
     service_health_subject,
     support_assessment_subject,
     support_transition_subject,
-    swing_channel_assessment_subject,
-    swing_channel_transition_subject,
     swing_trade_assessment_subject,
     swing_trade_transition_subject,
     universe_changed_subject,
@@ -119,7 +115,6 @@ from .enums import (
     SupportConfirmationType,
     SupportState,
     SupportZonePosition,
-    SwingChannelMaturity,
     SwingTradeMaturity,
     TradeSide,
     WavePhase,
@@ -207,7 +202,6 @@ from .support_confirmation import (
     SupportAssessment,
     SupportTransition,
 )
-from .swing_channel import SwingChannelAssessment, SwingChannelTransition
 from .swing_trade import SwingTradeAssessment, SwingTradeTransition
 from .universe import UniverseChanged
 
@@ -246,8 +240,6 @@ __all__ = [
     "SERVICE_HEALTH_EVENT",
     "SUPPORT_ASSESSMENT_EVENT",
     "SUPPORT_TRANSITION_EVENT",
-    "SWING_CHANNEL_ASSESSMENT_EVENT",
-    "SWING_CHANNEL_TRANSITION_EVENT",
     "SWING_TRADE_ASSESSMENT_EVENT",
     "SWING_TRADE_TRANSITION_EVENT",
     "UNIVERSE_CHANGED_EVENT",
@@ -362,9 +354,6 @@ __all__ = [
     "SupportState",
     "SupportTransition",
     "SupportZonePosition",
-    "SwingChannelAssessment",
-    "SwingChannelMaturity",
-    "SwingChannelTransition",
     "SwingTradeAssessment",
     "SwingTradeMaturity",
     "SwingTradeTransition",
@@ -404,8 +393,6 @@ __all__ = [
     "service_health_subject",
     "support_assessment_subject",
     "support_transition_subject",
-    "swing_channel_assessment_subject",
-    "swing_channel_transition_subject",
     "swing_trade_assessment_subject",
     "swing_trade_transition_subject",
     "universe_changed_subject",

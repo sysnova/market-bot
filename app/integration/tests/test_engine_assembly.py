@@ -78,12 +78,6 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV17,
     Swing4HGeriEngineV18,
 )
-from app.swing_channel_4h_engine import (
-    SwingChannel4HEngine,
-    SwingChannel4HEngineV11,
-    SwingChannel4HEngineV12,
-    SwingChannel4HEngineV13,
-)
 from app.swing_engine import (
     SwingEngineV4,
     SwingEngineV5,
@@ -118,9 +112,7 @@ PREVIOUS_DEFINITION = ROOT / "configs/marketbot/7.1.0.yaml"
 INTEGRATION = ROOT / "app/integration"
 NEWS_DEFINITION = ROOT / "configs/marketbot/7.12.0.yaml"
 VISIBLE_NEWS_DEFINITION = ROOT / "configs/marketbot/7.13.0.yaml"
-SWING_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.14.0.yaml"
 GERI_DEFINITION = ROOT / "configs/marketbot/7.15.0.yaml"
-PINNED_SWING_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.16.0.yaml"
 PINNED_GERI_DEFINITION = ROOT / "configs/marketbot/7.17.0.yaml"
 FAILED_BREAKOUT_FSM_DEFINITION = ROOT / "configs/marketbot/7.18.0.yaml"
 MIRRORED_GERI_DEFINITION = ROOT / "configs/marketbot/7.19.0.yaml"
@@ -141,8 +133,7 @@ PREENTRY_STABILITY_DEFINITION = ROOT / "configs/marketbot/7.35.0.yaml"
 NO_SWING_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.36.0.yaml"
 SHORT_CONFIRMATION_DEFINITION = ROOT / "configs/marketbot/7.37.0.yaml"
 LOCAL_SHORT_TRIGGER_DEFINITION = ROOT / "configs/marketbot/7.38.0.yaml"
-STRUCTURAL_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.39.0.yaml"
-PROJECTED_CHANNEL_DEFINITION = ROOT / "configs/marketbot/7.40.0.yaml"
+PRE_REBASE_GERI_DEFINITION = ROOT / "configs/marketbot/7.40.0.yaml"
 REBASED_GERI_DEFINITION = ROOT / "configs/marketbot/7.41.0.yaml"
 
 
@@ -178,28 +169,8 @@ def test_local_short_trigger_definition_keeps_ema20_as_warning_only() -> None:
     assert assembly.build_intraday()._short_ema20_extension_hard_gate is False
 
 
-def test_structural_channel_definition_rejects_nearby_support_pairs() -> None:
-    previous = MarketBotAssembly.from_path(LOCAL_SHORT_TRIGGER_DEFINITION)
-    assembly = MarketBotAssembly.from_path(STRUCTURAL_CHANNEL_DEFINITION)
-
-    assert isinstance(previous.build_swing_channel_4h(), SwingChannel4HEngineV11)
-    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV12)
-    assert assembly.definition.version == "7.39.0"
-    assert assembly.spec(EngineSlot.SWING_CHANNEL_4H).implementation == "1.2.0"
-
-
-def test_projected_channel_definition_preserves_broken_geometry() -> None:
-    previous = MarketBotAssembly.from_path(STRUCTURAL_CHANNEL_DEFINITION)
-    assembly = MarketBotAssembly.from_path(PROJECTED_CHANNEL_DEFINITION)
-
-    assert isinstance(previous.build_swing_channel_4h(), SwingChannel4HEngineV12)
-    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV13)
-    assert assembly.definition.version == "7.40.0"
-    assert assembly.spec(EngineSlot.SWING_CHANNEL_4H).implementation == "1.3.0"
-
-
 def test_rebased_geri_definition_replaces_structurally_detached_chains() -> None:
-    previous = MarketBotAssembly.from_path(PROJECTED_CHANNEL_DEFINITION)
+    previous = MarketBotAssembly.from_path(PRE_REBASE_GERI_DEFINITION)
     assembly = MarketBotAssembly.from_path(REBASED_GERI_DEFINITION)
 
     assert isinstance(previous.build_4hgeri(), Swing4HGeriEngineV16)
@@ -266,36 +237,18 @@ def test_visible_news_definition_keeps_buy_signals_and_marks_risk() -> None:
     assert isinstance(assembly.build_alert(), AlertEngineV37)
 
 
-def test_swing_channel_definition_adds_independent_shadow_engine() -> None:
-    assembly = MarketBotAssembly.from_path(SWING_CHANNEL_DEFINITION)
-
-    assert assembly.definition.version == "7.14.0"
-    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngine)
-    assert assembly.spec(EngineSlot.SWING_CHANNEL_4H).mode is EngineMode.ACTIVE
-
-
-def test_4hgeri_definition_keeps_both_swing_models_and_adds_third_shadow() -> None:
+def test_4hgeri_definition_adds_the_4h_structural_engine() -> None:
     assembly = MarketBotAssembly.from_path(GERI_DEFINITION)
 
     assert assembly.definition.version == "7.15.0"
-    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngine)
     assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngine)
     assert assembly.spec(EngineSlot.GERI_4H).mode is EngineMode.ACTIVE
-
-
-def test_pinned_swing_channel_definition_preserves_active_geometry() -> None:
-    assembly = MarketBotAssembly.from_path(PINNED_SWING_CHANNEL_DEFINITION)
-
-    assert assembly.definition.version == "7.16.0"
-    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV11)
-    assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngine)
 
 
 def test_pinned_geri_definition_preserves_the_active_level_chain() -> None:
     assembly = MarketBotAssembly.from_path(PINNED_GERI_DEFINITION)
 
     assert assembly.definition.version == "7.17.0"
-    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV11)
     assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV11)
 
 
@@ -306,7 +259,6 @@ def test_failed_breakout_fsm_definition_activates_swing_v6_without_mutating_v5()
     assert isinstance(previous.build_swing(), SwingEngineV5)
     assert assembly.definition.version == "7.18.0"
     assert isinstance(assembly.build_swing(), SwingEngineV6)
-    assert isinstance(assembly.build_swing_channel_4h(), SwingChannel4HEngineV11)
     assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV11)
     assert assembly.spec(EngineSlot.SWING).strategy.version == "2.0.0"
     swing = assembly.build_swing()
@@ -489,7 +441,6 @@ def test_default_definition_declares_every_engine_slot_and_strategy() -> None:
         EngineSlot.VOLUME_STRUCTURE,
         EngineSlot.OPTIONS_GAMMA,
         EngineSlot.NEWS_INTELLIGENCE,
-        EngineSlot.SWING_CHANNEL_4H,
         EngineSlot.GERI_4H,
         EngineSlot.SWING_TRADE,
         EngineSlot.ORDER_FLOW,
@@ -511,7 +462,6 @@ def test_latest_definition_adds_volume_structure_without_mutating_7_2() -> None:
     assert set(definition.engines) == set(EngineSlot) - {
         EngineSlot.OPTIONS_GAMMA,
         EngineSlot.NEWS_INTELLIGENCE,
-        EngineSlot.SWING_CHANNEL_4H,
         EngineSlot.GERI_4H,
         EngineSlot.SWING_TRADE,
         EngineSlot.ORDER_FLOW,

@@ -25,8 +25,6 @@ PATREON_CAPS_TRANSITION_EVENT: Final = "patreon-caps.transitioned"
 ELLIOTT_WAVE_ASSESSMENT_EVENT: Final = "elliott-wave.assessed"
 SUPPORT_ASSESSMENT_EVENT: Final = "support-confirmation.assessed"
 SUPPORT_TRANSITION_EVENT: Final = "support-confirmation.transitioned"
-SWING_CHANNEL_ASSESSMENT_EVENT: Final = "swing-channel-4h.assessed"
-SWING_CHANNEL_TRANSITION_EVENT: Final = "swing-channel-4h.transitioned"
 GERI_ASSESSMENT_EVENT: Final = "4hgeri.assessed"
 GERI_TRANSITION_EVENT: Final = "4hgeri.transitioned"
 SWING_TRADE_ASSESSMENT_EVENT: Final = "swing-trade.assessed"
@@ -103,17 +101,6 @@ def support_transition_subject(state: object, symbol: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError("support state is invalid")
     return f"marketbot.v1.support-confirmation.transition.{value}.{_symbol_token(symbol)}"
-
-
-def swing_channel_assessment_subject(symbol: str) -> str:
-    return f"marketbot.v1.swing-channel-4h.assessment.{_symbol_token(symbol)}"
-
-
-def swing_channel_transition_subject(maturity: object, symbol: str) -> str:
-    value = getattr(maturity, "value", maturity)
-    if not isinstance(value, str) or not value:
-        raise ValueError("swing channel maturity is invalid")
-    return f"marketbot.v1.swing-channel-4h.transition.{value}.{_symbol_token(symbol)}"
 
 
 def geri_assessment_subject(symbol: str) -> str:

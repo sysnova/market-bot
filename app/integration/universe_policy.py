@@ -69,10 +69,6 @@ NEWS_INTELLIGENCE = UniversePolicyDetails(
     universe_policy="active-watchlist-plus-positive-holdings",
     warmup_policy="durable-article-deduplication-before-llm-classification",
 )
-SWING_CHANNEL_4H = UniversePolicyDetails(
-    universe_policy="active-watchlist-plus-positive-holdings",
-    warmup_policy="completed-rth-15m-history-aggregated-into-4h-channel-bars",
-)
 GERI_4H = UniversePolicyDetails(
     universe_policy="active-watchlist-plus-positive-holdings",
     warmup_policy="completed-rth-15m-history-reconstructed-as-horizontal-4h-levels",
@@ -85,7 +81,6 @@ SWING_TRADE = UniversePolicyDetails(
 ENGINE_UNIVERSE_POLICIES: dict[str, UniversePolicyDetails] = {
     "long-term": CORE_DYNAMIC,
     "swing": CORE_DYNAMIC,
-    "swing-channel-4h": SWING_CHANNEL_4H,
     "4hgeri": GERI_4H,
     "swing-trade": SWING_TRADE,
     "intraday": CORE_DYNAMIC,

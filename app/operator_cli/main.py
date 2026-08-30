@@ -262,35 +262,6 @@ def intraday_engine_process(
     _engine_process("INTRADAY", once=once, symbols=symbols, ready_path=ready_path)
 
 
-@engine.command("swing-channel-4h")
-def swing_channel_4h_engine_process(
-    once: Annotated[bool, typer.Option(help="Analyze the current 4h channel once.")] = False,
-    symbols: Annotated[
-        str | None,
-        typer.Option(help="Comma-separated temporary universe; overrides PostgreSQL."),
-    ] = None,
-    ready_path: Annotated[
-        Path,
-        typer.Option(help="Readiness file written after history and source replay."),
-    ] = Path(".runtime/status/swing-channel-4h-v1.ready.json"),
-) -> None:
-    """Run the independent four-hour Swing channel shadow process."""
-
-    from app.integration.swing_channel_4h_composition import (
-        run_swing_channel_4h_process,
-    )
-
-    summary = _run_async(
-        run_swing_channel_4h_process(
-            ready_path=ready_path,
-            once=once,
-            symbols=tuple(symbols.split(",")) if symbols else None,
-        )
-    )
-    if summary is not None:
-        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
-
-
 @engine.command("4hgeri")
 def swing_4h_geri_engine_process(
     once: Annotated[bool, typer.Option(help="Analyze current 4HGERI levels once.")] = False,
@@ -989,20 +960,6 @@ def order_flow_monitor(
             refresh_interval=timedelta(seconds=refresh_seconds),
         )
     )
-
-
-@monitor.command("swing-channel-4h")
-def swing_channel_4h_monitor(
-    ready_path: Annotated[
-        Path,
-        typer.Option(help="Readiness file for the independent 4h channel view."),
-    ] = Path(".runtime/status/swing-channel-4h-monitor.ready.json"),
-) -> None:
-    """Run the process that shows live four-hour Swing channel maturity signals."""
-
-    from app.integration.swing_channel_4h_monitor import run_swing_channel_4h_monitor
-
-    _run_async(run_swing_channel_4h_monitor(ready_path=ready_path))
 
 
 @monitor.command("4hgeri")

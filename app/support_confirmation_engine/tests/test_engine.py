@@ -220,6 +220,8 @@ def test_engine_preserves_origin_of_a_recent_violent_impulse() -> None:
         "116",
         "117",
         "118",
+        "116",
+        "114",
     )
     bars = tuple(
         _bar(
@@ -240,6 +242,48 @@ def test_engine_preserves_origin_of_a_recent_violent_impulse() -> None:
     assert result.impulse_origin_at == bars[15].timestamp
     assert result.impulse_peak == Decimal("120")
     assert result.impulse_advance_percent == Decimal("50.0000")
+
+
+def test_v03_exports_fibonacci_levels_for_the_latest_impulse() -> None:
+    prices = (
+        *("100" for _ in range(15)),
+        "82",
+        "85",
+        "88",
+        "92",
+        "96",
+        "100",
+        "104",
+        "108",
+        "111",
+        "113",
+        "114",
+        "115",
+        "116",
+        "117",
+        "118",
+        "116",
+        "114",
+    )
+    bars = tuple(
+        _bar(
+            index,
+            open_=price,
+            high=str(Decimal(price) + Decimal("2")),
+            low=("80" if index == 15 else str(Decimal(price) - Decimal("1"))),
+            close=price,
+        )
+        for index, price in enumerate(prices)
+    )
+
+    result = SupportConfirmationEngineV03().evaluate(
+        SupportContext(symbol="TGT", daily_bars=bars)
+    )
+    metrics = {item.name: item.value for item in result.metrics}
+
+    assert metrics["impulse_fib_0500"] == Decimal("100.0000")
+    assert metrics["impulse_fib_0618"] == Decimal("95.2800")
+    assert metrics["impulse_fib_0786"] == Decimal("88.5600")
 
 
 def test_failed_reaction_keeps_explicit_b_wave_risk() -> None:
