@@ -78,6 +78,22 @@ class PostgresEntryOpportunityStore:
             for record in records
         )
 
+    async def list_events(
+        self,
+        opportunity_id: UUID,
+        *,
+        limit: int = 500,
+    ) -> tuple[EntryOpportunityEvent, ...]:
+        async with PersistenceUnitOfWork(self._session_factory) as unit:
+            records = await unit.entry_opportunities.list_events(
+                opportunity_id,
+                limit=limit,
+            )
+        return tuple(
+            EntryOpportunityEvent.model_validate(record.payload, strict=False)
+            for record in records
+        )
+
     async def save(
         self,
         opportunity: EntryOpportunity,

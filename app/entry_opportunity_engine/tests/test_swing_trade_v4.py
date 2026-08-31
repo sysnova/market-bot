@@ -1,18 +1,26 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 
 from app.contracts import (
     AnalysisHorizon,
+    AnalysisResult,
+    AnalysisVerdict,
     BarTimeframe,
     EntryCheckpointStatus,
+    EntryCloseReason,
     EntryLegStatus,
     EntryMaturityLevel,
     EntryOpportunityStatus,
     EntrySignal,
     EntrySignalFamily,
+    EntryWatchStatus,
+    EntryWatchTransition,
     MarketBar,
+    NamedValue,
+    PatternDirection,
     SwingTradeMaturity,
 )
 from app.entry_opportunity_engine import (
@@ -21,10 +29,12 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV6,
     EntryOpportunityEngineV7,
     EntryOpportunityEngineV8,
+    EntryOpportunityEngineV9,
     InMemoryEntryOpportunityStore,
 )
 
 NOW = datetime(2026, 8, 20, 14, 45, tzinfo=UTC)
+HASH = "sha256:" + "a" * 64
 
 
 def swing_signal(
@@ -71,6 +81,202 @@ def core_signal() -> EntrySignal:
         policy_version="1.0.0",
         reasons=("test",),
     )
+
+
+def long_avoid(*, at: datetime, price: str = "98") -> AnalysisResult:
+    return AnalysisResult(
+        analysis_id=UUID("0195f3a5-9000-7000-8000-000000000071"),
+        engine_id="long-term",
+        engine_version="2.0.0",
+        symbol="AAPL",
+        horizon=AnalysisHorizon.LONG_TERM,
+        as_of=at,
+        verdict=AnalysisVerdict.AVOID,
+        direction=PatternDirection.BEARISH,
+        score=Decimal("20"),
+        confidence=Decimal("0.2"),
+        reasons=("weekly_structure_broken",),
+        metrics=(NamedValue(name="reference_price", value=Decimal(price)),),
+        context_hash=HASH,
+    )
+
+
+def unrelated_watcher_invalidation(*, at: datetime, price: str = "98") -> EntryWatchTransition:
+    return EntryWatchTransition(
+        transition_id=UUID("0195f3a5-9000-7000-8000-000000000081"),
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000082"),
+        symbol="AAPL",
+        previous_status=EntryWatchStatus.ARMED,
+        status=EntryWatchStatus.INVALIDATED,
+        occurred_at=at,
+        zone_low=Decimal("95"),
+        zone_high=Decimal("100"),
+        invalidation=Decimal("90"),
+        current_price=Decimal(price),
+        watch_expires_at=at + timedelta(days=5),
+        reasons=("long_structure_invalidated",),
+        horizons=(AnalysisHorizon.LONG_TERM,),
+        source_analysis_ids=(UUID("0195f3a5-9000-7000-8000-000000000071"),),
+    )
+
+
+@pytest.mark.asyncio
+async def test_v9_long_term_avoid_does_not_close_swing_trade_thesis() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV9(store=store)
+    created = await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST2))
+    opportunity_id = created[0].opportunity.opportunity_id
+
+    events = await engine.ingest_analysis(
+        long_avoid(at=NOW + timedelta(minutes=15)),
+        now=NOW + timedelta(minutes=15),
+    )
+
+    assert events == ()
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.opportunity_id == opportunity_id
+    assert active.primary_signal_family is EntrySignalFamily.SWING_TRADE
+    assert active.latest_analyses[0].verdict is AnalysisVerdict.AVOID
+
+
+@pytest.mark.asyncio
+async def test_v9_unrelated_entry_watch_cannot_close_swing_trade_thesis() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV9(store=store)
+    created = await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST2))
+    opportunity_id = created[0].opportunity.opportunity_id
+
+    events = await engine.ingest_transition(
+        unrelated_watcher_invalidation(at=NOW + timedelta(minutes=15))
+    )
+
+    assert events == ()
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.opportunity_id == opportunity_id
+
+
+@pytest.mark.asyncio
+async def test_v9_swing_trade_still_closes_on_its_own_price_invalidation() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV9(store=store)
+    await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST3))
+
+    events = await engine.ingest_bar(
+        MarketBar(
+            symbol="AAPL",
+            timeframe=BarTimeframe.MINUTE_1,
+            timestamp=NOW + timedelta(minutes=1),
+            open=Decimal("97"),
+            high=Decimal("98"),
+            low=Decimal("91"),
+            close=Decimal("93"),
+            volume=Decimal("1000"),
+            source="fixture",
+            feed="sip",
+            is_final=True,
+        )
+    )
+
+    assert events[0].opportunity.close_reason is EntryCloseReason.ORIGINAL_THESIS_INVALIDATED
+    assert events[0].reasons == ("original_invalidation_breached",)
+
+
+@pytest.mark.asyncio
+async def test_v9_long_term_avoid_still_closes_core_thesis() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV9(store=store)
+    await engine.ingest_signal(core_signal())
+
+    events = await engine.ingest_analysis(
+        long_avoid(at=NOW + timedelta(minutes=15)),
+        now=NOW + timedelta(minutes=15),
+    )
+
+    assert events[0].opportunity.close_reason is EntryCloseReason.ORIGINAL_THESIS_INVALIDATED
+    assert events[0].reasons == ("long_structure_invalidated",)
+
+
+@pytest.mark.parametrize(
+    "family",
+    (
+        EntrySignalFamily.PATREON_CAPS,
+        EntrySignalFamily.LONG_PORTFOLIO,
+        EntrySignalFamily.SIGNAL_FUSION,
+        EntrySignalFamily.PORTFOLIO_FLOW,
+        EntrySignalFamily.LEVERAGED_THESIS,
+    ),
+)
+@pytest.mark.asyncio
+async def test_v9_long_term_avoid_cannot_close_other_family_theses(
+    family: EntrySignalFamily,
+) -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV9(store=store)
+    await engine.ingest_signal(
+        EntrySignal(
+            family=family,
+            symbol="AAPL",
+            created_at=NOW,
+            setup_id=f"{family.value.lower()}:AAPL:test",
+            entry_price=Decimal("97"),
+            horizons=(AnalysisHorizon.SWING,),
+            zone_low=Decimal("95"),
+            zone_high=Decimal("100"),
+            invalidation=Decimal("92"),
+            targets=(Decimal("119"),),
+            policy_id=family.value.lower(),
+            policy_version="1.0.0",
+            reasons=("test",),
+        )
+    )
+
+    events = await engine.ingest_analysis(
+        long_avoid(at=NOW + timedelta(minutes=15)),
+        now=NOW + timedelta(minutes=15),
+    )
+
+    assert events == ()
+    active = await store.load_active("AAPL")
+    assert active is not None
+    assert active.primary_signal_family is family
+
+
+@pytest.mark.asyncio
+async def test_v9_entry_watch_terminal_transition_requires_the_same_watch() -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EntryOpportunityEngineV9(store=store)
+    matching_watch_id = UUID("0195f3a5-9000-7000-8000-000000000082")
+    armed = unrelated_watcher_invalidation(at=NOW).model_copy(
+        update={
+            "transition_id": UUID("0195f3a5-9000-7000-8000-000000000083"),
+            "previous_status": None,
+            "status": EntryWatchStatus.ARMED,
+            "reasons": ("watch_armed",),
+        }
+    )
+    await engine.ingest_transition(armed)
+
+    unrelated = unrelated_watcher_invalidation(at=NOW + timedelta(minutes=10)).model_copy(
+        update={
+            "transition_id": UUID("0195f3a5-9000-7000-8000-000000000084"),
+            "watch_id": UUID("0195f3a5-9000-7000-8000-000000000085"),
+        }
+    )
+    assert await engine.ingest_transition(unrelated) == ()
+    assert await store.load_active("AAPL") is not None
+
+    matching = unrelated_watcher_invalidation(at=NOW + timedelta(minutes=15)).model_copy(
+        update={
+            "transition_id": UUID("0195f3a5-9000-7000-8000-000000000086"),
+            "watch_id": matching_watch_id,
+        }
+    )
+    events = await engine.ingest_transition(matching)
+
+    assert events[0].opportunity.close_reason is EntryCloseReason.ORIGINAL_THESIS_INVALIDATED
+    assert await store.load_active("AAPL") is None
 
 
 @pytest.mark.asyncio

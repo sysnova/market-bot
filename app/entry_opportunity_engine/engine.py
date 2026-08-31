@@ -85,6 +85,34 @@ class EntryOpportunityEngine:
         self._id_factory = id_factory
         self._child_id_factory = child_id_factory
 
+    @staticmethod
+    def _terminal_watcher_transition_is_unrelated(
+        active: EntryOpportunity,
+        transition: EntryWatchTransition,
+    ) -> bool:
+        return (
+            active.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND
+            and active.original_watch_id is None
+            and transition.status
+            in {
+                EntryWatchStatus.INVALIDATED,
+                EntryWatchStatus.EXPIRED,
+            }
+        )
+
+    @staticmethod
+    def _long_structure_invalidates(
+        active: EntryOpportunity,
+        result: AnalysisResult,
+        *,
+        bearish_failure: bool,
+    ) -> bool:
+        return (
+            active.primary_signal_family is not EntrySignalFamily.GERI_COUNTERTREND
+            and result.horizon is AnalysisHorizon.LONG_TERM
+            and (result.verdict is AnalysisVerdict.AVOID or bearish_failure)
+        )
+
     async def ingest_transition(
         self, transition: EntryWatchTransition
     ) -> tuple[EntryOpportunityEvent, ...]:
@@ -160,18 +188,9 @@ class EntryOpportunityEngine:
             event_id=transition.transition_id,
         ):
             return ()
-        if (
-            active.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND
-            and active.original_watch_id is None
-            and transition.status
-            in {
-                EntryWatchStatus.INVALIDATED,
-                EntryWatchStatus.EXPIRED,
-            }
-        ):
-            # A standalone GERI countertrend has no Entry Watcher thesis. Its
-            # lifecycle is owned by the GERI setup levels, bars, target and TTL,
-            # so an unrelated Core watch must not terminate it.
+        if self._terminal_watcher_transition_is_unrelated(active, transition):
+            # A terminal watcher event cannot terminate a thesis outside the
+            # ownership policy selected by this engine version.
             return ()
         if transition.status is EntryWatchStatus.INVALIDATED:
             closed = self._close_opportunity(
@@ -359,10 +378,10 @@ class EntryOpportunityEngine:
             AnalysisVerdict.AVOID,
             AnalysisVerdict.CAUTION,
         }
-        if original_breached or (
-            active.primary_signal_family is not EntrySignalFamily.GERI_COUNTERTREND
-            and result.horizon is AnalysisHorizon.LONG_TERM
-            and (result.verdict is AnalysisVerdict.AVOID or bearish_failure)
+        if original_breached or self._long_structure_invalidates(
+            active,
+            result,
+            bearish_failure=bearish_failure,
         ):
             closed = self._close_opportunity(
                 updated,
@@ -1899,6 +1918,41 @@ class EntryOpportunityEngineV8(EntryOpportunityEngineV7):
         if normalized.primary_signal_family is EntrySignalFamily.SWING_TRADE:
             return updated, "swing_trade_preentry_ineligible_deferred"
         return updated, "swing_trade_confluence_removed"
+
+
+class EntryOpportunityEngineV9(EntryOpportunityEngineV8):
+    """Keep terminal thesis evidence scoped to the family that owns it."""
+
+    engine_version = "9.0.0"
+
+    @staticmethod
+    def _terminal_watcher_transition_is_unrelated(
+        active: EntryOpportunity,
+        transition: EntryWatchTransition,
+    ) -> bool:
+        if transition.status not in {
+            EntryWatchStatus.INVALIDATED,
+            EntryWatchStatus.EXPIRED,
+        }:
+            return False
+        return active.original_watch_id != transition.watch_id
+
+    @staticmethod
+    def _long_structure_invalidates(
+        active: EntryOpportunity,
+        result: AnalysisResult,
+        *,
+        bearish_failure: bool,
+    ) -> bool:
+        return (
+            active.primary_signal_family
+            in {
+                EntrySignalFamily.CORE_ENTRY,
+                EntrySignalFamily.CORE_RECOVERY,
+            }
+            and result.horizon is AnalysisHorizon.LONG_TERM
+            and (result.verdict is AnalysisVerdict.AVOID or bearish_failure)
+        )
 
 
 _SEMVER_SUFFIX = re.compile(r"\d+\.\d+\.\d+")

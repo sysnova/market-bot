@@ -203,12 +203,12 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.42.0"
+    assert payload["version"] == "7.43.0"
     assert payload["engines"]["swing"]["implementation"] == "14.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "3.4.0"
     assert payload["engines"]["4hgeri"]["implementation"] == "1.8.0"
     assert payload["engines"]["entry-watcher"]["implementation"] == "5.5.0"
-    assert payload["engines"]["entry-opportunity"]["implementation"] == "8.0.0"
+    assert payload["engines"]["entry-opportunity"]["implementation"] == "9.0.0"
     assert payload["engines"]["swing-trade"]["implementation"] == "1.4.0"
     assert payload["engines"]["intraday"]["implementation"] == "6.0.0"
     assert payload["engines"]["alert"]["implementation"] == "3.9.0"
@@ -252,7 +252,7 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.42.0"
+    assert payload["definition_version"] == "7.43.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert "news-intelligence-v1" not in processes

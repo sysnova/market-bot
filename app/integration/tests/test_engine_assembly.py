@@ -23,6 +23,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV6,
     EntryOpportunityEngineV7,
     EntryOpportunityEngineV8,
+    EntryOpportunityEngineV9,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_recovery_engine import EntryRecoveryEngineV11
@@ -136,6 +137,7 @@ LOCAL_SHORT_TRIGGER_DEFINITION = ROOT / "configs/marketbot/7.38.0.yaml"
 PRE_REBASE_GERI_DEFINITION = ROOT / "configs/marketbot/7.40.0.yaml"
 REBASED_GERI_DEFINITION = ROOT / "configs/marketbot/7.41.0.yaml"
 ON_DEMAND_NEWS_DEFINITION = ROOT / "configs/marketbot/7.42.0.yaml"
+THESIS_OWNERSHIP_DEFINITION = ROOT / "configs/marketbot/7.43.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -189,6 +191,22 @@ def test_on_demand_news_definition_removes_news_from_automatic_runtime() -> None
     assert assembly.definition.version == "7.42.0"
     assert assembly.spec(EngineSlot.NEWS_INTELLIGENCE).mode is EngineMode.ON_DEMAND
     assert isinstance(assembly.build(EngineSlot.NEWS_INTELLIGENCE), NewsIntelligenceEngine)
+
+
+def test_thesis_ownership_definition_versions_entry_opportunity_only() -> None:
+    previous = MarketBotAssembly.from_path(ON_DEMAND_NEWS_DEFINITION)
+    assembly = MarketBotAssembly.from_path(THESIS_OWNERSHIP_DEFINITION)
+
+    assert isinstance(
+        previous.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV8,
+    )
+    assert isinstance(
+        assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
+        EntryOpportunityEngineV9,
+    )
+    assert assembly.definition.version == "7.43.0"
+    assert assembly.spec(EngineSlot.NEWS_INTELLIGENCE).mode is EngineMode.ON_DEMAND
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:

@@ -579,6 +579,25 @@ class EntryOpportunityRepository(Repository):
         )
         return tuple(records.all())
 
+    async def list_events(
+        self,
+        opportunity_id: UUID,
+        *,
+        limit: int = 500,
+    ) -> tuple[EntryOpportunityEventRecord, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        records = await self._session.scalars(
+            select(EntryOpportunityEventRecord)
+            .where(EntryOpportunityEventRecord.opportunity_id == opportunity_id)
+            .order_by(
+                EntryOpportunityEventRecord.occurred_at.desc(),
+                EntryOpportunityEventRecord.id.desc(),
+            )
+            .limit(limit)
+        )
+        return tuple(reversed(records.all()))
+
     async def save(
         self,
         opportunity: EntryOpportunityRecord,

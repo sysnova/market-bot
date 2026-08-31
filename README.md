@@ -167,6 +167,15 @@ session-close returns and realized gain/loss; and emits progress or closure even
 buy monitor. Use `uv run marketbot entry-opportunity report` for open progress bars and audited success
 rates.
 
+For a real-time browser view with filters, per-ticker P/L, thesis rankings, and evidence-bounded
+OpenAI reviews of losing paper entries, run `uv run marketbot monitor opportunities-web`.
+
+Entry Opportunity v9 scopes terminal evidence to the thesis that owns it. Long/Core structural
+invalidation can close Core entry and recovery opportunities, but cannot close SwingTrade, GERI,
+leveraged, portfolio, Patreon, or signal-fusion opportunities. Entry Watcher terminal transitions
+also require the matching original watch; family-owned price, policy, cancellation, and TTL exits
+remain unchanged.
+
 Entry Watcher v5.1 preserves the recent-zone-touch and no-retest higher-low paths, persists its
 confirmation checkpoint across restarts, and adds configurable zone-exit hysteresis. Confirmation
 still requires efficient Intraday v4 evidence: strong evidence, a

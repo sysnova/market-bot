@@ -940,6 +940,44 @@ def entry_opportunity_monitor(
     )
 
 
+@monitor.command("opportunities-web")
+def opportunity_web_dashboard(
+    port: Annotated[
+        int,
+        typer.Option(min=1, max=65535, help="Local HTTP/WebSocket port."),
+    ] = 8765,
+    history: Annotated[
+        int,
+        typer.Option(min=1, max=10000, help="Recent opportunities available for filtering."),
+    ] = 1000,
+    refresh_seconds: Annotated[
+        int,
+        typer.Option(min=1, max=3600, help="PostgreSQL fallback refresh interval."),
+    ] = 5,
+    open_browser: Annotated[
+        bool,
+        typer.Option(help="Open the local dashboard in the default browser."),
+    ] = True,
+    ready_path: Annotated[
+        Path,
+        typer.Option(help="Readiness file written after the web server starts."),
+    ] = Path(".runtime/status/opportunity-web-dashboard.ready.json"),
+) -> None:
+    """Run the real-time filterable Entry Opportunity web dashboard."""
+
+    from app.integration.opportunity_web_dashboard import run_opportunity_web_dashboard
+
+    _run_async(
+        run_opportunity_web_dashboard(
+            port=port,
+            history=history,
+            refresh_interval=timedelta(seconds=refresh_seconds),
+            open_browser=open_browser,
+            ready_path=ready_path,
+        )
+    )
+
+
 @monitor.command("order-flow")
 def order_flow_monitor(
     refresh_seconds: Annotated[

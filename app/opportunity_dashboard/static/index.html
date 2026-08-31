@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MarketBot · Opportunity Intelligence</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#monitor" aria-label="MarketBot Opportunity Intelligence">
+      <span class="brand-mark">MB</span>
+      <span><b>MARKETBOT</b><small>Opportunity Intelligence</small></span>
+    </a>
+    <nav aria-label="Secciones">
+      <a href="#monitor">Monitor</a>
+      <a href="#theses">Tesis</a>
+      <a href="#failure-lab">Failure Lab</a>
+    </nav>
+    <div class="connection"><span id="live-dot" class="dot"></span><span id="connection-text">Conectando…</span></div>
+  </header>
+
+  <main>
+    <section class="hero" id="monitor">
+      <div>
+        <p class="eyebrow">LIVE DECISION SUPPORT · PAPER ONLY</p>
+        <h1>Las oportunidades,<br><em>sin perder el contexto.</em></h1>
+        <p class="lede">Filtra cada tesis que registra MarketBot. El P/L visible y sus promedios se recalculan en cada cambio.</p>
+      </div>
+      <div class="market-clock">
+        <small>ÚLTIMO SNAPSHOT</small>
+        <strong id="snapshot-time">—</strong>
+        <span id="transport">Esperando datos</span>
+      </div>
+    </section>
+
+    <section class="filters panel" aria-label="Filtros de oportunidades">
+      <label class="search-field"><span>TICKER</span><input id="filter-symbol" type="search" placeholder="AAPL, NVDA…" autocomplete="off"></label>
+      <label><span>TIPO</span><select id="filter-kind"><option value="">Compras + referencias</option><option value="BUY">Sólo compras</option><option value="REFERENCE">Sólo referencias</option></select></label>
+      <label><span>TESIS</span><select id="filter-thesis"><option value="">Todas las tesis</option></select></label>
+      <label><span>ESTADO</span><select id="filter-state"><option value="">Todos los estados</option></select></label>
+      <label><span>CICLO</span><select id="filter-status"><option value="">Todo el ciclo</option></select></label>
+      <label><span>RESULTADO</span><select id="filter-result"><option value="">Ganadoras + perdedoras</option><option value="negative">P/L negativo</option><option value="positive">P/L positivo</option><option value="closed">Sólo cerradas</option><option value="open">Sólo abiertas</option></select></label>
+      <button id="clear-filters" class="ghost-button" type="button">Limpiar</button>
+    </section>
+
+    <section class="kpis" aria-label="Resumen filtrado">
+      <article><span>SEÑALES VISIBLES</span><strong id="kpi-rows">0</strong><small id="kpi-buys">0 compras</small></article>
+      <article><span>P/L PROMEDIO</span><strong id="kpi-pnl">—</strong><small>promedio simple filtrado</small></article>
+      <article><span>TICKERS</span><strong id="kpi-tickers">0</strong><small id="kpi-open">0 activos</small></article>
+      <article><span>TASA POSITIVA</span><strong id="kpi-positive">—</strong><small>sobre marcas visibles</small></article>
+    </section>
+
+    <section class="split-grid">
+      <article class="panel ticker-panel">
+        <div class="section-head"><div><p class="eyebrow">RECALCULADO POR FILTRO</p><h2>P/L por ticker</h2></div><span class="method-pill">AVG %</span></div>
+        <div id="ticker-bars" class="ticker-bars empty-state">Sin resultados para estos filtros.</div>
+      </article>
+      <article class="panel pulse-panel">
+        <div class="section-head"><div><p class="eyebrow">DISTRIBUCIÓN</p><h2>Pulso de la vista</h2></div></div>
+        <div id="pulse" class="pulse"></div>
+        <p class="fine-print">ARMED, IN_ZONE y CT0 son referencias. No se presentan como compras confirmadas.</p>
+      </article>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="section-head"><div><p class="eyebrow">LEDGER FILTRABLE</p><h2>Oportunidades registradas</h2></div><span id="table-count" class="result-count">0 filas</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ticker</th><th>Tipo</th><th>Tesis / estado</th><th>Ciclo</th><th>Entrada</th><th>Marca</th><th>P/L</th><th>MFE / MAE</th><th>Riesgo</th><th>Actualizado</th></tr></thead>
+          <tbody id="opportunity-rows"></tbody>
+        </table>
+      </div>
+      <p class="fine-print" id="pnl-definition"></p>
+    </section>
+
+    <section id="theses" class="section-block">
+      <div class="section-title"><div><p class="eyebrow">EDGE EXPLORER</p><h2>Mejores tesis de compra</h2></div><p>El ranking responde a los mismos filtros y muestra el tamaño de muestra. Los resultados abiertos son provisionales.</p></div>
+      <div id="thesis-ranking" class="ranking-grid"></div>
+    </section>
+
+    <section id="failure-lab" class="failure-lab">
+      <div class="failure-copy">
+        <p class="eyebrow coral">POST-MORTEM CON EVIDENCIA</p>
+        <h2>Failure Lab</h2>
+        <p>Selecciona una tesis con P/L negativo. El modelo buscará qué invalidó la entrada, qué esperaba MarketBot y no apareció, y qué señales tempranas merecen un backtest.</p>
+        <ul>
+          <li>No inventa order flow ausente.</li>
+          <li>Separa hechos de interpretación.</li>
+          <li>Toda protección propuesta exige backtest.</li>
+        </ul>
+      </div>
+      <div class="review-console panel dark-panel">
+        <label><span>TESIS PERDEDORA</span><select id="failure-select"><option value="">Seleccionar oportunidad…</option></select></label>
+        <label><span>NOTAS DEL OPERADOR · OPCIONAL</span><textarea id="failure-notes" maxlength="2000" rows="4" placeholder="¿Qué esperabas ver? ¿Qué te llamó la atención en el tape o el contexto?"></textarea></label>
+        <div class="review-actions"><button id="analyze-failure" class="primary-button" type="button">Analizar con OpenAI</button><span id="llm-status">Verificando disponibilidad…</span></div>
+        <div id="review-result" class="review-result"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer><span>MARKETBOT · ANALYSIS ONLY</span><span>Sin ejecución de órdenes · P/L de paper trades</span></footer>
+  <script src="/app.js" defer></script>
+</body>
+</html>
