@@ -203,7 +203,7 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.41.0"
+    assert payload["version"] == "7.42.0"
     assert payload["engines"]["swing"]["implementation"] == "14.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "3.4.0"
     assert payload["engines"]["4hgeri"]["implementation"] == "1.8.0"
@@ -222,6 +222,7 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
     assert payload["engines"]["support-confirmation"]["mode"] == "active"
     assert payload["engines"]["signal-fusion"]["mode"] == "on-demand"
     assert payload["engines"]["peter-lynch"]["mode"] == "on-demand"
+    assert payload["engines"]["news-intelligence"]["mode"] == "on-demand"
 
 
 def test_runtime_slots_command_reads_active_modes_from_the_definition() -> None:
@@ -233,6 +234,7 @@ def test_runtime_slots_command_reads_active_modes_from_the_definition() -> None:
     assert "signal-fusion" not in slots
     assert "dilution-sec" not in slots
     assert "peter-lynch" not in slots
+    assert "news-intelligence" not in slots
 
 
 def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
@@ -250,9 +252,10 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.41.0"
+    assert payload["definition_version"] == "7.42.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
+    assert "news-intelligence-v1" not in processes
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
     assert processes["confirmed-buy-monitor"]["dependencies"] == ["alert"]
     assert processes["long-term"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]

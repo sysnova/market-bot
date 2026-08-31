@@ -244,13 +244,14 @@ holding are marked `★ TENENCIA` in yellow. `Portfolio2026` loads persisted ale
 PostgreSQL and follows new allocation-aware LONG entries. The control pane still owns the
 `long-portfolio-v1` engine, so `Ctrl+C` stops it together with the rest of MarketBot.
 
-`news-intelligence-v1` is independent from that hourly panel. Every five minutes it deduplicates
-Alpaca articles in PostgreSQL, classifies unseen text with the pinned
+`news-intelligence-v1` is independent from that hourly panel and is now `on-demand`: the MarketBot
+launcher does not start it. Run `uv run marketbot engine news-intelligence --once` for one manual
+cycle, or omit `--once` to keep it polling every five minutes. It deduplicates Alpaca articles in
+PostgreSQL and classifies unseen text with the pinned
 `gpt-5.4-nano-2026-03-17` structured-output model, and publishes `AnalysisResult.NEWS`. Bullish news
 is context only. Fresh high-confidence bearish material news emits `NEWS_RISK`; new L1-L4 signals
 remain enabled but their buy banners are rendered red until the risk expires. It never submits a
-buy or sell order. If
-`MARKETBOT_OPENAI_API_KEY` is absent, the process reports `DEGRADED` without blocking startup.
+buy or sell order. If `MARKETBOT_OPENAI_API_KEY` is absent, a manual run reports `DEGRADED`.
 
 The same launcher also creates sibling `PatreonCaps`, `ElliottWave`, and
 `SupportConfirmation` windows. Support Confirmation is a holdings-only analytical view and keeps its

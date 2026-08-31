@@ -27,7 +27,7 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     assert "signal-fusion-v0" not in names
     assert "volume-structure-v1" in names
     assert "options-gamma-v1" in names
-    assert "news-intelligence-v1" in names
+    assert "news-intelligence-v1" not in names
     assert {"order-flow", "leveraged-thesis"} <= names
     assert "4hgeri" in names
     assert "patreon-caps-v1" not in names
@@ -72,13 +72,7 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     assert positions["volume-structure-v1"] < positions["alpaca-market-stream"]
     assert "options-gamma-v1" not in plan.process("alpaca-market-stream").dependencies
     assert "confirmed-buy-monitor" not in plan.process("alpaca-market-stream").dependencies
-    assert plan.process("news-intelligence-v1").dependencies == (
-        "alert",
-        "entry-watcher",
-        "entry-opportunity",
-    )
-    assert positions["entry-opportunity"] < positions["news-intelligence-v1"]
-    assert positions["news-intelligence-v1"] < positions["alpaca-market-stream"]
+    assert "news-intelligence-v1" not in positions
     assert positions["support-confirmation-v0"] < positions["order-flow"]
     for consumer in ("swing", "4hgeri", "swing-trade"):
         assert "order-flow" not in plan.process(consumer).dependencies

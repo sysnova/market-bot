@@ -50,6 +50,9 @@ async def run_news_intelligence_process(
     assert settings.openai_api_key is not None
     prompt_version, prompt = _load_prompt(settings.news_intelligence_prompt_path)
     assembly = MarketBotAssembly.from_settings(settings)
+    runtime_mode = (
+        assembly.spec(EngineSlot.NEWS_INTELLIGENCE).mode.value.upper().replace("-", "_")
+    )
     database = create_database_engine(
         settings.database_url.get_secret_value(),
         require_ssl=settings.environment is Environment.PRODUCTION,
@@ -77,7 +80,7 @@ async def run_news_intelligence_process(
         )
         startup_details: dict[str, object] = {
             "service": "news-intelligence-v1",
-            "mode": "ACTIVE",
+            "mode": runtime_mode,
             "marketbot_definition_version": assembly.definition.version,
             "engine_version": engine.engine_version,
             "prompt_version": prompt_version,
@@ -139,7 +142,7 @@ async def run_news_intelligence_process(
                     )
             details: dict[str, object] = {
                 "service": "news-intelligence-v1",
-                "mode": "ACTIVE",
+                "mode": runtime_mode,
                 "marketbot_definition_version": assembly.definition.version,
                 "engine_version": engine.engine_version,
                 "prompt_version": prompt_version,

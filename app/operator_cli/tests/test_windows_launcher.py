@@ -387,12 +387,12 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "support-confirmation-v0",
         "volume-structure-v1",
         "options-gamma-v1",
-        "news-intelligence-v1",
         "confirmed-buy-monitor",
         "alpaca-market-stream",
     ]
     assert "dilution-sec" not in plan["active_engine_slots"]
     assert "peter-lynch" not in plan["active_engine_slots"]
+    assert "news-intelligence" not in plan["active_engine_slots"]
     processes = {process["name"]: process for process in plan["processes"]}
     assert processes["entry-opportunity"]["arguments"][:6] == [
         "run",

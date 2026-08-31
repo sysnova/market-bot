@@ -646,17 +646,22 @@ tmux select-window -t marketbot:News
 uv run marketbot monitor news --history 100 --lookback-hours 24 --refresh-seconds 3600
 ```
 
-El panel no llama al LLM. El proceso headless `news-intelligence-v1` consulta independientemente
-cada 300 segundos, limita el ciclo inicial a 100 articulos y persiste el hash y la clasificacion en
-`market_bot.news_intelligence_results` para no volver a pagar por el mismo contenido. Se habilita
-con `MARKETBOT_OPENAI_API_KEY`; el modelo por defecto queda fijado en
-`gpt-5.4-nano-2026-03-17`. Sin clave, su readiness indica `DEGRADED` y el resto de MarketBot arranca
-normalmente.
+El panel no llama al LLM. `news-intelligence-v1` queda desacoplado del arranque y definido como
+`on-demand`; el launcher de MarketBot no lo inicia. Para ejecutar un unico ciclo manual:
 
-Al reiniciar, el proceso recupera desde PostgreSQL el ultimo `AnalysisResult.NEWS` no vencido por
-ticker y lo republica. El grafo de arranque espera primero el readiness de Alert, Entry Watcher y
-Entry Opportunity, por lo que NATS queda como transporte con retencion de siete dias y no como la
-fuente exclusiva de recuperacion.
+```bash
+uv run marketbot engine news-intelligence --once
+```
+
+Para mantenerlo corriendo manualmente, omita `--once`; en ese modo consulta cada 300 segundos.
+Limita el ciclo inicial a 100 articulos y persiste el hash y la clasificacion en
+`market_bot.news_intelligence_results` para no volver a pagar por el mismo contenido. Requiere
+`MARKETBOT_OPENAI_API_KEY`; el modelo por defecto queda fijado en
+`gpt-5.4-nano-2026-03-17`. Sin clave, el proceso manual indica `DEGRADED`.
+
+Al iniciarlo manualmente, el proceso recupera desde PostgreSQL el ultimo `AnalysisResult.NEWS` no
+vencido por ticker y lo republica. NATS queda como transporte con retencion de siete dias y no
+como la fuente exclusiva de recuperacion.
 
 En el layout WSL estándar, el launcher reutiliza en memoria `OPENAI_API_KEY` desde
 `../stock-analyzer/apps/alert-runner/.env` cuando `MARKETBOT_OPENAI_API_KEY` no fue definida. No

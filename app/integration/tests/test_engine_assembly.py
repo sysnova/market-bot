@@ -135,6 +135,7 @@ SHORT_CONFIRMATION_DEFINITION = ROOT / "configs/marketbot/7.37.0.yaml"
 LOCAL_SHORT_TRIGGER_DEFINITION = ROOT / "configs/marketbot/7.38.0.yaml"
 PRE_REBASE_GERI_DEFINITION = ROOT / "configs/marketbot/7.40.0.yaml"
 REBASED_GERI_DEFINITION = ROOT / "configs/marketbot/7.41.0.yaml"
+ON_DEMAND_NEWS_DEFINITION = ROOT / "configs/marketbot/7.42.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -178,6 +179,16 @@ def test_rebased_geri_definition_replaces_structurally_detached_chains() -> None
     assert assembly.definition.version == "7.41.0"
     assert assembly.spec(EngineSlot.GERI_4H).implementation == "1.8.0"
     assert assembly.build_4hgeri()._structural_rebase_atr == Decimal("3.00")
+
+
+def test_on_demand_news_definition_removes_news_from_automatic_runtime() -> None:
+    previous = MarketBotAssembly.from_path(REBASED_GERI_DEFINITION)
+    assembly = MarketBotAssembly.from_path(ON_DEMAND_NEWS_DEFINITION)
+
+    assert previous.spec(EngineSlot.NEWS_INTELLIGENCE).mode is EngineMode.ACTIVE
+    assert assembly.definition.version == "7.42.0"
+    assert assembly.spec(EngineSlot.NEWS_INTELLIGENCE).mode is EngineMode.ON_DEMAND
+    assert isinstance(assembly.build(EngineSlot.NEWS_INTELLIGENCE), NewsIntelligenceEngine)
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:
