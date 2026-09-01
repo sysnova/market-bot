@@ -11,6 +11,12 @@
   reclaim sólo queda `FAVORABLE` cuando conserva precio eficiente (máximo 0,50 ATR sobre el
   trigger y 2 ATR sobre EMA20), confirmación `strong` y higher low de cinco minutos. En otro caso
   emite `WATCH` con `late_entry_wait_retest` o `mature_retest_pending`.
+- `IntradayEngineV5`: agrega confirmación SHORT simétrica con persistencia y lower high.
+- `IntradayEngineV6`: conserva la ventana local de 0,50 ATR y deja la distancia a EMA20 como
+  advertencia, no como veto.
+- `IntradayEngineV7`: agrega la vía SHORT `DISPLACEMENT`. Puede confirmar fuera de la ventana
+  local sólo con gate SHORT crudo, lower high/confirmación strong, riesgo válido, momentum de
+  cinco minutos de al menos -0,50 % y RVOL de al menos 2,00. La vía estándar no cambia.
 
 Un trigger V1 con evidencia débil se degrada a `WATCH` en V2. Entry Watcher sólo acepta una
 confirmación intradiaria favorable y con un setup alcista explícitamente reconocido.
@@ -36,8 +42,9 @@ orders, quantities, position state, execution calls or Trading API concepts.
 input, making repeated evaluations reproducible and auditable. Reasons and all
 calculated evidence are exposed through stable metrics.
 
-La composición live utiliza `IntradayEngineV4` por defecto; V1-V3 continúan disponibles para
-rollback y replay.
+La composición live utiliza `IntradayEngineV7` por defecto; las versiones anteriores continúan
+disponibles para rollback y replay. Intraday consume premarket y RTH como sesiones separadas;
+Swing y 4HGERI conservan exclusivamente sus barras regulares.
 
 Run focused verification with:
 

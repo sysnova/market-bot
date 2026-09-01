@@ -1,0 +1,30 @@
+rule_id: marketbot.intraday
+version: 1.3.0
+status: active
+behavior:
+  minimum_momentum_percent: 0.15
+  minimum_risk_percent: 0.25
+  minimum_atr_risk_multiple: 0.50
+  reward_risk_ratio: 1.5
+  maximum_trigger_extension_atr: 0.50
+  maximum_ema20_extension_atr: 2.00
+  strong_confirmation_required: true
+  five_minute_higher_low_required: true
+  short_confirmation_enabled: true
+  five_minute_lower_high_required: true
+  short_ema20_extension_hard_gate: false
+  short_displacement_enabled: true
+  short_displacement_minimum_momentum_percent: 0.50
+  short_displacement_minimum_rvol: 2.00
+measurement:
+  dimensions:
+    - engine_version
+    - strategy_version
+    - entry_timing
+    - short_entry_timing
+    - short_entry_lane
+    - short_mature_confirmation_gate_passed
+    - short_displacement_gate_passed
+    - short_extension_override_applied
+    - short_ema20_extension_warning
+  outcomes: [first_level_hit, mfe_percent, mae_percent, return_15m, return_30m]

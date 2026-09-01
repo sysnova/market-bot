@@ -12,6 +12,7 @@ from app.common.clock import Clock
 from app.common.market_session import (
     is_completed_daily_bar,
     is_regular_analytical_bar,
+    market_session,
 )
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
@@ -25,6 +26,7 @@ from app.contracts import (
     EventEnvelope,
     LocalAlert,
     MarketBar,
+    MarketSession,
     analysis_result_subject,
     entry_opportunity_subject,
     market_bar_subject,
@@ -116,6 +118,10 @@ class AnalysisRuntime:
         self._aggregator = aggregator or MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_5, BarTimeframe.MINUTE_15)
         )
+        self._premarket_aggregator = MinuteBarAggregator(
+            targets=(BarTimeframe.MINUTE_5,),
+            accepted_sessions=frozenset({MarketSession.PRE_MARKET}),
+        )
         self._daily_aggregator = RegularSessionDailyAggregator()
         self._entry_watcher = entry_watcher
         self._entry_opportunity = entry_opportunity
@@ -137,15 +143,29 @@ class AnalysisRuntime:
             else MarketBar.model_validate(envelope.payload, strict=False)
         )
         if not is_regular_analytical_bar(bar):
-            if bar.timeframe is BarTimeframe.MINUTE_1:
+            if (
+                bar.timeframe is BarTimeframe.MINUTE_1
+                and market_session(bar.timestamp) is MarketSession.PRE_MARKET
+            ):
+                self._store.add(bar)
+                for aggregated in self._premarket_aggregator.add(bar):
+                    self._store.add(aggregated)
+                if self._live and bar.is_final:
+                    await self._evaluate_intraday(bar.symbol, (envelope.event_id,))
+            elif bar.timeframe is BarTimeframe.MINUTE_1:
                 for aggregated in self._aggregator.add(bar):
                     await self._publish_aggregated(aggregated, envelope.event_id)
+                for aggregated in self._premarket_aggregator.add(bar):
+                    self._store.add(aggregated)
             return
         if bar.timeframe is BarTimeframe.DAY_1 and not is_completed_daily_bar(
             bar, as_of=self._clock.now()
         ):
             return
         self._store.add(bar)
+        if bar.timeframe is BarTimeframe.MINUTE_1:
+            for aggregated in self._premarket_aggregator.add(bar):
+                self._store.add(aggregated)
         if not self._live or not bar.is_final:
             return
         if self._entry_opportunity is not None:
@@ -283,14 +303,19 @@ class AnalysisRuntime:
         if not minute:
             return
         session_date = minute[-1].timestamp.astimezone(_NEW_YORK).date()
+        active_session = market_session(minute[-1].timestamp)
         session_minutes = tuple(
-            bar for bar in minute if bar.timestamp.astimezone(_NEW_YORK).date() == session_date
+            bar
+            for bar in minute
+            if bar.timestamp.astimezone(_NEW_YORK).date() == session_date
+            and market_session(bar.timestamp) is active_session
         )
         five_minute = self._store.history(symbol, BarTimeframe.MINUTE_5, limit=100, final_only=True)
         session_five_minute = tuple(
             bar
             for bar in five_minute
             if bar.timestamp.astimezone(_NEW_YORK).date() == session_date
+            and market_session(bar.timestamp) is active_session
             and bar.timestamp <= session_minutes[-1].timestamp
         )
         result = self._intraday.analyze(

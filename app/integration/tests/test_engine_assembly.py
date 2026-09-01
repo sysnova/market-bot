@@ -56,6 +56,7 @@ from app.intraday_engine import (
     IntradayEngineV4,
     IntradayEngineV5,
     IntradayEngineV6,
+    IntradayEngineV7,
 )
 from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, PortfolioAllocation
 from app.long_term_engine import LongTermEngineV2
@@ -138,6 +139,7 @@ PRE_REBASE_GERI_DEFINITION = ROOT / "configs/marketbot/7.40.0.yaml"
 REBASED_GERI_DEFINITION = ROOT / "configs/marketbot/7.41.0.yaml"
 ON_DEMAND_NEWS_DEFINITION = ROOT / "configs/marketbot/7.42.0.yaml"
 THESIS_OWNERSHIP_DEFINITION = ROOT / "configs/marketbot/7.43.0.yaml"
+DISPLACEMENT_SHORT_DEFINITION = ROOT / "configs/marketbot/7.44.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -211,6 +213,20 @@ def test_thesis_ownership_definition_versions_entry_opportunity_only() -> None:
     assert swing_trade.strategy_version == assembly.spec(
         EngineSlot.SWING_TRADE
     ).strategy.version
+
+
+def test_displacement_short_definition_versions_only_intraday_policy() -> None:
+    previous = MarketBotAssembly.from_path(THESIS_OWNERSHIP_DEFINITION)
+    assembly = MarketBotAssembly.from_path(DISPLACEMENT_SHORT_DEFINITION)
+    intraday = assembly.build_intraday()
+
+    assert isinstance(previous.build_intraday(), IntradayEngineV6)
+    assert isinstance(intraday, IntradayEngineV7)
+    assert assembly.definition.version == "7.44.0"
+    assert assembly.spec(EngineSlot.INTRADAY).strategy.version == "1.3.0"
+    assert intraday._short_displacement_enabled is True
+    assert intraday._short_displacement_minimum_momentum_percent == Decimal("0.50")
+    assert intraday._short_displacement_minimum_rvol == Decimal("2.00")
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:

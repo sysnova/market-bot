@@ -18,12 +18,24 @@ _NEW_YORK = ZoneInfo("America/New_York")
 class MinuteBarAggregator:
     """Emit a target bar when the first minute of the next bucket arrives."""
 
-    def __init__(self, *, targets: tuple[BarTimeframe, ...]) -> None:
+    def __init__(
+        self,
+        *,
+        targets: tuple[BarTimeframe, ...],
+        accepted_sessions: frozenset[MarketSession] | None = None,
+    ) -> None:
         if not targets or len(targets) != len(set(targets)):
             raise ValueError("aggregation targets must be non-empty and unique")
         if any(target not in _TARGET_MINUTES for target in targets):
             raise ValueError("only 5Min, 15Min and 1Hour aggregation is supported")
         self._targets = targets
+        self._accepted_sessions = (
+            accepted_sessions
+            if accepted_sessions is not None
+            else frozenset({MarketSession.REGULAR})
+        )
+        if not self._accepted_sessions:
+            raise ValueError("accepted sessions must be non-empty")
         self._pending: dict[tuple[str, BarTimeframe], list[MarketBar]] = {}
 
     def add(self, bar: MarketBar) -> tuple[MarketBar, ...]:
@@ -31,12 +43,9 @@ class MinuteBarAggregator:
             raise ValueError("aggregation input must use 1Min timeframe")
         if not bar.is_final:
             return ()
-        if not is_regular_session(bar.timestamp):
-            return (
-                self._flush(bar.symbol)
-                if market_session(bar.timestamp) is MarketSession.AFTER_HOURS
-                else ()
-            )
+        session = market_session(bar.timestamp)
+        if session not in self._accepted_sessions:
+            return self._flush(bar.symbol)
         emitted: list[MarketBar] = []
         for target in self._targets:
             key = (bar.symbol, target)
@@ -45,16 +54,21 @@ class MinuteBarAggregator:
             if pending is None:
                 self._pending[key] = [bar]
                 continue
+            current_start = _bucket_start(pending[0].timestamp, _TARGET_MINUTES[target])
+            pending_session = market_session(pending[0].timestamp)
+            if pending_session is not session:
+                emitted.append(_aggregate(pending, target, current_start))
+                self._pending[key] = [bar]
+                continue
             if pending[-1].timestamp.date() != bar.timestamp.date():
                 self._pending[key] = [bar]
                 continue
-            current_start = _bucket_start(pending[0].timestamp, _TARGET_MINUTES[target])
             if bucket_start < current_start:
                 continue
             if bucket_start == current_start:
                 pending.append(bar)
                 continue
-            if is_regular_session(current_start):
+            if market_session(current_start) in self._accepted_sessions:
                 emitted.append(_aggregate(pending, target, current_start))
             self._pending[key] = [bar]
         return tuple(emitted)
@@ -66,7 +80,7 @@ class MinuteBarAggregator:
             if pending is None:
                 continue
             start = _bucket_start(pending[0].timestamp, _TARGET_MINUTES[target])
-            if is_regular_session(start):
+            if market_session(start) in self._accepted_sessions:
                 emitted.append(_aggregate(pending, target, start))
         return tuple(emitted)
 

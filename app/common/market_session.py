@@ -38,6 +38,12 @@ def is_regular_session(value: datetime) -> bool:
     return market_session(value) is MarketSession.REGULAR
 
 
+def is_intraday_analysis_session(value: datetime) -> bool:
+    """Allow premarket and RTH while keeping after-hours out of Intraday."""
+
+    return market_session(value) in {MarketSession.PRE_MARKET, MarketSession.REGULAR}
+
+
 def is_regular_session_close_minute(value: datetime) -> bool:
     """Return whether a timestamp belongs to the final minute of US RTH."""
 

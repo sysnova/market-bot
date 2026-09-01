@@ -17,8 +17,10 @@ from app.alpaca_market_data.transports import HttpxTransport
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
 from app.common.market_session import (
+    analytical_storage_limit,
     is_completed_daily_bar,
     is_regular_analytical_bar,
+    market_session,
     requires_regular_session,
 )
 from app.common.settings import AppSettings, Environment
@@ -28,6 +30,7 @@ from app.contracts import (
     MarketHistoryRequest,
     MarketHistoryRequirement,
     MarketHistoryResponse,
+    MarketSession,
 )
 from app.market_history_engine import MarketHistoryService
 from app.persistence import create_database_engine
@@ -89,6 +92,7 @@ class MarketHistoryLoader:
         requirements: tuple[MarketHistoryRequirement, ...],
         as_of: datetime,
         force_refresh: bool = False,
+        include_premarket_intraday: bool = False,
     ) -> tuple[MarketBar, ...]:
         profile = await self.ensure_and_load_profiled(
             engine_id=engine_id,
@@ -96,6 +100,7 @@ class MarketHistoryLoader:
             requirements=requirements,
             as_of=as_of,
             force_refresh=force_refresh,
+            include_premarket_intraday=include_premarket_intraday,
         )
         return profile.bars
 
@@ -107,6 +112,7 @@ class MarketHistoryLoader:
         requirements: tuple[MarketHistoryRequirement, ...],
         as_of: datetime,
         force_refresh: bool = False,
+        include_premarket_intraday: bool = False,
     ) -> MarketHistoryLoadProfile:
         total_started = perf_counter()
         request = MarketHistoryRequest(
@@ -122,12 +128,27 @@ class MarketHistoryLoader:
         output: list[MarketBar] = []
         requirement_profiles: list[HistoryRequirementProfile] = []
         for requirement in requirements:
+            include_premarket = (
+                include_premarket_intraday
+                and requires_regular_session(requirement.timeframe)
+            )
+            repository_limit = (
+                analytical_storage_limit(
+                    requirement.timeframe,
+                    requirement.max_bars_per_symbol,
+                )
+                if include_premarket
+                else requirement.max_bars_per_symbol
+            )
             repository_started = perf_counter()
             loaded = await self._repository.load_latest(
                 request.symbols,
                 requirement.timeframe,
-                limit_per_symbol=requirement.max_bars_per_symbol,
-                regular_session_only=requires_regular_session(requirement.timeframe),
+                limit_per_symbol=repository_limit,
+                regular_session_only=(
+                    requires_regular_session(requirement.timeframe)
+                    and not include_premarket
+                ),
             )
             repository_read_ms = _elapsed_ms(repository_started)
             selection_started = perf_counter()
@@ -135,7 +156,13 @@ class MarketHistoryLoader:
             eligible = tuple(
                 bar
                 for bar in loaded
-                if is_regular_analytical_bar(bar)
+                if (
+                    is_regular_analytical_bar(bar)
+                    or (
+                        include_premarket
+                        and market_session(bar.timestamp) is MarketSession.PRE_MARKET
+                    )
+                )
                 and (
                     bar.timeframe is not BarTimeframe.DAY_1
                     or is_completed_daily_bar(bar, as_of=as_of)
@@ -168,6 +195,7 @@ async def load_market_history(
     requirements: tuple[MarketHistoryRequirement, ...],
     as_of: datetime,
     force_refresh: bool = False,
+    include_premarket_intraday: bool = False,
 ) -> tuple[MarketBar, ...]:
     return (
         await load_market_history_profiled(
@@ -178,6 +206,7 @@ async def load_market_history(
             requirements=requirements,
             as_of=as_of,
             force_refresh=force_refresh,
+            include_premarket_intraday=include_premarket_intraday,
         )
     ).bars
 
@@ -191,6 +220,7 @@ async def load_market_history_profiled(
     requirements: tuple[MarketHistoryRequirement, ...],
     as_of: datetime,
     force_refresh: bool = False,
+    include_premarket_intraday: bool = False,
 ) -> MarketHistoryLoadProfile:
     client = await NatsMarketHistoryClient.connect(
         [settings.nats_url.get_secret_value()],
@@ -206,6 +236,7 @@ async def load_market_history_profiled(
             requirements=requirements,
             as_of=as_of,
             force_refresh=force_refresh,
+            include_premarket_intraday=include_premarket_intraday,
         )
     finally:
         await client.close()

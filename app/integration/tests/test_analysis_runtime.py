@@ -210,6 +210,60 @@ async def test_market_events_only_trigger_live_intraday_after_enable() -> None:
 
 
 @pytest.mark.unit
+async def test_premarket_bars_feed_only_intraday_without_publishing_swing_bars() -> None:
+    store = MarketBarStore()
+    publisher = RecordingPublisher()
+    swing = StaticEngine(AnalysisHorizon.SWING)
+    intraday = StaticEngine(AnalysisHorizon.INTRADAY)
+    runtime = AnalysisRuntime(
+        store=store,
+        publisher=publisher,
+        long_term=StaticEngine(AnalysisHorizon.LONG_TERM),
+        swing=swing,
+        intraday=intraday,
+        alert_engine=AlertEngine(),
+        alert_dispatcher=AlertDispatcher(sinks=()),
+        clock=FixedClock(),
+    )
+    runtime.enable_live()
+    premarket_open = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
+
+    for index in range(6):
+        price = Decimal("100") - Decimal(index) / Decimal("10")
+        current = MarketBar(
+            symbol="AAPL",
+            timeframe=BarTimeframe.MINUTE_1,
+            timestamp=premarket_open + timedelta(minutes=index),
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+            volume=Decimal("1000"),
+            source="test",
+            feed="sip",
+        )
+        await runtime.handle_market_event(
+            EventEnvelope(
+                event_type="market.bar.received",
+                occurred_at=current.timestamp,
+                source="test",
+                subject="AAPL",
+                payload=current,
+            )
+        )
+
+    assert len(intraday.contexts) == 6
+    assert len(intraday.contexts[-1].five_minute_bars) == 1
+    assert swing.contexts == []
+    assert all(
+        item.event_type != "market.bar.received"
+        or not isinstance(item.payload, MarketBar)
+        or item.payload.timeframe is not BarTimeframe.MINUTE_5
+        for _, item in publisher.items
+    )
+
+
+@pytest.mark.unit
 async def test_entry_watch_transition_is_dispatched_as_local_alert() -> None:
     result = AnalysisResult(
         engine_id="long-test",

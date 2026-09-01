@@ -7,6 +7,7 @@ from .v3 import IntradayEngineV3
 from .v4 import IntradayEngineV4
 from .v5 import IntradayEngineV5
 from .v6 import IntradayEngineV6
+from .v7 import IntradayEngineV7
 
 __all__ = [
     "IntradayContext",
@@ -17,5 +18,6 @@ __all__ = [
     "IntradayEngineV4",
     "IntradayEngineV5",
     "IntradayEngineV6",
+    "IntradayEngineV7",
     "IntradaySetup",
 ]

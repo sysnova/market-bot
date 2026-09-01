@@ -246,6 +246,7 @@ async def run_engine_process(
             symbols=universe.symbols,
             requirements=engine_history_requests(horizon),
             as_of=as_of,
+            include_premarket_intraday=horizon is AnalysisHorizon.INTRADAY,
         )
         bars = history.bars
         historical_bar_count = len(bars)
@@ -375,6 +376,9 @@ async def run_engine_process(
                                 symbols=added,
                                 requirements=engine_history_requests(horizon),
                                 as_of=clock.now(),
+                                include_premarket_intraday=(
+                                    horizon is AnalysisHorizon.INTRADAY
+                                ),
                             )
                             await worker.bootstrap(refresh_bars, symbols=added)
                         initial_results = await worker.handle_universe_changed(consumer_change)

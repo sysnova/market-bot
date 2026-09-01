@@ -7,7 +7,7 @@ from typing import Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from app.common.market_session import is_regular_session
+from app.common.market_session import is_intraday_analysis_session, market_session
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     MARKET_BAR_EVENT,
@@ -17,6 +17,7 @@ from app.contracts import (
     BarTimeframe,
     EventEnvelope,
     MarketBar,
+    MarketSession,
     UniverseChanged,
     analysis_result_subject,
 )
@@ -53,7 +54,12 @@ class IntradayWorker:
         self._publisher = publisher
         self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=INTRADAY_MINUTE_BARS)
-        self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_5,))
+        self._aggregator = MinuteBarAggregator(
+            targets=(BarTimeframe.MINUTE_5,),
+            accepted_sessions=frozenset(
+                {MarketSession.PRE_MARKET, MarketSession.REGULAR}
+            ),
+        )
         self._universe = UniverseWarmupGate()
 
     def activate_universe(self, symbols: tuple[str, ...]) -> None:
@@ -82,8 +88,9 @@ class IntradayWorker:
         for bar in bars:
             if bar.timeframe is not BarTimeframe.MINUTE_1:
                 continue
-            if not is_regular_session(bar.timestamp):
-                self._aggregator.add(bar)
+            if not is_intraday_analysis_session(bar.timestamp):
+                for aggregated in self._aggregator.add(bar):
+                    self._store.add(aggregated)
                 continue
             self._store.add(bar)
             for aggregated in self._aggregator.add(bar):
@@ -96,7 +103,7 @@ class IntradayWorker:
         bar = _bar(envelope)
         if bar.timeframe is not BarTimeframe.MINUTE_1:
             return
-        if not is_regular_session(bar.timestamp):
+        if not is_intraday_analysis_session(bar.timestamp):
             for aggregated in self._aggregator.add(bar):
                 self._store.add(aggregated)
                 await self._evaluate(bar.symbol, (envelope.event_id,))
@@ -123,8 +130,12 @@ class IntradayWorker:
         if not minute:
             return 0
         session_date = minute[-1].timestamp.astimezone(_NEW_YORK).date()
+        active_session = market_session(minute[-1].timestamp)
         session_minutes = tuple(
-            item for item in minute if item.timestamp.astimezone(_NEW_YORK).date() == session_date
+            item
+            for item in minute
+            if item.timestamp.astimezone(_NEW_YORK).date() == session_date
+            and market_session(item.timestamp) is active_session
         )
         five_minute = self._store.history(
             symbol,
@@ -136,6 +147,7 @@ class IntradayWorker:
             item
             for item in five_minute
             if item.timestamp.astimezone(_NEW_YORK).date() == session_date
+            and market_session(item.timestamp) is active_session
             and item.timestamp <= session_minutes[-1].timestamp
         )
         result = self._analyzer.analyze(
