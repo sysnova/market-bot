@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import TypedDict
 from uuid import UUID
 
 from app.contracts.order_flow import (
@@ -28,6 +29,13 @@ _ONE = Decimal("1")
 _TEN_THOUSAND = Decimal("10000")
 
 
+class StateMetadata(TypedDict, total=False):
+    pulse_state: OrderFlowStateKind | None
+    candidate_state: OrderFlowStateKind | None
+    candidate_samples: int
+    state_stable_since: datetime | None
+
+
 @dataclass(frozen=True, slots=True)
 class OrderFlowPolicy:
     """Version-one thresholds; every calculation remains Decimal based."""
@@ -41,6 +49,12 @@ class OrderFlowPolicy:
     absorption_max_price_change_bps: Decimal = Decimal("2")
     absorption_minimum_trades: int = 10
     divergence_minimum_price_change_bps: Decimal = Decimal("5")
+    transition_confirmation_samples: int = 1
+    transition_confirmation_seconds: Decimal = Decimal("0")
+    reversal_confirmation_samples: int = 1
+    reversal_confirmation_seconds: Decimal = Decimal("0")
+    neutral_confirmation_samples: int = 1
+    neutral_confirmation_seconds: Decimal = Decimal("0")
 
     def __post_init__(self) -> None:
         normalized = tuple(
@@ -59,6 +73,15 @@ class OrderFlowPolicy:
             raise ValueError("quote_max_age must be positive")
         if self.minimum_trades < 1 or self.absorption_minimum_trades < 1:
             raise ValueError("trade thresholds must be positive")
+        if any(
+            value < 1
+            for value in (
+                self.transition_confirmation_samples,
+                self.reversal_confirmation_samples,
+                self.neutral_confirmation_samples,
+            )
+        ):
+            raise ValueError("state confirmation sample thresholds must be positive")
         if self.minimum_volume <= _ZERO or self.large_trade_size <= _ZERO:
             raise ValueError("volume thresholds must be positive")
         if not Decimal("0.5") < self.pressure_ratio <= _ONE:
@@ -68,6 +91,15 @@ class OrderFlowPolicy:
             or self.divergence_minimum_price_change_bps < _ZERO
         ):
             raise ValueError("price thresholds cannot be negative")
+        if any(
+            value < _ZERO
+            for value in (
+                self.transition_confirmation_seconds,
+                self.reversal_confirmation_seconds,
+                self.neutral_confirmation_seconds,
+            )
+        ):
+            raise ValueError("state confirmation durations cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,9 +296,15 @@ class OrderFlowEngine:
             unknown_ratio=unknown_ratio,
             trade_count=primary.trade_count,
         )
-        kind = self._state_kind(windows)
-        confidence = self._confidence(primary, data_quality)
-        reasons = (kind.value.lower(), quote_reason)
+        pulse_kind = self._state_kind(windows)
+        kind = self._stabilize_state(
+            symbol,
+            as_of,
+            pulse_kind,
+            advance=emit_transition,
+        )
+        confidence = self._state_confidence(kind, pulse_kind, primary, data_quality)
+        reasons = self._state_reasons(kind, pulse_kind, quote_reason)
         current_price = book.latest_price
         if current_price is None:
             raise RuntimeError("cannot evaluate Order Flow without a market price")
@@ -286,6 +324,7 @@ class OrderFlowEngine:
             occurred_at=as_of,
             engine_version=self.engine_version,
             state=kind,
+            **self._state_metadata(symbol),
             current_price=current_price,
             mid_price=quote.mid_price if quote is not None else None,
             bid_price=bid_price,
@@ -322,6 +361,50 @@ class OrderFlowEngine:
             )
             book.last_state = kind
         return OrderFlowUpdate(state=state, aggressor=aggressor, transition=transition)
+
+    def _stabilize_state(
+        self,
+        symbol: str,
+        as_of: datetime,
+        pulse_state: OrderFlowStateKind,
+        *,
+        advance: bool,
+    ) -> OrderFlowStateKind:
+        """Keep the legacy implementations responsive to every classified pulse."""
+
+        del symbol, as_of, advance
+        return pulse_state
+
+    def _state_metadata(self, symbol: str) -> StateMetadata:
+        """Allow later implementations to expose stability without changing legacy payloads."""
+
+        del symbol
+        return {}
+
+    @staticmethod
+    def _state_reasons(
+        state: OrderFlowStateKind,
+        pulse_state: OrderFlowStateKind,
+        quote_reason: str,
+    ) -> tuple[str, ...]:
+        if state is pulse_state:
+            return (state.value.lower(), quote_reason)
+        return (
+            state.value.lower(),
+            f"pulse:{pulse_state.value.lower()}",
+            "state_confirmation_pending",
+            quote_reason,
+        )
+
+    def _state_confidence(
+        self,
+        state: OrderFlowStateKind,
+        pulse_state: OrderFlowStateKind,
+        window: OrderFlowWindow,
+        data_quality: Decimal,
+    ) -> Decimal:
+        del state, pulse_state
+        return self._confidence(window, data_quality)
 
     def _state_kind(self, windows: tuple[OrderFlowWindow, ...]) -> OrderFlowStateKind:
         five = windows[1]

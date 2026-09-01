@@ -13,7 +13,7 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
             raise ValueError("Order Flow 1.0 uses its embedded wildcard policy")
         return
     if source.artifact is None:
-        raise ValueError("Order Flow 1.1 requires a bounded strategy artifact")
+        raise ValueError("Order Flow 1.1+ requires a bounded strategy artifact")
     load_order_flow_policy(source.artifact)
 
 
@@ -26,6 +26,6 @@ def configure_engine(
     if implementation == "1.0.0":
         return args, kwargs
     if source.artifact is None:
-        raise ValueError("Order Flow 1.1 requires a bounded strategy artifact")
+        raise ValueError("Order Flow 1.1+ requires a bounded strategy artifact")
     kwargs["policy"] = load_order_flow_policy(source.artifact)
     return args, kwargs

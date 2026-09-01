@@ -11,7 +11,12 @@ from app.contracts.order_flow import (
     OrderFlowStateKind,
     TradeAggressor,
 )
-from app.order_flow_engine import OrderFlowEngine, OrderFlowEngineV11, OrderFlowPolicy
+from app.order_flow_engine import (
+    OrderFlowEngine,
+    OrderFlowEngineV11,
+    OrderFlowEngineV12,
+    OrderFlowPolicy,
+)
 
 NOW = datetime(2026, 8, 24, 14, 30, tzinfo=UTC)
 
@@ -140,6 +145,71 @@ def test_buy_pressure_emits_a_transition_only_when_state_changes() -> None:
     assert second.transition is not None
     assert second.transition.previous_state is OrderFlowStateKind.NEUTRAL
     assert third.transition is None
+
+
+def test_v12_requires_persistent_pulse_before_promoting_a_stable_state() -> None:
+    engine = OrderFlowEngineV12(
+        OrderFlowPolicy(
+            tracked_symbols=("AAPL",),
+            minimum_trades=1,
+            minimum_volume=Decimal("1"),
+            transition_confirmation_samples=3,
+            transition_confirmation_seconds=Decimal("2"),
+        )
+    )
+    engine.ingest_quote(_quote())
+
+    first = engine.ingest_trade(_trade("1", size="100"))
+    second = engine.ingest_trade(
+        _trade("2", at=NOW + timedelta(seconds=1), price="100.20", size="100")
+    )
+    third = engine.ingest_trade(
+        _trade("3", at=NOW + timedelta(seconds=2), price="100.30", size="100")
+    )
+
+    assert first.state.pulse_state is OrderFlowStateKind.BUY_PRESSURE
+    assert first.state.state is OrderFlowStateKind.NEUTRAL
+    assert first.state.candidate_state is OrderFlowStateKind.BUY_PRESSURE
+    assert first.state.candidate_samples == 1
+    assert second.state.state is OrderFlowStateKind.NEUTRAL
+    assert second.state.candidate_samples == 2
+    assert third.state.state is OrderFlowStateKind.BUY_PRESSURE
+    assert third.state.candidate_state is None
+    assert third.state.state_stable_since == NOW + timedelta(seconds=2)
+    assert third.transition is not None
+
+
+def test_v12_does_not_reverse_a_stable_bias_on_one_opposite_pulse() -> None:
+    engine = OrderFlowEngineV12(
+        OrderFlowPolicy(
+            tracked_symbols=("AAPL",),
+            minimum_trades=1,
+            minimum_volume=Decimal("1"),
+            transition_confirmation_samples=2,
+            transition_confirmation_seconds=Decimal("1"),
+            reversal_confirmation_samples=3,
+            reversal_confirmation_seconds=Decimal("3"),
+        )
+    )
+    engine.ingest_quote(_quote())
+    engine.ingest_trade(_trade("buy-1", size="100"))
+    stable = engine.ingest_trade(
+        _trade("buy-2", at=NOW + timedelta(seconds=1), price="100.20", size="100")
+    )
+    engine.ingest_quote(
+        _quote(at=NOW + timedelta(seconds=2), bid="99.80", ask="100.00")
+    )
+    opposite = engine.ingest_trade(
+        _trade("sell-1", at=NOW + timedelta(seconds=2), price="99.80", size="1000")
+    )
+
+    assert stable.state.state is OrderFlowStateKind.BUY_PRESSURE
+    assert opposite.state.pulse_state is OrderFlowStateKind.SELL_PRESSURE
+    assert opposite.state.state is OrderFlowStateKind.BUY_PRESSURE
+    assert opposite.state.candidate_state is OrderFlowStateKind.SELL_PRESSURE
+    assert opposite.state.candidate_samples == 1
+    assert opposite.state.confidence < Decimal("0.50")
+    assert opposite.transition is None
 
 
 def test_large_trade_and_correction_are_reflected_without_double_counting() -> None:

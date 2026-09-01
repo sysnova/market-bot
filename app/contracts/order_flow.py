@@ -223,6 +223,10 @@ class OrderFlowState(StrictFrozenModel):
     occurred_at: datetime
     engine_version: SemVer
     state: OrderFlowStateKind
+    pulse_state: OrderFlowStateKind | None = None
+    candidate_state: OrderFlowStateKind | None = None
+    candidate_samples: int = Field(default=0, ge=0)
+    state_stable_since: datetime | None = None
     current_price: PositiveDecimal
     mid_price: PositiveDecimal | None = None
     bid_price: PositiveDecimal | None = None
@@ -266,6 +270,12 @@ class OrderFlowState(StrictFrozenModel):
             raise ValueError("source_event_ids must be unique")
         if any(event_id.version != 7 for event_id in self.source_event_ids):
             raise ValueError("source_event_ids must be UUIDv7")
+        if self.state_stable_since is not None and self.state_stable_since > self.occurred_at:
+            raise ValueError("state_stable_since cannot be later than occurred_at")
+        if self.candidate_state is None and self.candidate_samples != 0:
+            raise ValueError("candidate_samples requires candidate_state")
+        if self.candidate_state is not None and self.candidate_samples < 1:
+            raise ValueError("candidate_state requires positive candidate_samples")
         return self
 
 

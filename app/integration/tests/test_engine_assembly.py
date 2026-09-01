@@ -62,7 +62,7 @@ from app.long_portfolio_engine import LongPortfolioEngine, LongPortfolioPolicy, 
 from app.long_term_engine import LongTermEngineV2
 from app.news_intelligence_engine import NewsIntelligenceEngine
 from app.options_gamma_engine import OptionsGammaEngine
-from app.order_flow_engine import OrderFlowEngine
+from app.order_flow_engine import OrderFlowEngine, OrderFlowEngineV12
 from app.patreon_caps_engine import PatreonCapsEngine, PatreonCapsPolicy
 from app.portfolio_flow_engine import PortfolioFlowEngineV1, PortfolioFlowEngineV2
 from app.signal_fusion_engine import SignalFusionEngineV05
@@ -140,6 +140,7 @@ REBASED_GERI_DEFINITION = ROOT / "configs/marketbot/7.41.0.yaml"
 ON_DEMAND_NEWS_DEFINITION = ROOT / "configs/marketbot/7.42.0.yaml"
 THESIS_OWNERSHIP_DEFINITION = ROOT / "configs/marketbot/7.43.0.yaml"
 DISPLACEMENT_SHORT_DEFINITION = ROOT / "configs/marketbot/7.44.0.yaml"
+STABLE_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.45.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -227,6 +228,19 @@ def test_displacement_short_definition_versions_only_intraday_policy() -> None:
     assert intraday._short_displacement_enabled is True
     assert intraday._short_displacement_minimum_momentum_percent == Decimal("0.50")
     assert intraday._short_displacement_minimum_rvol == Decimal("2.00")
+
+
+def test_stable_order_flow_definition_activates_confirmed_microstructure_states() -> None:
+    previous = MarketBotAssembly.from_path(DISPLACEMENT_SHORT_DEFINITION)
+    assembly = MarketBotAssembly.from_path(STABLE_ORDER_FLOW_DEFINITION)
+    engine = assembly.build_order_flow()
+
+    assert previous.spec(EngineSlot.ORDER_FLOW).implementation == "1.1.0"
+    assert assembly.definition.version == "7.45.0"
+    assert assembly.spec(EngineSlot.ORDER_FLOW).strategy.version == "1.2.0"
+    assert isinstance(engine, OrderFlowEngineV12)
+    assert engine._policy.transition_confirmation_samples == 3
+    assert engine._policy.reversal_confirmation_seconds == Decimal("5")
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:

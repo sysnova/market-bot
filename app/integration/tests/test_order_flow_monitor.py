@@ -1,7 +1,14 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from app.contracts import OrderFlowState, OrderFlowStateKind, OrderFlowWindow
+from app.contracts import (
+    OrderFlowState,
+    OrderFlowStateKind,
+    OrderFlowSupportAssessment,
+    OrderFlowSupportDisposition,
+    OrderFlowWindow,
+    new_uuid7,
+)
 from app.integration.order_flow_monitor import (
     OrderFlowDashboard,
     format_order_flow_dashboard,
@@ -61,6 +68,60 @@ def test_dashboard_ignores_replayed_states_from_an_old_engine_version() -> None:
     assert "ASTS | PENDIENTE" in rendered
 
 
+def test_dashboard_translates_stable_flow_and_support_into_an_actionable_plan() -> None:
+    dashboard = OrderFlowDashboard(symbols=SYMBOLS, expected_engine_version="1.2.0")
+    state = _state().model_copy(
+        update={
+            "engine_version": "1.2.0",
+            "pulse_state": OrderFlowStateKind.SELLER_EXHAUSTION,
+            "state_stable_since": NOW - timedelta(seconds=27),
+            "candidate_state": OrderFlowStateKind.SELLER_EXHAUSTION,
+            "candidate_samples": 2,
+        }
+    )
+
+    assert dashboard.merge(state) is True
+    assert dashboard.merge_support(_support(state)) is True
+    rendered = format_order_flow_dashboard(dashboard, refreshed_at=NOW)
+
+    assert "ASTS | REGIMEN COMPRADOR" in rendered
+    assert "ACCION PREPARAR_LONG" in rendered
+    assert "ESTABLE PRESION COMPRADORA 27s" in rendered
+    assert "PULSO AGOTAMIENTO VENDEDOR (ALCISTA)" in rendered
+    assert "CANDIDATO AGOTAMIENTO VENDEDOR (ALCISTA) 2" in rendered
+    assert "SOPORTE 99.5000-100.5000 | CONFIRMA SOPORTE" in rendered
+    assert "TRIGGER > 100.5000 | RIESGO < 99.5000" in rendered
+
+
+def test_dashboard_distinguishes_reclaim_trigger_from_an_extended_entry() -> None:
+    triggered = OrderFlowDashboard(symbols=SYMBOLS, expected_engine_version="1.2.0")
+    state = _state().model_copy(
+        update={
+            "engine_version": "1.2.0",
+            "pulse_state": OrderFlowStateKind.BUY_PRESSURE,
+            "state_stable_since": NOW - timedelta(seconds=30),
+            "current_price": Decimal("100.60"),
+        }
+    )
+    triggered.merge(state)
+    triggered.merge_support(_support(state))
+
+    assert "ACCION LONG_TRIGGERED" in format_order_flow_dashboard(
+        triggered,
+        refreshed_at=NOW,
+    )
+
+    extended = OrderFlowDashboard(symbols=SYMBOLS, expected_engine_version="1.2.0")
+    extended_state = state.model_copy(update={"current_price": Decimal("101.60")})
+    extended.merge(extended_state)
+    extended.merge_support(_support(extended_state))
+
+    assert "ACCION NO_PERSEGUIR_EXTENDIDO" in format_order_flow_dashboard(
+        extended,
+        refreshed_at=NOW,
+    )
+
+
 def _state() -> OrderFlowState:
     windows = tuple(
         OrderFlowWindow(
@@ -97,4 +158,27 @@ def _state() -> OrderFlowState:
         windows=windows,
         reasons=("buy_pressure",),
         context_hash="sha256:" + "a" * 64,
+    )
+
+
+def _support(state: OrderFlowState) -> OrderFlowSupportAssessment:
+    return OrderFlowSupportAssessment(
+        symbol=state.symbol,
+        occurred_at=NOW,
+        engine_version="1.0.0",
+        disposition=OrderFlowSupportDisposition.CONFIRMS_SUPPORT,
+        support_assessment_id=new_uuid7(),
+        order_flow_state_id=state.state_id,
+        support_occurred_at=NOW - timedelta(minutes=5),
+        order_flow_occurred_at=state.occurred_at,
+        current_price=state.current_price,
+        zone_low=Decimal("99.50"),
+        zone_high=Decimal("100.50"),
+        order_flow_state=state.state,
+        confidence=Decimal("0.81"),
+        data_quality=Decimal("0.93"),
+        quote_fresh=True,
+        fresh_until=NOW + timedelta(seconds=120),
+        reasons=("buy_pressure_over_support",),
+        context_hash="sha256:" + "b" * 64,
     )

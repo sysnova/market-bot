@@ -68,7 +68,7 @@ from app.long_term_engine import LongTermEngine, LongTermEngineV2
 from app.market_rotation_engine import RotationEngine
 from app.news_intelligence_engine import NewsIntelligenceEngine
 from app.options_gamma_engine import OptionsGammaEngine
-from app.order_flow_engine import OrderFlowEngine, OrderFlowEngineV11
+from app.order_flow_engine import OrderFlowEngine, OrderFlowEngineV11, OrderFlowEngineV12
 from app.order_flow_engine.strategy import configure_engine as configure_order_flow
 from app.order_flow_engine.strategy import validate_strategy as validate_order_flow
 from app.patreon_caps_engine import PatreonCapsEngine
@@ -212,6 +212,7 @@ def default_engine_registry() -> EngineRegistry:
                 implementations={
                     "1.0.0": OrderFlowEngine,
                     "1.1.0": OrderFlowEngineV11,
+                    "1.2.0": OrderFlowEngineV12,
                 },
                 required_since="7.32.0",
                 configure=configure_order_flow,
