@@ -4,9 +4,25 @@ from __future__ import annotations
 
 from app.common.strategy import StrategySource
 
+_CONFIGURED_IMPLEMENTATIONS = {
+    "1.0.0",
+    "1.1.0",
+    "1.2.0",
+    "1.3.0",
+    "1.4.0",
+    "1.5.0",
+}
+_INTRADAY_CONFIRMATION_IMPLEMENTATIONS = _CONFIGURED_IMPLEMENTATIONS - {"1.0.0"}
+_SUPPORT_CONFIRMATION_IMPLEMENTATIONS = {
+    "1.2.0",
+    "1.3.0",
+    "1.4.0",
+    "1.5.0",
+}
+
 
 def validate_strategy(implementation: str, source: StrategySource) -> None:
-    if implementation not in {"1.0.0", "1.1.0", "1.2.0"}:
+    if implementation not in _CONFIGURED_IMPLEMENTATIONS:
         return
     behavior = source.behavior()
     for name in (
@@ -28,12 +44,12 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
     ):
         if behavior.decimal(name) <= 0:
             raise ValueError(f"SwingTrade {name} must be positive")
-    if implementation in {"1.1.0", "1.2.0"}:
+    if implementation in _INTRADAY_CONFIRMATION_IMPLEMENTATIONS:
         behavior.positive_int("minimum_rvol_samples")
         if behavior.decimal("minimum_intraday_rvol") <= 0:
             raise ValueError("SwingTrade minimum_intraday_rvol must be positive")
         behavior.boolean("require_vwap_gate")
-    if implementation == "1.2.0":
+    if implementation in _SUPPORT_CONFIRMATION_IMPLEMENTATIONS:
         behavior.positive_int("support_freshness_sessions")
 
 
@@ -43,7 +59,7 @@ def configure_engine(
     args: tuple[object, ...],
     kwargs: dict[str, object],
 ) -> tuple[tuple[object, ...], dict[str, object]]:
-    if implementation not in {"1.0.0", "1.1.0", "1.2.0"}:
+    if implementation not in _CONFIGURED_IMPLEMENTATIONS:
         return args, kwargs
     behavior = source.behavior()
     kwargs.update(
@@ -61,12 +77,12 @@ def configure_engine(
         trade_ttl_sessions=behavior.positive_int("trade_ttl_sessions"),
         strategy_version=source.version,
     )
-    if implementation in {"1.1.0", "1.2.0"}:
+    if implementation in _INTRADAY_CONFIRMATION_IMPLEMENTATIONS:
         kwargs.update(
             minimum_intraday_rvol=behavior.decimal("minimum_intraday_rvol"),
             minimum_rvol_samples=behavior.positive_int("minimum_rvol_samples"),
             require_vwap_gate=behavior.boolean("require_vwap_gate"),
         )
-    if implementation == "1.2.0":
+    if implementation in _SUPPORT_CONFIRMATION_IMPLEMENTATIONS:
         kwargs["support_freshness_sessions"] = behavior.positive_int("support_freshness_sessions")
     return args, kwargs

@@ -41,3 +41,8 @@ GERI evidence later than `as_of`. Rules are versioned in `configs/rules/swing_tr
 later demotion resets the notification latch, so a genuinely new rejection may confirm again while
 unchanged repeated assessments remain silent. The isolated backtest accepts `--source-end-date`
 to preserve the opportunity and its target/invalidation lifecycle across multiple sessions.
+
+At runtime bootstrap, the latest completed RTH 15-minute bar may rebuild analytical state, but it
+may open a new actionable `ST3`/`ST4` signal only for 30 minutes after that bar completed. Older
+bootstrap evidence still publishes assessment and transition state so demotions and thesis closure
+remain reconcilable, without presenting a previous-session rejection as a new confirmed entry.

@@ -196,6 +196,7 @@ def test_on_demand_news_definition_removes_news_from_automatic_runtime() -> None
 def test_thesis_ownership_definition_versions_entry_opportunity_only() -> None:
     previous = MarketBotAssembly.from_path(ON_DEMAND_NEWS_DEFINITION)
     assembly = MarketBotAssembly.from_path(THESIS_OWNERSHIP_DEFINITION)
+    swing_trade = assembly.build_swing_trade()
 
     assert isinstance(
         previous.build_entry_opportunity(store=InMemoryEntryOpportunityStore()),
@@ -207,6 +208,9 @@ def test_thesis_ownership_definition_versions_entry_opportunity_only() -> None:
     )
     assert assembly.definition.version == "7.43.0"
     assert assembly.spec(EngineSlot.NEWS_INTELLIGENCE).mode is EngineMode.ON_DEMAND
+    assert swing_trade.strategy_version == assembly.spec(
+        EngineSlot.SWING_TRADE
+    ).strategy.version
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:
@@ -243,12 +247,16 @@ def test_preentry_stability_definition_versions_entry_opportunity_only() -> None
 
 def test_microstructure_definition_adds_operational_engines() -> None:
     assembly = MarketBotAssembly.from_path(MICROSTRUCTURE_DEFINITION)
+    swing_trade = assembly.build_swing_trade()
 
     assert assembly.definition.version == "7.32.0"
     assert isinstance(assembly.build_order_flow(), OrderFlowEngine)
     assert isinstance(assembly.build_swing(), SwingEngineV13)
     assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV17)
-    assert isinstance(assembly.build_swing_trade(), SwingTradeEngineV15)
+    assert isinstance(swing_trade, SwingTradeEngineV15)
+    assert swing_trade.strategy_version == assembly.spec(
+        EngineSlot.SWING_TRADE
+    ).strategy.version
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:

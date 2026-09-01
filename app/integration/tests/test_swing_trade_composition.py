@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.common.clock import FrozenClock
 from app.contracts import (
     ENTRY_SIGNAL_EVENT,
     MARKET_BAR_EVENT,
@@ -103,8 +104,12 @@ async def test_runtime_evaluates_only_when_a_completed_15m_bucket_emits() -> Non
 @pytest.mark.asyncio
 async def test_runtime_deduplicates_the_same_completed_15m_observation() -> None:
     publisher = Publisher()
-    runtime = SwingTradeRuntime(engine=SwingTradeEngine(), publisher=publisher)
     at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+    runtime = SwingTradeRuntime(
+        engine=SwingTradeEngine(),
+        publisher=publisher,
+        clock=FrozenClock(at + timedelta(minutes=20)),
+    )
     bar = minute(at).model_copy(update={"timeframe": BarTimeframe.MINUTE_15})
 
     await runtime.bootstrap((*daily_bars(), bar), symbols=("AAPL",))
@@ -157,8 +162,12 @@ async def test_runtime_exposes_rejected_evaluation_reasons() -> None:
 @pytest.mark.asyncio
 async def test_actionable_assessment_allows_invalidation_inside_fibonacci_zone() -> None:
     publisher = Publisher()
-    runtime = SwingTradeRuntime(engine=SwingTradeEngine(), publisher=publisher)
     at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+    runtime = SwingTradeRuntime(
+        engine=SwingTradeEngine(),
+        publisher=publisher,
+        clock=FrozenClock(at + timedelta(minutes=20)),
+    )
     bar = minute(at).model_copy(
         update={
             "timeframe": BarTimeframe.MINUTE_15,
@@ -249,7 +258,12 @@ async def test_runtime_publishes_setup_identity_migration_without_market_change(
         }
     )
     publisher = Publisher()
-    runtime = SwingTradeRuntime(engine=FixedEngine(current), publisher=publisher)
+    at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+    runtime = SwingTradeRuntime(
+        engine=FixedEngine(current),
+        publisher=publisher,
+        clock=FrozenClock(at + timedelta(minutes=20)),
+    )
     await runtime.restore_assessment(
         EventEnvelope(
             event_type=SWING_TRADE_ASSESSMENT_EVENT,
@@ -259,7 +273,6 @@ async def test_runtime_publishes_setup_identity_migration_without_market_change(
             payload=previous,
         )
     )
-    at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
     bar = minute(at).model_copy(update={"timeframe": BarTimeframe.MINUTE_15})
 
     await runtime.bootstrap((*daily_bars(), bar), symbols=("AAPL",))
@@ -272,3 +285,57 @@ async def test_runtime_publishes_setup_identity_migration_without_market_change(
     signal = publisher.events[-1].payload
     assert isinstance(signal, EntrySignal)
     assert signal.setup_id == canonical_setup
+
+
+@pytest.mark.asyncio
+async def test_runtime_publishes_strategy_migration_without_market_change() -> None:
+    previous = analyze("97")
+    current = previous.model_copy(update={"strategy_version": "1.2.0"})
+    publisher = Publisher()
+    at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+    runtime = SwingTradeRuntime(
+        engine=FixedEngine(current),
+        publisher=publisher,
+        clock=FrozenClock(at + timedelta(minutes=20)),
+    )
+    await runtime.restore_assessment(
+        EventEnvelope(
+            event_type=SWING_TRADE_ASSESSMENT_EVENT,
+            occurred_at=previous.occurred_at,
+            source="test",
+            subject=previous.symbol,
+            payload=previous,
+        )
+    )
+    bar = minute(at).model_copy(update={"timeframe": BarTimeframe.MINUTE_15})
+
+    await runtime.bootstrap((*daily_bars(), bar), symbols=("AAPL",))
+
+    assert [item.event_type for item in publisher.events] == [
+        SWING_TRADE_ASSESSMENT_EVENT,
+        SWING_TRADE_TRANSITION_EVENT,
+        ENTRY_SIGNAL_EVENT,
+    ]
+    signal = publisher.events[-1].payload
+    assert isinstance(signal, EntrySignal)
+    assert signal.policy_version == "1.2.0"
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_does_not_emit_actionable_signal_from_previous_session() -> None:
+    assessment = analyze("97")
+    publisher = Publisher()
+    at = datetime(2026, 8, 20, 19, 45, tzinfo=UTC)
+    runtime = SwingTradeRuntime(
+        engine=FixedEngine(assessment),
+        publisher=publisher,
+        clock=FrozenClock(datetime(2026, 8, 21, 10, 0, tzinfo=UTC)),
+    )
+    bar = minute(at).model_copy(update={"timeframe": BarTimeframe.MINUTE_15})
+
+    await runtime.bootstrap((*daily_bars(), bar), symbols=("AAPL",))
+
+    assert [item.event_type for item in publisher.events] == [
+        SWING_TRADE_ASSESSMENT_EVENT,
+        SWING_TRADE_TRANSITION_EVENT,
+    ]

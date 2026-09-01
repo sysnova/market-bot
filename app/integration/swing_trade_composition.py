@@ -34,6 +34,7 @@ from app.contracts import (
     SubscriptionOptions,
     SupportAssessment,
     SwingTradeAssessment,
+    SwingTradeMaturity,
     SwingTradeTransition,
     entry_signal_subject,
     swing_trade_assessment_subject,
@@ -62,9 +63,13 @@ SWING_TRADE_HISTORY_REQUESTS = (
         max_bars_per_symbol=180,
     ),
 )
+_BOOTSTRAP_ACTIONABLE_SIGNAL_MAX_AGE = timedelta(minutes=30)
 
 
 class SwingTradeEnginePort(Protocol):
+    @property
+    def strategy_version(self) -> str: ...
+
     def analyze(self, context: SwingTradeContext) -> SwingTradeAssessment: ...
 
 
@@ -147,6 +152,7 @@ class SwingTradeRuntime:
 
     async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {symbol.strip().upper() for symbol in symbols if symbol.strip()}
+        bootstrap_at = self._clock.now()
         latest_fifteen: dict[str, MarketBar] = {}
         for bar in sorted(bars, key=lambda value: (value.timestamp, value.symbol)):
             if bar.symbol not in self._symbols or not bar.is_final:
@@ -158,7 +164,15 @@ class SwingTradeRuntime:
                 latest_fifteen[bar.symbol] = bar
         published = 0
         for bar in latest_fifteen.values():
-            published += int(await self._accept_fifteen(bar))
+            published += int(
+                await self._accept_fifteen(
+                    bar,
+                    actionable_signals_enabled=_bootstrap_actionable_signal_is_fresh(
+                        bar,
+                        now=bootstrap_at,
+                    ),
+                )
+            )
         return published
 
     async def handle_market(self, envelope: EventEnvelope) -> None:
@@ -178,7 +192,12 @@ class SwingTradeRuntime:
             for fifteen in self._minute.add(bar):
                 await self._accept_fifteen(fifteen)
 
-    async def _accept_fifteen(self, bar: MarketBar) -> bool:
+    async def _accept_fifteen(
+        self,
+        bar: MarketBar,
+        *,
+        actionable_signals_enabled: bool = True,
+    ) -> bool:
         key = (bar.symbol, bar.timestamp)
         if key in self._evaluated:
             return False
@@ -212,11 +231,19 @@ class SwingTradeRuntime:
         if previous is not None and not _material_change(previous, assessment):
             return False
         self._latest[bar.symbol] = assessment
-        await self._publish(assessment, previous)
+        await self._publish(
+            assessment,
+            previous,
+            actionable_signals_enabled=actionable_signals_enabled,
+        )
         return True
 
     async def _publish(
-        self, item: SwingTradeAssessment, previous: SwingTradeAssessment | None
+        self,
+        item: SwingTradeAssessment,
+        previous: SwingTradeAssessment | None,
+        *,
+        actionable_signals_enabled: bool,
     ) -> None:
         occurred_at = item.assessed_at or item.occurred_at
         await self._publisher.publish(
@@ -260,6 +287,11 @@ class SwingTradeRuntime:
                 payload=transition,
             ),
         )
+        if not actionable_signals_enabled and item.maturity in {
+            SwingTradeMaturity.ST3,
+            SwingTradeMaturity.ST4,
+        }:
+            return
         signal_basis = item if item.maturity is not None else previous
         if signal_basis is None:
             raise AssertionError("SwingTrade thesis loss requires a previous assessment")
@@ -305,7 +337,9 @@ def _payload[ModelT: BaseModel](envelope: EventEnvelope, model: type[ModelT]) ->
 
 def _material_change(previous: SwingTradeAssessment, current: SwingTradeAssessment) -> bool:
     return (
-        previous.maturity is not current.maturity
+        previous.engine_version != current.engine_version
+        or previous.strategy_version != current.strategy_version
+        or previous.maturity is not current.maturity
         or previous.impulse_low_at != current.impulse_low_at
         or previous.impulse_high_at != current.impulse_high_at
         or previous.zone_low != current.zone_low
@@ -319,6 +353,12 @@ def _material_change(previous: SwingTradeAssessment, current: SwingTradeAssessme
     )
 
 
+def _bootstrap_actionable_signal_is_fresh(bar: MarketBar, *, now: datetime) -> bool:
+    completed_at = bar.timestamp + timedelta(minutes=15)
+    age = now - completed_at
+    return timedelta(0) <= age <= _BOOTSTRAP_ACTIONABLE_SIGNAL_MAX_AGE
+
+
 def _metric(item: SwingTradeAssessment, name: str) -> object | None:
     return next((metric.value for metric in item.metrics if metric.name == name), None)
 
@@ -328,6 +368,13 @@ async def run_swing_trade_process(
 ) -> dict[str, object] | None:
     settings = AppSettings()
     assembly = MarketBotAssembly.from_settings(settings)
+    engine = assembly.build_swing_trade()
+    configured_strategy_version = assembly.spec(EngineSlot.SWING_TRADE).strategy.version
+    if engine.strategy_version != configured_strategy_version:
+        raise RuntimeError(
+            "SwingTrade built strategy does not match the MarketBot definition: "
+            f"built={engine.strategy_version} configured={configured_strategy_version}"
+        )
     database = create_database_engine(
         settings.database_url.get_secret_value(),
         require_ssl=settings.environment is Environment.PRODUCTION,
@@ -346,7 +393,7 @@ async def run_swing_trade_process(
                 raise ValueError("SwingTrade requires at least one Watchlist symbol")
             universe_source = "operator-watchlist-override"
         bus = await connect_nats(settings)
-        runtime = SwingTradeRuntime(engine=assembly.build_swing_trade(), publisher=bus)
+        runtime = SwingTradeRuntime(engine=engine, publisher=bus)
         replay_handlers = {
             "marketbot.v1.swing-trade.assessment.>": (
                 runtime.restore_assessment,
@@ -389,7 +436,8 @@ async def run_swing_trade_process(
         summary: dict[str, object] = {
             "service": "swing-trade-v1",
             "engine_version": assembly.spec(EngineSlot.SWING_TRADE).implementation,
-            "engine_strategy_version": assembly.spec(EngineSlot.SWING_TRADE).strategy.version,
+            "engine_strategy_version": engine.strategy_version,
+            "configured_strategy_version": configured_strategy_version,
             "marketbot_definition_version": assembly.definition.version,
             "symbols": len(selected),
             "universe_source": universe_source,

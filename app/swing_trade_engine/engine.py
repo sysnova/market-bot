@@ -86,6 +86,12 @@ class SwingTradeEngine:
         self._trade_ttl = trade_ttl_sessions
         self._strategy_version = strategy_version
 
+    @property
+    def strategy_version(self) -> str:
+        """Return the rule artifact version actually applied to this engine."""
+
+        return self._strategy_version
+
     def analyze(self, context: SwingTradeContext) -> SwingTradeAssessment:
         """Evaluate the operational thesis using its immutable extrema rule."""
 
