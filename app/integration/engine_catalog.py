@@ -45,6 +45,7 @@ from app.entry_watcher import (
     EntryWatcherV53,
     EntryWatcherV54,
     EntryWatcherV55,
+    EntryWatcherV56,
 )
 from app.entry_watcher.strategy import configure_engine as configure_watcher
 from app.entry_watcher.strategy import validate_strategy as validate_watcher
@@ -234,6 +235,7 @@ def default_engine_registry() -> EngineRegistry:
                     "5.3.0": EntryWatcherV53,
                     "5.4.0": EntryWatcherV54,
                     "5.5.0": EntryWatcherV55,
+                    "5.6.0": EntryWatcherV56,
                 },
                 required_since="0.0.0",
                 configure=configure_watcher,

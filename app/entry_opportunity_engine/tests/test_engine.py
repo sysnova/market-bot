@@ -11,6 +11,7 @@ from app.contracts import (
     AnalysisResult,
     AnalysisVerdict,
     BarTimeframe,
+    EntryCheckpointStatus,
     EntryCloseReason,
     EntryLegStatus,
     EntryMaturityLevel,
@@ -28,6 +29,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngine,
     EntryOpportunityEngineV2,
     EntryOpportunityEngineV3,
+    EntryOpportunityEngineV9,
     InMemoryEntryOpportunityStore,
 )
 
@@ -160,6 +162,60 @@ async def test_early_watcher_entry_opens_l1_horizon_legs() -> None:
         AnalysisHorizon.INTRADAY,
     }
     assert all(leg.entry_price == Decimal("102") for leg in opened)
+
+
+@pytest.mark.unit
+async def test_each_checkpoint_and_leg_keeps_its_own_emission_price_for_pnl() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngineV9(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    watch_id = "0195f3a5-9000-7000-8000-000000000021"
+    await manager.ingest_transition(
+        watch_transition(EntryWatchStatus.ARMED, watch_id=watch_id, price="100")
+    )
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.EARLY_ENTRY,
+            watch_id=watch_id,
+            price="105",
+            occurred_at=NOW + timedelta(minutes=5),
+            previous=EntryWatchStatus.ARMED,
+            horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        )
+    )
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.TRIGGERED,
+            watch_id=watch_id,
+            price="110",
+            occurred_at=NOW + timedelta(minutes=10),
+            previous=EntryWatchStatus.EARLY_ENTRY,
+            horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        )
+    )
+    await manager.ingest_transition(
+        watch_transition(
+            EntryWatchStatus.INVALIDATED,
+            watch_id=watch_id,
+            price="90",
+            occurred_at=NOW + timedelta(minutes=15),
+            previous=EntryWatchStatus.TRIGGERED,
+        )
+    )
+
+    closed = await store.load_latest("AAPL")
+    assert closed is not None
+    checkpoints = {item.level: item for item in closed.checkpoints}
+    assert checkpoints[EntryMaturityLevel.ARMED].entry_price == Decimal("100")
+    assert checkpoints[EntryMaturityLevel.L1].entry_price == Decimal("105")
+    assert checkpoints[EntryMaturityLevel.L4].entry_price == Decimal("110")
+    assert all(item.status is EntryCheckpointStatus.CLOSED for item in checkpoints.values())
+    assert checkpoints[EntryMaturityLevel.ARMED].gain_loss_percent == Decimal("-10.0000")
+    assert checkpoints[EntryMaturityLevel.L1].gain_loss_percent == Decimal("-14.2857")
+    assert checkpoints[EntryMaturityLevel.L4].gain_loss_percent == Decimal("-18.1818")
+    opened_legs = tuple(item for item in closed.legs if item.entry_price is not None)
+    assert opened_legs
+    assert {item.entry_price for item in opened_legs} == {Decimal("105")}
+    assert {item.gain_loss_percent for item in opened_legs} == {Decimal("-14.2857")}
 
 
 @pytest.mark.unit

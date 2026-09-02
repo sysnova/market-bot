@@ -596,12 +596,22 @@ class EntryWatcher:
 
     @staticmethod
     def _current_price(analyses: dict[AnalysisHorizon, AnalysisResult]) -> Decimal | None:
+        observation = EntryWatcher._current_price_observation(analyses)
+        return observation[1] if observation is not None else None
+
+    @staticmethod
+    def _current_price_observation(
+        analyses: dict[AnalysisHorizon, AnalysisResult],
+    ) -> tuple[datetime, Decimal] | None:
         candidates = [
             (result.as_of, _PRICE_PRIORITY[horizon], price)
             for horizon, result in analyses.items()
             if (price := _decimal(_metrics(result).get("reference_price"))) is not None
         ]
-        return max(candidates)[2] if candidates else None
+        if not candidates:
+            return None
+        as_of, _, price = max(candidates)
+        return as_of, price
 
     @staticmethod
     def _validate_time(result: AnalysisResult, now: datetime) -> None:

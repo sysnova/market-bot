@@ -80,7 +80,9 @@ def build_dashboard_snapshot(
         "definitions": {
             "pnl": (
                 "Cierres usan P/L auditado; abiertos usan mark-to-market desde el precio "
-                "de entrada de cada checkpoint. Los promedios son simples, sin position sizing."
+                "congelado al emitirse cada checkpoint. ARMED/IN_ZONE miden movimiento desde "
+                "su propia referencia; cada compra y leg mide P/L desde su propia entrada. "
+                "Los promedios son simples, sin position sizing."
             ),
             "reference": "ARMED, IN_ZONE y CT0 son referencias; no se cuentan como compras.",
             "buy": "Core L1-L4, SwingTrade ST1-ST4, GERI CT1-CT4 y señales accionables.",

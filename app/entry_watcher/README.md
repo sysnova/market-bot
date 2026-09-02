@@ -41,6 +41,12 @@ classification `recovery`. It accepts that classification only when Swing publis
 the existing fresh mature Intraday and Long-thesis gates also pass. Older watcher versions remain
 unchanged for deterministic replay.
 
+`EntryWatcherV56` (`5.6.0`) hydrates replayed analyses as context but requires the price selected
+for every newly emitted watch transition to be recent. This prevents a prior-session
+`reference_price` from being stamped onto a new `ARMED`, early-entry, or confirmed-entry event;
+downstream checkpoints and horizon legs therefore freeze the price contemporary with their own
+business transition.
+
 The Entry Watcher preserves a Long entry thesis across later market evaluations. It freezes
 the original buy zone, invalidation, expected correction, source analysis, and expiry instead
 of recalculating those levels away when price finally pulls back.

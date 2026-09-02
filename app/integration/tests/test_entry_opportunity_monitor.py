@@ -113,14 +113,14 @@ def test_dashboard_renders_maturity_entries_closed_gain_loss_and_tracking_detail
         "CLOSED",
         "L4",
         "100%",
-        "ORIG 103",
+        "PX ARMED 103",
         "ZONE 95-100",
         "INV 92",
         "ALL_HORIZONS_CLOSED",
         "CHECKPOINTS DE MADURACION",
-        "ENTRY 100",
+        "ENTRADA 100",
         "EXIT 105",
-        "G/L +5.0000%",
+        "P/L DESDE ENTRADA FINAL +5.0000%",
         "MFE +8.0000%",
         "MAE -2.0000%",
         "15m +1.5000%",
@@ -142,7 +142,7 @@ def test_dashboard_highlights_trade_summary_with_foreground_colors_only() -> Non
     assert "COMPRA \033[1;96mAAPL\033[0m" in output
     assert "ENTRADA \033[1;93m100\033[0m" in output
     assert "SALIDA \033[1;95m105\033[0m" in output
-    assert "P/L \033[1;92m+5.0000%\033[0m" in output
+    assert "P/L DESDE ENTRADA \033[1;92m+5.0000%\033[0m" in output
     assert all(code not in output for code in ("\033[40m", "\033[41m", "\033[42m"))
 
 
@@ -174,7 +174,7 @@ def test_dashboard_uses_red_for_a_negative_live_trade_summary() -> None:
     output = format_opportunity_dashboard(dashboard, refreshed_at=NOW, color=True)
 
     assert "MARCA \033[1;95m95\033[0m" in output
-    assert "P/L \033[1;91m-5.0000%\033[0m" in output
+    assert "P/L DESDE ENTRADA \033[1;91m-5.0000%\033[0m" in output
 
 
 @pytest.mark.unit
@@ -207,8 +207,8 @@ def test_dashboard_does_not_label_armed_tracking_as_a_purchase() -> None:
     output = format_opportunity_dashboard(dashboard, refreshed_at=NOW)
 
     assert "REFERENCIA AAPL" in output
-    assert "MOVE +5.0000%" in output
-    assert "P/L +5.0000%" not in output
+    assert "MOVE DESDE ARMED +5.0000%" in output
+    assert "P/L DESDE ENTRADA +5.0000%" not in output
     assert "COMPRA AAPL | MADUREZ ARMED" not in output
 
 
@@ -405,12 +405,12 @@ def test_dashboard_labels_tracking_checkpoints_as_references_not_entries() -> No
 
     output = format_opportunity_dashboard(dashboard, refreshed_at=NOW)
 
-    assert "REFERENCE 100 PX 105" in output
-    assert "MOVE LIVE +5.0000%" in output
-    assert "ENTRY 100 PX 105" not in output
-    assert "P/L LIVE +5.0000%" not in output
-    assert "REFERENCE - PX 105" in output
-    assert "MOVE -" in output
+    assert "BASE ARMED 100 PX 105" in output
+    assert "MOVE DESDE ARMED LIVE +5.0000%" in output
+    assert "ENTRADA 100 PX 105" not in output
+    assert "P/L DESDE ENTRADA LIVE +5.0000%" not in output
+    assert "SIN APERTURA - PX 105" in output
+    assert "P/L -" in output
 
 
 @pytest.mark.unit

@@ -394,7 +394,7 @@ def _format_opportunity(
         ),
         *_trade_summary_lines(opportunity, color=color),
         (
-            f"  ORIG {opportunity.original_price} | PX {opportunity.current_price} | "
+            f"  PX ARMED {opportunity.original_price} | PX ACTUAL {opportunity.current_price} | "
             f"ZONE {opportunity.zone_low}-{opportunity.zone_high} | "
             f"INV {opportunity.invalidation} | EXPIRES {opportunity.expires_at:%Y-%m-%d %H:%M}"
         ),
@@ -457,18 +457,19 @@ def _format_opportunity(
             }
         )
         if tracking:
-            price_label = "REFERENCE"
+            price_label = f"BASE {level}"
             performance = (
-                f"MOVE FINAL {_percent_text(item.gain_loss_percent)}"
+                f"MOVE DESDE {level} FINAL {_percent_text(item.gain_loss_percent)}"
                 if item.status is EntryCheckpointStatus.CLOSED
-                else f"MOVE LIVE {_live_percent(item.entry_price, item.current_price)}"
+                else f"MOVE DESDE {level} LIVE "
+                f"{_live_percent(item.entry_price, item.current_price)}"
             )
         else:
-            price_label = "ENTRY"
+            price_label = "ENTRADA"
             performance = (
-                f"G/L {_percent_text(item.gain_loss_percent)}"
+                f"P/L DESDE ENTRADA FINAL {_percent_text(item.gain_loss_percent)}"
                 if item.status is EntryCheckpointStatus.CLOSED
-                else f"P/L LIVE {_live_percent(item.entry_price, item.current_price)}"
+                else f"P/L DESDE ENTRADA LIVE {_live_percent(item.entry_price, item.current_price)}"
             )
         lines.append(
             f"    {setup:<28} {item.status.value:<7} "
@@ -501,17 +502,17 @@ def _format_opportunity(
         entry = leg.entry_price
         tracking = leg.status is EntryLegStatus.WATCHING and entry is None
         if tracking:
-            price_label = "REFERENCE"
-            performance = "MOVE -"
+            price_label = "SIN APERTURA"
+            performance = "P/L -"
         else:
-            price_label = "ENTRY"
+            price_label = "ENTRADA"
             performance = (
-                f"G/L {_percent_text(leg.gain_loss_percent)}"
+                f"P/L DESDE APERTURA FINAL {_percent_text(leg.gain_loss_percent)}"
                 if leg.status not in {EntryLegStatus.WATCHING, EntryLegStatus.OPEN}
                 else (
-                    f"P/L LIVE {_live_percent(entry, leg.current_price)}"
+                    f"P/L DESDE APERTURA LIVE {_live_percent(entry, leg.current_price)}"
                     if entry is not None
-                    else "P/L LIVE -"
+                    else "P/L DESDE APERTURA LIVE -"
                 )
             )
         lines.append(
@@ -569,7 +570,6 @@ def _trade_summary_lines(
                 checkpoint.current_price,
             )
         summary_label = "REFERENCIA" if tracking else "COMPRA"
-        price_label = "PRECIO" if tracking else "ENTRADA"
         maturity = (
             checkpoint.countertrend_maturity.value
             if checkpoint.countertrend_maturity is not None
@@ -579,12 +579,14 @@ def _trade_summary_lines(
                 else checkpoint.level.value
             )
         )
+        price_label = f"BASE {maturity}" if tracking else "ENTRADA"
+        performance_label = f"MOVE DESDE {maturity}" if tracking else "P/L DESDE ENTRADA"
         lines.append(
             f"  {summary_label} {_styled(opportunity.symbol, _TICKER_STYLE, color)} | "
             f"MADUREZ {maturity} | ESTADO {checkpoint.status.value} | "
             f"{price_label} {_styled(str(checkpoint.entry_price), _ENTRY_STYLE, color)} | "
             f"{mark_label} {_styled(str(mark), _EXIT_STYLE, color)} | "
-            f"{'MOVE' if tracking else 'P/L'} "
+            f"{performance_label} "
             f"{_styled_percent(performance, color=color)}"
         )
     return lines

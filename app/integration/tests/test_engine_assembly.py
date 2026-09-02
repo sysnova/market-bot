@@ -33,6 +33,7 @@ from app.entry_watcher import (
     EntryWatcherV53,
     EntryWatcherV54,
     EntryWatcherV55,
+    EntryWatcherV56,
     InMemoryEntryWatchStore,
 )
 from app.integration.engine_assembly import (
@@ -141,6 +142,7 @@ ON_DEMAND_NEWS_DEFINITION = ROOT / "configs/marketbot/7.42.0.yaml"
 THESIS_OWNERSHIP_DEFINITION = ROOT / "configs/marketbot/7.43.0.yaml"
 DISPLACEMENT_SHORT_DEFINITION = ROOT / "configs/marketbot/7.44.0.yaml"
 STABLE_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.45.0.yaml"
+FRESH_TRANSITION_PRICE_DEFINITION = ROOT / "configs/marketbot/7.46.0.yaml"
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:
@@ -241,6 +243,21 @@ def test_stable_order_flow_definition_activates_confirmed_microstructure_states(
     assert isinstance(engine, OrderFlowEngineV12)
     assert engine._policy.transition_confirmation_samples == 3
     assert engine._policy.reversal_confirmation_seconds == Decimal("5")
+
+
+def test_fresh_transition_price_definition_rejects_stale_replay_prices() -> None:
+    previous = MarketBotAssembly.from_path(STABLE_ORDER_FLOW_DEFINITION)
+    assembly = MarketBotAssembly.from_path(FRESH_TRANSITION_PRICE_DEFINITION)
+    watcher = assembly.build_entry_watcher(store=InMemoryEntryWatchStore())
+
+    assert isinstance(
+        previous.build_entry_watcher(store=InMemoryEntryWatchStore()), EntryWatcherV55
+    )
+    assert assembly.definition.version == "7.46.0"
+    assert assembly.spec(EngineSlot.ENTRY_WATCHER).implementation == "5.6.0"
+    assert assembly.spec(EngineSlot.ENTRY_WATCHER).strategy.version == "1.4.0"
+    assert isinstance(watcher, EntryWatcherV56)
+    assert watcher._transition_price_max_age == timedelta(minutes=5)
 
 
 def test_no_swing_order_flow_definition_rolls_back_all_three_consumers() -> None:
