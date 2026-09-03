@@ -117,6 +117,7 @@ from app.swing_engine import (
     SwingEngineV12,
     SwingEngineV13,
     SwingEngineV14,
+    SwingEngineV15,
 )
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
@@ -161,6 +162,7 @@ def default_engine_registry() -> EngineRegistry:
                     "12.0.0": SwingEngineV12,
                     "13.0.0": SwingEngineV13,
                     "14.0.0": SwingEngineV14,
+                    "15.0.0": SwingEngineV15,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,

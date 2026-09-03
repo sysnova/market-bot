@@ -26,6 +26,7 @@ class SwingEngineV14(SwingEngineV12):
     """Declare a broken LONG thesis when failed-breakout evidence loses structure."""
 
     engine_version = "14.0.0"
+    short_failed_breakout_states = frozenset(_BLOCKING_FAILED_BREAKOUT_STATES)
 
     def __init__(
         self,
@@ -108,7 +109,7 @@ class SwingEngineV14(SwingEngineV12):
         if not self._short_confirmation_enabled:
             return False
         failed_breakout = str(metrics.get("failed_breakout_state", "NONE")) in (
-            _BLOCKING_FAILED_BREAKOUT_STATES
+            self.short_failed_breakout_states
         )
         sma20 = _decimal(metrics.get("daily_sma20"))
         sma50 = _decimal(metrics.get("daily_sma50"))

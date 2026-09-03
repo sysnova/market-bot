@@ -2,7 +2,25 @@
 
 ## Versiones
 
-La composicion activa usa `SwingEngineV6`. La definicion candidata `7.23.0` agrega
+La definicion por defecto `7.47.0` selecciona `SwingEngineV15` con reglas `3.5.0`.
+`STRUCTURE_INVALIDATED` significa que el cierre diario perdio el minimo de las
+veinte ruedas previas despues de un breakout long fallido. `VOLATILITY_INVALIDATED`
+significa que perdio el piso definido por el ATR del breakout. Ambos terminan el
+ciclo de ese breakout long, pero siguen siendo evidencia para la tesis short.
+V15 los admite junto con `ACTIVE` y `NEW_BREAKOUT_PENDING`, conservando los gates
+de SMA20, ruptura minima de SMA50 y AVWAP del breakout. Un evento terminal no
+habilita un short si el precio ya recupero el nivel original del breakout.
+`RECOVERED`, `SUPERSEDED`, `EXPIRED` y `NONE` no habilitan esa tesis.
+
+Esta correccion produce `short_structure_gate_passed` y `short_setup_id`; la
+alerta `SHORT CONFIRMED` sigue exigiendo confirmacion intradia madura y niveles
+ordenados `invalidation > entry > target`. Una caida diaria porcentual aislada no
+reemplaza ninguna de esas condiciones. V14 y la definicion `7.46.0` permanecen
+disponibles para replay y rollback. La prueba de integracion
+`app/integration/tests/test_invalidated_long_short.py` verifica el recorrido de
+las barras al analisis Swing, Intraday y la alerta, incluyendo el caso sin entrada.
+
+La definicion historica `7.23.0` agrega
 `SwingEngineV7`: devuelve `INSUFFICIENT_DATA` de forma segura con historia parcial y decide si la
 ultima rueda diaria debe participar de la resistencia segun su fecha de mercado respecto de
 `as_of`. Durante mercado abierto, la rueda completa anterior ya no queda excluida por posicion.

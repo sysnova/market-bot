@@ -1,0 +1,38 @@
+rule_id: marketbot.swing
+version: 3.5.0
+status: active
+behavior:
+  anchored_vwap_gate: true
+  minimum_reward_risk_to_resistance: 1.5
+  structural_support_lookback_days: 10
+  resistance_lookback_days: 20
+  failed_breakout_failure_window_days: 5
+  failed_breakout_maximum_age_days: 60
+  failed_breakout_structural_reset_lookback_days: 20
+  failed_breakout_reset_atr_multiple: 5
+  recovery_enabled: true
+  recovery_daily_lookback_days: 5
+  recovery_selloff_lookback_days: 10
+  recovery_intraday_confirmation_bars: 4
+  recovery_intraday_breakout_lookback_bars: 3
+  recovery_stop_lookback_bars: 3
+  recovery_stop_atr_buffer: 0.10
+  recovery_minimum_selloff_atr: 1
+  recovery_maximum_risk_percent: 12
+  recovery_maximum_risk_atr: 1
+  recovery_minimum_reward_risk: 1.5
+  support_freshness_sessions: 3
+  short_confirmation_enabled: true
+  short_below_sma20_required: true
+  short_below_sma50_required: true
+  short_below_breakout_avwap_required: true
+  short_minimum_sma50_break_percent: 2
+measurement:
+  dimensions:
+    - engine_version
+    - strategy_version
+    - entry_lane
+    - short_thesis_broken
+    - short_setup_id
+    - failed_breakout_state
+  outcomes: [first_level_hit, mfe_percent, mae_percent]
