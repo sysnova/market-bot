@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from app.contracts import AlertKind, AnalysisHorizon, AnalysisResult, LocalAlert
 
-from .confirmed import BuyMaturity, buy_maturity
+from .confirmed import BuyMaturity, buy_maturity, is_confirmed_short
 
 _HORIZON_LABELS = {
     AnalysisHorizon.LONG_TERM: "LONG",
@@ -196,6 +196,13 @@ def _level_line(
     analyses: dict[AnalysisHorizon, AnalysisResult],
 ) -> str | None:
     alert_metrics = _metrics(alert)
+    if is_confirmed_short(alert):
+        return (
+            f"Niveles de {alert.symbol}: "
+            f"Price {_money(alert_metrics.get('short_entry_price'))} | "
+            f"Invalidation {_money(alert_metrics.get('short_invalidation'))} | "
+            f"Objective {_money(alert_metrics.get('short_target'))}"
+        )
     analysis_metrics = [_metrics(item) for item in analyses.values()]
     price = _first(
         alert_metrics.get("current_price"),

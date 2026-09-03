@@ -21,6 +21,7 @@ from app.contracts import (
     SubscriptionOptions,
 )
 from app.event_bus import NatsJetStreamEventBus
+from app.leveraged_thesis_engine import LeveragedPair
 
 from .alert_sounds import (
     play_aggressive_flow_sound,
@@ -28,8 +29,9 @@ from .alert_sounds import (
     play_entry_close_sound,
     play_solid_buy_sound,
 )
-from .confirmed_signal_projection import project_confirmed_signal
+from .confirmed_signal_projection import project_confirmed_short, project_confirmed_signal
 from .distributed_composition import write_ready
+from .engine_assembly import MarketBotAssembly
 
 
 async def run_confirmed_buy_monitor(
@@ -37,10 +39,14 @@ async def run_confirmed_buy_monitor(
     ready_path: Path | None = None,
     bell: bool = True,
     stream: TextIO | None = None,
+    leveraged_pairs: tuple[LeveragedPair, ...] | None = None,
 ) -> None:
-    """Render final buy decisions plus manual Portfolio Flow alarms."""
+    """Render confirmed directions with associated instruments and manual Flow alarms."""
 
     settings = AppSettings()
+    if leveraged_pairs is None:
+        leveraged_pairs = MarketBotAssembly.from_settings(settings).build_leveraged_thesis().pairs
+    pairs = {pair.underlying_symbol: pair for pair in leveraged_pairs}
     output = stream or sys.stdout
     bus = await NatsJetStreamEventBus.connect(
         servers=[settings.nats_url.get_secret_value()],
@@ -66,7 +72,12 @@ async def run_confirmed_buy_monitor(
         display_key: UUID | str = signal.signal_id
         if display_key in displayed:
             return
-        projection = project_confirmed_signal(signal, color=True)
+        pair = pairs.get(signal.symbol)
+        projection = project_confirmed_signal(
+            signal,
+            color=True,
+            instrument_symbol=pair.bullish_instrument if pair is not None else None,
+        )
         if projection is None:
             return
         displayed.add(display_key)
@@ -86,6 +97,21 @@ async def run_confirmed_buy_monitor(
             if isinstance(envelope.payload, LocalAlert)
             else LocalAlert.model_validate(envelope.payload, strict=False)
         )
+        pair = pairs.get(alert.symbol)
+        short = project_confirmed_short(
+            alert,
+            color=True,
+            instrument_symbol=pair.bearish_instrument if pair is not None else None,
+        )
+        if short is not None:
+            display_key = f"short:{alert.deduplication_key}"
+            if display_key in displayed:
+                return
+            displayed.add(display_key)
+            print(short.text, file=output, flush=True)
+            if bell:
+                play_solid_buy_sound(fallback=output)
+            return
         if alert.kind not in {
             AlertKind.PORTFOLIO_PROTECT,
             AlertKind.PORTFOLIO_FLOW_BUY,

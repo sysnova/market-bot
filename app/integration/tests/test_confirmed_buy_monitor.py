@@ -18,6 +18,7 @@ from app.contracts import (
     EventEnvelope,
     GeriCountertrendMaturity,
     LocalAlert,
+    NamedValue,
     new_uuid7,
 )
 from app.integration import confirmed_buy_monitor
@@ -25,6 +26,7 @@ from app.integration.confirmed_buy_monitor import (
     _analytical_stage_changed,
     run_confirmed_buy_monitor,
 )
+from app.leveraged_thesis_engine import LeveragedPair
 
 NOW = datetime(2026, 8, 9, 15, tzinfo=UTC)
 
@@ -138,7 +140,7 @@ async def test_monitor_projects_final_signals_and_only_manual_flow_alerts(
     output = StringIO()
 
     with pytest.raises(RuntimeError, match="stop monitor"):
-        await run_confirmed_buy_monitor(stream=output, bell=False)
+        await run_confirmed_buy_monitor(stream=output, bell=False, leveraged_pairs=())
 
     rendered = output.getvalue()
     assert "SIGNAL FUSION CONFIRMED" in rendered
@@ -191,3 +193,85 @@ def test_monitor_realerts_geri_after_maturity_resets() -> None:
     assert _analytical_stage_changed(repeated, state) is False
     assert _analytical_stage_changed(reset, state) is True
     assert _analytical_stage_changed(reconfirmed, state) is True
+
+
+@pytest.mark.parametrize("bell", [True, False])
+async def test_confirmed_directions_show_associated_instrument_once(
+    monkeypatch: pytest.MonkeyPatch,
+    bell: bool,
+) -> None:
+    short = LocalAlert(
+        symbol="ASTS",
+        created_at=NOW,
+        severity=AlertSeverity.ACTION,
+        kind=AlertKind.BEARISH_CONSENSUS,
+        title="ASTS SHORT CONFIRMED",
+        message="Confirmed bearish entry",
+        horizons=(AnalysisHorizon.SWING,),
+        component_analysis_ids=(new_uuid7(),),
+        score=Decimal("80"),
+        reasons=("short_entry_confirmed",),
+        deduplication_key="short:asts:one",
+        metrics=(
+            NamedValue(name="short_entry_price", value=Decimal("61.565")),
+            NamedValue(name="short_invalidation", value=Decimal("61.7189")),
+            NamedValue(name="short_target", value=Decimal("61.3341")),
+        ),
+    )
+    bearish_only = short.model_copy(
+        update={
+            "alert_id": new_uuid7(),
+            "title": "UNCONFIRMED BEARISH CONSENSUS",
+            "reasons": ("bearish_consensus",),
+        }
+    )
+    long = _signal_event().payload
+    assert isinstance(long, EntrySignal)
+    long = long.model_copy(update={"symbol": "ASTS"})
+
+    def events(subject: str) -> tuple[EventEnvelope, ...]:
+        if subject == "marketbot.v1.entry-signal.>":
+            event = EventEnvelope(
+                event_type=ENTRY_SIGNAL_EVENT,
+                occurred_at=NOW,
+                source="test",
+                subject="ASTS",
+                payload=long,
+            )
+            return (event, event)
+        return tuple(
+            EventEnvelope(
+                event_type=LOCAL_ALERT_EVENT,
+                occurred_at=NOW,
+                source="test",
+                subject="ASTS",
+                payload=item,
+            )
+            for item in (short, short.model_copy(update={"alert_id": new_uuid7()}), bearish_only)
+        )
+
+    sounds: list[str] = []
+    monkeypatch.setattr(confirmed_buy_monitor, "NatsJetStreamEventBus", _MonitorBus)
+    monkeypatch.setattr(confirmed_buy_monitor.asyncio, "Event", _StopEvent)
+    monkeypatch.setattr(f"{__name__}._events_for", events)
+    monkeypatch.setattr(
+        confirmed_buy_monitor,
+        "play_solid_buy_sound",
+        lambda **_: sounds.append("buy"),
+    )
+    output = StringIO()
+    with pytest.raises(RuntimeError, match="stop monitor"):
+        await run_confirmed_buy_monitor(
+            stream=output,
+            bell=bell,
+            leveraged_pairs=(LeveragedPair("ASTS", "ASTX", "ASTN"),),
+        )
+    text = output.getvalue()
+    assert text.count("COMPRAR ASTN | ASTS SHORT CONFIRMED") == 1
+    assert text.count("COMPRAR ASTX | ASTS LONG CONFIRMED") == 1
+    assert "Niveles de ASTS" in text
+    assert "Invalidation $61.7189" in text
+    assert "Objective $61.3341" in text
+    assert "UNCONFIRMED BEARISH CONSENSUS" not in text
+    assert "ASTN | PX $61.565" not in text
+    assert len(sounds) == (2 if bell else 0)

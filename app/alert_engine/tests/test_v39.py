@@ -2,6 +2,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.alert_engine import AlertEngineV39
+from app.alert_engine.confirmed import is_audible_alert, is_portfolio_monitor_alert
+from app.alert_engine.formatter import format_local_alert
 from app.contracts import (
     AlertKind,
     AnalysisHorizon,
@@ -90,3 +92,33 @@ def test_v39_requires_both_short_gates() -> None:
     engine = AlertEngineV39()
     assert engine.ingest(_swing(gate=False), now=NOW) is None
     assert engine.ingest(_intraday(), now=NOW) is None
+
+
+def test_confirmed_short_renders_its_own_levels_and_is_audible() -> None:
+    engine = AlertEngineV39()
+    swing = _swing()
+    swing = swing.model_copy(
+        update={
+            "metrics": (
+                *swing.metrics,
+                NamedValue(name="invalidation", value=Decimal("54.8645")),
+                NamedValue(name="target_2r", value=Decimal("75.4760")),
+                NamedValue(name="buy_zone_low", value=Decimal("62")),
+                NamedValue(name="buy_zone_high", value=Decimal("65")),
+            )
+        }
+    )
+    engine.ingest(swing, now=NOW)
+    alert = engine.ingest(_intraday(), now=NOW)
+    assert alert is not None
+    text = format_local_alert(alert)
+    assert "Invalidation $59.2" in text
+    assert "Objective $56.2" in text
+    assert "Invalidation $54.8645" not in text
+    assert "Objective $75.4760" not in text
+    assert "Buy zone" not in text
+    assert is_audible_alert(alert)
+    assert is_portfolio_monitor_alert(alert)
+    unconfirmed = alert.model_copy(update={"reasons": ("bearish_consensus",)})
+    assert not is_audible_alert(unconfirmed)
+    assert not is_portfolio_monitor_alert(unconfirmed)

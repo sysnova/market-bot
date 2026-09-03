@@ -37,10 +37,7 @@ def buy_maturity(alert: LocalAlert) -> BuyMaturity | None:
         return None
     if alert.kind is AlertKind.HIGH_CONVICTION_BUY:
         return BuyMaturity.HIGH_CONVICTION if _CONVICTION_HORIZONS.issubset(horizons) else None
-    if (
-        alert.kind is AlertKind.ENTRY_WATCH
-        and "ENTRY EARLY L1" in alert.title.upper()
-    ):
+    if alert.kind is AlertKind.ENTRY_WATCH and "ENTRY EARLY L1" in alert.title.upper():
         return BuyMaturity.EARLY_ENTRY
     if (
         alert.kind is AlertKind.ENTRY_WATCH
@@ -72,16 +69,31 @@ def is_confirmed_buy(alert: LocalAlert) -> bool:
     return is_buy_alert(alert)
 
 
+def is_confirmed_short(alert: LocalAlert) -> bool:
+    """Distinguish an emitted SHORT entry from ordinary bearish context."""
+
+    return alert.kind is AlertKind.BEARISH_CONSENSUS and "short_entry_confirmed" in alert.reasons
+
+
 def is_portfolio_monitor_alert(alert: LocalAlert) -> bool:
     """Return whether the focused monitor should render this alert."""
 
-    return is_buy_alert(alert) or alert.kind in {
-        AlertKind.PORTFOLIO_PROTECT,
-        AlertKind.PORTFOLIO_FLOW_BUY,
-    }
+    return (
+        is_buy_alert(alert)
+        or is_confirmed_short(alert)
+        or alert.kind
+        in {
+            AlertKind.PORTFOLIO_PROTECT,
+            AlertKind.PORTFOLIO_FLOW_BUY,
+        }
+    )
 
 
 def is_audible_alert(alert: LocalAlert) -> bool:
-    """Ring for buy maturities and explicit paper-trade closures."""
+    """Ring for confirmed directions and explicit paper-trade closures."""
 
-    return is_buy_alert(alert) or alert.kind is AlertKind.ENTRY_OPPORTUNITY_CLOSED
+    return (
+        is_buy_alert(alert)
+        or is_confirmed_short(alert)
+        or alert.kind is AlertKind.ENTRY_OPPORTUNITY_CLOSED
+    )

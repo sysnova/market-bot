@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.alert_engine.confirmed import BuyMaturity
+from app.alert_engine.confirmed import BuyMaturity, is_confirmed_short
+from app.alert_engine.formatter import format_local_alert
 from app.contracts import (
     EntryMaturityLevel,
     EntrySignal,
     EntrySignalFamily,
     GeriCountertrendMaturity,
+    LocalAlert,
     SwingTradeMaturity,
 )
 
@@ -51,6 +53,7 @@ def project_confirmed_signal(
     signal: EntrySignal,
     *,
     color: bool = True,
+    instrument_symbol: str | None = None,
 ) -> ConfirmedSignalProjection | None:
     """Render only final buy decisions; omit watches and manual Flow alarms."""
 
@@ -93,9 +96,13 @@ def project_confirmed_signal(
         style = _NEWS_RISK_STYLE
         label = f"{label} | NEWS RISK"
     banner = f"{signal.symbol} | {label} | PX ${signal.entry_price}"
+    if instrument_symbol is not None and instrument_symbol != signal.symbol:
+        banner = f"COMPRAR {instrument_symbol} | {signal.symbol} LONG CONFIRMED | {label}"
     if color:
         banner = f"{style} {banner} {_RESET_STYLE}"
     levels = _format_levels(signal)
+    if instrument_symbol is not None and instrument_symbol != signal.symbol:
+        levels = f"Niveles de {signal.symbol}: {levels}"
     return ConfirmedSignalProjection(
         text="\n".join(
             (
@@ -107,6 +114,27 @@ def project_confirmed_signal(
             )
         ),
         sound_maturity=sound_maturity,
+    )
+
+
+def project_confirmed_short(
+    alert: LocalAlert,
+    *,
+    instrument_symbol: str | None = None,
+    color: bool = True,
+) -> ConfirmedSignalProjection | None:
+    """Display an existing SHORT confirmation with its associated buy instrument."""
+
+    if not is_confirmed_short(alert):
+        return None
+    banner = f"{alert.symbol} SHORT CONFIRMED"
+    if instrument_symbol is not None:
+        banner = f"COMPRAR {instrument_symbol} | {banner}"
+    if color:
+        banner = f"{_ANALYTICAL_STYLE} {banner} {_RESET_STYLE}"
+    return ConfirmedSignalProjection(
+        text=f"{banner}\n{format_local_alert(alert, color=color)}",
+        sound_maturity=None,
     )
 
 
