@@ -1,5 +1,12 @@
 # Contratos v1
 
+`EntryHorizonLeg.signal_family` identifica opcionalmente al dueño de la posición desde
+Entry Opportunity v10. Su valor por defecto `None` permite leer snapshots anteriores;
+v10 resuelve esa procedencia desde el setup o la familia primaria cuando es inequívoca.
+No requiere migración de tablas: forma parte del payload JSON. La selección de v9 para
+rollback sigue disponible con los contratos actuales; desplegar binarios anteriores que
+rechacen campos desconocidos requiere revisar su compatibilidad con estos payloads.
+
 `UniverseChanged` es el snapshot aditivo del universo Core. El coordinador lo publica en
 `marketbot.v1.universe.changed.core` desde el refresh central. Los consumidores reciben el reemplazo
 completo y los deltas exactos; `consumer_warmup_required=true` les exige cargar su historia antes de

@@ -193,7 +193,7 @@ class EntryOpportunityEngine:
             # ownership policy selected by this engine version.
             return ()
         if transition.status is EntryWatchStatus.INVALIDATED:
-            closed = self._close_opportunity(
+            closed = self._close_watcher_thesis(
                 active,
                 price=transition.current_price,
                 now=transition.occurred_at,
@@ -215,7 +215,7 @@ class EntryOpportunityEngine:
             await self._store.save(closed, event)
             return (event,)
         if transition.status is EntryWatchStatus.EXPIRED:
-            closed = self._close_opportunity(
+            closed = self._close_watcher_thesis(
                 active,
                 price=transition.current_price,
                 now=transition.occurred_at,
@@ -316,7 +316,7 @@ class EntryOpportunityEngine:
             )
         ):
             return ()
-        price = _metric_decimal(result, "reference_price") or active.current_price
+        price = self._analysis_price(active, result)
         analyses = _replace_analysis(active.latest_analyses, result)
         sources = _bounded_source_analysis_ids(active.source_analysis_ids, (result.analysis_id,))
         updated = active.model_copy(
@@ -373,6 +373,31 @@ class EntryOpportunityEngine:
                 )
                 await self._store.save(changed, event)
                 return (event,)
+        invalidated = self._apply_analysis_invalidation(active, updated, result=result, now=now)
+        if invalidated is not None:
+            closed, reasons = invalidated
+            event = self._event(
+                closed, occurred_at=now, reasons=reasons, event_id=result.analysis_id
+            )
+            await self._store.save(closed, event)
+            return (event,)
+        await self._store.save(updated, None)
+        return ()
+
+    @staticmethod
+    def _analysis_price(active: EntryOpportunity, result: AnalysisResult) -> Decimal:
+        return _metric_decimal(result, "reference_price") or active.current_price
+
+    def _apply_analysis_invalidation(
+        self,
+        active: EntryOpportunity,
+        updated: EntryOpportunity,
+        *,
+        result: AnalysisResult,
+        now: datetime,
+    ) -> tuple[EntryOpportunity, tuple[str, ...]] | None:
+        """Legacy ownership policy, retained for assemblies through v9."""
+        price = updated.current_price
         original_breached = price <= active.invalidation
         bearish_failure = result.direction is PatternDirection.BEARISH and result.verdict in {
             AnalysisVerdict.AVOID,
@@ -390,18 +415,11 @@ class EntryOpportunityEngine:
                 reason=EntryCloseReason.ORIGINAL_THESIS_INVALIDATED,
                 leg_status=EntryLegStatus.THESIS_BROKEN,
             )
-            event = self._event(
-                closed,
-                occurred_at=now,
-                reasons=(
-                    "original_invalidation_breached"
-                    if original_breached
-                    else "long_structure_invalidated",
-                ),
-                event_id=result.analysis_id,
+            return closed, (
+                "original_invalidation_breached"
+                if original_breached
+                else "long_structure_invalidated",
             )
-            await self._store.save(closed, event)
-            return (event,)
 
         if bearish_failure and active.status in {
             EntryOpportunityStatus.CONFIRMING,
@@ -425,17 +443,21 @@ class EntryOpportunityEngine:
                         leg_status=EntryLegStatus.TIME_EXIT,
                     )
                     reasons = (*reasons, "all_horizons_closed")
-                event = self._event(
-                    changed,
-                    occurred_at=now,
-                    reasons=reasons,
-                    event_id=result.analysis_id,
-                )
-                await self._store.save(changed, event)
-                return (event,)
+                return changed, reasons
+        return None
 
-        await self._store.save(updated, None)
-        return ()
+    def _close_watcher_thesis(
+        self,
+        opportunity: EntryOpportunity,
+        *,
+        price: Decimal,
+        now: datetime,
+        reason: EntryCloseReason,
+        leg_status: EntryLegStatus,
+    ) -> EntryOpportunity:
+        return self._close_opportunity(
+            opportunity, price=price, now=now, reason=reason, leg_status=leg_status
+        )
 
     async def ingest_alert(self, alert: LocalAlert) -> tuple[EntryOpportunityEvent, ...]:
         """Record L1-L4 maturity without replacing the ticker's original thesis."""
@@ -538,7 +560,9 @@ class EntryOpportunityEngine:
         reasons = _leg_close_reasons(active.legs, legs)
         reasons.extend(_checkpoint_close_reasons(active.checkpoints, checkpoints))
 
-        if bar.low <= active.invalidation:
+        if bar.low <= active.invalidation and self._bar_can_close_opportunity(
+            active, legs=legs, checkpoints=checkpoints
+        ):
             updated = active.model_copy(
                 update={
                     "checkpoints": checkpoints,
@@ -587,7 +611,9 @@ class EntryOpportunityEngine:
                 "checkpoints": checkpoints,
             }
         )
-        if _all_opened_legs_terminal(updated.legs):
+        if _all_opened_legs_terminal(updated.legs) and self._bar_can_close_opportunity(
+            updated, legs=updated.legs, checkpoints=updated.checkpoints
+        ):
             updated = self._close_opportunity(
                 updated,
                 price=bar.close,
@@ -601,6 +627,15 @@ class EntryOpportunityEngine:
             event = self._event(updated, occurred_at=bar.timestamp, reasons=tuple(reasons))
         await self._store.save(updated, event)
         return (event,) if event is not None else ()
+
+    @staticmethod
+    def _bar_can_close_opportunity(
+        opportunity: EntryOpportunity,
+        *,
+        legs: tuple[EntryHorizonLeg, ...],
+        checkpoints: tuple[EntryMaturityCheckpoint, ...],
+    ) -> bool:
+        return True
 
     async def reconcile(
         self, *, now: datetime, active_symbols: Collection[str]
@@ -757,8 +792,9 @@ class EntryOpportunityEngine:
                 if level is EntryMaturityLevel.L4
                 else EntryOpportunityStatus.CONFIRMING
             )
-            legs = self._open_horizons(
-                legs,
+            legs = self._open_entry_horizons(
+                opportunity,
+                family=checkpoint_family,
                 horizons=horizons,
                 price=price,
                 invalidation=opportunity.invalidation,
@@ -787,6 +823,23 @@ class EntryOpportunityEngine:
                 "legs": legs,
                 "checkpoints": checkpoints,
             }
+        )
+
+    def _open_entry_horizons(
+        self,
+        opportunity: EntryOpportunity,
+        *,
+        family: EntrySignalFamily,
+        horizons: tuple[AnalysisHorizon, ...],
+        price: Decimal,
+        invalidation: Decimal,
+        now: datetime,
+        horizon_invalidations: dict[AnalysisHorizon, Decimal],
+        horizon_targets: dict[AnalysisHorizon, Decimal],
+    ) -> tuple[EntryHorizonLeg, ...]:
+        return self._open_horizons(
+            opportunity.legs, horizons=horizons, price=price, invalidation=invalidation,
+            now=now, horizon_invalidations=horizon_invalidations, horizon_targets=horizon_targets,
         )
 
     def _new_checkpoint(
@@ -1953,6 +2006,218 @@ class EntryOpportunityEngineV9(EntryOpportunityEngineV8):
             and result.horizon is AnalysisHorizon.LONG_TERM
             and (result.verdict is AnalysisVerdict.AVOID or bearish_failure)
         )
+
+
+# Core Recovery is the Core L2/retest circuit, not SwingTrade Fibonacci recovery.
+_CORE_FAMILIES = frozenset({EntrySignalFamily.CORE_ENTRY, EntrySignalFamily.CORE_RECOVERY})
+_CORE_ENGINES = {
+    AnalysisHorizon.LONG_TERM: "long-term",
+    AnalysisHorizon.SWING: "swing",
+    AnalysisHorizon.INTRADAY: "intraday",
+}
+
+
+class EntryOpportunityEngineV10(EntryOpportunityEngineV9):
+    """Core evidence cannot terminate another strategy's paper entries."""
+
+    engine_version = "10.0.0"
+
+    def _open_entry_horizons(
+        self,
+        opportunity: EntryOpportunity,
+        *,
+        family: EntrySignalFamily,
+        horizons: tuple[AnalysisHorizon, ...],
+        price: Decimal,
+        invalidation: Decimal,
+        now: datetime,
+        horizon_invalidations: dict[AnalysisHorizon, Decimal],
+        horizon_targets: dict[AnalysisHorizon, Decimal],
+    ) -> tuple[EntryHorizonLeg, ...]:
+        owned = tuple(leg for leg in opportunity.legs if _leg_family(opportunity, leg) is family)
+        other = tuple(
+            leg for leg in opportunity.legs if _leg_family(opportunity, leg) is not family
+        )
+        opened = self._open_horizons(
+            owned, horizons=horizons, price=price, invalidation=invalidation,
+            now=now, horizon_invalidations=horizon_invalidations, horizon_targets=horizon_targets,
+        )
+        return (*other, *(leg.model_copy(update={"signal_family": family}) for leg in opened))
+
+    @staticmethod
+    def _bar_can_close_opportunity(
+        opportunity: EntryOpportunity,
+        *,
+        legs: tuple[EntryHorizonLeg, ...],
+        checkpoints: tuple[EntryMaturityCheckpoint, ...],
+    ) -> bool:
+        # Core's original stop / last closed leg must not sweep surviving
+        # independent checkpoints into a global closure on the following bar.
+        return not any(
+            cp.status is EntryCheckpointStatus.OPEN and cp.signal_family not in _CORE_FAMILIES
+            for cp in checkpoints
+        ) and not any(
+            leg.status in {EntryLegStatus.OPEN, EntryLegStatus.WATCHING}
+            and _leg_family(opportunity, leg) not in _CORE_FAMILIES
+            for leg in legs
+        )
+
+    @staticmethod
+    def _analysis_price(active: EntryOpportunity, result: AnalysisResult) -> Decimal:
+        # Retain historical analytical context without replacing the live mark.
+        latest_mark = max(active.updated_at, active.last_market_bar_at or active.armed_at)
+        if result.as_of < latest_mark:
+            return active.current_price
+        return _metric_decimal(result, "reference_price") or active.current_price
+
+    def _apply_analysis_invalidation(
+        self,
+        active: EntryOpportunity,
+        updated: EntryOpportunity,
+        *,
+        result: AnalysisResult,
+        now: datetime,
+    ) -> tuple[EntryOpportunity, tuple[str, ...]] | None:
+        if result.engine_id != _CORE_ENGINES.get(result.horizon):
+            return None
+        bearish = result.direction is PatternDirection.BEARISH and result.verdict in {
+            AnalysisVerdict.AVOID,
+            AnalysisVerdict.CAUTION,
+        }
+        long_failure = result.horizon is AnalysisHorizon.LONG_TERM and (
+            result.verdict is AnalysisVerdict.AVOID or bearish
+        )
+        price = _metric_decimal(result, "reference_price")
+        if price is None:
+            price = active.current_price
+        if long_failure:
+            reason = "long_structure_invalidated"
+            outcome = EntryLegStatus.THESIS_BROKEN
+        elif bearish:
+            reason = f"{result.horizon.value.lower()}_invalidated"
+            outcome = EntryLegStatus.INVALIDATED
+        else:
+            reason = "core_invalidation_breached"
+            outcome = EntryLegStatus.INVALIDATED
+        changed = self._close_core_entries(
+            updated,
+            price=price,
+            now=now,
+            evidence_at=result.as_of,
+            reason=(
+                EntryCloseReason.ORIGINAL_THESIS_INVALIDATED
+                if long_failure
+                else EntryCloseReason.ALL_HORIZONS_CLOSED
+            ),
+            leg_status=outcome,
+            horizon=None if long_failure else result.horizon,
+            price_breach_only=not (long_failure or bearish),
+        )
+        if changed.legs == updated.legs and changed.checkpoints == updated.checkpoints:
+            return None
+        return changed, (reason,)
+
+    def _close_watcher_thesis(
+        self,
+        opportunity: EntryOpportunity,
+        *,
+        price: Decimal,
+        now: datetime,
+        reason: EntryCloseReason,
+        leg_status: EntryLegStatus,
+    ) -> EntryOpportunity:
+        return self._close_core_entries(
+            opportunity,
+            price=price,
+            now=now,
+            evidence_at=now,
+            reason=reason,
+            leg_status=leg_status,
+        )
+
+    def _close_core_entries(
+        self,
+        opportunity: EntryOpportunity,
+        *,
+        price: Decimal,
+        now: datetime,
+        evidence_at: datetime,
+        reason: EntryCloseReason,
+        leg_status: EntryLegStatus,
+        horizon: AnalysisHorizon | None = None,
+        price_breach_only: bool = False,
+    ) -> EntryOpportunity:
+        legs: list[EntryHorizonLeg] = []
+        for leg in opportunity.legs:
+            owned = (
+                _leg_family(opportunity, leg) in _CORE_FAMILIES
+                and (horizon is None or leg.horizon is horizon)
+                and evidence_at >= (leg.opened_at or opportunity.armed_at)
+                and (not price_breach_only or price <= leg.invalidation)
+            )
+            if owned and leg.status is EntryLegStatus.OPEN:
+                legs.append(_close_leg(leg, price=price, now=now, status=leg_status))
+            elif not (owned and leg.status is EntryLegStatus.WATCHING):
+                legs.append(leg)
+        checkpoints = tuple(
+            _close_checkpoint(cp, price=price, now=now, outcome=leg_status)
+            if cp.signal_family in _CORE_FAMILIES
+            and cp.status is EntryCheckpointStatus.OPEN
+            and evidence_at >= cp.reached_at
+            and (horizon is None or horizon in _checkpoint_horizons(opportunity, cp))
+            and (not price_breach_only or price <= cp.invalidation)
+            else cp
+            for cp in opportunity.checkpoints
+        )
+        if tuple(legs) == opportunity.legs and checkpoints == opportunity.checkpoints:
+            return opportunity
+        updated = opportunity.model_copy(
+            update={
+                "legs": tuple(legs),
+                "checkpoints": checkpoints,
+                "updated_at": max(opportunity.updated_at, now),
+                "revision": opportunity.revision + 1,
+            }
+        )
+        # GERI can own checkpoints without a dedicated horizon leg in mixed records.
+        if any(leg.status in {EntryLegStatus.OPEN, EntryLegStatus.WATCHING} for leg in legs) or any(
+            cp.status is EntryCheckpointStatus.OPEN for cp in checkpoints
+        ):
+            return updated
+        return self._close_opportunity(
+            updated, price=price, now=now, reason=reason, leg_status=leg_status
+        )
+
+
+def _leg_family(opportunity: EntryOpportunity, leg: EntryHorizonLeg) -> EntrySignalFamily | None:
+    if leg.signal_family is not None:
+        return leg.signal_family
+    if leg.setup_id is None:
+        # Prior versions left the primary strategy's legs unlabelled. Parallel
+        # SwingTrade legs carry explicit setup IDs from v6 onward.
+        return opportunity.primary_signal_family
+    families = {
+        cp.signal_family for cp in opportunity.checkpoints if cp.setup_id == leg.setup_id
+    } | {ref.family for ref in opportunity.signal_references if ref.setup_id == leg.setup_id}
+    # Ambiguous provenance never grants Core authority over the position.
+    return next(iter(families)) if len(families) == 1 else None
+
+
+def _checkpoint_horizons(
+    opportunity: EntryOpportunity, checkpoint: EntryMaturityCheckpoint
+) -> set[AnalysisHorizon]:
+    references = [
+        ref
+        for ref in opportunity.signal_references
+        if ref.setup_id == checkpoint.setup_id and ref.family is checkpoint.signal_family
+    ]
+    if references:
+        return {horizon for ref in references for horizon in ref.horizons}
+    return {
+        leg.horizon
+        for leg in opportunity.legs
+        if _leg_family(opportunity, leg) is checkpoint.signal_family
+    }
 
 
 _SEMVER_SUFFIX = re.compile(r"\d+\.\d+\.\d+")

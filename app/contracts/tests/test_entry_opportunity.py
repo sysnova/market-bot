@@ -5,6 +5,9 @@ from uuid import UUID
 import pytest
 
 from app.contracts import (
+    AnalysisHorizon,
+    EntryHorizonLeg,
+    EntryLegStatus,
     EntryMaturityCheckpoint,
     EntryMaturityLevel,
     EntryOpportunity,
@@ -12,6 +15,24 @@ from app.contracts import (
     EntryOpportunityStatus,
     EntrySignalFamily,
 )
+
+
+def test_leg_owner_is_optional_for_legacy_and_roundtrips_when_present() -> None:
+    legacy = {
+        "horizon": AnalysisHorizon.SWING,
+        "status": EntryLegStatus.WATCHING,
+        "current_price": Decimal("100"),
+        "highest_price": Decimal("100"),
+        "lowest_price": Decimal("100"),
+        "invalidation": Decimal("90"),
+    }
+    assert EntryHorizonLeg.model_validate(legacy).signal_family is None
+    owned = EntryHorizonLeg.model_validate(
+        {**legacy, "signal_family": EntrySignalFamily.CORE_ENTRY}
+    )
+    assert EntryHorizonLeg.model_validate_json(owned.model_dump_json()).signal_family is (
+        EntrySignalFamily.CORE_ENTRY
+    )
 
 
 @pytest.mark.unit
@@ -104,9 +125,7 @@ def test_entry_opportunity_rejects_duplicate_source_cursors() -> None:
             invalidation=Decimal("90"),
             original_price=Decimal("100"),
             current_price=Decimal("100"),
-            source_analysis_ids=(
-                UUID("0195f3a5-9000-7000-8000-000000000011"),
-            ),
+            source_analysis_ids=(UUID("0195f3a5-9000-7000-8000-000000000011"),),
             source_cursors=(cursor, cursor),
             checkpoints=(checkpoint,),
         )

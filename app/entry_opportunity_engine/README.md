@@ -1,5 +1,29 @@
 # Entry Opportunity Engine
 
+## Independent strategy exits (v10, MarketBot 7.48.0)
+
+Core continuation and SwingTrade Fibonacci recovery have different premises. A bearish
+Core Swing/Long verdict is context for SwingTrade and GERI countertrend, not authority
+to close their entries. This policy also applies when multiple families share a ticker.
+Core analyses and matching Entry Watcher terminal events close only Core-owned entries;
+`CORE_RECOVERY` remains part of the Core L2/retest circuit, distinct from `SWING_TRADE`.
+No bullish Core consensus has been added to the ST/CT entry gates.
+
+Ownership is resolved from each checkpoint's family and each leg's explicit family or setup provenance;
+new Core legs never reuse another family's horizon leg. Legacy unlabelled primary legs
+retain the original primary family. Ambiguous setup
+provenance does not grant Core exit authority. Analysis evidence must be at least as
+recent as the entry it closes. Historical context remains visible without replacing a
+newer price mark. Invalidated checkpoints retain `INVALIDATED`/`THESIS_BROKEN`, not
+`TIME_EXIT`, even if that closes the final Core horizon.
+
+Independent checkpoints without a dedicated leg also survive Core closure and subsequent
+market bars. Their own price stops, targets, and expiration policies remain active.
+Universe removal remains a separate global administrative closure. Existing closed audit
+events are not rewritten or reopened by this upgrade; historical performance requires
+a separately labelled replay with subsequent market data, not relabelling old exits as
+profitable trades. Assemblies through 7.47.0 retain the v9 ownership policy for rollback.
+
 `EntryOpportunityEngine v1` is the lifecycle and paper-trade engine for candidate buys. It
 merges Entry Watcher transitions, L1-L4 alerts, analysis results, and final one-minute bars
 into one active opportunity per ticker while preserving the original thesis.

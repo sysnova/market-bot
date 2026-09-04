@@ -24,6 +24,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV7,
     EntryOpportunityEngineV8,
     EntryOpportunityEngineV9,
+    EntryOpportunityEngineV10,
     InMemoryEntryOpportunityStore,
 )
 from app.entry_recovery_engine import EntryRecoveryEngineV11
@@ -143,6 +144,21 @@ THESIS_OWNERSHIP_DEFINITION = ROOT / "configs/marketbot/7.43.0.yaml"
 DISPLACEMENT_SHORT_DEFINITION = ROOT / "configs/marketbot/7.44.0.yaml"
 STABLE_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.45.0.yaml"
 FRESH_TRANSITION_PRICE_DEFINITION = ROOT / "configs/marketbot/7.46.0.yaml"
+
+
+def test_independent_recovery_definition_versions_only_opportunity_ownership() -> None:
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.47.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.48.0.yaml")
+    assert type(previous.build_entry_opportunity(store=InMemoryEntryOpportunityStore())) is (
+        EntryOpportunityEngineV9
+    )
+    assert type(assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore())) is (
+        EntryOpportunityEngineV10
+    )
+    assert assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).strategy.version == "10.0.0"
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.ENTRY_OPPORTUNITY:
+            assert assembly.spec(slot) == previous.spec(slot)
 
 
 def test_short_confirmation_definition_versions_all_three_decision_engines() -> None:

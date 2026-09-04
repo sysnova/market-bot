@@ -98,6 +98,7 @@ class EntryHorizonLeg(StrictFrozenModel):
 
     leg_id: UUID = Field(default_factory=new_uuid7)
     horizon: AnalysisHorizon
+    signal_family: EntrySignalFamily | None = None
     setup_id: NonEmptyStr | None = None
     status: EntryLegStatus
     opened_at: datetime | None = None
