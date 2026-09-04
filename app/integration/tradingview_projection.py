@@ -350,6 +350,7 @@ def _calculate_symbol(
         geri=geri,
         confirmation_bars=fifteen_bars[-160:],
         current_price_at=price_at,
+        four_hour_bars=four_hour[-120:],
     )
     try:
         swing_trade = swing_trade_engine.analyze(swing_trade_context)

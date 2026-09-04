@@ -100,6 +100,7 @@ from app.swing_trade_engine import (
     SwingTradeEngineV13,
     SwingTradeEngineV14,
     SwingTradeEngineV15,
+    SwingTradeEngineV16,
 )
 from app.volume_structure_engine import VolumeStructureEngineV11
 
@@ -144,6 +145,17 @@ THESIS_OWNERSHIP_DEFINITION = ROOT / "configs/marketbot/7.43.0.yaml"
 DISPLACEMENT_SHORT_DEFINITION = ROOT / "configs/marketbot/7.44.0.yaml"
 STABLE_ORDER_FLOW_DEFINITION = ROOT / "configs/marketbot/7.45.0.yaml"
 FRESH_TRANSITION_PRICE_DEFINITION = ROOT / "configs/marketbot/7.46.0.yaml"
+
+
+def test_recovery_observation_definition_versions_only_swing_trade() -> None:
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.48.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.49.0.yaml")
+    assert type(previous.build_swing_trade()) is SwingTradeEngineV14
+    assert type(assembly.build_swing_trade()) is SwingTradeEngineV16
+    assert assembly.build_swing_trade().strategy_version == "1.3.0"
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.SWING_TRADE:
+            assert assembly.spec(slot) == previous.spec(slot)
 
 
 def test_independent_recovery_definition_versions_only_opportunity_ownership() -> None:

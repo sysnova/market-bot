@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
@@ -44,7 +46,7 @@ from app.event_bus import NatsJetStreamEventBus
 from app.persistence import create_database_engine
 from app.swing_trade_engine import SwingTradeContext
 
-from .bar_aggregator import MinuteBarAggregator
+from .bar_aggregator import MinuteBarAggregator, RegularSessionFourHourAggregator
 from .distributed_composition import HistoryRequest, connect_nats, write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
@@ -63,6 +65,15 @@ SWING_TRADE_HISTORY_REQUESTS = (
         max_bars_per_symbol=180,
     ),
 )
+SWING_TRADE_MOMENTUM_HISTORY_REQUESTS = (
+    SWING_TRADE_HISTORY_REQUESTS[0],
+    HistoryRequest(
+        timeframe=BarTimeframe.MINUTE_15,
+        lookback=timedelta(days=60),
+        max_bars_per_symbol=1200,
+    ),
+)
+_NEW_YORK = ZoneInfo("America/New_York")
 _BOOTSTRAP_ACTIONABLE_SIGNAL_MAX_AGE = timedelta(minutes=30)
 
 
@@ -101,6 +112,9 @@ class SwingTradeRuntime:
         self._clock = clock or SystemClock()
         self._bars = MarketBarStore(capacity_per_series=160)
         self._minute = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
+        self._four_hour = RegularSessionFourHourAggregator()
+        self._last_momentum_input: dict[str, datetime] = {}
+        self._momentum_daily: dict[str, dict[date, MarketBar]] = {}
         self._symbols: set[str] = set()
         self._geri: dict[str, GeriAssessment] = {}
         self._support: dict[str, SupportAssessment] = {}
@@ -159,8 +173,9 @@ class SwingTradeRuntime:
                 continue
             if bar.timeframe is BarTimeframe.DAY_1:
                 self._bars.add(bar)
+                self._store_momentum_daily(bar)
             elif bar.timeframe is BarTimeframe.MINUTE_15 and is_regular_session(bar.timestamp):
-                self._bars.add(bar)
+                self._store_fifteen(bar)
                 latest_fifteen[bar.symbol] = bar
         published = 0
         for bar in latest_fifteen.values():
@@ -183,6 +198,7 @@ class SwingTradeRuntime:
             return
         if bar.timeframe is BarTimeframe.DAY_1:
             self._bars.add(bar)
+            self._store_momentum_daily(bar)
             return
         if bar.timeframe is BarTimeframe.MINUTE_15:
             if is_regular_session(bar.timestamp):
@@ -191,6 +207,49 @@ class SwingTradeRuntime:
         if bar.timeframe is BarTimeframe.MINUTE_1:
             for fifteen in self._minute.add(bar):
                 await self._accept_fifteen(fifteen)
+
+    def _store_momentum_daily(self, bar: MarketBar) -> None:
+        history = self._momentum_daily.setdefault(bar.symbol, {})
+        history[bar.timestamp.astimezone(_NEW_YORK).date()] = bar
+        while len(history) > 120:
+            del history[min(history)]
+
+    def _store_fifteen(self, bar: MarketBar) -> None:
+        self._bars.add(bar)
+        previous = self._last_momentum_input.get(bar.symbol)
+        if previous is not None and bar.timestamp <= previous:
+            return
+        self._last_momentum_input[bar.symbol] = bar.timestamp
+        for channel in self._four_hour.add(bar):
+            self._bars.add(channel)
+            # Both complete RTH segments are required to roll the observation's daily close.
+            # Keep this separate from the native Fibonacci geometry history.
+            pair = self._bars.history(bar.symbol, BarTimeframe.HOUR_4, limit=2)
+            if len(pair) != 2 or pair[1].timestamp - pair[0].timestamp != timedelta(hours=4):
+                continue
+            local = channel.timestamp.astimezone(_NEW_YORK)
+            total = sum((part.volume for part in pair), Decimal(0))
+            vwap = (
+                sum(((part.vwap or part.close) * part.volume for part in pair), Decimal(0)) / total
+                if total
+                else channel.close
+            )
+            self._store_momentum_daily(
+                channel.model_copy(
+                    update={
+                        "timeframe": BarTimeframe.DAY_1,
+                        "timestamp": datetime.combine(local.date(), time(), _NEW_YORK).astimezone(
+                            UTC
+                        ),
+                        "open": pair[0].open,
+                        "high": max(part.high for part in pair),
+                        "low": min(part.low for part in pair),
+                        "volume": total,
+                        "vwap": vwap,
+                        "trade_count": None,
+                    }
+                )
+            )
 
     async def _accept_fifteen(
         self,
@@ -202,7 +261,7 @@ class SwingTradeRuntime:
         if key in self._evaluated:
             return False
         self._evaluated.add(key)
-        self._bars.add(bar)
+        self._store_fifteen(bar)
         daily = self._bars.history(bar.symbol, BarTimeframe.DAY_1, limit=120, final_only=True)
         try:
             assessment = self._engine.analyze(
@@ -221,6 +280,16 @@ class SwingTradeRuntime:
                         final_only=True,
                     ),
                     current_price_at=bar.timestamp + timedelta(minutes=15),
+                    four_hour_bars=self._bars.history(
+                        bar.symbol,
+                        BarTimeframe.HOUR_4,
+                        limit=120,
+                        final_only=True,
+                    ),
+                    momentum_daily_bars=tuple(
+                        value
+                        for _, value in sorted(self._momentum_daily.get(bar.symbol, {}).items())
+                    ),
                 )
             ).model_copy(update={"assessed_at": self._clock.now()})
         except ValueError as error:
@@ -229,6 +298,10 @@ class SwingTradeRuntime:
             return False
         previous = self._latest.get(bar.symbol)
         if previous is not None and not _material_change(previous, assessment):
+            if _metric(assessment, "recovery_quality_mode") == "OBSERVATION":
+                self._latest[bar.symbol] = assessment
+                await self._publish_assessment(assessment)
+                return True
             return False
         self._latest[bar.symbol] = assessment
         await self._publish(
@@ -238,13 +311,7 @@ class SwingTradeRuntime:
         )
         return True
 
-    async def _publish(
-        self,
-        item: SwingTradeAssessment,
-        previous: SwingTradeAssessment | None,
-        *,
-        actionable_signals_enabled: bool,
-    ) -> None:
+    async def _publish_assessment(self, item: SwingTradeAssessment) -> None:
         occurred_at = item.assessed_at or item.occurred_at
         await self._publisher.publish(
             swing_trade_assessment_subject(item.symbol),
@@ -256,6 +323,16 @@ class SwingTradeRuntime:
                 payload=item,
             ),
         )
+
+    async def _publish(
+        self,
+        item: SwingTradeAssessment,
+        previous: SwingTradeAssessment | None,
+        *,
+        actionable_signals_enabled: bool,
+    ) -> None:
+        occurred_at = item.assessed_at or item.occurred_at
+        await self._publish_assessment(item)
         previous_maturity = previous.maturity if previous is not None else None
         if item.maturity is None and previous_maturity is None:
             return
@@ -429,7 +506,11 @@ async def run_swing_trade_process(
             database,
             engine_id="swing-trade-v1",
             symbols=selected,
-            requirements=SWING_TRADE_HISTORY_REQUESTS,
+            requirements=(
+                SWING_TRADE_MOMENTUM_HISTORY_REQUESTS
+                if engine_version == "1.6.0"
+                else SWING_TRADE_HISTORY_REQUESTS
+            ),
             as_of=SystemClock().now(),
         )
         published = await runtime.bootstrap(bars, symbols=selected)

@@ -1,15 +1,49 @@
 """TradingView export keeps calculated geometry observable across its lifecycle."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from app.contracts import BarTimeframe, SwingTradeAssessment
+from app.integration.engine_assembly import MarketBotAssembly
 from app.integration.tradingview_projection import (
     TRADINGVIEW_COLUMNS,
     TradingViewAssessment,
+    _calculate_symbol,
     _swing_invalidation_sources,
     project_tradingview_row,
 )
+from app.swing_trade_engine.tests.test_engine import daily_bars
+
+
+def test_projection_supplies_completed_four_hour_history_to_swing_trade() -> None:
+    daily = daily_bars()
+    start = daily[-1].timestamp.replace(hour=13, minute=30) + timedelta(days=1)
+    fifteen = tuple(
+        daily[-1].model_copy(
+            update={
+                "timeframe": BarTimeframe.MINUTE_15,
+                "timestamp": start + timedelta(minutes=15 * i),
+                "open": Decimal("97"),
+                "close": Decimal("97"),
+                "low": Decimal("96"),
+                "high": Decimal("98"),
+            }
+        )
+        for i in range(26)
+    )
+    result = _calculate_symbol(
+        "AAPL",
+        daily_bars=daily,
+        fifteen_bars=fifteen,
+        weekly_bars=(),
+        hourly_bars=(),
+        assembly=MarketBotAssembly.from_path(Path("configs/marketbot/7.49.0.yaml")),
+        as_of=start + timedelta(hours=6, minutes=30),
+    )
+    assert isinstance(result.swing_trade, SwingTradeAssessment)
+    metrics = {m.name: m.value for m in result.swing_trade.metrics}
+    assert metrics["macd_4h_samples"] == 2
 
 
 def test_projection_exports_every_calculated_price_layer() -> None:
@@ -35,7 +69,7 @@ def test_projection_exports_every_calculated_price_layer() -> None:
                 {"name": "pivot_low_anchor_at", "value": "2026-08-19T04:00:00Z"},
                 {"name": "breakout_anchor_at", "value": "2026-08-21T04:00:00Z"},
                 {"name": "swing_entry_gate_passed", "value": False},
-            ]
+            ],
         },
         swing_trade={
             "impulse_low": "65.0000",
@@ -197,11 +231,7 @@ def test_support_validation_triggers_only_for_real_swing_invalidation() -> None:
         current_price=Decimal("79.42"),
     )
     invalidated = _swing_invalidation_sources(
-        swing={
-            "metrics": [
-                {"name": "failed_breakout_state", "value": "STRUCTURE_INVALIDATED"}
-            ]
-        },
+        swing={"metrics": [{"name": "failed_breakout_state", "value": "STRUCTURE_INVALIDATED"}]},
         swing_trade={"current_price": "79.42", "invalidation": "80.00"},
         geri={"maturity": "INVALIDATED"},
         current_price=Decimal("79.42"),
@@ -212,9 +242,7 @@ def test_support_validation_triggers_only_for_real_swing_invalidation() -> None:
 
 
 def test_tradingview_pine_resolves_engine_fields_from_the_csv_header() -> None:
-    pine = Path("scripts/tradingview/marketbot_operational_viewer.pine").read_text(
-        encoding="utf-8"
-    )
+    pine = Path("scripts/tradingview/marketbot_operational_viewer.pine").read_text(encoding="utf-8")
 
     assert "f_num_col(cfg, csvHeader" in pine
     assert "f_text_col(cfg, csvHeader" in pine
@@ -243,9 +271,7 @@ def test_tradingview_pine_resolves_engine_fields_from_the_csv_header() -> None:
 
 
 def test_tradingview_export_never_uses_non_operational_swing_trade_geometry() -> None:
-    projection = Path("app/integration/tradingview_projection.py").read_text(
-        encoding="utf-8"
-    )
+    projection = Path("app/integration/tradingview_projection.py").read_text(encoding="utf-8")
 
     assert ".analyze_geometry(" not in projection
     assert 'swing_trade_status = "ENGINE_REJECTED"' in projection

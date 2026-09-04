@@ -129,6 +129,7 @@ from app.swing_trade_engine import (
     SwingTradeEngineV13,
     SwingTradeEngineV14,
     SwingTradeEngineV15,
+    SwingTradeEngineV16,
 )
 from app.swing_trade_engine.strategy import configure_engine as configure_swing_trade
 from app.swing_trade_engine.strategy import validate_strategy as validate_swing_trade
@@ -193,6 +194,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.3.0": SwingTradeEngineV13,
                     "1.4.0": SwingTradeEngineV14,
                     "1.5.0": SwingTradeEngineV15,
+                    "1.6.0": SwingTradeEngineV16,
                 },
                 required_since="7.20.0",
                 configure=configure_swing_trade,

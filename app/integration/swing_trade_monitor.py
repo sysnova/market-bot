@@ -207,6 +207,31 @@ def _format_assessment(item: SwingTradeAssessment, *, color: bool) -> list[str]:
                 f"REV {metrics.get('support_reversal_score')}"
             ),
         )
+    if metrics.get("recovery_quality_mode") == "OBSERVATION":
+        quality_labels = {
+            "WATCHING": "En seguimiento",
+            "EARLY_REACTION": "Reaccion temprana",
+            "LOCAL_BREAKOUT": "Ruptura local",
+            "RECOVERY_WITH_MOMENTUM": "Ruptura con impulso 4H",
+        }
+        lines.insert(
+            -1,
+            "  CALIDAD (OBSERVACION): "
+            + quality_labels.get(str(metrics.get("recovery_quality")), "Sin clasificar"),
+        )
+        direction_labels = {"IMPROVING": "Mejora", "DETERIORATING": "Deteriora", "FLAT": "Plano"}
+        status_labels = {"INSUFFICIENT_HISTORY": "Historial insuficiente", "STALE": "Dato vencido"}
+        for prefix, label in (("daily", "DIARIO"), ("4h", "4H")):
+            status = str(metrics.get(f"macd_{prefix}_status"))
+            detail = status_labels.get(status, "Sin dato")
+            if status == "AVAILABLE":
+                direction = direction_labels.get(
+                    str(metrics.get(f"macd_{prefix}_direction")), "Sin dato"
+                )
+                detail = f"{direction} | HIST {metrics.get(f'macd_{prefix}_histogram')}"
+            lines.insert(
+                -1, f"  MACD {label}: {detail} | CIERRE {metrics.get(f'macd_{prefix}_as_of', '-')}"
+            )
     if item.metrics:
         lines.append(
             "  METRICAS " + " | ".join(f"{metric.name}={metric.value}" for metric in item.metrics)

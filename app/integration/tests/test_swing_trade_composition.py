@@ -21,7 +21,7 @@ from app.integration.swing_trade_composition import (
     SwingTradeRuntime,
     swing_trade_replay_subjects,
 )
-from app.swing_trade_engine import SwingTradeEngine
+from app.swing_trade_engine import SwingTradeContext, SwingTradeEngine
 from app.swing_trade_engine.tests.test_engine import analyze, daily_bars
 
 
@@ -47,6 +47,67 @@ class RejectingEngine:
     def analyze(self, context: object) -> SwingTradeAssessment:
         del context
         raise ValueError("no valid impulse")
+
+
+class ObservingEngine:
+    strategy_version = "test"
+
+    def __init__(self) -> None:
+        self.contexts: list[SwingTradeContext] = []
+        self.assessment = analyze("97")
+
+    def analyze(self, context: SwingTradeContext) -> SwingTradeAssessment:
+        self.contexts.append(context)
+        return self.assessment.model_copy(
+            update={
+                "occurred_at": context.as_of,
+                "metrics": (
+                    *self.assessment.metrics,
+                    NamedValue(name="recovery_quality_mode", value="OBSERVATION"),
+                ),
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_observations_refresh_without_duplicate_signals_or_transitions() -> None:
+    publisher = Publisher()
+    engine = ObservingEngine()
+    runtime = SwingTradeRuntime(engine=engine, publisher=publisher)
+    at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+    bar = minute(at).model_copy(update={"timeframe": BarTimeframe.MINUTE_15})
+    await runtime.bootstrap((*daily_bars(), bar), symbols=("AAPL",))
+    publisher.events.clear()
+    await runtime.handle_market(
+        envelope(bar.model_copy(update={"timestamp": at + timedelta(minutes=15)}))
+    )
+    assert [e.event_type for e in publisher.events] == [SWING_TRADE_ASSESSMENT_EVENT]
+
+
+@pytest.mark.asyncio
+async def test_momentum_history_bootstraps_four_hour_and_rolls_daily_after_close() -> None:
+    engine = ObservingEngine()
+    runtime = SwingTradeRuntime(engine=engine, publisher=Publisher())
+    start = datetime(2026, 8, 20, 13, 30, tzinfo=UTC)
+    bars = tuple(
+        minute(start + timedelta(minutes=15 * i)).model_copy(
+            update={"timeframe": BarTimeframe.MINUTE_15}
+        )
+        for i in range(26)
+    )
+    await runtime.bootstrap((*daily_bars(), *bars[:25]), symbols=("AAPL",))
+    context = engine.contexts[-1]
+    assert len(context.four_hour_bars) == 1
+    assert context.momentum_daily_bars == daily_bars()
+    await runtime.handle_market(envelope(bars[-1]))
+    context = engine.contexts[-1]
+    assert len(context.four_hour_bars) == 2
+    assert context.four_hour_bars[-1].timestamp == start + timedelta(hours=4)
+    assert context.momentum_daily_bars is not None
+    assert context.momentum_daily_bars[-1].close == bars[-1].close
+    assert context.momentum_daily_bars[-1].timestamp == start.replace(hour=4, minute=0)
+    assert context.daily_bars == daily_bars()
+    assert len(context.confirmation_bars) == 26
 
 
 def test_swing_trade_replay_excludes_order_flow_before_v15() -> None:

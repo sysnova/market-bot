@@ -23,3 +23,5 @@ class SwingTradeContext:
     order_flow_support: OrderFlowSupportAssessment | None = None
     confirmation_bars: tuple[MarketBar, ...] = ()
     current_price_at: datetime | None = None
+    four_hour_bars: tuple[MarketBar, ...] = ()
+    momentum_daily_bars: tuple[MarketBar, ...] | None = None

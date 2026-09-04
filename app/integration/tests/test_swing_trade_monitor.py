@@ -1,13 +1,35 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from app.contracts import SwingTradeAssessment, SwingTradeMaturity, new_uuid7
+from app.contracts import NamedValue, SwingTradeAssessment, SwingTradeMaturity, new_uuid7
 from app.integration.swing_trade_monitor import (
     SwingTradeDashboard,
     format_swing_trade_dashboard,
 )
 
 NOW = datetime(2026, 8, 21, 19, 45, tzinfo=UTC)
+
+
+def test_dashboard_explains_observation_and_unavailable_macd() -> None:
+    dashboard = SwingTradeDashboard()
+    dashboard.merge(
+        _assessment().model_copy(
+            update={
+                "metrics": (
+                    NamedValue(name="recovery_quality_mode", value="OBSERVATION"),
+                    NamedValue(name="recovery_quality", value="RECOVERY_WITH_MOMENTUM"),
+                    NamedValue(name="macd_4h_status", value="AVAILABLE"),
+                    NamedValue(name="macd_4h_direction", value="IMPROVING"),
+                    NamedValue(name="macd_4h_histogram", value=Decimal("-0.12")),
+                    NamedValue(name="macd_daily_status", value="INSUFFICIENT_HISTORY"),
+                )
+            }
+        )
+    )
+    rendered = format_swing_trade_dashboard(dashboard, refreshed_at=NOW, color=False)
+    assert "CALIDAD (OBSERVACION): Ruptura con impulso 4H" in rendered
+    assert "MACD 4H: Mejora | HIST -0.12" in rendered
+    assert "MACD DIARIO: Historial insuficiente" in rendered
 
 
 def _assessment(
@@ -60,9 +82,7 @@ def test_dashboard_keeps_latest_assessment_per_symbol() -> None:
     newest = _assessment()
 
     assert dashboard.merge(newest) is True
-    assert dashboard.merge(
-        _assessment(assessed_at=NOW - timedelta(minutes=15))
-    ) is False
+    assert dashboard.merge(_assessment(assessed_at=NOW - timedelta(minutes=15))) is False
 
     assert dashboard.items() == (newest,)
 

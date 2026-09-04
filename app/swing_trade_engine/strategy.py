@@ -11,6 +11,7 @@ _CONFIGURED_IMPLEMENTATIONS = {
     "1.3.0",
     "1.4.0",
     "1.5.0",
+    "1.6.0",
 }
 _INTRADAY_CONFIRMATION_IMPLEMENTATIONS = _CONFIGURED_IMPLEMENTATIONS - {"1.0.0"}
 _SUPPORT_CONFIRMATION_IMPLEMENTATIONS = {
@@ -18,6 +19,7 @@ _SUPPORT_CONFIRMATION_IMPLEMENTATIONS = {
     "1.3.0",
     "1.4.0",
     "1.5.0",
+    "1.6.0",
 }
 
 
@@ -51,6 +53,17 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
         behavior.boolean("require_vwap_gate")
     if implementation in _SUPPORT_CONFIRMATION_IMPLEMENTATIONS:
         behavior.positive_int("support_freshness_sessions")
+    if implementation == "1.6.0":
+        for name in (
+            "macd_fast_period",
+            "macd_slow_period",
+            "macd_signal_period",
+            "macd_max_age_hours",
+            "recovery_reference_bars",
+        ):
+            behavior.positive_int(name)
+        if behavior.positive_int("macd_fast_period") >= behavior.positive_int("macd_slow_period"):
+            raise ValueError("SwingTrade MACD fast period must be smaller than slow period")
 
 
 def configure_engine(
@@ -85,4 +98,13 @@ def configure_engine(
         )
     if implementation in _SUPPORT_CONFIRMATION_IMPLEMENTATIONS:
         kwargs["support_freshness_sessions"] = behavior.positive_int("support_freshness_sessions")
+    if implementation == "1.6.0":
+        for name in (
+            "macd_fast_period",
+            "macd_slow_period",
+            "macd_signal_period",
+            "macd_max_age_hours",
+            "recovery_reference_bars",
+        ):
+            kwargs[name] = behavior.positive_int(name)
     return args, kwargs

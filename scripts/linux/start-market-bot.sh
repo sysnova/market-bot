@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
-DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.48.0.yaml"
+DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.49.0.yaml"
 MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
 ROLE="launcher"
@@ -47,7 +47,7 @@ Options:
   --symbols AAPL,MSFT   Override the PostgreSQL universe for this run.
   --runtime-root PATH   Runtime directory (default: .runtime).
   --definition-path PATH
-                        Explicit immutable MarketBot definition (default: 7.48.0).
+                        Explicit immutable MarketBot definition (default: 7.49.0).
   --no-bell             Disable alert bells.
   --detach              Create the tmux runtime without attaching a client.
   --ready-timeout SEC   Readiness timeout (default: 1800).
