@@ -241,9 +241,7 @@ def test_thesis_ownership_definition_versions_entry_opportunity_only() -> None:
     )
     assert assembly.definition.version == "7.43.0"
     assert assembly.spec(EngineSlot.NEWS_INTELLIGENCE).mode is EngineMode.ON_DEMAND
-    assert swing_trade.strategy_version == assembly.spec(
-        EngineSlot.SWING_TRADE
-    ).strategy.version
+    assert swing_trade.strategy_version == assembly.spec(EngineSlot.SWING_TRADE).strategy.version
 
 
 def test_displacement_short_definition_versions_only_intraday_policy() -> None:
@@ -329,9 +327,7 @@ def test_microstructure_definition_adds_operational_engines() -> None:
     assert isinstance(assembly.build_swing(), SwingEngineV13)
     assert isinstance(assembly.build_4hgeri(), Swing4HGeriEngineV17)
     assert isinstance(swing_trade, SwingTradeEngineV15)
-    assert swing_trade.strategy_version == assembly.spec(
-        EngineSlot.SWING_TRADE
-    ).strategy.version
+    assert swing_trade.strategy_version == assembly.spec(EngineSlot.SWING_TRADE).strategy.version
 
 
 def test_news_definition_activates_versioned_classifier_and_news_gate() -> None:
@@ -983,3 +979,20 @@ def test_definition_model_is_a_separate_public_boundary() -> None:
     assert DefinitionEngineSlot is EngineSlot
     assert DefinitionEngineMode is EngineMode
     assert definition.engines[EngineSlot.ENTRY_RECOVERY].mode is EngineMode.ACTIVE
+
+
+def test_rebound_definition_versions_swing_trade_and_exit_consumer_only() -> None:
+    from app.entry_opportunity_engine import EntryOpportunityEngineV11
+    from app.swing_trade_engine import SwingTradeEngineV17
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.49.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.50.0.yaml")
+    assert type(assembly.build_swing_trade()) is SwingTradeEngineV17
+    assert assembly.build_swing_trade().strategy_version == "1.4.0"
+    assert (
+        type(assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()))
+        is EntryOpportunityEngineV11
+    )
+    for slot in assembly.definition.engines:
+        if slot not in {EngineSlot.SWING_TRADE, EngineSlot.ENTRY_OPPORTUNITY}:
+            assert assembly.spec(slot) == previous.spec(slot)

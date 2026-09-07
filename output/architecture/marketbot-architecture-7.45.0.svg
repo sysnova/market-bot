@@ -1,0 +1,385 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4800" height="2700" viewBox="0 0 4800 2700" role="img" aria-labelledby="title desc">
+  <title id="title">Arquitectura operativa de MarketBot 7.45.0 y cálculo de zonas por engine</title>
+  <desc id="desc">Lámina de arquitectura que muestra control plane, fuentes, infraestructura, engines analíticos, decisiones, persistencia y fórmulas resumidas de zonas.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.55" stop-color="#0b1930"/>
+      <stop offset="1" stop-color="#101d34"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3dd9eb" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0.08"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#77d8e6"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b29cf7"/>
+    </marker>
+    <style>
+      .title { font: 700 64px 'Segoe UI', Arial, sans-serif; fill:#f6fbff; letter-spacing:-1px; }
+      .subtitle { font: 400 27px 'Segoe UI', Arial, sans-serif; fill:#abc2d6; }
+      .kicker { font: 700 22px 'Segoe UI', Arial, sans-serif; fill:#5ee2f0; letter-spacing:3px; }
+      .section { font: 700 31px 'Segoe UI', Arial, sans-serif; fill:#eef8ff; }
+      .sectionNote { font: 400 22px 'Segoe UI', Arial, sans-serif; fill:#90aac0; }
+      .cardTitle { font: 700 27px 'Segoe UI', Arial, sans-serif; fill:#f5fbff; }
+      .cardSub { font: 600 19px 'Segoe UI', Arial, sans-serif; fill:#6ee1ef; letter-spacing:1px; }
+      .body { font: 400 21px 'Segoe UI', Arial, sans-serif; fill:#c9d9e7; }
+      .small { font: 400 18px 'Segoe UI', Arial, sans-serif; fill:#a9bfd2; }
+      .tiny { font: 400 16px 'Segoe UI', Arial, sans-serif; fill:#92a9bb; }
+      .formula { font: 600 18px Consolas, 'Courier New', monospace; fill:#ebfaff; }
+      .chip { font: 700 16px 'Segoe UI', Arial, sans-serif; fill:#08131f; letter-spacing:.5px; }
+      .lane { fill:#0e1f37; stroke:#25435c; stroke-width:2; }
+      .card { fill:#102642; stroke:#2c5873; stroke-width:2; filter:url(#shadow); }
+      .cardAlt { fill:#16213d; stroke:#594f8b; stroke-width:2; filter:url(#shadow); }
+      .infra { fill:#102c38; stroke:#2d7f8b; stroke-width:2; filter:url(#shadow); }
+      .decision { fill:#231d42; stroke:#7162b6; stroke-width:2; filter:url(#shadow); }
+      .output { fill:#152b31; stroke:#3c8d78; stroke-width:2; filter:url(#shadow); }
+      .zoneCard { fill:#0d2038; stroke:#315b79; stroke-width:2; }
+      .zoneHeader { fill:#132a48; }
+      .edge { fill:none; stroke:#77d8e6; stroke-width:4; marker-end:url(#arrow); opacity:.9; }
+      .edgeSoft { fill:none; stroke:#6d9fb1; stroke-width:3; marker-end:url(#arrow); opacity:.68; }
+      .edgePurple { fill:none; stroke:#b29cf7; stroke-width:4; marker-end:url(#arrowPurple); opacity:.9; }
+      .dash { stroke-dasharray:12 10; }
+    </style>
+  </defs>
+
+  <rect width="4800" height="2700" fill="url(#bg)"/>
+  <circle cx="600" cy="300" r="540" fill="#23d3e2" opacity=".035"/>
+  <circle cx="4210" cy="2230" r="800" fill="#8b5cf6" opacity=".04"/>
+
+  <!-- Header -->
+  <rect x="70" y="55" width="4660" height="160" rx="30" fill="url(#hero)" stroke="#28445f" stroke-width="2"/>
+  <text x="120" y="105" class="kicker">MARKETBOT · ARQUITECTURA ANALÍTICA EVENT-DRIVEN</text>
+  <text x="120" y="175" class="title">Cómo opera MarketBot 7.45.0</text>
+  <text x="3360" y="112" class="subtitle">Una composición versionada · procesos independientes</text>
+  <text x="3360" y="158" class="subtitle">Señales, alertas y órdenes reales · Alpaca Comitente Producción</text>
+  <rect x="4422" y="89" width="250" height="58" rx="29" fill="#64e3ee"/>
+  <text x="4547" y="126" class="chip" text-anchor="middle">CURRENT MODEL</text>
+
+  <!-- Main columns -->
+  <rect x="70" y="255" width="3190" height="2375" rx="28" class="lane" opacity=".65"/>
+  <rect x="3300" y="255" width="1430" height="2375" rx="28" fill="#0a172a" stroke="#2b4865" stroke-width="2"/>
+
+  <!-- Control plane -->
+  <text x="115" y="305" class="section">1 · CONTROL PLANE</text>
+  <text x="440" y="305" class="sectionNote">La definición selecciona código, reglas y modo; no contiene lógica de negocio.</text>
+  <rect x="115" y="335" width="690" height="150" rx="22" class="cardAlt"/>
+  <text x="150" y="382" class="cardTitle">configs/marketbot/7.45.0.yaml</text>
+  <text x="150" y="417" class="body">implementation + strategy + mode</text>
+  <text x="150" y="452" class="small">17 active · 1 scheduled · 5 on-demand</text>
+
+  <rect x="955" y="335" width="690" height="150" rx="22" class="cardAlt"/>
+  <text x="990" y="382" class="cardTitle">MarketBotAssembly</text>
+  <text x="990" y="417" class="body">Catálogo central + adapters propios</text>
+  <text x="990" y="452" class="small">Selecciona versiones; valida artefactos</text>
+
+  <rect x="1795" y="335" width="690" height="150" rx="22" class="cardAlt"/>
+  <text x="1830" y="382" class="cardTitle">Runtime Process Plan</text>
+  <text x="1830" y="417" class="body">Dependencias + readiness + batches</text>
+  <text x="1830" y="452" class="small">Un proceso aislado por engine</text>
+
+  <rect x="2635" y="335" width="580" height="150" rx="22" class="cardAlt"/>
+  <text x="2670" y="382" class="cardTitle">Stable Contracts</text>
+  <text x="2670" y="417" class="body">MarketBar · AnalysisResult</text>
+  <text x="2670" y="452" class="small">Assessment · EntrySignal · Envelope</text>
+  <path d="M805 410 H945" class="edgePurple"/>
+  <path d="M1645 410 H1785" class="edgePurple"/>
+  <path d="M2485 410 H2625" class="edgePurple"/>
+
+  <!-- Inputs -->
+  <text x="115" y="555" class="section">2 · DATOS Y UNIVERSO</text>
+  <text x="465" y="555" class="sectionNote">Backfill histórico y stream live viajan por caminos distintos.</text>
+  <rect x="115" y="585" width="490" height="135" rx="20" class="infra"/>
+  <text x="150" y="630" class="cardTitle">Alpaca REST</text>
+  <text x="150" y="665" class="body">OHLCV histórico · opciones</text>
+  <text x="150" y="696" class="small">Backfill / snapshots</text>
+
+  <rect x="665" y="585" width="490" height="135" rx="20" class="infra"/>
+  <text x="700" y="630" class="cardTitle">Alpaca WebSocket</text>
+  <text x="700" y="665" class="body">Barras, trades y quotes live</text>
+  <text x="700" y="696" class="small">Ingress único</text>
+
+  <rect x="1215" y="585" width="490" height="135" rx="20" class="infra"/>
+  <text x="1250" y="630" class="cardTitle">Watchlist + Holdings</text>
+  <text x="1250" y="665" class="body">Universo Core dinámico</text>
+  <text x="1250" y="696" class="small">UniverseChanged + warmup</text>
+
+  <rect x="1765" y="585" width="670" height="135" rx="20" class="infra"/>
+  <text x="1800" y="630" class="cardTitle">Market History</text>
+  <text x="1800" y="665" class="body">Único dueño del REST de barras</text>
+  <text x="1800" y="696" class="small">Cache PostgreSQL + NATS Core RPC</text>
+
+  <rect x="2495" y="585" width="720" height="135" rx="20" class="infra"/>
+  <text x="2530" y="630" class="cardTitle">NATS JetStream · Event Bus</text>
+  <text x="2530" y="665" class="body">Fan-out durable; consumidor por engine</text>
+  <text x="2530" y="696" class="small">MarketBar · results · health · transitions</text>
+  <path d="M605 652 H1755" class="edgeSoft"/>
+  <path d="M1155 652 H2485" class="edge"/>
+  <path d="M1705 675 H1755" class="edgeSoft"/>
+  <path d="M2435 652 H2485" class="edgeSoft"/>
+
+  <!-- Analytics -->
+  <text x="115" y="790" class="section">3 · ENGINES ANALÍTICOS</text>
+  <text x="505" y="790" class="sectionNote">No se importan entre sí: colaboran sólo por contratos y adapters externos.</text>
+  <rect x="115" y="825" width="920" height="560" rx="24" class="card"/>
+  <rect x="115" y="825" width="920" height="64" rx="24" fill="#13314f"/>
+  <text x="155" y="868" class="cardTitle">Core multi-horizonte</text>
+  <rect x="155" y="925" width="400" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="185" y="965" class="cardTitle">LONG TERM 2.0</text>
+  <text x="185" y="1000" class="small">diario + semanal · buy zone</text>
+  <rect x="595" y="925" width="400" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="625" y="965" class="cardTitle">SWING 14.0</text>
+  <text x="625" y="1000" class="small">diario + 15m/1h · 2 lanes</text>
+  <rect x="155" y="1065" width="400" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="185" y="1105" class="cardTitle">4HGERI 1.8</text>
+  <text x="185" y="1140" class="small">niveles horizontales causales</text>
+  <rect x="595" y="1065" width="400" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="625" y="1105" class="cardTitle">SWING TRADE 1.4</text>
+  <text x="625" y="1140" class="small">Fib diario · ST1 → ST4</text>
+  <rect x="155" y="1205" width="400" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="185" y="1245" class="cardTitle">INTRADAY 7.0</text>
+  <text x="185" y="1280" class="small">breakout / VWAP · long + short</text>
+  <rect x="595" y="1205" width="400" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="625" y="1245" class="cardTitle">VOLUME STRUCTURE</text>
+  <text x="625" y="1280" class="small">precio vs OBV semanal</text>
+
+  <rect x="1085" y="825" width="1030" height="560" rx="24" class="card"/>
+  <rect x="1085" y="825" width="1030" height="64" rx="24" fill="#13314f"/>
+  <text x="1125" y="868" class="cardTitle">Contexto y confirmación</text>
+  <rect x="1125" y="925" width="450" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="1155" y="965" class="cardTitle">SUPPORT CONF. 0.3</text>
+  <text x="1155" y="1000" class="small">cluster de fuentes HTF</text>
+  <rect x="1615" y="925" width="460" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="1645" y="965" class="cardTitle">ORDER FLOW 1.2</text>
+  <text x="1645" y="1000" class="small">anota defensa / breakdown</text>
+  <rect x="1125" y="1065" width="450" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="1155" y="1105" class="cardTitle">OPTIONS GAMMA 1.0</text>
+  <text x="1155" y="1140" class="small">walls · flip · max pain</text>
+  <rect x="1615" y="1065" width="460" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="1645" y="1105" class="cardTitle">LEVERAGED THESIS</text>
+  <text x="1645" y="1140" class="small">flujo + soporte + timing</text>
+  <rect x="1125" y="1205" width="450" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="1155" y="1245" class="cardTitle">MARKET ROTATION</text>
+  <text x="1155" y="1280" class="small">contexto sectorial global</text>
+  <rect x="1615" y="1205" width="460" height="112" rx="18" fill="#12324d" stroke="#34718e"/>
+  <text x="1645" y="1245" class="cardTitle">PORTFOLIO FLOW</text>
+  <text x="1645" y="1280" class="small">holdings · trades · quotes</text>
+
+  <rect x="2165" y="825" width="1050" height="560" rx="24" class="cardAlt"/>
+  <rect x="2165" y="825" width="1050" height="64" rx="24" fill="#242045"/>
+  <text x="2205" y="868" class="cardTitle">Universos específicos / ejecución diferida</text>
+  <text x="2210" y="930" class="cardSub">ACTIVE</text>
+  <text x="2210" y="968" class="body">Long Portfolio · asignación PORT_YTD</text>
+  <text x="2210" y="1010" class="cardSub">ON-DEMAND</text>
+  <text x="2210" y="1048" class="body">Patreon Caps · Elliott Wave</text>
+  <text x="2210" y="1083" class="body">Signal Fusion · Peter Lynch · News</text>
+  <text x="2210" y="1125" class="cardSub">SCHEDULED</text>
+  <text x="2210" y="1163" class="body">Dilution SEC · scan diario independiente</text>
+  <line x1="2210" y1="1200" x2="3165" y2="1200" stroke="#5b5489"/>
+  <text x="2210" y="1245" class="small">Regla clave: una ausencia es UNAVAILABLE,</text>
+  <text x="2210" y="1277" class="small">no evidencia bearish ni permiso para inventar voto.</text>
+  <text x="2210" y="1330" class="small">Todos publican assessments versionados y auditables.</text>
+
+  <!-- Cross-engine relations -->
+  <path d="M1310 1037 V1050 H795 V1065" class="edgePurple dash"/>
+  <path d="M1575 980 H1605" class="edgePurple dash"/>
+  <path d="M1575 990 C1460 1180 1120 1135 1010 1120" class="edgePurple dash"/>
+  <path d="M795 1177 V1195" class="edgePurple dash"/>
+  <path d="M1575 1120 H1605" class="edgePurple dash"/>
+  <path d="M1575 1000 C1820 1020 1840 1050 1840 1065" class="edgePurple dash"/>
+
+  <!-- Contracts bus between analytics and decisions -->
+  <rect x="115" y="1435" width="3100" height="105" rx="18" fill="#0e3543" stroke="#2d8290" stroke-width="2"/>
+  <text x="155" y="1480" class="cardTitle">Event backbone: AnalysisResult + assessments + transitions</text>
+  <text x="155" y="1515" class="small">JetStream distribuye una copia por consumidor; implementation_version viaja como provenance, nunca como routing.</text>
+  <path d="M575 1385 V1425" class="edge"/>
+  <path d="M1600 1385 V1425" class="edge"/>
+  <path d="M2690 1385 V1425" class="edge"/>
+
+  <!-- Decision & lifecycle -->
+  <text x="115" y="1610" class="section">4 · DECISIÓN Y CICLO DE VIDA</text>
+  <text x="575" y="1610" class="sectionNote">Las zonas se congelan, confirman y ejecutan contra Alpaca Producción.</text>
+  <rect x="115" y="1645" width="670" height="290" rx="24" class="decision"/>
+  <text x="155" y="1695" class="cardTitle">ENTRY WATCHER 5.5</text>
+  <text x="155" y="1733" class="body">Consume Long + Swing + Intraday</text>
+  <text x="155" y="1770" class="body">y contexto Gamma.</text>
+  <text x="155" y="1810" class="small">Congela tesis Long; ARMED → IN_ZONE</text>
+  <text x="155" y="1842" class="small">→ EARLY_ENTRY / IMPULSE_EXTENDED</text>
+  <text x="155" y="1874" class="small">→ TRIGGERED o INVALIDATED</text>
+  <rect x="155" y="1890" width="260" height="29" rx="14" fill="#b39df8"/>
+  <text x="285" y="1911" class="chip" text-anchor="middle">WATCHER LIFECYCLE</text>
+
+  <rect x="845" y="1645" width="670" height="290" rx="24" class="decision"/>
+  <text x="885" y="1695" class="cardTitle">ALERT 3.9</text>
+  <text x="885" y="1733" class="body">Único dueño de Core L1–L4</text>
+  <text x="885" y="1770" class="body">y LocalAlert / EntrySignal.</text>
+  <text x="885" y="1810" class="small">Evalúa continuación, Watcher,</text>
+  <text x="885" y="1842" class="small">Recovery y modificador Gamma acotado.</text>
+  <rect x="885" y="1890" width="245" height="29" rx="14" fill="#b39df8"/>
+  <text x="1007" y="1911" class="chip" text-anchor="middle">DECISION OWNER</text>
+
+  <rect x="1575" y="1645" width="760" height="290" rx="24" class="decision"/>
+  <text x="1615" y="1695" class="cardTitle">ENTRY OPPORTUNITY 9.0</text>
+  <text x="1615" y="1733" class="body">Materializa oportunidades y operaciones.</text>
+  <text x="1615" y="1770" class="small">Analysis + lifecycle + EntrySignal + 1m</text>
+  <text x="1615" y="1802" class="small">→ legs por horizonte → P/L + outcomes</text>
+  <text x="1615" y="1842" class="small">No crea la zona: conserva niveles y provenance.</text>
+  <rect x="1615" y="1890" width="300" height="29" rx="14" fill="#b39df8"/>
+  <text x="1765" y="1911" class="chip" text-anchor="middle">EXECUTION LIFECYCLE</text>
+
+  <rect x="2395" y="1645" width="820" height="290" rx="24" class="decision"/>
+  <text x="2435" y="1695" class="cardTitle">ENTRY RECOVERY 1.1</text>
+  <text x="2435" y="1733" class="body">Reentrada tras leg invalidada.</text>
+  <text x="2435" y="1770" class="small">Publica EntrySetupAssessment sin madurez;</text>
+  <text x="2435" y="1802" class="small">Alert decide si Swing + Intraday ⇒ L2.</text>
+  <text x="2435" y="1842" class="small">No relaja ni reescribe la invalidación original.</text>
+  <rect x="2435" y="1890" width="320" height="29" rx="14" fill="#b39df8"/>
+  <text x="2595" y="1911" class="chip" text-anchor="middle">EVIDENCE, NOT MATURITY</text>
+
+  <path d="M450 1540 V1635" class="edgePurple"/>
+  <path d="M785 1790 H835" class="edgePurple"/>
+  <path d="M1515 1790 H1565" class="edgePurple"/>
+  <path d="M2335 1860 H2385" class="edgePurple"/>
+  <path d="M2805 1645 V1585 H1180 V1635" class="edgePurple"/>
+
+  <!-- Durability -->
+  <text x="115" y="2015" class="section">5 · DURABILIDAD Y CONSUMO</text>
+  <rect x="115" y="2050" width="700" height="260" rx="24" class="output"/>
+  <text x="155" y="2100" class="cardTitle">PostgreSQL local</text>
+  <text x="155" y="2140" class="body">History cache · watchlist · holdings</text>
+  <text x="155" y="2177" class="body">theses · opportunity state · outbox</text>
+  <text x="155" y="2222" class="small">Estado + envelope en una transacción corta</text>
+  <text x="155" y="2254" class="small">At-least-once; event IDs idempotentes</text>
+
+  <rect x="875" y="2050" width="580" height="260" rx="24" class="output"/>
+  <text x="915" y="2100" class="cardTitle">Outbox Relay</text>
+  <text x="915" y="2140" class="body">Claim → publish → retry</text>
+  <text x="915" y="2177" class="small">Publica fuera de la transacción</text>
+  <text x="915" y="2222" class="small">Evita el dual-write DB ↔ NATS</text>
+
+  <rect x="1515" y="2050" width="690" height="260" rx="24" class="output"/>
+  <text x="1555" y="2100" class="cardTitle">NATS JetStream</text>
+  <text x="1555" y="2140" class="body">Resultados + signals + health</text>
+  <text x="1555" y="2177" class="body">transiciones + replay 7 días</text>
+  <text x="1555" y="2222" class="small">Backbone desacoplado y observable</text>
+
+  <rect x="2265" y="2050" width="950" height="260" rx="24" class="output"/>
+  <text x="2305" y="2100" class="cardTitle">Ejecución + observabilidad</text>
+  <text x="2305" y="2140" class="body">Alpaca Trading API · Comitente Producción</text>
+  <text x="2305" y="2177" class="body">Órdenes reales + estado de ejecución</text>
+  <text x="2305" y="2222" class="small">Compras Confirmadas · monitores · Connector remoto</text>
+  <text x="2305" y="2254" class="small">Los operator views no condicionan readiness.</text>
+  <path d="M815 2180 H865" class="edge"/>
+  <path d="M1455 2180 H1505" class="edge"/>
+  <path d="M2205 2180 H2255" class="edge"/>
+  <path d="M1945 1935 V2040" class="edgeSoft"/>
+
+  <!-- Principles strip -->
+  <rect x="115" y="2360" width="3100" height="210" rx="24" fill="#091728" stroke="#29435a" stroke-width="2"/>
+  <text x="155" y="2410" class="cardTitle">Principios que sostienen el modelo</text>
+  <text x="155" y="2455" class="body">① Aislamiento por proceso</text>
+  <text x="760" y="2455" class="body">② Contratos estables</text>
+  <text x="1320" y="2455" class="body">③ Configuración inmutable</text>
+  <text x="2030" y="2455" class="body">④ Estado durable + outbox</text>
+  <text x="2750" y="2455" class="body">⑤ Pureza analítica</text>
+  <text x="155" y="2505" class="small">Un engine caído degrada parcialmente; no detiene el resto · Fechas/entropía inyectadas · Decimal + hash canónico + UUIDv7 · warmup explícito.</text>
+  <text x="155" y="2542" class="tiny">Fuente: definición 7.45.0, runtime process plan y código de engines del checkout Windows · 2026-09-02</text>
+
+  <!-- Right panel: zone formulas -->
+  <text x="3345" y="310" class="section">CÓMO CALCULA ZONAS CADA ENGINE</text>
+  <text x="3345" y="345" class="sectionNote">Sólo los productores de geometría; el resto consume o congela.</text>
+
+  <g transform="translate(3345,375)">
+    <rect width="1340" height="230" rx="22" class="zoneCard"/>
+    <rect width="1340" height="52" rx="22" class="zoneHeader"/>
+    <text x="28" y="36" class="cardTitle">LONG TERM · zona semanal de compra</text>
+    <text x="28" y="88" class="small">13 semanas + SMA 10/30/50W; usa sólo barras completadas.</text>
+    <text x="28" y="126" class="formula">LOW = max(floor, cierreW × 0.82)</text>
+    <text x="28" y="158" class="formula">HIGH = min(SMA10W×1.05, SMA30W×1.08, cierreW×1.02)</text>
+    <text x="28" y="195" class="small">floor=min(soporte13W,SMA10/30/50W) · invalid=min(soporte,SMA30/50W)×0.97</text>
+  </g>
+
+  <g transform="translate(3345,625)">
+    <rect width="1340" height="255" rx="22" class="zoneCard"/>
+    <rect width="1340" height="52" rx="22" class="zoneHeader"/>
+    <text x="28" y="36" class="cardTitle">SWING · banda alrededor del soporte técnico</text>
+    <text x="28" y="88" class="small">Anchor más cercano al spot: soporte, SMA20/50, pivot-AVWAP o breakout-AVWAP.</text>
+    <text x="28" y="126" class="formula">ENTRY = anchor ± 0.50 × ATR14 diario</text>
+    <text x="28" y="160" class="formula">STRUCTURAL SUPPORT = mínimo diario 10 ruedas</text>
+    <text x="28" y="194" class="small">invalid≈soporte×0.985 · resistencia=max(cierres 20d) · mecha máxima sólo liquidity</text>
+    <text x="28" y="226" class="tiny">Support Confirmation y Order Flow enriquecen; no reemplazan la zona nativa.</text>
+  </g>
+
+  <g transform="translate(3345,900)">
+    <rect width="1340" height="250" rx="22" class="zoneCard"/>
+    <rect width="1340" height="52" rx="22" class="zoneHeader"/>
+    <text x="28" y="36" class="cardTitle">4HGERI · niveles horizontales alternantes</text>
+    <text x="28" y="88" class="small">Pivot confirmado → cierre 4H rompe N por 0.10 ATR → extremo intermedio crea el N siguiente.</text>
+    <text x="28" y="126" class="formula">SUPPORT ZONE = N ± 0.25 × ATR14(4H)</text>
+    <text x="28" y="160" class="formula">INVALID = N − 0.50 × ATR14(4H)</text>
+    <text x="28" y="198" class="small">N1/N2/N3 ≠ L1/L2/L3 · v1.8 rebasa la cadena si el nivel se separa &gt;3 ATR.</text>
+    <text x="28" y="228" class="tiny">Lane countertrend espejada; extensión máxima 1.50 ATR.</text>
+  </g>
+
+  <g transform="translate(3345,1170)">
+    <rect width="1340" height="270" rx="22" class="zoneCard"/>
+    <rect width="1340" height="52" rx="22" class="zoneHeader"/>
+    <text x="28" y="36" class="cardTitle">SWING TRADE · retracement Fibonacci causal</text>
+    <text x="28" y="88" class="small">60 ruedas: mínimo L debe preceder al máximo H; R = H − L.</text>
+    <text x="28" y="126" class="formula">ZONE = [ H − 0.618R , H − 0.500R ]</text>
+    <text x="28" y="160" class="formula">SUPPORT20 BAND = minLow20 ± 0.25 ATR</text>
+    <text x="28" y="194" class="small">invalid=minLow20−0.50ATR · targets=resistencia20 y L+1.618R</text>
+    <text x="28" y="228" class="small">ST1 geometría/RR · ST2 soporte · ST3 reacción 15m · ST4 reacción 4HGERI.</text>
+  </g>
+
+  <g transform="translate(3345,1460)">
+    <rect width="1340" height="245" rx="22" class="zoneCard"/>
+    <rect width="1340" height="52" rx="22" class="zoneHeader"/>
+    <text x="28" y="36" class="cardTitle">INTRADAY · trigger y caja de riesgo (no zona HTF)</text>
+    <text x="28" y="88" class="small">Trigger = rango previo o VWAP de sesión, según breakout / reclaim.</text>
+    <text x="28" y="126" class="formula">LONG invalid = max(low vela, trigger − 0.25 ATR)</text>
+    <text x="28" y="160" class="formula">SHORT invalid = min(high vela, trigger + 0.25 ATR)</text>
+    <text x="28" y="198" class="small">target = entrada ± 1.5R · V7 exige estructura, persistencia y eficiencia.</text>
+  </g>
+
+  <g transform="translate(3345,1725)">
+    <rect width="1340" height="275" rx="22" class="zoneCard"/>
+    <rect width="1340" height="52" rx="22" class="zoneHeader"/>
+    <text x="28" y="36" class="cardTitle">SUPPORT CONF. / PATREON · cluster multi-fuente</text>
+    <text x="28" y="88" class="small">Pivots D/W + SMA + Fibonacci + round numbers (+ AVWAP/breakout en Patreon).</text>
+    <text x="28" y="126" class="formula">cluster: |nivel − seed| ≤ 0.35 ATR</text>
+    <text x="28" y="160" class="formula">ZONE = [min(levels)−0.10ATR, max(levels)+0.10ATR]</text>
+    <text x="28" y="194" class="small">invalid=low−0.75ATR · Support v0.3 exige ≥2 familias independientes.</text>
+    <text x="28" y="226" class="small">Patreon usa centro ponderado, ancho≤0.75ATR y congela zona al armar watch.</text>
+  </g>
+
+  <g transform="translate(3345,2020)">
+    <rect width="1340" height="235" rx="22" class="zoneCard"/>
+    <rect width="1340" height="52" rx="22" class="zoneHeader"/>
+    <text x="28" y="36" class="cardTitle">ELLIOTT WAVE · bandas de fin de corrección</text>
+    <text x="28" y="91" class="formula">Wave 2 = [H1−0.786R1, H1−0.500R1]</text>
+    <text x="28" y="127" class="formula">Wave 4 = [H3−0.500R3, H3−0.236R3]</text>
+    <text x="28" y="169" class="small">Pivots confirmados + impulso mínimo en ATR + no-overlap + follow-through.</text>
+    <text x="28" y="201" class="tiny">Observacional y holdings-only; no modifica Core.</text>
+  </g>
+
+  <g transform="translate(3345,2275)">
+    <rect width="1340" height="275" rx="22" class="zoneCard"/>
+    <rect width="1340" height="52" rx="22" class="zoneHeader"/>
+    <text x="28" y="36" class="cardTitle">OPTIONS GAMMA · zonas de influencia, no entradas</text>
+    <text x="28" y="88" class="formula">GEX = gamma × OI × 100 × spot² × 1%</text>
+    <text x="28" y="122" class="small">Walls = strike con mayor GEX call / put / absoluto · Max Pain = payout mínimo.</text>
+    <text x="28" y="156" class="small">Expected Move = straddle ATM; fallback spot×IV×√(DTE/365).</text>
+    <text x="28" y="190" class="small">Gamma Flip = cruce de GEX neto escaneado entre 80% y 120% del spot.</text>
+    <text x="28" y="228" class="tiny">Watcher / Alert / Fusion consumen calidad y freshness; Gamma nunca crea L1–L4.</text>
+  </g>
+
+  <!-- Footer note right -->
+  <rect x="3345" y="2570" width="1340" height="60" rx="20" fill="#272044" stroke="#6f61ad"/>
+  <text x="3372" y="2608" class="small">WATCHER congela Long / pullback 38.2–61.8%; Alert decide; Opportunity mide; Fusion compara.</text>
+</svg>

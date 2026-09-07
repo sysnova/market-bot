@@ -10,6 +10,7 @@ from app.contracts.geri_4h import GeriAssessment
 from app.contracts.market_analysis import MarketBar
 from app.contracts.order_flow_support import OrderFlowSupportAssessment
 from app.contracts.support_confirmation import SupportAssessment
+from app.contracts.swing_trade import SwingTradeAssessment
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,3 +26,5 @@ class SwingTradeContext:
     current_price_at: datetime | None = None
     four_hour_bars: tuple[MarketBar, ...] = ()
     momentum_daily_bars: tuple[MarketBar, ...] | None = None
+    previous_assessment: SwingTradeAssessment | None = None
+    allow_new_entry: bool = True

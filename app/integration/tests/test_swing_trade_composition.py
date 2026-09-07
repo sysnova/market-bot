@@ -400,3 +400,36 @@ async def test_bootstrap_does_not_emit_actionable_signal_from_previous_session()
         SWING_TRADE_ASSESSMENT_EVENT,
         SWING_TRADE_TRANSITION_EVENT,
     ]
+
+
+@pytest.mark.asyncio
+async def test_rebound_operational_stop_and_exit_survive_runtime_restart() -> None:
+    from dataclasses import replace
+
+    from app.entry_opportunity_engine import (
+        EntryOpportunityEngineV11,
+        InMemoryEntryOpportunityStore,
+    )
+    from app.swing_trade_engine.tests.test_v17 import append_bar, context_at, values
+    from app.swing_trade_engine.v17 import SwingTradeEngineV17
+
+    engine = SwingTradeEngineV17()
+    ctx = context_at(7)
+    entered = engine.analyze(ctx)
+    publisher = Publisher()
+    runtime = SwingTradeRuntime(engine=engine, publisher=publisher)
+    await runtime._publish(entered, None, actionable_signals_enabled=True)
+    signal = EntrySignal.model_validate_json(publisher.events[-1].payload.model_dump_json())
+    assert signal.invalidation == values(entered)["operational_stop"]
+    assert signal.invalidation > entered.invalidation
+    manager = EntryOpportunityEngineV11(store=InMemoryEntryOpportunityStore())
+    active = manager._new_swing_trade_opportunity(signal)
+    restored = SwingTradeAssessment.model_validate_json(entered.model_dump_json())
+    ctx = append_bar(ctx, "96", high="97", low="95")
+    exited = engine.analyze(replace(ctx, previous_assessment=restored))
+    await runtime._publish(exited, restored, actionable_signals_enabled=True)
+    exit_signal = EntrySignal.model_validate_json(publisher.events[-1].payload.model_dump_json())
+    updated, reason = manager._apply_swing_trade(active, exit_signal)
+    assert updated is not None
+    assert reason == "swing_trade_rebound_exit"
+    assert all(leg.status.value != "OPEN" for leg in updated.legs)

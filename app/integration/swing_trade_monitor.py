@@ -196,6 +196,15 @@ def _format_assessment(item: SwingTradeAssessment, *, color: bool) -> list[str]:
         ),
         f"  RAZONES {','.join(item.reasons)}",
     ]
+    if metrics.get("rebound_state") is not None:
+        lines.insert(
+            -1,
+            f"  REBOTE {metrics.get('rebound_state')}"
+            f" | STOP OPERATIVO {metrics.get('operational_stop', '-')}"
+            f" | RIESGO % {metrics.get('entry_risk_percent', '-')}"
+            f" | R:R OPERATIVO {metrics.get('operational_reward_risk', '-')}"
+            " | MACD 4H COMPLEMENTARIO",
+        )
     if metrics.get("support_contribution") is not None:
         lines.insert(
             -1,

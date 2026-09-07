@@ -2189,6 +2189,73 @@ class EntryOpportunityEngineV10(EntryOpportunityEngineV9):
         )
 
 
+class EntryOpportunityEngineV11(EntryOpportunityEngineV10):
+    """Consume explicit SwingTrade rebound exits without closing other strategies."""
+
+    engine_version = "11.0.0"
+
+    def _apply_swing_trade(
+        self, active: EntryOpportunity, signal: EntrySignal
+    ) -> tuple[EntryOpportunity | None, str]:
+        if (
+            signal.swing_trade_maturity is not None
+            or "swing_trade_rebound_exit" not in signal.reasons
+        ):
+            return super()._apply_swing_trade(active, signal)
+        signal = _canonical_swing_trade_signal(signal)
+        active = _consolidate_swing_trade_theses(active)
+        previous = _signal_reference_for_setup(active, signal)
+        if previous is None or signal.created_at <= previous.created_at:
+            return None, "stale_or_untracked_rebound_exit"
+        outcome = (
+            EntryLegStatus.TARGET_HIT
+            if "rebound_target_reached" in signal.reasons
+            else EntryLegStatus.INVALIDATED
+        )
+        legs = tuple(
+            _close_leg(leg, price=signal.entry_price, now=signal.created_at, status=outcome)
+            if _swing_trade_leg_matches_setup(active, leg, setup_id=signal.setup_id)
+            and leg.status is EntryLegStatus.OPEN
+            and signal.created_at >= (leg.opened_at or active.armed_at)
+            else leg
+            for leg in active.legs
+        )
+        checkpoints = tuple(
+            _close_checkpoint(cp, price=signal.entry_price, now=signal.created_at, outcome=outcome)
+            if cp.signal_family is EntrySignalFamily.SWING_TRADE
+            and cp.setup_id == signal.setup_id
+            and cp.status is EntryCheckpointStatus.OPEN
+            and signal.created_at >= cp.reached_at
+            else cp
+            for cp in active.checkpoints
+        )
+        if legs == active.legs and checkpoints == active.checkpoints:
+            return None, "duplicate_rebound_exit"
+        updated = active.model_copy(
+            update={
+                "legs": legs,
+                "checkpoints": checkpoints,
+                "signal_references": _replace_signal_reference(
+                    active.signal_references, _swing_trade_reference(signal, previous)
+                ),
+                "current_price": signal.entry_price,
+                "updated_at": max(active.updated_at, signal.created_at),
+                "revision": active.revision + 1,
+            }
+        )
+        if not any(
+            leg.status in {EntryLegStatus.OPEN, EntryLegStatus.WATCHING} for leg in legs
+        ) and not any(cp.status is EntryCheckpointStatus.OPEN for cp in checkpoints):
+            updated = self._close_opportunity(
+                updated,
+                price=signal.entry_price,
+                now=signal.created_at,
+                reason=EntryCloseReason.ALL_HORIZONS_CLOSED,
+                leg_status=outcome,
+            )
+        return updated, "swing_trade_rebound_exit"
+
+
 def _leg_family(opportunity: EntryOpportunity, leg: EntryHorizonLeg) -> EntrySignalFamily | None:
     if leg.signal_family is not None:
         return leg.signal_family

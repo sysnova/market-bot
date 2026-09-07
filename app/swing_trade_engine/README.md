@@ -88,3 +88,59 @@ without a duplicate transition or EntrySignal. Confirmed-buy events retain their
 native ST3/ST4 maturity and include the observed quality in their reasons. No broker
 orders are placed. Historical performance comparisons must use the observations
 available at entry, not later quality updates, and still require out-of-sample validation.
+
+
+## Rebound entry and operational risk (1.7.0)
+
+MarketBot `7.50.0` selects SwingTrade implementation `1.7.0`, strategy `1.4.0`,
+and Entry Opportunity `11.0.0`. Other slots are unchanged. `7.49.0` remains the
+rollback definition. Windows defaults and the versioned Linux launcher source
+select the new assembly; existing processes/checkouts must be restarted/deployed
+separately. This is paper-trade lifecycle management, never broker execution.
+
+Entry requires a Fibonacci touch followed by a bullish 15m close above the fixed
+maximum of four preceding bars, with same-slot RVOL >= 1.20 (minimum five samples).
+Reference, touch, breakout and acceptance must be consecutive bars in one session.
+A subsequent bullish retest closes above the recovered reference (a volatility
+buffer allows near-touches), or a complete RTH-aligned hour beginning at/after the
+breakout has all four closes above it. Confirmation expires after eight 15m bars.
+The touch is remembered within that window even if price leaves Fibonacci.
+Acceptance must close above the volume-weighted session VWAP, requiring contiguous
+history from 09:30 ET and actual bar VWAP values. Missing price/volume confirmation
+remains pending. No synthetic partial hour is used; the final half-hour is not 1H.
+
+The operational stop is the higher of the structural invalidation and the rejection
+low minus 0.25 times the mean high-low range of the reference and touch bars.
+It is never clipped to a percentage or widened after entry. The initial stop distance
+must be <= 4% of entry, primary R/R must be strictly > 1.50, support confluence must
+hold, and price must remain within the existing extension bound. These configurable
+initial parameters are engineering defaults, not calibrated performance claims.
+
+The assessment retains `invalidation` as the structural daily level for compatibility;
+`operational_stop`, `entry_risk_percent`, and `operational_reward_risk` expose trade
+risk. ST3/ST4 transitions and EntrySignals carry the operational stop. Entry R/R uses
+the operational stop; structural R/R remains available as a metric. The monitor
+shows both levels. Each accepted rebound gets a distinct setup suffix; a failed
+rebound cannot reuse its old touch to enter again.
+
+After entry, immutable stop/entry/target identity and counters are restored from the
+previous persisted assessment supplied by integration. A missing daily window or
+invalid new daily impulse cannot disable the existing operational stop. Stop touch exits; two closes
+below the recovered reference exit even above that stop. After eight bars, failure
+to reach 0.5R combined with a close at/below entry triggers the no-progress exit.
+Target touch also ends the observed episode. When a bar touches both stop and target,
+stop takes precedence; simulated stop fills use min(open, stop), including gaps,
+and target fills use max(open, target). These are OHLC simulation assumptions.
+Checks run on completed 15m bars, not a live broker stop. Gap losses can exceed 4%.
+
+Entry Opportunity `11.0.0` consumes the explicit `swing_trade_rebound_exit` reason,
+closing only matching SwingTrade legs/checkpoints. Ordinary maturity loss keeps its
+old behavior. No other strategy's open position is closed by this event. Old entries
+without rebound state retain their previously recorded stop; they are not silently
+retrofitted. Stale bootstrap evidence cannot create a new open rebound episode.
+
+MACD 4H is always complementary. Only completed observations contribute; an
+unfinished bar, absent history or stale MACD cannot block entry or invalidate an
+open trade. Negative/improving/deteriorating MACD changes observations only.
+Validation covers deterministic entry, risk, exits, serialization and publication;
+profitability and parameter selection still require out-of-sample historical testing.

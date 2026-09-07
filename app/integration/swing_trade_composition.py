@@ -266,6 +266,8 @@ class SwingTradeRuntime:
         try:
             assessment = self._engine.analyze(
                 SwingTradeContext(
+                    previous_assessment=self._latest.get(bar.symbol),
+                    allow_new_entry=actionable_signals_enabled,
                     symbol=bar.symbol,
                     as_of=bar.timestamp + timedelta(minutes=15),
                     current_price=bar.close,
@@ -347,7 +349,7 @@ class SwingTradeRuntime:
             current_price=item.current_price,
             zone_low=item.zone_low,
             zone_high=item.zone_high,
-            invalidation=item.invalidation,
+            invalidation=_operational_stop(item),
             primary_target=item.primary_target,
             reward_risk=item.reward_risk,
             eligible=item.eligible,
@@ -381,11 +383,16 @@ class SwingTradeRuntime:
             symbol=item.symbol,
             created_at=occurred_at,
             setup_id=setup_id,
-            entry_price=item.current_price,
+            entry_price=(
+                Decimal(str(_metric(item, "rebound_exit_price")))
+                if "swing_trade_rebound_exit" in item.reasons
+                and _metric(item, "rebound_exit_price") is not None
+                else item.current_price
+            ),
             horizons=(AnalysisHorizon.SWING,),
             zone_low=signal_basis.zone_low,
             zone_high=signal_basis.zone_high,
-            invalidation=signal_basis.invalidation,
+            invalidation=_operational_stop(signal_basis),
             targets=(signal_basis.primary_target, signal_basis.extended_target),
             policy_id="swing-trade",
             policy_version=signal_basis.strategy_version,
@@ -421,6 +428,8 @@ def _material_change(previous: SwingTradeAssessment, current: SwingTradeAssessme
         or previous.impulse_high_at != current.impulse_high_at
         or previous.zone_low != current.zone_low
         or previous.zone_high != current.zone_high
+        or _metric(previous, "rebound_state") != _metric(current, "rebound_state")
+        or _metric(previous, "operational_stop") != _metric(current, "operational_stop")
         or previous.invalidation != current.invalidation
         or previous.primary_target != current.primary_target
         or previous.geri_confluence is not current.geri_confluence
@@ -434,6 +443,17 @@ def _bootstrap_actionable_signal_is_fresh(bar: MarketBar, *, now: datetime) -> b
     completed_at = bar.timestamp + timedelta(minutes=15)
     age = now - completed_at
     return timedelta(0) <= age <= _BOOTSTRAP_ACTIONABLE_SIGNAL_MAX_AGE
+
+
+def _operational_stop(item: SwingTradeAssessment) -> Decimal:
+    value = _metric(item, "operational_stop")
+    if (
+        item.engine_version == "1.7.0"
+        and _metric(item, "rebound_state") in {"OPEN", "EXITED"}
+        and value is not None
+    ):
+        return Decimal(str(value))
+    return item.invalidation
 
 
 def _metric(item: SwingTradeAssessment, name: str) -> object | None:
@@ -508,7 +528,7 @@ async def run_swing_trade_process(
             symbols=selected,
             requirements=(
                 SWING_TRADE_MOMENTUM_HISTORY_REQUESTS
-                if engine_version == "1.6.0"
+                if engine_version in {"1.6.0", "1.7.0"}
                 else SWING_TRADE_HISTORY_REQUESTS
             ),
             as_of=SystemClock().now(),
