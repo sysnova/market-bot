@@ -88,3 +88,22 @@ is not implemented by these fixed 09:30–16:00 aggregators.
 
 See `docs/recovery-countertrend-design.md` and the Windows `output/recovery-7.51.0-validation.md`
 report. This implementation does not enable broker orders or deploy the WSL checkout.
+
+Version `1.10.0`, selected by `7.52.0` and `geri_4h/1.4.0`, preserves the structural
+recovery after an overhead resistance is touched. Each subsequent completed 15m breakout
+and consecutive acceptance above that resistance can create another entry window, with a
+higher tactical stop and the nearest overhead obstacle known at that acceptance. A wick
+alone cannot renew the entry. Missing targets, risk above 4%, R/R <= 1.5, extension and the
+original five-session TTL still block entries. The structural floor remains the thesis
+invalidation; losing a tactical stop disables that entry without erasing structural maturity.
+
+`countertrend_accepted_at` identifies the original recovery. The new
+`countertrend_entry_accepted_at`, `countertrend_entry_sequence` and
+`countertrend_entry_recovery_level` identify successive entry windows. Each window has a
+distinct signal setup ID; an open paper position keeps its original levels. CT3 requires
+a completed 4H close after the original acceptance; CT4 additionally requires an accepted
+subsequent resistance. The prior `1.9.0` behavior remains available for rollback.
+
+The HUT replay still has zero entries: it now retains CT4 and evaluates six renewals rather
+than terminating at 81.55, but the nearest-obstacle R/R filter rejects all six. See
+`output/recovery-7.52.0-validation.md` for evidence and controls.

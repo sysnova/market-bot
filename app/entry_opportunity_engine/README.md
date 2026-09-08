@@ -76,3 +76,10 @@ uv run marketbot entry-opportunity prune-history --older-than-days 30
 History pruning is dry-run by default. It only targets old single-reason legacy
 `*_evidence_updated` events, preserves the newest configured count per opportunity, and requires
 `--apply` before it deletes bounded batches. It never runs `VACUUM`, `VACUUM FULL`, or `pg_repack`.
+
+Version `13.0.0` retains `12.0.0`'s CT2 minimum for paper entries and its directional
+geometry/R/R validation. For progressive recovery signals from GERI `1.10.0`, a pending
+entry or reached intermediate resistance leaves an unfilled observation active, including
+at session close. Structural invalidation and expiration still end that observation.
+Successive accepted resistances have distinct setup IDs; a new setup cannot rewrite an
+open paper leg or its checkpoints. Version `12.0.0` remains available for rollback.

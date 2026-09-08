@@ -104,11 +104,12 @@ class Swing4HGeriRuntime:
             "1.7.0",
             "1.8.0",
             "1.9.0",
+            "1.10.0",
         }
         self._publisher = publisher
         self._clock = clock or SystemClock()
         self._emit_countertrend_signals = emit_countertrend_signals
-        self._recovery_lanes = getattr(engine, "engine_version", "") == "1.9.0"
+        self._recovery_lanes = getattr(engine, "engine_version", "") in {"1.9.0", "1.10.0"}
         self._bars = MarketBarStore(capacity_per_series=600 if self._recovery_lanes else 80)
         self._minute = MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_15,),
@@ -507,7 +508,10 @@ def _countertrend_observation(item: GeriAssessment) -> tuple[tuple[str, object],
         (metric.name, metric.value)
         for metric in item.metrics
         if metric.name in material_names
-        or (item.engine_version == "1.9.0" and metric.name.startswith(("countertrend_", "short_")))
+        or (
+            item.engine_version in {"1.9.0", "1.10.0"}
+            and metric.name.startswith(("countertrend_", "short_"))
+        )
     )
 
 
@@ -534,7 +538,7 @@ def _countertrend_signal(item: GeriAssessment) -> EntrySignal | None:
         GeriMaturity.L3.value: GeriCountertrendMaturity.CT3,
         GeriMaturity.L4.value: GeriCountertrendMaturity.CT4,
     }.get(str(state_value))
-    if item.engine_version == "1.9.0":
+    if item.engine_version in {"1.9.0", "1.10.0"}:
         raw_maturity = metrics.get("countertrend_maturity")
         maturity = GeriCountertrendMaturity(str(raw_maturity)) if raw_maturity is not None else None
         if metrics.get("countertrend_eligible") is not True:
@@ -561,12 +565,19 @@ def _countertrend_signal(item: GeriAssessment) -> EntrySignal | None:
     reasons = _countertrend_signal_reasons(
         metrics, state_value, maturity, current_price=item.current_price
     )
+    setup_id = f"geri-countertrend:{item.symbol}:{source_at.isoformat()}:{item.engine_version}"
+    if (
+        item.engine_version == "1.10.0"
+        and metrics.get("countertrend_entry_accepted_at") is not None
+    ):
+        # A new acceptance is a new entry window, never a rewrite of an existing paper trade.
+        setup_id += f":entry:{metrics['countertrend_entry_accepted_at']}"
     return EntrySignal(
         family=EntrySignalFamily.GERI_COUNTERTREND,
         countertrend_maturity=maturity,
         symbol=item.symbol,
         created_at=item.assessed_at or item.occurred_at,
-        setup_id=(f"geri-countertrend:{item.symbol}:{source_at.isoformat()}:{item.engine_version}"),
+        setup_id=setup_id,
         entry_price=item.current_price,
         horizons=(AnalysisHorizon.SWING,),
         zone_low=Decimal(str(metrics["countertrend_zone_low"])),
@@ -594,7 +605,11 @@ def _countertrend_signal_reasons(
         return ("countertrend_invalidated",)
     target = Decimal(str(metrics["countertrend_target"]))
     side = getattr(metrics.get("countertrend_side"), "value", metrics.get("countertrend_side"))
-    if side == TradeSide.LONG.value and current_price >= target:
+    if (
+        side == TradeSide.LONG.value
+        and current_price >= target
+        and metrics.get("countertrend_lifecycle") != "PROGRESSIVE_RECOVERY"
+    ):
         return ("countertrend_target_reached",)
     if maturity is not None:
         support_reason = _support_signal_reason(metrics, zone="TACTICAL")
@@ -687,7 +702,7 @@ async def run_swing_4h_geri_process(
                 "marketbot-4hgeri-restore-v1",
             ),
         )
-        if engine_version in {"1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0"}:
+        if engine_version in {"1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0", "1.10.0"}:
             replay_specs += (
                 (
                     "marketbot.v1.support-confirmation.assessment.>",
@@ -712,6 +727,7 @@ async def run_swing_4h_geri_process(
             "1.7.0",
             "1.8.0",
             "1.9.0",
+            "1.10.0",
         }:
             replay_specs += (
                 (

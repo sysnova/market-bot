@@ -119,7 +119,7 @@ def _format_assessment(item: GeriAssessment, *, color: bool) -> str:
         if item.standalone_swing
         else f"4HGERI {item.maturity.value}"
     )
-    if item.engine_version == "1.9.0":
+    if item.engine_version in {"1.9.0", "1.10.0"}:
         heading = (
             f"4HGERI v{item.engine_version} | {stage} | "
             f"SESGO ESTRUCTURAL {item.trade_side.value}"
@@ -163,7 +163,7 @@ def _format_countertrend(item: GeriAssessment) -> str:
     state_value = state.value if hasattr(state, "value") else str(state)
     eligible = "SI" if metrics.get("countertrend_eligible") else "NO"
     expired = "SI" if metrics.get("countertrend_expired") else "NO"
-    if item.engine_version == "1.9.0":
+    if item.engine_version in {"1.9.0", "1.10.0"}:
         confluence = "SI" if metrics.get("countertrend_fibonacci_confluence") else "NO"
         return (
             f"  COUNTERTREND LONG / RECUPERACION | "

@@ -92,7 +92,7 @@ class Swing4HGeriEngineV19(Swing4HGeriEngineV18):
             update={
                 "metrics": (
                     *structural.metrics,
-                    *recovery_metrics(context, self._recovery),
+                    *self._recovery_metrics(context),
                     *short_metrics(context, self._short),
                     NamedValue(name="atr_duration_normalized", value=True),
                 )
@@ -117,3 +117,6 @@ class Swing4HGeriEngineV19(Swing4HGeriEngineV18):
         payload = "|".join(m.model_dump_json() for m in result.metrics)
         digest = hashlib.sha256(f"{result.context_hash}|{payload}".encode()).hexdigest()
         return result.model_copy(update={"context_hash": f"sha256:{digest}"})
+
+    def _recovery_metrics(self, context: Swing4HGeriContext) -> tuple[NamedValue, ...]:
+        return recovery_metrics(context, self._recovery)

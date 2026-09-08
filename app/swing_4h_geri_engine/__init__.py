@@ -13,6 +13,7 @@ from .v16 import Swing4HGeriEngineV16
 from .v17 import Swing4HGeriEngineV17
 from .v18 import Swing4HGeriEngineV18
 from .v19 import Swing4HGeriEngineV19
+from .v110 import Swing4HGeriEngineV110
 
 __all__ = [
     "Swing4HGeriContext",
@@ -26,4 +27,5 @@ __all__ = [
     "Swing4HGeriEngineV17",
     "Swing4HGeriEngineV18",
     "Swing4HGeriEngineV19",
+    "Swing4HGeriEngineV110",
 ]

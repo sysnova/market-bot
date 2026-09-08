@@ -1,0 +1,157 @@
+﻿hora_Nueva_York,precio,version,countertrend_maturity,countertrend_level_price,countertrend_recovery_reference,countertrend_invalidation,countertrend_target,countertrend_reward_risk,countertrend_eligible,countertrend_fibonacci_confluence,motivos
+2026-08-28T09:45:00-04:00,85.23,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,0.3065941071005046311124719222,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T10:00:00-04:00,85.72,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,0.2349610665972379032643236588,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T10:15:00-04:00,83.18,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,0.7252662010678926581174363803,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T10:30:00-04:00,84.405,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,0.4480068709119665186050728234,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T10:45:00-04:00,83.8601,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,0.5594856372000974667303530715,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T11:00:00-04:00,83.475,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,0.6492195742312124304138774435,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T11:15:00-04:00,83.08,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,0.7526615936494384951329850789,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T11:30:00-04:00,83.23,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,0.7118871719102610469863565773,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T11:45:00-04:00,82.13,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,1.064018585653691474185818167,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T12:00:00-04:00,80.14,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,2.287313397134211592360002640,False,False,countertrend_expired
+2026-08-28T12:15:00-04:00,80.36,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,2.085167084497603490000690465,False,False,countertrend_expired
+2026-08-28T12:30:00-04:00,79.9499,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,2.484600918860506300419586733,False,False,countertrend_expired
+2026-08-28T12:45:00-04:00,79.41,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,3.200577306955085164254757567,False,False,countertrend_expired
+2026-08-28T13:00:00-04:00,79.655,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,2.842322350732560446547203671,False,False,countertrend_expired
+2026-08-28T13:15:00-04:00,79.4,1.9.0,,77.3501,94.22,76.78234905036523758905765570,87.82,3.216624432365526867736561795,False,False,countertrend_expired
+2026-08-28T13:30:00-04:00,79.35,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.4517748022428847424016844689,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T13:45:00-04:00,79.62,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.3136397026260587155090028851,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T14:00:00-04:00,79.45,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.3973533344552173791254226527,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T14:15:00-04:00,79.28,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.4924627279003360735570657153,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T14:30:00-04:00,79.28,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.4924627279003360735570657153,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T14:45:00-04:00,78.85,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.8028434394563688819033019774,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T15:00:00-04:00,78.9,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.7602763809010552529338139201,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T15:15:00-04:00,78.92,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.7438071216779644589990588004,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T15:30:00-04:00,79.77,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.2476862299093086230353837329,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T15:45:00-04:00,79.86,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.2112000388078895668734223761,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-28T16:00:00-04:00,79.42,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.4132464912201264356604025500,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-31T09:45:00-04:00,79.1,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.6083746131928111422327966159,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-31T10:00:00-04:00,78.98,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,0.6961979108894784435536724929,False,False,countertrend_expired | insufficient_reward_risk
+2026-08-31T10:15:00-04:00,77.43,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,4.755648087502907919591893347,False,False,countertrend_expired
+2026-08-31T10:30:00-04:00,77.32,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,5.933217456729192125951913158,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T10:45:00-04:00,77.31,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,6.064615257899233300645793992,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T11:00:00-04:00,77.64,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,3.346349702314458693734481082,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T11:15:00-04:00,77.36,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,5.453120092664409944251990117,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T11:30:00-04:00,77.32,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,5.933217456729192125951913158,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T11:45:00-04:00,76.98,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,17.85976746645062121167027365,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T12:00:00-04:00,76.1,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,,False,False,countertrend_invalidated | countertrend_expired | target_or_invalidation_order_failed
+2026-08-31T12:15:00-04:00,76.17,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,,False,False,countertrend_invalidated | countertrend_expired | target_or_invalidation_order_failed
+2026-08-31T12:30:00-04:00,76.87,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,41.52835782347729589890904423,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T12:45:00-04:00,77.705,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,3.040152943115029720946875686,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T13:00:00-04:00,76.98,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,17.85976746645062121167027365,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T13:15:00-04:00,77.45,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,4.583233202430055772323175800,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T13:30:00-04:00,77.08,1.9.0,,77.3501,94.22,76.78234905036523758905765570,77.3501,0.9074387309411602224232379428,False,False,countertrend_invalidated | countertrend_expired | insufficient_reward_risk
+2026-08-31T13:45:00-04:00,77.2,1.9.0,,77.3501,94.22,76.78234905036523758905765570,77.3501,0.3593910181007923218661652448,False,False,countertrend_invalidated | countertrend_expired | insufficient_reward_risk
+2026-08-31T14:00:00-04:00,77.4,1.9.0,,77.3501,94.22,76.78234905036523758905765570,77.5,0.1619037420069269421345870046,False,False,countertrend_invalidated | countertrend_expired | insufficient_reward_risk
+2026-08-31T14:15:00-04:00,77.43,1.9.0,,77.3501,94.22,76.78234905036523758905765570,77.5,0.1080829110796115436270884852,False,False,countertrend_invalidated | countertrend_expired | insufficient_reward_risk
+2026-08-31T14:30:00-04:00,77.385,1.9.0,,77.3501,94.22,76.78234905036523758905765570,77.5,0.1908235605862662909664796722,False,False,countertrend_invalidated | countertrend_expired | insufficient_reward_risk
+2026-08-31T14:45:00-04:00,77.485,1.9.0,,77.3501,94.22,76.78234905036523758905765570,77.5,0.02134772607622175989933904438,False,False,countertrend_invalidated | countertrend_expired | insufficient_reward_risk
+2026-08-31T15:00:00-04:00,77.5,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,4.194239555499639404338476531,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T15:15:00-04:00,77.42,1.9.0,,77.3501,94.22,76.78234905036523758905765570,77.5,0.1254604890745052391932712517,False,False,countertrend_invalidated | countertrend_expired | insufficient_reward_risk
+2026-08-31T15:30:00-04:00,77.67,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,3.199455823450154062532587608,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T15:45:00-04:00,78.25,1.9.0,,77.3501,94.22,76.78234905036523758905765570,80.51,1.539875677225855698044890274,False,False,countertrend_invalidated | countertrend_expired
+2026-08-31T16:00:00-04:00,78.58,1.9.0,CT1,75.71,80.11,75.22365925590768961603670282,79.1,0.1549306341780947297260897365,False,False,insufficient_reward_risk
+2026-09-01T09:45:00-04:00,76.63,1.9.0,CT1,75.71,80.11,75.22365925590768961603670282,79.1,1.756331109921872818097367173,True,False,recovery_setup_eligible
+2026-09-01T10:00:00-04:00,76.17,1.9.0,CT1,75.71,80.11,75.22365925590768961603670282,79.1,3.096136374018568582852452189,True,False,recovery_setup_eligible
+2026-09-01T10:15:00-04:00,75.79,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,5.844538000360589371791044726,False,False,countertrend_invalidated
+2026-09-01T10:30:00-04:00,75.8,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,5.725779469569222575516717247,False,False,countertrend_invalidated
+2026-09-01T10:45:00-04:00,77.3,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.8669097329623924336422510277,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T11:00:00-04:00,78.86,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.06600041549734027793950416692,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T11:15:00-04:00,79.6299,1.9.0,,75.71,80.11,75.22365925590768961603670282,80.51,0.1997394266711365094742491327,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T11:30:00-04:00,79.4,1.9.0,,75.71,80.11,75.22365925590768961603670282,80.51,0.2657829109299002824471589836,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T11:45:00-04:00,79.17,1.9.0,,75.71,80.11,75.22365925590768961603670282,80.51,0.3395550680731221574640303240,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T12:00:00-04:00,79.16,1.9.0,,75.71,80.11,75.22365925590768961603670282,80.51,0.3429581145956660617687485418,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T12:15:00-04:00,78.895,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.05583791162121713999601906526,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T12:30:00-04:00,78.295,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.2621005180061536671184383795,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T12:45:00-04:00,78.075,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.3594800102806710576096131557,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T13:00:00-04:00,78.23,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.2893883541676426981599256371,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T13:15:00-04:00,77.865,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.4675655735679814441903450068,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T13:30:00-04:00,77.65,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.5976077364774428403145713870,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T13:45:00-04:00,78.13,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.3337530198314527467500722822,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T14:00:00-04:00,78.16,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.3201263347556672445648362906,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T14:15:00-04:00,77.935,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.4296767208394580068757374807,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T14:30:00-04:00,77.58,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.6450679952850034518067166929,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T14:45:00-04:00,77.13,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,1.033393429849814433649546453,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T15:00:00-04:00,77.765,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.5253132635217798762617610578,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T15:15:00-04:00,77.8606,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.4700143538593724252936721667,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T15:30:00-04:00,78.11,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.3429948463383289350251006747,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T15:45:00-04:00,78.01,1.9.0,,75.71,80.11,75.22365925590768961603670282,79.1,0.3911940785817575240546206912,False,False,countertrend_invalidated | insufficient_reward_risk
+2026-09-01T16:00:00-04:00,77.65,1.9.0,CT0,75.3096,79.99,74.91574816046797826632012949,79.1,0.5303096002481517457210711671,False,False,insufficient_reward_risk
+2026-09-02T09:45:00-04:00,78.08,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,0.3223510806746827395004558884,False,False,insufficient_reward_risk
+2026-09-02T10:00:00-04:00,76.04,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,2.721810089520287524676268801,True,False,recovery_setup_eligible
+2026-09-02T10:15:00-04:00,76.5,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.641153215115106974643169292,True,False,recovery_setup_eligible
+2026-09-02T10:30:00-04:00,76.905,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.103429920927649473181575124,False,False,insufficient_reward_risk
+2026-09-02T10:45:00-04:00,77.02,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,0.9884748398093760211872070918,False,False,insufficient_reward_risk
+2026-09-02T11:00:00-04:00,76.94,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.067060905079558338164642580,False,False,insufficient_reward_risk
+2026-09-02T11:15:00-04:00,76.55,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.560347027499879392387381966,True,False,recovery_setup_eligible
+2026-09-02T11:30:00-04:00,76.76,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.268807193161739879598190172,False,False,insufficient_reward_risk
+2026-09-02T11:45:00-04:00,76.585,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.506663009402515047141633193,True,False,recovery_setup_eligible
+2026-09-02T12:00:00-04:00,77.0475,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,0.9628231400755260067538855041,False,False,insufficient_reward_risk
+2026-09-02T12:15:00-04:00,76.85,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.163240460220718339286946896,False,False,insufficient_reward_risk
+2026-09-02T12:30:00-04:00,76.96,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.046837751893571643428050191,False,False,insufficient_reward_risk
+2026-09-02T12:45:00-04:00,77,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,1.007555785807301583028909177,False,False,insufficient_reward_risk
+2026-09-02T13:00:00-04:00,77.45,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,0.6510797286447629303673925744,False,False,insufficient_reward_risk
+2026-09-02T13:15:00-04:00,77.5,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,0.6191347048783533364177064154,False,False,insufficient_reward_risk
+2026-09-02T13:30:00-04:00,77.61,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,0.5530292224867908624175747278,False,False,insufficient_reward_risk
+2026-09-02T13:45:00-04:00,78.21,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,0.2701675656122370258647695001,False,False,insufficient_reward_risk
+2026-09-02T14:00:00-04:00,78.7551,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,79.1,0.08983287138436362513965733865,False,False,insufficient_reward_risk
+2026-09-02T14:15:00-04:00,80.89,1.9.0,CT1,75.3096,79.99,74.91574816046797826632012949,81.55,0.1104740840740485875363227885,False,False,insufficient_reward_risk
+2026-09-02T14:30:00-04:00,80.755,1.9.0,CT2,75.3096,79.99,78.40614816046797826632012949,81.55,0.3384632383447367372024906741,False,False,insufficient_reward_risk
+2026-09-02T14:45:00-04:00,81.3682,1.9.0,CT2,75.3096,79.99,78.40614816046797826632012949,81.55,0.06137637349004763159678165728,False,False,insufficient_reward_risk
+2026-09-02T15:00:00-04:00,80.92,1.9.0,CT2,75.3096,79.99,78.40614816046797826632012949,81.55,0.2506114282842065591775108152,False,False,insufficient_reward_risk
+2026-09-02T15:15:00-04:00,81.36,1.9.0,CT2,75.3096,79.99,78.40614816046797826632012949,81.55,0.06432279285548108908718212879,False,False,insufficient_reward_risk
+2026-09-02T15:30:00-04:00,80.77,1.9.0,CT2,75.3096,79.99,78.40614816046797826632012949,81.55,0.3299699189922236203381403038,False,False,insufficient_reward_risk
+2026-09-02T15:45:00-04:00,80.98,1.9.0,CT2,75.3096,79.99,78.40614816046797826632012949,81.55,0.2214579686543408482415351499,False,False,insufficient_reward_risk
+2026-09-02T16:00:00-04:00,80.62,1.9.0,CT3,75.3096,79.99,78.40614816046797826632012949,81.55,0.4200823123721727431659024135,False,False,insufficient_reward_risk
+2026-09-03T09:45:00-04:00,80.435,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,0.5495719195824509857478903115,False,False,countertrend_target_reached | insufficient_reward_risk
+2026-09-03T10:00:00-04:00,80.875,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,0.2734064431051270671815974529,False,False,countertrend_target_reached | insufficient_reward_risk
+2026-09-03T10:15:00-04:00,81.8,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | recovery_risk_limit_exceeded
+2026-09-03T10:30:00-04:00,83.04,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | recovery_risk_limit_exceeded
+2026-09-03T10:45:00-04:00,83.43,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | recovery_risk_limit_exceeded
+2026-09-03T11:00:00-04:00,84.9,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | recovery_risk_limit_exceeded
+2026-09-03T11:15:00-04:00,84.945,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | recovery_risk_limit_exceeded
+2026-09-03T11:30:00-04:00,85.6,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | recovery_risk_limit_exceeded
+2026-09-03T11:45:00-04:00,86.365,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T12:00:00-04:00,86.5025,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T12:15:00-04:00,86.71,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T12:30:00-04:00,86.305,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T12:45:00-04:00,86.99,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T13:00:00-04:00,87.16,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T13:15:00-04:00,87.57,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T13:30:00-04:00,87.48,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T13:45:00-04:00,87.29,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T14:00:00-04:00,87.29,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T14:15:00-04:00,87.23,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T14:30:00-04:00,86.66,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T14:45:00-04:00,86.68,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T15:00:00-04:00,87.155,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T15:15:00-04:00,87.2247,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T15:30:00-04:00,88.195,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T15:45:00-04:00,88.345,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-03T16:00:00-04:00,88.02,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T09:45:00-04:00,88.385,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T10:00:00-04:00,89.24,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T10:15:00-04:00,89.49,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T10:30:00-04:00,89.43,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T10:45:00-04:00,90.125,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T11:00:00-04:00,89.89,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T11:15:00-04:00,89.952,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T11:30:00-04:00,89.83,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T11:45:00-04:00,89.71,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T12:00:00-04:00,90.07,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T12:15:00-04:00,89.46,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T12:30:00-04:00,89.45,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T12:45:00-04:00,89.45,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T13:00:00-04:00,89.76,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T13:15:00-04:00,89.645,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T13:30:00-04:00,89.72,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T13:45:00-04:00,89.625,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T14:00:00-04:00,89.82,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T14:15:00-04:00,90.05,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T14:30:00-04:00,90.36,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T14:45:00-04:00,90.27,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T15:00:00-04:00,89.79,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T15:15:00-04:00,89.81,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T15:30:00-04:00,93.25,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T15:45:00-04:00,91.96,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
+2026-09-04T16:00:00-04:00,93.5,1.9.0,,75.3096,79.99,78.40614816046797826632012949,81.55,,False,False,countertrend_target_reached | target_or_invalidation_order_failed | countertrend_extended | recovery_risk_limit_exceeded
