@@ -1,6 +1,6 @@
 """Deterministic aggregation of completed one-minute bars."""
 
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -23,12 +23,14 @@ class MinuteBarAggregator:
         *,
         targets: tuple[BarTimeframe, ...],
         accepted_sessions: frozenset[MarketSession] | None = None,
+        emit_on_complete: bool = False,
     ) -> None:
         if not targets or len(targets) != len(set(targets)):
             raise ValueError("aggregation targets must be non-empty and unique")
         if any(target not in _TARGET_MINUTES for target in targets):
             raise ValueError("only 5Min, 15Min and 1Hour aggregation is supported")
         self._targets = targets
+        self._emit_on_complete = emit_on_complete
         self._accepted_sessions = (
             accepted_sessions
             if accepted_sessions is not None
@@ -37,12 +39,15 @@ class MinuteBarAggregator:
         if not self._accepted_sessions:
             raise ValueError("accepted sessions must be non-empty")
         self._pending: dict[tuple[str, BarTimeframe], list[MarketBar]] = {}
+        self._latest_complete_input: dict[str, datetime] = {}
 
     def add(self, bar: MarketBar) -> tuple[MarketBar, ...]:
         if bar.timeframe is not BarTimeframe.MINUTE_1:
             raise ValueError("aggregation input must use 1Min timeframe")
         if not bar.is_final:
             return ()
+        if self._emit_on_complete:
+            return self._add_complete(bar)
         session = market_session(bar.timestamp)
         if session not in self._accepted_sessions:
             return self._flush(bar.symbol)
@@ -71,6 +76,33 @@ class MinuteBarAggregator:
             if market_session(current_start) in self._accepted_sessions:
                 emitted.append(_aggregate(pending, target, current_start))
             self._pending[key] = [bar]
+        return tuple(emitted)
+
+    def _add_complete(self, bar: MarketBar) -> tuple[MarketBar, ...]:
+        previous = self._latest_complete_input.get(bar.symbol)
+        if previous is not None and bar.timestamp <= previous:
+            return ()
+        self._latest_complete_input[bar.symbol] = bar.timestamp
+        emitted: list[MarketBar] = []
+        if market_session(bar.timestamp) not in self._accepted_sessions:
+            for target in self._targets:
+                self._pending.pop((bar.symbol, target), None)
+            return ()
+        for target in self._targets:
+            minutes = _TARGET_MINUTES[target]
+            key = (bar.symbol, target)
+            start = _bucket_start(bar.timestamp, minutes)
+            values = self._pending.get(key, [])
+            if values and _bucket_start(values[0].timestamp, minutes) != start:
+                values = []
+            if not values or bar.timestamp > values[-1].timestamp:
+                values.append(bar)
+            self._pending[key] = values
+            if len(values) == minutes and all(
+                b.timestamp == start + timedelta(minutes=i) for i, b in enumerate(values)
+            ):
+                emitted.append(_aggregate(values, target, start))
+                self._pending.pop(key)
         return tuple(emitted)
 
     def _flush(self, symbol: str) -> tuple[MarketBar, ...]:
@@ -136,6 +168,34 @@ class RegularSessionFourHourAggregator:
         if len(values) != expected:
             return ()
         return (_aggregate(values, BarTimeframe.HOUR_4, start),)
+
+
+class RegularSessionDailyFifteenAggregator:
+    """Only a complete 26-bar regular session becomes new daily evidence."""
+
+    def __init__(self) -> None:
+        self._pending: dict[str, list[MarketBar]] = {}
+
+    def add(self, bar: MarketBar) -> MarketBar | None:
+        if bar.timeframe is not BarTimeframe.MINUTE_15 or not bar.is_final:
+            return None
+        if not is_regular_session(bar.timestamp):
+            return None
+        local = bar.timestamp.astimezone(_NEW_YORK)
+        values = self._pending.get(bar.symbol, [])
+        if values and values[0].timestamp.astimezone(_NEW_YORK).date() != local.date():
+            values = []
+        if not values or bar.timestamp > values[-1].timestamp:
+            values.append(bar)
+        self._pending[bar.symbol] = values
+        start = datetime.combine(local.date(), time(9, 30), _NEW_YORK).astimezone(UTC)
+        if len(values) != 26 or any(
+            b.timestamp != start + timedelta(minutes=15 * i) for i, b in enumerate(values)
+        ):
+            return None
+        self._pending.pop(bar.symbol)
+        timestamp = datetime.combine(local.date(), time(), _NEW_YORK).astimezone(UTC)
+        return _aggregate(values, BarTimeframe.DAY_1, timestamp)
 
 
 def _bucket_start(timestamp: datetime, minutes: int) -> datetime:

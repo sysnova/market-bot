@@ -62,7 +62,7 @@ from app.event_bus import InMemoryEventBus
 from .alert_publisher import AlertEventPublisher
 from .confirmed_signal_projection import project_confirmed_signal
 from .elliott_wave_composition import ElliottWaveRuntime
-from .engine_assembly import MarketBotAssembly
+from .engine_assembly import EngineSlot, MarketBotAssembly
 from .entry_opportunity_report import build_entry_opportunity_report
 from .entry_signal_adapter import entry_signal_from_alert_watch, publish_entry_signal
 from .intraday_worker import IntradayWorker
@@ -407,7 +407,12 @@ async def run_signal_backtest(
             swing_trade_transitions.append(_payload(envelope, SwingTradeTransition))
 
     async def handle_bar(bar: MarketBar) -> None:
-        delta = bar.timestamp - clock.now()
+        observed_at = bar.timestamp
+        if assembly.spec(EngineSlot.GERI_4H).implementation == "1.9.0" and (
+            bar.timeframe is BarTimeframe.MINUTE_1
+        ):
+            observed_at += timedelta(minutes=1)
+        delta = observed_at - clock.now()
         if delta.total_seconds() > 0:
             clock.advance(delta)
         await _ingest_opportunity_then_publish_bar(

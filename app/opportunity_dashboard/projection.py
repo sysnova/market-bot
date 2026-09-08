@@ -12,6 +12,7 @@ from app.contracts import (
     EntryMaturityCheckpoint,
     EntryMaturityLevel,
     EntryOpportunity,
+    EntryOpportunitySignalReference,
     EntrySignalFamily,
     GeriCountertrendMaturity,
 )
@@ -62,6 +63,15 @@ def build_dashboard_snapshot(
         for opportunity in items
         for checkpoint in opportunity.checkpoints
     ]
+    rows.extend(
+        _recovery_reference_row(opportunity, reference)
+        for opportunity in items
+        for reference in opportunity.signal_references
+        if reference.family is EntrySignalFamily.GERI_COUNTERTREND
+        and reference.policy_version == "1.9.0"
+        and reference.current_ct in {GeriCountertrendMaturity.CT0, GeriCountertrendMaturity.CT1}
+        and not any(cp.setup_id == reference.setup_id for cp in opportunity.checkpoints)
+    )
     rows.sort(key=lambda row: (row["updated_at"], row["symbol"]), reverse=True)
     return {
         "type": "snapshot",
@@ -84,9 +94,55 @@ def build_dashboard_snapshot(
                 "su propia referencia; cada compra y leg mide P/L desde su propia entrada. "
                 "Los promedios son simples, sin position sizing."
             ),
-            "reference": "ARMED, IN_ZONE y CT0 son referencias; no se cuentan como compras.",
-            "buy": "Core L1-L4, SwingTrade ST1-ST4, GERI CT1-CT4 y señales accionables.",
+            "reference": (
+                "ARMED, IN_ZONE y CT0 son referencias; recuperación 1.9 también mantiene CT1 "
+                "como observación sin entrada ni P/L."
+            ),
+            "buy": (
+                "Core L1-L4, SwingTrade ST1-ST4, GERI histórico CT1-CT4; "
+                "recuperación 1.9 entra desde CT2 con riesgo válido."
+            ),
         },
+    }
+
+
+def _recovery_reference_row(
+    opportunity: EntryOpportunity,
+    reference: EntryOpportunitySignalReference,
+) -> dict[str, Any]:
+    """An observation has no entry or P/L; no synthetic financial checkpoint is created."""
+    return {
+        "row_id": f"{opportunity.opportunity_id}:reference:{reference.setup_id}",
+        "opportunity_id": str(opportunity.opportunity_id),
+        "symbol": opportunity.symbol,
+        "thesis": reference.family.value,
+        "thesis_label": "Countertrend recuperación LONG",
+        "setup_id": reference.setup_id,
+        "entry_kind": "REFERENCE",
+        "state": reference.current_ct.value if reference.current_ct is not None else "WATCH",
+        "lifecycle_status": opportunity.status.value,
+        "checkpoint_status": "WATCHING",
+        "outcome": None,
+        "close_reason": None,
+        "entry_price": None,
+        "current_price": _number(opportunity.current_price),
+        "exit_price": None,
+        "pnl_percent": None,
+        "pnl_basis": "NO_ENTRY",
+        "mfe_percent": None,
+        "mae_percent": None,
+        "invalidation": None,
+        "risk_to_invalidation_percent": None,
+        "target": None,
+        "target_distance_percent": None,
+        "zone_low": None,
+        "zone_high": None,
+        "reached_at": reference.created_at.isoformat(),
+        "updated_at": opportunity.updated_at.isoformat(),
+        "closed_at": None,
+        "is_losing": False,
+        "latest_reasons": ["countertrend_observation_only"],
+        "analysis_summary": [],
     }
 
 
@@ -126,9 +182,7 @@ def _checkpoint_row(
         "exit_price": _number(checkpoint.exit_price),
         "pnl_percent": _number(pnl),
         "pnl_basis": (
-            "AUDITED_CLOSE"
-            if checkpoint.status is EntryCheckpointStatus.CLOSED
-            else "LIVE_MARK"
+            "AUDITED_CLOSE" if checkpoint.status is EntryCheckpointStatus.CLOSED else "LIVE_MARK"
         ),
         "mfe_percent": _number(checkpoint.mfe_percent),
         "mae_percent": _number(checkpoint.mae_percent),

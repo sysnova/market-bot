@@ -47,8 +47,13 @@ from app.contracts import (
 from app.event_bus import NatsJetStreamEventBus
 from app.persistence import create_database_engine
 from app.swing_4h_geri_engine import Swing4HGeriContext
+from app.swing_4h_geri_engine.tactical_levels import completed_at
 
-from .bar_aggregator import MinuteBarAggregator, RegularSessionFourHourAggregator
+from .bar_aggregator import (
+    MinuteBarAggregator,
+    RegularSessionDailyFifteenAggregator,
+    RegularSessionFourHourAggregator,
+)
 from .distributed_composition import HistoryRequest, connect_nats, write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
@@ -61,6 +66,11 @@ GERI_HISTORY_REQUESTS = (
         timeframe=BarTimeframe.MINUTE_15,
         lookback=timedelta(days=35),
         max_bars_per_symbol=600,
+    ),
+    HistoryRequest(
+        timeframe=BarTimeframe.DAY_1,
+        lookback=timedelta(days=150),
+        max_bars_per_symbol=100,
     ),
 )
 
@@ -93,12 +103,18 @@ class Swing4HGeriRuntime:
             "1.6.0",
             "1.7.0",
             "1.8.0",
+            "1.9.0",
         }
         self._publisher = publisher
         self._clock = clock or SystemClock()
         self._emit_countertrend_signals = emit_countertrend_signals
-        self._bars = MarketBarStore(capacity_per_series=80)
-        self._minute = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
+        self._recovery_lanes = getattr(engine, "engine_version", "") == "1.9.0"
+        self._bars = MarketBarStore(capacity_per_series=600 if self._recovery_lanes else 80)
+        self._minute = MinuteBarAggregator(
+            targets=(BarTimeframe.MINUTE_15,),
+            emit_on_complete=self._recovery_lanes,
+        )
+        self._daily = RegularSessionDailyFifteenAggregator()
         self._four_hour = RegularSessionFourHourAggregator()
         self._symbols: set[str] = set()
         self._prices: dict[str, Decimal] = {}
@@ -170,16 +186,23 @@ class Swing4HGeriRuntime:
         for bar in sorted(bars, key=lambda item: (item.timestamp, item.symbol)):
             if bar.symbol not in self._symbols or not bar.is_final:
                 continue
+            if self._recovery_lanes and bar.timeframe is BarTimeframe.DAY_1:
+                if completed_at(bar) <= self._clock.now():
+                    self._bars.add(bar)
+                continue
             if bar.timeframe is BarTimeframe.HOUR_4:
                 self._bars.add(bar)
                 self._prices[bar.symbol] = bar.close
-                self._price_at[bar.symbol] = bar.timestamp
+                self._price_at[bar.symbol] = (
+                    completed_at(bar) if self._recovery_lanes else bar.timestamp
+                )
             elif bar.timeframe is BarTimeframe.MINUTE_15 and is_regular_session(bar.timestamp):
                 self._bars.add(bar)
                 self._prices[bar.symbol] = bar.close
                 self._price_at[bar.symbol] = bar.timestamp + timedelta(minutes=15)
                 for aggregated in self._four_hour.add(bar):
                     self._bars.add(aggregated)
+                self._accept_daily(bar)
         published = 0
         for symbol in sorted(self._symbols):
             published += int(await self.evaluate(symbol))
@@ -195,13 +218,21 @@ class Swing4HGeriRuntime:
         )
         if bar.symbol not in self._symbols or not bar.is_final:
             return
+        if self._recovery_lanes and bar.timeframe is BarTimeframe.DAY_1:
+            if completed_at(bar) <= self._clock.now():
+                self._bars.add(bar)
+            return
         if bar.timeframe is BarTimeframe.HOUR_4:
             self._bars.add(bar)
             self._prices[bar.symbol] = bar.close
-            self._price_at[bar.symbol] = bar.timestamp
+            self._price_at[bar.symbol] = (
+                completed_at(bar) if self._recovery_lanes else bar.timestamp
+            )
             await self.evaluate(
                 bar.symbol,
-                market_at=bar.timestamp if is_regular_session(bar.timestamp) else None,
+                market_at=self._price_at[bar.symbol]
+                if self._recovery_lanes
+                else (bar.timestamp if is_regular_session(bar.timestamp) else None),
             )
             return
         if bar.timeframe is BarTimeframe.MINUTE_15:
@@ -213,14 +244,16 @@ class Swing4HGeriRuntime:
         aggregated = self._minute.add(bar)
         if is_regular_session(bar.timestamp):
             self._prices[bar.symbol] = bar.close
-            self._price_at[bar.symbol] = bar.timestamp
+            self._price_at[bar.symbol] = bar.timestamp + (
+                timedelta(minutes=1) if self._recovery_lanes else timedelta(0)
+            )
             for fifteen in aggregated:
                 if is_regular_session(fifteen.timestamp):
                     await self._accept_fifteen(fifteen, evaluate=False)
             await self.evaluate(
                 bar.symbol,
                 current_price=bar.close,
-                market_at=bar.timestamp,
+                market_at=self._price_at[bar.symbol],
             )
             return
 
@@ -288,7 +321,7 @@ class Swing4HGeriRuntime:
                     confirmation_bars=self._bars.history(
                         normalized,
                         BarTimeframe.MINUTE_15,
-                        limit=32,
+                        limit=600 if self._recovery_lanes else 32,
                         final_only=True,
                     ),
                     daily_swing=self._daily_swing.get(normalized),
@@ -298,6 +331,18 @@ class Swing4HGeriRuntime:
                     order_flow_support=self._order_flow_support.get(normalized),
                     as_of=self._clock.now(),
                     current_price_at=price_at,
+                    daily_bars=tuple(
+                        b
+                        for b in self._bars.history(
+                            normalized,
+                            BarTimeframe.DAY_1,
+                            limit=100,
+                            final_only=True,
+                        )
+                        if completed_at(b) <= price_at
+                    )
+                    if self._recovery_lanes
+                    else (),
                 )
             )
         except ValueError:
@@ -322,8 +367,19 @@ class Swing4HGeriRuntime:
         self._price_at[bar.symbol] = bar.timestamp + timedelta(minutes=15)
         for aggregated in self._four_hour.add(bar):
             self._bars.add(aggregated)
+        self._accept_daily(bar)
         if evaluate:
-            await self.evaluate(bar.symbol, current_price=bar.close)
+            await self.evaluate(
+                bar.symbol,
+                current_price=bar.close,
+                market_at=self._price_at[bar.symbol] if self._recovery_lanes else None,
+            )
+
+    def _accept_daily(self, bar: MarketBar) -> None:
+        if self._recovery_lanes:
+            daily = self._daily.add(bar)
+            if daily is not None:
+                self._bars.add(daily)
 
     async def _publish_assessment(self, item: GeriAssessment) -> None:
         await self._publisher.publish(
@@ -448,7 +504,10 @@ def _countertrend_observation(item: GeriAssessment) -> tuple[tuple[str, object],
         "support_zone_match",
     }
     return tuple(
-        (metric.name, metric.value) for metric in item.metrics if metric.name in material_names
+        (metric.name, metric.value)
+        for metric in item.metrics
+        if metric.name in material_names
+        or (item.engine_version == "1.9.0" and metric.name.startswith(("countertrend_", "short_")))
     )
 
 
@@ -475,6 +534,27 @@ def _countertrend_signal(item: GeriAssessment) -> EntrySignal | None:
         GeriMaturity.L3.value: GeriCountertrendMaturity.CT3,
         GeriMaturity.L4.value: GeriCountertrendMaturity.CT4,
     }.get(str(state_value))
+    if item.engine_version == "1.9.0":
+        raw_maturity = metrics.get("countertrend_maturity")
+        maturity = GeriCountertrendMaturity(str(raw_maturity)) if raw_maturity is not None else None
+        if metrics.get("countertrend_eligible") is not True:
+            maturity = None
+        # Recheck the geometry at the publication boundary, independent of engine flags.
+        stop = Decimal(str(metrics["countertrend_invalidation"]))
+        target = Decimal(str(metrics["countertrend_target"]))
+        if not stop < item.current_price < target or (
+            maturity
+            in {
+                GeriCountertrendMaturity.CT2,
+                GeriCountertrendMaturity.CT3,
+                GeriCountertrendMaturity.CT4,
+            }
+            and (
+                (target - item.current_price) / (item.current_price - stop)
+                <= Decimal(str(metrics.get("countertrend_minimum_reward_risk", "1.5")))
+            )
+        ):
+            maturity = None
     source_at = metrics["countertrend_level_source_at"]
     if not isinstance(source_at, datetime):
         source_at = datetime.fromisoformat(str(source_at).replace("Z", "+00:00"))
@@ -518,9 +598,14 @@ def _countertrend_signal_reasons(
         return ("countertrend_target_reached",)
     if maturity is not None:
         support_reason = _support_signal_reason(metrics, zone="TACTICAL")
+        fib_reason = (
+            "fibonacci_support_confluence"
+            if metrics.get("countertrend_fibonacci_confluence") is True
+            else None
+        )
         return tuple(
             reason
-            for reason in (f"countertrend_{maturity.value.lower()}", support_reason)
+            for reason in (f"countertrend_{maturity.value.lower()}", support_reason, fib_reason)
             if reason is not None
         )
     if state_value == GeriMaturity.RECLAIM_REQUIRED.value:
@@ -591,7 +676,7 @@ async def run_swing_4h_geri_process(
             engine=assembly.build_4hgeri(),
             publisher=bus,
             emit_countertrend_signals=(
-                assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation == "5.0.0"
+                assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation in {"5.0.0", "12.0.0"}
             ),
         )
         engine_version = assembly.spec(EngineSlot.GERI_4H).implementation
@@ -602,7 +687,7 @@ async def run_swing_4h_geri_process(
                 "marketbot-4hgeri-restore-v1",
             ),
         )
-        if engine_version in {"1.5.0", "1.6.0", "1.7.0", "1.8.0"}:
+        if engine_version in {"1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0"}:
             replay_specs += (
                 (
                     "marketbot.v1.support-confirmation.assessment.>",
@@ -626,6 +711,7 @@ async def run_swing_4h_geri_process(
             "1.6.0",
             "1.7.0",
             "1.8.0",
+            "1.9.0",
         }:
             replay_specs += (
                 (
@@ -677,7 +763,7 @@ async def run_swing_4h_geri_process(
             "bar_source": "15Min_RTH_aggregated_09:30_ET",
             "feeds_core_opportunities": False,
             "feeds_countertrend_opportunities": (
-                assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation == "5.0.0"
+                assembly.spec(EngineSlot.ENTRY_OPPORTUNITY).implementation in {"5.0.0", "12.0.0"}
             ),
             "emits_buy_signals": False,
             "places_orders": False,

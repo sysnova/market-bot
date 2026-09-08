@@ -56,3 +56,35 @@ level. It evaluates causal suffixes of the same completed 4H history and rebases
 non-detached N1/N2/N3 chain; a complete actionable chain is preferred over a still-building one.
 The assessment records the replaced level and both ATR distances in metrics. The legacy pinned
 implementations remain available for replay and comparison.
+
+Version `1.9.0`, selected by definition `7.51.0` and strategy `geri_4h/1.3.0`,
+replaces the inverted tactical side with two separate pure evaluations:
+
+- `recovery.py`: LONG recovery of a confirmed local floor, fixed breakout ceiling,
+  acceptance on completed consecutive 15-minute bars, and independent CT0–CT4 maturity.
+  `countertrend_eligible` remains separate from observed maturity. The first accepted
+  breakout fixes its stop and nearest known overhead obstacle. A new entry requires
+  R/R > 1.5, risk <= 4%, valid chronology, TTL, and extension gates.
+- `short_structure.py`: bearish daily support breakdown, price below daily EMA8/SMA21/SMA50,
+  pivot-anchored 4H VWAP, bearish completed 15-minute continuation and same-time-of-day
+  RVOL >= 1.5 versus five previous sessions. SHORT levels must satisfy target < entry < stop.
+  Missing daily or volume evidence cannot confirm SHORT. This lane is analytical only.
+
+Fibonacci confluence records confirmed local 4H low/high anchors, a 50–61.8% retracement,
+and a matching current support zone. Its ordinal priority is 1 for confluence and 0 otherwise;
+it is exposed in metrics and signal reasons, without overriding maturity, risk or order sizing.
+BUILDING chains can be rebased only to a newer confirmed chain within the ATR distance limit.
+
+Entry Opportunity `12.0.0` preserves CT0/CT1 as references without a paper position or P/L
+checkpoint. CT2–CT4 require an independent geometry/R/R check at ingestion. The dashboard
+shows early recovery references without manufacturing a trade. Existing versions retain
+their historical semantics for rollback.
+
+The 1.9 runtime receives completed daily history and retains 600 fifteen-minute bars.
+It closes complete minute buckets without waiting for the next session, aggregates a new
+daily bar only from all 26 RTH fifteen-minute bars, and timestamps evidence at completion.
+Incomplete sessions do not generate a synthetic completed daily bar. Half-day aggregation
+is not implemented by these fixed 09:30–16:00 aggregators.
+
+See `docs/recovery-countertrend-design.md` and the Windows `output/recovery-7.51.0-validation.md`
+report. This implementation does not enable broker orders or deploy the WSL checkout.

@@ -5,11 +5,13 @@ from uuid import UUID
 import pytest
 
 from app.contracts import (
+    AnalysisHorizon,
     EntryCheckpointStatus,
     EntryLegStatus,
     EntryMaturityCheckpoint,
     EntryMaturityLevel,
     EntryOpportunity,
+    EntryOpportunitySignalReference,
     EntryOpportunityStatus,
     EntrySignalFamily,
     GeriCountertrendMaturity,
@@ -17,6 +19,28 @@ from app.contracts import (
 from app.opportunity_dashboard import build_dashboard_snapshot, checkpoint_pnl_percent
 
 NOW = datetime(2026, 8, 31, 15, tzinfo=UTC)
+
+
+def test_recovery_ct1_is_visible_without_a_buy_or_pnl_checkpoint() -> None:
+    ref = EntryOpportunitySignalReference(
+        signal_id=UUID("0199a100-0000-7002-8000-000000000001"),
+        family=EntrySignalFamily.GERI_COUNTERTREND,
+        current_ct=GeriCountertrendMaturity.CT1,
+        peak_ct=GeriCountertrendMaturity.CT1,
+        setup_id="recovery:AAPL",
+        created_at=NOW,
+        entry_price=Decimal("95"),
+        horizons=(AnalysisHorizon.SWING,),
+        policy_id="geri-countertrend",
+        policy_version="1.9.0",
+    )
+    item = opportunity().model_copy(update={"checkpoints": (), "signal_references": (ref,)})
+    rows = build_dashboard_snapshot((item,), refreshed_at=NOW)["rows"]
+    assert len(rows) == 1
+    assert rows[0]["state"] == "CT1"
+    assert rows[0]["entry_kind"] == "REFERENCE"
+    assert rows[0]["entry_price"] is None
+    assert rows[0]["pnl_percent"] is None
 
 
 def _checkpoint(

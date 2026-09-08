@@ -15,6 +15,7 @@ from .engine import (
 )
 from .memory import InMemoryEntryOpportunityStore
 from .ports import EntryOpportunityStore
+from .v12 import EntryOpportunityEngineV12
 
 # Compatibility name for callers created before the engine became an assembly slot.
 EntryOpportunityManager = EntryOpportunityEngine
@@ -32,6 +33,7 @@ __all__ = [
     "EntryOpportunityEngineV9",
     "EntryOpportunityEngineV10",
     "EntryOpportunityEngineV11",
+    "EntryOpportunityEngineV12",
     "EntryOpportunityManager",
     "EntryOpportunityStore",
     "InMemoryEntryOpportunityStore",

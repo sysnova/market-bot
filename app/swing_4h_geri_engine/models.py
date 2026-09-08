@@ -29,3 +29,4 @@ class Swing4HGeriContext:
     order_flow_support: OrderFlowSupportAssessment | None = None
     as_of: datetime | None = None
     current_price_at: datetime | None = None
+    daily_bars: tuple[MarketBar, ...] = ()

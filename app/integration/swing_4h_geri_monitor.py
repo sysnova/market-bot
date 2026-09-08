@@ -119,6 +119,12 @@ def _format_assessment(item: GeriAssessment, *, color: bool) -> str:
         if item.standalone_swing
         else f"4HGERI {item.maturity.value}"
     )
+    if item.engine_version == "1.9.0":
+        heading = (
+            f"4HGERI v{item.engine_version} | {stage} | "
+            f"SESGO ESTRUCTURAL {item.trade_side.value}"
+        )
+        active = "nivel de la cadena 4H; ver recuperacion LONG y ruptura SHORT por separado"
     body = (
         f"{item.symbol} | {heading} | N{item.active_level_sequence} "
         f"{item.active_level_kind.value} {item.active_level_price} | {active}\n"
@@ -132,6 +138,15 @@ def _format_assessment(item: GeriAssessment, *, color: bool) -> str:
     tactical = _format_countertrend(item)
     if tactical:
         body = f"{body}\n{tactical}"
+    metrics = {metric.name: metric.value for metric in item.metrics}
+    if "short_state" in metrics:
+        body += (
+            f"\n  SHORT / RUPTURA BAJISTA | {metrics['short_state']} | "
+            f"TARGET {metrics.get('short_target', '-')} | "
+            f"STOP {metrics.get('short_invalidation', '-')} | "
+            f"R:R {metrics.get('short_reward_risk', '-')}\n"
+            f"  SHORT: {metrics.get('short_reasons')} | ANALITICO / SIN ORDEN"
+        )
     support = _format_support(item)
     if support:
         body = f"{body}\n{support}"
@@ -148,6 +163,19 @@ def _format_countertrend(item: GeriAssessment) -> str:
     state_value = state.value if hasattr(state, "value") else str(state)
     eligible = "SI" if metrics.get("countertrend_eligible") else "NO"
     expired = "SI" if metrics.get("countertrend_expired") else "NO"
+    if item.engine_version == "1.9.0":
+        confluence = "SI" if metrics.get("countertrend_fibonacci_confluence") else "NO"
+        return (
+            f"  COUNTERTREND LONG / RECUPERACION | "
+            f"{metrics.get('countertrend_maturity') or state_value} | ELEGIBLE {eligible}\n"
+            f"  ZONA {metrics.get('countertrend_zone_low')}-"
+            f"{metrics.get('countertrend_zone_high')} | "
+            f"STOP {metrics.get('countertrend_invalidation')} | "
+            f"TARGET {metrics.get('countertrend_target')} | "
+            f"R:R {metrics.get('countertrend_reward_risk')}\n"
+            f"  CONFLUENCIA FIBONACCI {confluence} | "
+            f"{metrics.get('countertrend_eligibility_reasons')} | SIN ORDEN"
+        )
     return (
         f"  TACTICAL COUNTERTREND {side_value} | {state_value}\n"
         f"  LEVEL {metrics.get('countertrend_level_price')} | "
