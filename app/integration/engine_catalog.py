@@ -34,6 +34,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV11,
     EntryOpportunityEngineV12,
     EntryOpportunityEngineV13,
+    EntryOpportunityEngineV14,
 )
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
@@ -272,6 +273,7 @@ def default_engine_registry() -> EngineRegistry:
                     "11.0.0": EntryOpportunityEngineV11,
                     "12.0.0": EntryOpportunityEngineV12,
                     "13.0.0": EntryOpportunityEngineV13,
+                    "14.0.0": EntryOpportunityEngineV14,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(

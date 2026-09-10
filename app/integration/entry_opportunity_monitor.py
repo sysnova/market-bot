@@ -367,6 +367,21 @@ def _format_opportunity(
     *,
     color: bool,
 ) -> list[str]:
+    if opportunity.primary_signal_family is EntrySignalFamily.CORE_SHORT:
+        leg = opportunity.legs[0]
+        pnl = leg.gain_loss_percent or Decimal("0")
+        unit_pnl = opportunity.original_price - leg.current_price
+        return [
+            "",
+            f"{opportunity.symbol} SHORT | {opportunity.status.value} | SIMULADO",
+            f"  ENTRADA {leg.entry_price} | PRECIO {leg.current_price} | "
+            f"STOP {leg.invalidation} | OBJETIVO {leg.target}",
+            f"  P/L {_styled_percent(pnl, color=color)} | USD/ACCION {unit_pnl:+.4f} | "
+            f"MFE {_percent_text(leg.mfe_percent)} | MAE {_percent_text(leg.mae_percent)}",
+            f"  SALIDA {leg.exit_price or '-'} | RESULTADO {leg.status.value} | "
+            f"APERTURA {leg.opened_at} | ACTUALIZADO {opportunity.updated_at}",
+            f"  ULTIMO EVENTO {','.join(reasons) if reasons else '-'}",
+        ]
     filled = min(10, max(0, int(opportunity.progress_percent / Decimal("10"))))
     progress = f"[{'#' * filled}{'-' * (10 - filled)}]"
     core_family = opportunity.primary_signal_family.value.startswith("CORE_")

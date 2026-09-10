@@ -499,7 +499,12 @@ class EntryOpportunityRecord(Base):
             name="peak_maturity",
         ),
         CheckConstraint("progress_percent between 0 and 100", name="progress"),
-        CheckConstraint("invalidation < zone_low and zone_low <= zone_high", name="levels"),
+        CheckConstraint(
+            "zone_low <= zone_high and ((coalesce(payload->>'trade_side', 'LONG') = 'LONG' "
+            "and invalidation < zone_low) or (coalesce(payload->>'trade_side', 'LONG') = 'SHORT' "
+            "and invalidation > zone_high))",
+            name="levels",
+        ),
         CheckConstraint("expires_at > armed_at", name="expiry"),
         CheckConstraint("revision >= 1", name="revision_positive"),
         CheckConstraint(

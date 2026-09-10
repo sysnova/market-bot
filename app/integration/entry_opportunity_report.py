@@ -63,9 +63,7 @@ def build_entry_opportunity_report(
     active = tuple(
         item for item in opportunities if item.status is not EntryOpportunityStatus.CLOSED
     )
-    closed = tuple(
-        item for item in opportunities if item.status is EntryOpportunityStatus.CLOSED
-    )
+    closed = tuple(item for item in opportunities if item.status is EntryOpportunityStatus.CLOSED)
     return {
         "summary": {
             "opportunities": len(opportunities),
@@ -150,12 +148,8 @@ def _evidence_audit(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, An
         for opportunity in opportunities
         for checkpoint in opportunity.checkpoints
     )
-    tracking = tuple(
-        pair for pair in checkpoints if pair[1].level in _TRACKING_LEVELS
-    )
-    actionable = tuple(
-        pair for pair in checkpoints if pair[1].level in _MATURE_LEVELS
-    )
+    tracking = tuple(pair for pair in checkpoints if pair[1].level in _TRACKING_LEVELS)
+    actionable = tuple(pair for pair in checkpoints if pair[1].level in _MATURE_LEVELS)
     negative: list[dict[str, Any]] = []
     for opportunity, checkpoint in checkpoints:
         snapshot_return = _checkpoint_snapshot_return(checkpoint)
@@ -206,17 +200,12 @@ def _evidence_audit(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, An
         "Los checkpoints OPEN están censurados: su P/L puede cambiar y no es un resultado final.",
     ]
     if len(checkpoints) < 30:
-        limitations.append(
-            "La muestra tiene menos de 30 checkpoints; las tasas son exploratorias."
-        )
+        limitations.append("La muestra tiene menos de 30 checkpoints; las tasas son exploratorias.")
     if not actionable:
         limitations.append(
             "Todavía no hay entradas L1-L4; no puede estimarse la tasa de acierto de compras."
         )
-    if not any(
-        checkpoint.status is EntryCheckpointStatus.CLOSED
-        for _, checkpoint in checkpoints
-    ):
+    if not any(checkpoint.status is EntryCheckpointStatus.CLOSED for _, checkpoint in checkpoints):
         limitations.append(
             "No hay checkpoints cerrados; aún no existe una distribución de resultados finales."
         )
@@ -228,12 +217,10 @@ def _evidence_audit(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, An
             "tracking_references": len(tracking),
             "actionable_entries": len(actionable),
             "open_checkpoints": sum(
-                checkpoint.status is EntryCheckpointStatus.OPEN
-                for _, checkpoint in checkpoints
+                checkpoint.status is EntryCheckpointStatus.OPEN for _, checkpoint in checkpoints
             ),
             "closed_checkpoints": sum(
-                checkpoint.status is EntryCheckpointStatus.CLOSED
-                for _, checkpoint in checkpoints
+                checkpoint.status is EntryCheckpointStatus.CLOSED for _, checkpoint in checkpoints
             ),
         },
         "snapshot": {
@@ -267,12 +254,8 @@ def _snapshot_stats(
         "positive_rate_percent": _average_rate(positive, len(values)),
         "average_percent": _average(values),
         "median_percent": _median(values),
-        "average_mfe_percent": _average(
-            tuple(checkpoint.mfe_percent for _, checkpoint in pairs)
-        ),
-        "average_mae_percent": _average(
-            tuple(checkpoint.mae_percent for _, checkpoint in pairs)
-        ),
+        "average_mfe_percent": _average(tuple(checkpoint.mfe_percent for _, checkpoint in pairs)),
+        "average_mae_percent": _average(tuple(checkpoint.mae_percent for _, checkpoint in pairs)),
     }
 
 
@@ -282,9 +265,7 @@ def _fixed_horizon_stats(
     result: dict[str, dict[str, Any]] = {}
     for label, field in _FIXED_HORIZONS:
         values = tuple(
-            value
-            for _, checkpoint in pairs
-            if (value := getattr(checkpoint, field)) is not None
+            value for _, checkpoint in pairs if (value := getattr(checkpoint, field)) is not None
         )
         positive = sum(value > 0 for value in values)
         negative = sum(value < 0 for value in values)
@@ -348,15 +329,17 @@ def _pullback_entry_improvement(
 
 
 def _checkpoint_snapshot_return(checkpoint: EntryMaturityCheckpoint) -> Decimal:
+    if checkpoint.signal_family is EntrySignalFamily.CORE_SHORT:
+        return (checkpoint.entry_price - checkpoint.current_price) / checkpoint.entry_price * 100
     if checkpoint.status is EntryCheckpointStatus.CLOSED:
         assert checkpoint.gain_loss_percent is not None
         return checkpoint.gain_loss_percent
-    return (checkpoint.current_price / checkpoint.entry_price - Decimal("1")) * Decimal(
-        "100"
-    )
+    return (checkpoint.current_price / checkpoint.entry_price - Decimal("1")) * Decimal("100")
 
 
 def _checkpoint_role(checkpoint: EntryMaturityCheckpoint) -> str:
+    if checkpoint.signal_family is EntrySignalFamily.CORE_SHORT:
+        return "ACTIONABLE_ENTRY"
     if checkpoint.level in _TRACKING_LEVELS:
         return "TRACKING_REFERENCE"
     return "ACTIONABLE_ENTRY"
@@ -387,11 +370,15 @@ def _decimal_text(value: Decimal) -> str:
 
 def _open_trade(opportunity: EntryOpportunity) -> dict[str, Any]:
     filled = min(10, max(0, int(opportunity.progress_percent / Decimal("10"))))
-    core_family = opportunity.primary_signal_family.value.startswith("CORE_")
+    core_family = opportunity.primary_signal_family in {
+        EntrySignalFamily.CORE_ENTRY,
+        EntrySignalFamily.CORE_RECOVERY,
+    }
     return {
         "symbol": opportunity.symbol,
         "status": opportunity.status.value,
         "signal_family": opportunity.primary_signal_family.value,
+        "trade_side": opportunity.trade_side.value,
         "maturity": opportunity.current_maturity.value if core_family else None,
         "peak_maturity": opportunity.peak_maturity.value if core_family else None,
         "progress_percent": str(opportunity.progress_percent),
@@ -433,9 +420,7 @@ def _maturity_outcomes(opportunities: tuple[EntryOpportunity, ...]) -> dict[str,
                 for item in values[level]
                 if item.gain_loss_percent is not None
             ),
-            open_count=sum(
-                item.status is EntryCheckpointStatus.OPEN for item in values[level]
-            ),
+            open_count=sum(item.status is EntryCheckpointStatus.OPEN for item in values[level]),
             mfe=tuple(item.mfe_percent for item in values[level]),
             mae=tuple(item.mae_percent for item in values[level]),
         )
@@ -483,9 +468,7 @@ def _signal_family_outcomes(
     opportunities: tuple[EntryOpportunity, ...],
 ) -> dict[str, Any]:
     checkpoints = tuple(
-        checkpoint
-        for opportunity in opportunities
-        for checkpoint in opportunity.checkpoints
+        checkpoint for opportunity in opportunities for checkpoint in opportunity.checkpoints
     )
     return {
         family.value: _outcome_stats(
@@ -498,12 +481,8 @@ def _signal_family_outcomes(
                 item.signal_family is family and item.status is EntryCheckpointStatus.OPEN
                 for item in checkpoints
             ),
-            mfe=tuple(
-                item.mfe_percent for item in checkpoints if item.signal_family is family
-            ),
-            mae=tuple(
-                item.mae_percent for item in checkpoints if item.signal_family is family
-            ),
+            mfe=tuple(item.mfe_percent for item in checkpoints if item.signal_family is family),
+            mae=tuple(item.mae_percent for item in checkpoints if item.signal_family is family),
         )
         for family in EntrySignalFamily
     }

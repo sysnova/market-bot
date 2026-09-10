@@ -28,6 +28,7 @@ _CORE_BUYS = {
 
 _THESIS_LABELS = {
     EntrySignalFamily.CORE_ENTRY: "Entrada Core",
+    EntrySignalFamily.CORE_SHORT: "Short confirmado",
     EntrySignalFamily.CORE_RECOVERY: "Recuperación Core",
     EntrySignalFamily.PATREON_CAPS: "Patreon Caps",
     EntrySignalFamily.LONG_PORTFOLIO: "Portafolio Long",
@@ -45,7 +46,8 @@ def checkpoint_pnl_percent(checkpoint: EntryMaturityCheckpoint) -> Decimal:
     if checkpoint.status is EntryCheckpointStatus.CLOSED:
         assert checkpoint.gain_loss_percent is not None
         return checkpoint.gain_loss_percent
-    return (checkpoint.current_price / checkpoint.entry_price - Decimal("1")) * Decimal("100")
+    result = (checkpoint.current_price / checkpoint.entry_price - Decimal("1")) * Decimal("100")
+    return -result if checkpoint.signal_family is EntrySignalFamily.CORE_SHORT else result
 
 
 def build_dashboard_snapshot(
@@ -155,12 +157,18 @@ def _checkpoint_row(
     family = checkpoint.signal_family
     state = _checkpoint_state(checkpoint)
     entry_kind = "BUY" if _is_buy(checkpoint) else "REFERENCE"
+    if family is EntrySignalFamily.CORE_SHORT:
+        entry_kind = "SHORT"
     target_distance = (
         (checkpoint.target / checkpoint.current_price - Decimal("1")) * Decimal("100")
         if checkpoint.target is not None
         else None
     )
     risk = (checkpoint.current_price / checkpoint.invalidation - Decimal("1")) * Decimal("100")
+    if family is EntrySignalFamily.CORE_SHORT:
+        risk = (checkpoint.invalidation / checkpoint.current_price - 1) * 100
+        if target_distance is not None:
+            target_distance = -target_distance
     analyses = sorted(opportunity.latest_analyses, key=lambda item: item.as_of, reverse=True)
     return {
         "row_id": str(checkpoint.checkpoint_id),
@@ -213,6 +221,8 @@ def _checkpoint_row(
 
 
 def _checkpoint_state(checkpoint: EntryMaturityCheckpoint) -> str:
+    if checkpoint.signal_family is EntrySignalFamily.CORE_SHORT:
+        return "SHORT_CONFIRMED"
     if checkpoint.countertrend_maturity is not None:
         return checkpoint.countertrend_maturity.value
     if checkpoint.swing_trade_maturity is not None:

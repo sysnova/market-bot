@@ -83,3 +83,29 @@ entry or reached intermediate resistance leaves an unfilled observation active, 
 at session close. Structural invalidation and expiration still end that observation.
 Successive accepted resistances have distinct setup IDs; a new setup cannot rewrite an
 open paper leg or its checkpoints. Version `12.0.0` remains available for rollback.
+
+### v14: confirmed SHORT paper lifecycle
+
+A fresh regular-session LocalAlert carrying BEARISH_CONSENSUS and
+short_entry_confirmed opens CORE_SHORT with the exact short entry, stop and
+target emitted by Alert. No broker order or inverse ETF purchase is sent.
+The trade uses an Intraday leg because these are tactical Intraday levels.
+The opportunity monitor and web dashboard retain it with live/closed P/L,
+MFE, MAE and exit reason; returns use (entry - price) / entry. Dollar figures
+are per share, not a position sized by an assumed account allocation.
+
+Repeated alerts do not replace an active fill. Expired, out-of-session or
+replayed old Intraday confirmations do not open historical fills. Closed trades
+may re-enter only on a newer confirmation. The one-active-thesis-per-symbol
+policy is preserved: an active LONG produces a persisted conflict event rather
+than being silently overwritten or treated as SHORT.
+
+Completed 1-minute RTH bars after entry drive the simulation. Stops win when
+a bar touches both stop and target and order cannot be resolved. Stop gaps
+fill at the bar open. Session-close bars close at their close; reconciliation
+uses the last observed price if that bar was unavailable, with an explicit
+reason. This is an OHLC simulation without fees, borrow costs or fill guarantees.
+
+Activation: apply local PostgreSQL migration 20260910180000_short_opportunity_levels.sql
+and select definition 7.55.0 for the updated consumer and monitors. The base is operational definition 7.52.0; prior definitions and the existing
+Windows default selection are unchanged. Do not blindly replay old alerts into the live ledger.

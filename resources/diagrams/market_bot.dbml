@@ -404,3 +404,6 @@ Ref: market_bot.entry_watch_transitions.watch_id > market_bot.entry_watches.id [
 Ref: market_bot.entry_opportunities.original_watch_id > market_bot.entry_watches.id [delete: restrict]
 Ref: market_bot.entry_opportunity_events.opportunity_id > market_bot.entry_opportunities.id [delete: restrict]
 Ref: market_bot.patreon_caps_transitions.watch_id > market_bot.patreon_caps_watches.id [delete: restrict]
+
+// entry_opportunities_levels_check: payload.trade_side defaults to LONG.
+// LONG: invalidation < zone_low <= zone_high. SHORT: zone_low <= zone_high < invalidation.

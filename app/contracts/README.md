@@ -159,3 +159,11 @@ python -m pytest app/contracts/tests -q
 
 Los tests son contractuales: además del camino feliz, fijan coerción prohibida,
 inmutabilidad, UTC, UUIDv7, hashes, grafos, PRIMARY y restricciones de dominio.
+
+### Simulated short opportunities
+
+EntryOpportunity, EntryMaturityCheckpoint and EntryHorizonLeg add trade_side,
+defaulting to LONG for all legacy payloads. CORE_SHORT identifies a confirmed
+short paper entry; its displayed state is SHORT_CONFIRMED, not a buy L1-L4.
+A SHORT zone sits below its invalidation. Prices remain positive Decimal values.
+The serialized side is retained in PostgreSQL payloads and lifecycle events.

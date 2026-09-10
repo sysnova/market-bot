@@ -73,7 +73,7 @@ function renderKpis() {
   const active = new Set(rows.filter(r => r.lifecycle_status !== "CLOSED").map(r => r.symbol));
   const average = avg(values), positive = values.filter(value => value > 0).length;
   $("kpi-rows").textContent = rows.length;
-  $("kpi-buys").textContent = `${rows.filter(r => r.entry_kind === "BUY").length} compras`;
+  $("kpi-buys").textContent = `${rows.filter(r => r.entry_kind === "BUY").length} compras � ${rows.filter(r => r.entry_kind === "SHORT").length} shorts`;
   setSigned($("kpi-pnl"), average);
   $("kpi-tickers").textContent = tickers.size;
   $("kpi-open").textContent = `${active.size} activos`;
@@ -112,12 +112,12 @@ function renderTable() {
   $("table-count").textContent = `${rows.length} ${rows.length === 1 ? "fila" : "filas"}`;
   target.innerHTML = rows.map(row => {
     const pnl = Number(row.pnl_percent), risk = Number(row.risk_to_invalidation_percent);
-    return `<tr data-row="${row.row_id}"><td><span class="ticker-cell">${escapeHtml(row.symbol)}</span><span class="subline">${escapeHtml(row.pnl_basis === "LIVE_MARK" ? "LIVE" : "AUDITADO")}</span></td><td><span class="pill ${row.entry_kind === "REFERENCE" ? "ref" : ""}">${row.entry_kind === "BUY" ? "COMPRA" : "REFERENCIA"}</span></td><td><b>${escapeHtml(row.thesis_label)}</b><span class="subline state-code">${escapeHtml(row.state)}</span></td><td>${escapeHtml(row.lifecycle_status)}<span class="subline">${escapeHtml(row.outcome || row.checkpoint_status)}</span></td><td>${money(row.entry_price)}<span class="subline">Inv. ${money(row.invalidation)}</span></td><td>${money(row.current_price)}${row.target ? `<span class="subline">Obj. ${money(row.target)}</span>` : ""}</td><td class="${signedClass(pnl)}"><b>${signed(pnl)}</b></td><td><span class="positive">${signed(Number(row.mfe_percent))}</span><span class="subline negative">${signed(Number(row.mae_percent))}</span></td><td>${risk.toFixed(2)}%<span class="subline">a invalidación</span></td><td>${formatDate(row.updated_at)}<span class="subline">${timeAgo(row.updated_at)}</span></td></tr>`;
+    return `<tr data-row="${row.row_id}"><td><span class="ticker-cell">${escapeHtml(row.symbol)}</span><span class="subline">${escapeHtml(row.pnl_basis === "LIVE_MARK" ? "LIVE" : "AUDITADO")}</span></td><td><span class="pill ${row.entry_kind === "REFERENCE" ? "ref" : ""}">${row.entry_kind === "SHORT" ? "SHORT" : row.entry_kind === "BUY" ? "COMPRA" : "REFERENCIA"}</span></td><td><b>${escapeHtml(row.thesis_label)}</b><span class="subline state-code">${escapeHtml(row.state)}</span></td><td>${escapeHtml(row.lifecycle_status)}<span class="subline">${escapeHtml(row.outcome || row.checkpoint_status)}</span></td><td>${money(row.entry_price)}<span class="subline">Inv. ${money(row.invalidation)}</span></td><td>${money(row.current_price)}${row.target ? `<span class="subline">Obj. ${money(row.target)}</span>` : ""}</td><td class="${signedClass(pnl)}"><b>${signed(pnl)}</b></td><td><span class="positive">${signed(Number(row.mfe_percent))}</span><span class="subline negative">${signed(Number(row.mae_percent))}</span></td><td>${risk.toFixed(2)}%<span class="subline">a invalidación</span></td><td>${formatDate(row.updated_at)}<span class="subline">${timeAgo(row.updated_at)}</span></td></tr>`;
   }).join("") || `<tr><td colspan="10" class="empty-state">No hay oportunidades que coincidan.</td></tr>`;
 }
 
 function renderRanking() {
-  const buys = state.filtered.filter(row => row.entry_kind === "BUY"), groups = new Map();
+  const buys = state.filtered.filter(row => ["BUY", "SHORT"].includes(row.entry_kind)), groups = new Map();
   buys.forEach(row => { if (!groups.has(row.thesis)) groups.set(row.thesis, { label: row.thesis_label, rows: [] }); groups.get(row.thesis).rows.push(row); });
   const ranking = [...groups.values()].map(group => {
     const all = group.rows.map(row => Number(row.pnl_percent));

@@ -26,6 +26,7 @@ from .enums import (
     EntrySignalFamily,
     GeriCountertrendMaturity,
     SwingTradeMaturity,
+    TradeSide,
 )
 from .market_analysis import AnalysisResult
 
@@ -34,6 +35,7 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
     """One simulated entry at a maturity level within the same opportunity."""
 
     checkpoint_id: UUID = Field(default_factory=new_uuid7)
+    trade_side: TradeSide = TradeSide.LONG
     level: EntryMaturityLevel
     swing_trade_maturity: SwingTradeMaturity | None = None
     countertrend_maturity: GeriCountertrendMaturity | None = None
@@ -76,7 +78,10 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
         if (self.zone_low is None) != (self.zone_high is None):
             raise ValueError("checkpoint zone requires both low and high")
         if self.zone_low is not None and self.zone_high is not None:
-            if self.signal_family is EntrySignalFamily.SWING_TRADE:
+            if self.trade_side is TradeSide.SHORT:
+                if not self.zone_low <= self.zone_high < self.invalidation:
+                    raise ValueError("short checkpoint stop must sit above zone")
+            elif self.signal_family is EntrySignalFamily.SWING_TRADE:
                 if self.zone_low > self.zone_high:
                     raise ValueError("SwingTrade checkpoint zone levels are out of order")
                 if self.invalidation >= self.entry_price:
@@ -97,6 +102,7 @@ class EntryHorizonLeg(StrictFrozenModel):
     """One paper-trade leg whose horizon may close independently."""
 
     leg_id: UUID = Field(default_factory=new_uuid7)
+    trade_side: TradeSide = TradeSide.LONG
     horizon: AnalysisHorizon
     signal_family: EntrySignalFamily | None = None
     setup_id: NonEmptyStr | None = None
@@ -200,6 +206,7 @@ class EntryOpportunity(StrictFrozenModel):
     """Current materialized state of one ticker's original entry thesis."""
 
     opportunity_id: UUID = Field(default_factory=new_uuid7)
+    trade_side: TradeSide = TradeSide.LONG
     symbol: Identifier
     status: EntryOpportunityStatus
     current_maturity: EntryMaturityLevel
@@ -243,7 +250,10 @@ class EntryOpportunity(StrictFrozenModel):
         setups = {(item.family, item.setup_id) for item in self.signal_references}
         if len(setups) != len(self.signal_references):
             raise ValueError("opportunity signal references must have unique setups")
-        if self.primary_signal_family is EntrySignalFamily.SWING_TRADE:
+        if self.trade_side is TradeSide.SHORT:
+            if not self.zone_low <= self.zone_high < self.invalidation:
+                raise ValueError("short opportunity stop must sit above zone")
+        elif self.primary_signal_family is EntrySignalFamily.SWING_TRADE:
             if self.zone_low > self.zone_high:
                 raise ValueError("SwingTrade opportunity zone levels are out of order")
             if self.invalidation >= self.original_price:
