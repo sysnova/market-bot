@@ -32,6 +32,7 @@ async def run_support_confirmation_monitor(
     import sys
 
     output = stream or sys.stdout
+    color = output.isatty()
     settings = AppSettings()
     bus = await NatsJetStreamEventBus.connect(
         servers=[settings.nats_url.get_secret_value()],
@@ -47,7 +48,11 @@ async def run_support_confirmation_monitor(
             if isinstance(envelope.payload, SupportAssessment)
             else SupportAssessment.model_validate(envelope.payload, strict=False)
         )
-        print(_format_assessment(assessment), file=output, flush=True)
+        print(
+            _color_support_line(_format_assessment(assessment), assessment.state, color=color),
+            file=output,
+            flush=True,
+        )
 
     async def handle_transition(envelope: EventEnvelope) -> None:
         if envelope.event_type != SUPPORT_TRANSITION_EVENT:
@@ -61,7 +66,11 @@ async def run_support_confirmation_monitor(
             return
         if bell:
             print("\a", end="", file=output, flush=True)
-        print(_format_reentry(transition), file=output, flush=True)
+        print(
+            _color_support_line(_format_reentry(transition), transition.state, color=color),
+            file=output,
+            flush=True,
+        )
 
     assessment_subscription = await bus.subscribe(
         "marketbot.v1.support-confirmation.assessment.>",
@@ -94,11 +103,27 @@ async def run_support_confirmation_monitor(
             file=output,
             flush=True,
         )
+        print(
+            _color_support_line(
+                "VERDE: STRUCTURE_CONFIRMED / RETEST_CONFIRMED — soporte confirmado; "
+                "RECLAIMED / REACTION_CONFIRMED todavía no confirman giro.",
+                SupportState.STRUCTURE_CONFIRMED,
+                color=color,
+            ),
+            file=output,
+            flush=True,
+        )
         await asyncio.Event().wait()
     finally:
         await assessment_subscription.unsubscribe()
         await transition_subscription.unsubscribe()
         await bus.close()
+
+
+def _color_support_line(line: str, state: SupportState, *, color: bool) -> str:
+    if color and state in {SupportState.STRUCTURE_CONFIRMED, SupportState.RETEST_CONFIRMED}:
+        return f"\033[1;32m{line}\033[0m"
+    return line
 
 
 def _display(value: object | None) -> str:
