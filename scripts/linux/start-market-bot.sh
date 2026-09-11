@@ -227,6 +227,11 @@ run_opportunities() {
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
 }
 
+run_opportunity_summary() {
+  cd "$PROJECT_ROOT"
+  exec "$UV_PROJECT_ENVIRONMENT/bin/python" -m app.integration.opportunity_summary_monitor
+}
+
 run_open_buy_pl() {
   cd "$PROJECT_ROOT"
   exec "$UV_PROJECT_ENVIRONMENT/bin/python" -m app.integration.open_buy_pl_monitor
@@ -543,6 +548,18 @@ ensure_open_buy_pl_pane() {
   tmux select-layout -t "$SESSION":MarketBot even-vertical
 }
 
+ensure_opportunity_summary_pane() {
+  local command="$1" pane_id
+  pane_id="$(tmux list-panes -t "$SESSION":Opportunities -F '#{pane_id}|#{pane_title}' | awk -F'|' '$2 == "P/L RESUMEN OPPORTUNITIES" { print $1; exit }')"
+  if [[ -z "$pane_id" ]]; then
+    pane_id="$(tmux split-window -d -v -P -F '#{pane_id}' -t "$SESSION":Opportunities "$command")"
+    tmux select-pane -t "$pane_id" -T 'P/L RESUMEN OPPORTUNITIES'
+  elif [[ "$(tmux display-message -p -t "$pane_id" '#{pane_dead}')" == "1" ]]; then
+    tmux respawn-pane -t "$pane_id" "$command"
+  fi
+  tmux select-layout -t "$SESSION":Opportunities even-vertical
+}
+
 launch_tmux() {
   command -v uv >/dev/null || { echo "uv is not installed or not in PATH." >&2; exit 1; }
   command -v tmux >/dev/null || {
@@ -564,11 +581,13 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --definition-path "$DEFINITION_PATH" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
+  local opportunity_summary
   local control analysis confirmed opportunities open_buy_pl order_flow long_portfolio news geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
   printf -v open_buy_pl '%q ' "${base[@]}" --role open-buy-pl
+  printf -v opportunity_summary '%q ' "${base[@]}" --role opportunity-summary
   printf -v opportunities '%q ' "${base[@]}" --role opportunities
   printf -v order_flow '%q ' "${base[@]}" --role order-flow-monitor
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
@@ -597,6 +616,9 @@ launch_tmux() {
       tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
       tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
       tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
+    fi
+    if engine_is_active entry-opportunity; then
+      ensure_opportunity_summary_pane "$opportunity_summary"
     fi
     if engine_is_active order-flow && \
       ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'OrderFlow'; then
@@ -700,6 +722,7 @@ launch_tmux() {
     tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
     tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
     tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
+    ensure_opportunity_summary_pane "$opportunity_summary"
   fi
   if engine_is_active order-flow; then
     tmux new-window -d -t "$SESSION" -n OrderFlow "$order_flow"
@@ -765,6 +788,7 @@ case "$ROLE" in
   analysis) run_analysis ;;
   confirmed) run_confirmed ;;
   opportunities) run_opportunities ;;
+  opportunity-summary) run_opportunity_summary ;;
   open-buy-pl) run_open_buy_pl ;;
   order-flow-monitor) run_order_flow_monitor ;;
   order-flow) run_manual_plan_process order-flow ;;
