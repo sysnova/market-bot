@@ -22,6 +22,8 @@ _CONFIGURED_IMPLEMENTATIONS = {
 
 
 def validate_strategy(implementation: str, source: StrategySource) -> None:
+    if implementation == "3.10.0":
+        implementation = "3.9.0"
     if implementation not in _CONFIGURED_IMPLEMENTATIONS:
         return
     behavior = source.behavior()
@@ -54,6 +56,8 @@ def configure_engine(
     args: tuple[object, ...],
     kwargs: dict[str, object],
 ) -> tuple[tuple[object, ...], dict[str, object]]:
+    if implementation == "3.10.0":
+        implementation = "3.9.0"
     restored_state = kwargs.pop("restored_state", None)
     if implementation not in _CONFIGURED_IMPLEMENTATIONS:
         if restored_state is not None:

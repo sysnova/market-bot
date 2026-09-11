@@ -134,7 +134,20 @@ class MarketBotAssembly:
     ) -> object:
         """Build any registered engine without extending this class for each new version."""
 
-        return self._registry.registration(slot).build(
+        registration = self._registry.registration(slot)
+        factory = registration.implementations[self.spec(slot).implementation]
+        if getattr(factory, "requires_order_flow_short_scope", False):
+            underlyings = {pair.underlying_symbol for pair in self.build_leveraged_thesis().pairs}
+            kwargs["short_symbols"] = (
+                tuple(
+                    symbol
+                    for symbol in self.build_order_flow().tracked_symbols
+                    if symbol in underlyings
+                )
+                if self.spec(EngineSlot.ORDER_FLOW).mode is EngineMode.ACTIVE
+                else ()
+            )
+        return registration.build(
             self.spec(slot),
             *args,
             strategy_artifact_override=strategy_artifact_override,

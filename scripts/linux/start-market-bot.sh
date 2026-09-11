@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
-DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.50.0.yaml"
+DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.58.0.yaml"
 MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
 ROLE="launcher"
@@ -47,7 +47,7 @@ Options:
   --symbols AAPL,MSFT   Override the PostgreSQL universe for this run.
   --runtime-root PATH   Runtime directory (default: .runtime).
   --definition-path PATH
-                        Explicit immutable MarketBot definition (default: 7.50.0).
+                        Explicit immutable MarketBot definition (default: 7.58.0).
   --no-bell             Disable alert bells.
   --detach              Create the tmux runtime without attaching a client.
   --ready-timeout SEC   Readiness timeout (default: 1800).
@@ -714,7 +714,7 @@ launch_tmux() {
   local pane_id
   if engine_is_active alert; then
     pane_id="$(tmux split-window -v -P -F '#{pane_id}' -t "$SESSION":0 "$confirmed")"
-    tmux select-pane -t "$pane_id" -T 'COMPRAS CONFIRMADAS'
+    tmux select-pane -t "$pane_id" -T 'COMPRAS Y SHORT CONFIRMADOS'
     tmux select-layout -t "$SESSION":0 even-vertical
   fi
   if engine_is_active entry-opportunity; then

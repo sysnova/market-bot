@@ -18,6 +18,7 @@ from app.alert_engine import (
 )
 from app.alert_engine.strategy import configure_engine as configure_alert
 from app.alert_engine.strategy import validate_strategy as validate_alert
+from app.alert_engine.v310 import AlertEngineV310
 from app.dilution_sec_engine import DilutionSecEngine
 from app.elliott_wave_engine import ElliottWaveEngine
 from app.entry_opportunity_engine import (
@@ -36,6 +37,7 @@ from app.entry_opportunity_engine import (
     EntryOpportunityEngineV13,
     EntryOpportunityEngineV14,
 )
+from app.entry_opportunity_engine.v15 import EntryOpportunityEngineV15
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
 from app.entry_recovery_engine.strategy import validate_strategy as validate_recovery
@@ -280,6 +282,7 @@ def default_engine_registry() -> EngineRegistry:
                     "12.0.0": EntryOpportunityEngineV12,
                     "13.0.0": EntryOpportunityEngineV13,
                     "14.0.0": EntryOpportunityEngineV14,
+                    "15.0.0": EntryOpportunityEngineV15,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(
@@ -305,6 +308,7 @@ def default_engine_registry() -> EngineRegistry:
                     "3.7.0": AlertEngineV37,
                     "3.8.0": AlertEngineV38,
                     "3.9.0": AlertEngineV39,
+                    "3.10.0": AlertEngineV310,
                 },
                 required_since="0.0.0",
                 configure=configure_alert,

@@ -155,7 +155,7 @@ async def run_confirmed_buy_monitor(
                 },
             )
         print(
-            "COMPRAS CONFIRMADAS + TESIS APALANCADAS + PORTFOLIO FLOW - esperando NATS...",
+            "COMPRAS Y SHORT CONFIRMADOS + TESIS APALANCADAS + PORTFOLIO FLOW - esperando NATS...",
             file=output,
             flush=True,
         )
