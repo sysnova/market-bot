@@ -408,9 +408,13 @@ async def run_signal_backtest(
 
     async def handle_bar(bar: MarketBar) -> None:
         observed_at = bar.timestamp
-        if assembly.spec(EngineSlot.GERI_4H).implementation in {"1.9.0", "1.10.0"} and (
-            bar.timeframe is BarTimeframe.MINUTE_1
-        ):
+        if assembly.spec(EngineSlot.GERI_4H).implementation in {
+            "1.9.0",
+            "1.10.0",
+            "1.11.0",
+            "1.12.0",
+            "1.13.0",
+        } and (bar.timeframe is BarTimeframe.MINUTE_1):
             observed_at += timedelta(minutes=1)
         delta = observed_at - clock.now()
         if delta.total_seconds() > 0:

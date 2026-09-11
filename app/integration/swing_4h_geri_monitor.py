@@ -119,22 +119,43 @@ def _format_assessment(item: GeriAssessment, *, color: bool) -> str:
         if item.standalone_swing
         else f"4HGERI {item.maturity.value}"
     )
-    if item.engine_version in {"1.9.0", "1.10.0"}:
+    if item.engine_version in {"1.9.0", "1.10.0", "1.11.0", "1.12.0", "1.13.0"}:
         heading = (
-            f"4HGERI v{item.engine_version} | {stage} | "
-            f"SESGO ESTRUCTURAL {item.trade_side.value}"
+            f"4HGERI v{item.engine_version} | {stage} | SESGO ESTRUCTURAL {item.trade_side.value}"
         )
         active = "nivel de la cadena 4H; ver recuperacion LONG y ruptura SHORT por separado"
+    rupture = f"ruptura {item.breakout_buffer} ATR-px"
+    if item.structure_policy == "clean_support_swing":
+        active = "soporte limpio N1; esperando primera perforacion"
+        if len(item.levels) == 3:
+            active = "piso N3 fijo; zona estructural N3-N2"
+            rupture = f"confirma swing: cierre 4H > N2 {item.levels[1].price}"
+        else:
+            rupture = "esperando N3"
     body = (
         f"{item.symbol} | {heading} | N{item.active_level_sequence} "
         f"{item.active_level_kind.value} {item.active_level_price} | {active}\n"
-        f"  Precio {item.current_price} | {zone} | ruptura {item.breakout_buffer} ATR-px\n"
+        f"  Precio {item.current_price} | {zone} | {rupture}\n"
         f"  Estructura: {levels}\n"
         f"  Confirmaciones: 15m {'SI' if item.fast_confirmation else 'NO'} | "
         f"4H {'SI' if item.four_hour_confirmation else 'NO'} | "
         f"continuacion {'SI' if item.continuation_confirmation else 'NO'}\n"
         "  SALIDA: MONITOR MANUAL | NO COMPRA | NO OPPORTUNITY"
     )
+    structural_metrics = {metric.name: metric.value for metric in item.metrics}
+    if "structural_fibonacci_status" in structural_metrics:
+        if structural_metrics["structural_fibonacci_status"] == "AVAILABLE":
+            plus = "SI" if structural_metrics["structural_fibonacci_confluence"] else "NO"
+            body += (
+                f"\n  FIBO CONTEXTO | PLUS {plus} | impulso "
+                f"{structural_metrics['structural_fibonacci_low']}-"
+                f"{structural_metrics['structural_fibonacci_high']} | franja 38.2%-61.8% "
+                f"{structural_metrics['structural_fibonacci_zone_low']}-"
+                f"{structural_metrics['structural_fibonacci_zone_high']}"
+                " | confluencia de N3, no confirma entrada"
+            )
+        else:
+            body += "\n  FIBO CONTEXTO | NO DISPONIBLE | no condiciona GERI"
     tactical = _format_countertrend(item)
     if tactical:
         body = f"{body}\n{tactical}"
@@ -163,8 +184,19 @@ def _format_countertrend(item: GeriAssessment) -> str:
     state_value = state.value if hasattr(state, "value") else str(state)
     eligible = "SI" if metrics.get("countertrend_eligible") else "NO"
     expired = "SI" if metrics.get("countertrend_expired") else "NO"
-    if item.engine_version in {"1.9.0", "1.10.0"}:
+    if item.engine_version in {"1.9.0", "1.10.0", "1.11.0", "1.12.0", "1.13.0"}:
         confluence = "SI" if metrics.get("countertrend_fibonacci_confluence") else "NO"
+        averages = (
+            f"\n  EMA21 diaria {metrics.get('countertrend_ema21_daily', '-')} "
+            f"({metrics.get('countertrend_ema21_state', '-')}) | "
+            f"SMA50 diaria {metrics.get('countertrend_sma50_daily', '-')} "
+            f"({metrics.get('countertrend_sma50_state', '-')})\n"
+            f"  OBJETIVO {metrics.get('countertrend_target_source', '-')} | "
+            f"DATOS AL {metrics.get('countertrend_ma_as_of', '-')} | "
+            f"RVOL ACEPTACION {metrics.get('countertrend_entry_rvol', '-')}"
+            if item.engine_version in {"1.11.0", "1.12.0", "1.13.0"}
+            else ""
+        )
         return (
             f"  COUNTERTREND LONG / RECUPERACION | "
             f"{metrics.get('countertrend_maturity') or state_value} | ELEGIBLE {eligible}\n"
@@ -174,7 +206,7 @@ def _format_countertrend(item: GeriAssessment) -> str:
             f"TARGET {metrics.get('countertrend_target')} | "
             f"R:R {metrics.get('countertrend_reward_risk')}\n"
             f"  CONFLUENCIA FIBONACCI {confluence} | "
-            f"{metrics.get('countertrend_eligibility_reasons')} | SIN ORDEN"
+            f"{metrics.get('countertrend_eligibility_reasons')} | SIN ORDEN{averages}"
         )
     return (
         f"  TACTICAL COUNTERTREND {side_value} | {state_value}\n"

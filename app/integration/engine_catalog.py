@@ -107,6 +107,9 @@ from app.swing_4h_geri_engine import (
     Swing4HGeriEngineV18,
     Swing4HGeriEngineV19,
     Swing4HGeriEngineV110,
+    Swing4HGeriEngineV111,
+    Swing4HGeriEngineV112,
+    Swing4HGeriEngineV113,
 )
 from app.swing_4h_geri_engine.strategy import configure_engine as configure_geri_4h
 from app.swing_4h_geri_engine.strategy import validate_strategy as validate_geri_4h
@@ -191,6 +194,9 @@ def default_engine_registry() -> EngineRegistry:
                     "1.8.0": Swing4HGeriEngineV18,
                     "1.9.0": Swing4HGeriEngineV19,
                     "1.10.0": Swing4HGeriEngineV110,
+                    "1.11.0": Swing4HGeriEngineV111,
+                    "1.12.0": Swing4HGeriEngineV112,
+                    "1.13.0": Swing4HGeriEngineV113,
                 },
                 required_since="7.15.0",
                 configure=configure_geri_4h,

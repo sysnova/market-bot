@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -49,12 +51,13 @@ class GeriAssessment(StrictFrozenModel):
     engine_version: SemVer
     maturity: GeriMaturity
     current_price: PositiveDecimal
+    structure_policy: Literal["alternating_breaks", "clean_support_swing"] = "alternating_breaks"
     levels: tuple[GeriStructuralLevel, ...] = Field(min_length=1)
     active_level_sequence: int = Field(ge=1)
     active_level_kind: GeriLevelKind
     active_level_price: PositiveDecimal
     atr14: PositiveDecimal
-    breakout_buffer: PositiveDecimal
+    breakout_buffer: Decimal = Field(ge=0)
     zone_low: PositiveDecimal | None = None
     zone_high: PositiveDecimal | None = None
     invalidation: PositiveDecimal | None = None
@@ -82,8 +85,27 @@ class GeriAssessment(StrictFrozenModel):
         for previous, current in zip(self.levels, self.levels[1:], strict=False):
             if previous.kind is current.kind:
                 raise ValueError("4HGERI levels must alternate support and resistance")
-            if previous.broken_at is None:
+            if previous.broken_at is None and not (
+                self.structure_policy == "clean_support_swing"
+                and previous.sequence == 2
+                and current.sequence == 3
+            ):
                 raise ValueError("only the active 4HGERI level may remain unbroken")
+        if self.structure_policy == "clean_support_swing":
+            if not self.standalone_swing or self.trade_side is not TradeSide.LONG:
+                raise ValueError("clean support swing requires standalone LONG")
+            if len(self.levels) not in {1, 3}:
+                raise ValueError("clean support swing requires N1 or N1/N2/N3")
+            if len(self.levels) == 3:
+                n1, n2, n3 = self.levels
+                if not n3.price < n1.price < n2.price:
+                    raise ValueError("clean support swing requires N3 < N1 < N2")
+                if not n1.source_at <= n2.source_at <= n3.source_at:
+                    raise ValueError("clean support extrema must be chronological")
+                if n1.broken_at != n3.source_at or n3.confirmed_at != n3.source_at:
+                    raise ValueError("N3 must originate on the N1 break")
+                if self.four_hour_confirmation != (n2.broken_at is not None):
+                    raise ValueError("swing confirmation must match the N2 break")
         active = self.levels[-1]
         if active.broken_at is not None:
             raise ValueError("active 4HGERI level cannot already be broken")
@@ -144,7 +166,10 @@ class GeriAssessment(StrictFrozenModel):
         if self.trade_side is TradeSide.LONG:
             if active.kind is not GeriLevelKind.SUPPORT:
                 raise ValueError("standalone long requires active support")
-            if self.invalidation >= self.zone_low:
+            if self.invalidation > self.zone_low or (
+                self.invalidation == self.zone_low
+                and self.structure_policy != "clean_support_swing"
+            ):
                 raise ValueError("standalone long invalidation must be below the zone")
         else:
             if active.kind is not GeriLevelKind.RESISTANCE:

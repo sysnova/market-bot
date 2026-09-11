@@ -54,6 +54,38 @@ class Swing4HGeriEngineV19(Swing4HGeriEngineV18):
     def analyze(self, context: Swing4HGeriContext) -> GeriAssessment:
         _validate_temporal_context(context)
         validate_context(context)
+        structural = self._structural_assessment(context)
+        result = structural.model_copy(
+            update={
+                "metrics": (
+                    *structural.metrics,
+                    *self._recovery_metrics(context),
+                    *short_metrics(context, self._short),
+                    NamedValue(name="atr_duration_normalized", value=True),
+                )
+            }
+        )
+        contribution = _support_contribution(
+            context,
+            result,
+            freshness_days=self._support_freshness_days,
+            classifier=self._classify_support,
+        )
+        if contribution is not None:
+            support, strength, zone = contribution
+            result = result.model_copy(
+                update={
+                    "metrics": (
+                        *result.metrics,
+                        *self._support_metrics(support, strength, zone),
+                    )
+                }
+            )
+        payload = "|".join(m.model_dump_json() for m in result.metrics)
+        digest = hashlib.sha256(f"{result.context_hash}|{payload}".encode()).hexdigest()
+        return result.model_copy(update={"context_hash": f"sha256:{digest}"})
+
+    def _structural_assessment(self, context: Swing4HGeriContext) -> GeriAssessment:
         # Deliberately bypass V13's inverse-side tactical path.
         structural = Swing4HGeriEngineV12.analyze(self, context)
         if structural.maturity in {GeriMaturity.BUILDING, GeriMaturity.EXTENDED} and (
@@ -88,35 +120,7 @@ class Swing4HGeriEngineV19(Swing4HGeriEngineV18):
                         ),
                     }
                 )
-        result = structural.model_copy(
-            update={
-                "metrics": (
-                    *structural.metrics,
-                    *self._recovery_metrics(context),
-                    *short_metrics(context, self._short),
-                    NamedValue(name="atr_duration_normalized", value=True),
-                )
-            }
-        )
-        contribution = _support_contribution(
-            context,
-            result,
-            freshness_days=self._support_freshness_days,
-            classifier=self._classify_support,
-        )
-        if contribution is not None:
-            support, strength, zone = contribution
-            result = result.model_copy(
-                update={
-                    "metrics": (
-                        *result.metrics,
-                        *self._support_metrics(support, strength, zone),
-                    )
-                }
-            )
-        payload = "|".join(m.model_dump_json() for m in result.metrics)
-        digest = hashlib.sha256(f"{result.context_hash}|{payload}".encode()).hexdigest()
-        return result.model_copy(update={"context_hash": f"sha256:{digest}"})
+        return structural
 
     def _recovery_metrics(self, context: Swing4HGeriContext) -> tuple[NamedValue, ...]:
         return recovery_metrics(context, self._recovery)

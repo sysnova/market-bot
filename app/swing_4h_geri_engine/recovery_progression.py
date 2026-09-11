@@ -1,5 +1,6 @@
 """Keep the recovery thesis separate from successive, independently priced entries."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
@@ -39,7 +40,11 @@ def _target(context: Swing4HGeriContext, price: Decimal, at: datetime) -> Decima
     )
 
 
-def _seed(context: Swing4HGeriContext, rules: RecoveryRules) -> dict[str, object]:
+def _seed(
+    context: Swing4HGeriContext,
+    rules: RecoveryRules,
+    target_selector: Callable[[Swing4HGeriContext, Decimal, datetime], Decimal | None],
+) -> dict[str, object]:
     # V19 owns the original floor/acceptance rules. Its terminal target semantics
     # must not unpin a still-live recovery in V110. No operational order state is inferred.
     previous = context.active_structure
@@ -60,7 +65,9 @@ def _seed(context: Swing4HGeriContext, rules: RecoveryRules) -> dict[str, object
         previous = previous.model_copy(update={"engine_version": "1.9.0", "metrics": metrics})
     return {
         m.name: m.value
-        for m in recovery_metrics(replace(context, active_structure=previous), rules)
+        for m in recovery_metrics(
+            replace(context, active_structure=previous), rules, target_selector=target_selector
+        )
     }
 
 
@@ -71,6 +78,7 @@ def _renew(
     hit: int,
     atr: Decimal,
     rules: RecoveryRules,
+    target_selector: Callable[[Swing4HGeriContext, Decimal, datetime], Decimal | None] = _target,
 ) -> EntryWindow | None:
     assert entry.target is not None
     offset = hit
@@ -88,7 +96,7 @@ def _renew(
                 index,
                 entry.target,
                 stop,
-                _target(context, fast[index].close, completed_at(fast[index])),
+                target_selector(context, fast[index].close, completed_at(fast[index])),
                 entry.sequence + 1,
             )
         offset += accepted + 1
@@ -98,8 +106,11 @@ def _renew(
 def progressive_recovery_metrics(
     context: Swing4HGeriContext,
     rules: RecoveryRules,
+    *,
+    target_selector: Callable[[Swing4HGeriContext, Decimal, datetime], Decimal | None] = _target,
+    freeze_windows: bool = False,
 ) -> tuple[NamedValue, ...]:
-    m = _seed(context, rules)
+    m = _seed(context, rules, target_selector)
     m["countertrend_lifecycle"] = "PROGRESSIVE_RECOVERY"
     origin_at = cast(datetime | None, m.get("countertrend_accepted_at"))
     if origin_at is None:
@@ -116,8 +127,49 @@ def progressive_recovery_metrics(
         original,
         reference,
         cast(Decimal, m["countertrend_invalidation"]),
-        _target(context, fast[original].close, origin_at),
+        target_selector(context, fast[original].close, origin_at),
     )
+    previous_metrics = (
+        {v.name: v.value for v in context.active_structure.metrics}
+        if context.active_structure is not None
+        else {}
+    )
+    saved = cast(
+        tuple[dict[str, object], ...], previous_metrics.get("countertrend_entry_windows", ())
+    )
+    windows: list[dict[str, object]] = []
+
+    def pin(candidate: EntryWindow) -> EntryWindow:
+        accepted_at = completed_at(fast[candidate.accepted]).isoformat()
+        floor_at = floor.timestamp.isoformat()
+        if freeze_windows:
+            stored = next(
+                (
+                    v
+                    for v in saved
+                    if v.get("accepted_at") == accepted_at and v.get("floor_at") == floor_at
+                ),
+                None,
+            )
+            if stored is not None:
+                candidate = replace(
+                    candidate,
+                    stop=Decimal(str(stored["stop"])),
+                    reference=Decimal(str(stored["reference"])),
+                    target=Decimal(str(stored["target"])) if stored["target"] is not None else None,
+                )
+            windows.append(
+                {
+                    "floor_at": floor_at,
+                    "accepted_at": accepted_at,
+                    "stop": str(candidate.stop),
+                    "reference": str(candidate.reference),
+                    "target": str(candidate.target) if candidate.target is not None else None,
+                }
+            )
+        return candidate
+
+    entry = pin(entry)
     pending = False
     while entry.target is not None:
         hit = next(
@@ -125,11 +177,11 @@ def progressive_recovery_metrics(
         )
         if hit is None:
             break
-        renewed = _renew(context, fast, entry, hit, atr, rules)
+        renewed = _renew(context, fast, entry, hit, atr, rules, target_selector)
         if renewed is None:
             pending = True
             break
-        entry = renewed
+        entry = pin(renewed)
 
     # Structural maturity survives a reached resistance or an invalid tactical stop.
     # It ends only when the structural floor fails or the original thesis expires.
@@ -194,4 +246,6 @@ def progressive_recovery_metrics(
         countertrend_four_hour_confirmation=four,
         countertrend_continuation_confirmation=continued,
     )
+    if freeze_windows:
+        m["countertrend_entry_windows"] = tuple(windows)
     return to_metrics(m)

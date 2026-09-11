@@ -107,3 +107,38 @@ subsequent resistance. The prior `1.9.0` behavior remains available for rollback
 The HUT replay still has zero entries: it now retains CT4 and evaluates six renewals rather
 than terminating at 81.55, but the nearest-obstacle R/R filter rejects all six. See
 `output/recovery-7.52.0-validation.md` for evidence and controls.
+
+Version `1.11.0`, selected by `7.53.0` and `geri_4h/1.5.0`, uses daily EMA21 and
+SMA50 as mandatory recovery objectives when above price. It selects the nearest
+pending mean, capped sooner by a confirmed daily pivot high from the last 20
+sessions that has not subsequently been closed above. Older lows and minor 4H
+pivots remain visible as intermediate levels, without automatically capping R/R.
+After both means have been crossed, a valid recent daily high is still required;
+missing overhead targets never become synthetic profit targets.
+
+Only completed daily bars are used, with at least 50 observations. EMA21 is seeded
+with the first 21-close SMA; SMA50 uses the latest 50 closes. The acceptance bar
+requires same-slot RVOL >= 1.20 against five previous sessions. R/R must remain
+strictly greater than 1.50 to the selected target and any nearer current daily mean.
+These checks supplement CT2+ maturity, the existing stop/risk limits and TTL.
+
+Each accepted entry window freezes its stop and target, including through rolling
+history buffers and JSON restoration. Daily averages continue updating for new
+entry checks; an open paper trade keeps its original levels. Metrics expose each
+mean's slope, resistance/reclaim/retest state, grouping within 0.25 ATR, timestamps,
+target source, and acceptance RVOL. Average reclaim states are explanatory context;
+they do not independently emit a buy or replace the CT maturity gates.
+
+The SHORT evaluator is unchanged. See `output/recovery-7.53.0-validation.md` for the
+HUT replay, execution assumptions and controls. The Windows default changes only;
+no WSL deployment or broker order is part of this implementation.
+
+## 1.12.0 — clean N1 support
+
+See [clean support swing](docs/clean-support-swing.md) for the N1/N3 first-cross
+rule, N3–N2 structural zone and N2 break confirmation. Assembly: 7.56.0.
+
+## 1.13.0 - recent valid swing
+
+Assembly 7.57.0 prioritizes the most recently formed valid N3, with an optional
+Fibonacci context annotation. See [recent clean support swing](docs/recent-clean-support-swing.md).

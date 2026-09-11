@@ -1,7 +1,8 @@
 """LONG-only recovery maturity; independent of GERI's pinned structural direction."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from app.contracts import GeriLevelKind, GeriMaturity, MarketBar, NamedValue, TradeSide
@@ -32,7 +33,13 @@ class RecoveryRules:
     acceptance_bars: int = 1
 
 
-def recovery_metrics(context: Swing4HGeriContext, rules: RecoveryRules) -> tuple[NamedValue, ...]:
+def recovery_metrics(
+    context: Swing4HGeriContext,
+    rules: RecoveryRules,
+    *,
+    target_selector: Callable[[Swing4HGeriContext, Decimal, datetime], Decimal | None]
+    | None = None,
+) -> tuple[NamedValue, ...]:
     validate_context(context)
     bars = context.bars
     lows = pivots(bars, low=True)
@@ -106,6 +113,8 @@ def recovery_metrics(context: Swing4HGeriContext, rules: RecoveryRules) -> tuple
         entry,
         (*obstacles(known4, TradeSide.LONG), *obstacles(knownd, TradeSide.LONG)),
     )
+    if target_selector is not None and known_at is not None:
+        target = target_selector(context, entry, known_at)
     rr = directional_rr(TradeSide.LONG, price, stop, target)
     sessions = {
         b.timestamp.astimezone(NY).date() for b in (*bars, *fast) if b.timestamp >= confirmed

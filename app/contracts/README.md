@@ -167,3 +167,12 @@ defaulting to LONG for all legacy payloads. CORE_SHORT identifies a confirmed
 short paper entry; its displayed state is SHORT_CONFIRMED, not a buy L1-L4.
 A SHORT zone sits below its invalidation. Prices remain positive Decimal values.
 The serialized side is retained in PostgreSQL payloads and lifecycle events.
+
+## Clean support GERI structure
+
+`GeriAssessment.structure_policy` defaults to `alternating_breaks`, preserving
+legacy validation. `clean_support_swing` supports N1 alone or N1/N2/N3 with N2
+still unbroken; N3 is the first N1 crossing candle low. It requires standalone
+LONG, chronological extrema and N3 < N1 < N2. Four-hour confirmation corresponds
+to N2.broken_at. In this policy invalidation may equal the zone floor. The
+breakout buffer permits zero for an exact structural break without ATR padding.

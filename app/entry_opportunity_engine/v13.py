@@ -18,7 +18,7 @@ class EntryOpportunityEngineV13(EntryOpportunityEngineV12):
         paper_open: bool,
     ) -> tuple[EntryOpportunity | None, str]:
         if (
-            signal.policy_version != "1.10.0"
+            signal.policy_version not in {"1.10.0", "1.11.0", "1.12.0", "1.13.0"}
             or previous is None
             or any(
                 r in signal.reasons for r in ("countertrend_invalidated", "countertrend_expired")
