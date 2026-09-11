@@ -227,6 +227,11 @@ run_opportunities() {
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
 }
 
+run_open_buy_pl() {
+  cd "$PROJECT_ROOT"
+  exec "$UV_PROJECT_ENVIRONMENT/bin/python" -m app.integration.open_buy_pl_monitor
+}
+
 validate_order_flow_readiness() {
   "$UV_PROJECT_ENVIRONMENT/bin/python" - \
     "$DEFINITION_PATH" "$STATUS_ROOT/order-flow.ready.json" <<'PY'
@@ -519,6 +524,25 @@ run_control() {
   done
 }
 
+ensure_open_buy_pl_pane() {
+  local command="$1" pane_id window_name pane_dead
+  pane_id="$(tmux list-panes -s -t "$SESSION" -F '#{pane_id}|#{pane_title}' | awk -F'|' '$2 == "P/L COMPRAS ABIERTAS" { print $1; exit }')"
+  if [[ -n "$pane_id" ]]; then
+    window_name="$(tmux display-message -p -t "$pane_id" '#{window_name}')"
+    if [[ "$window_name" != "MarketBot" ]]; then
+      tmux join-pane -v -s "$pane_id" -t "$SESSION":MarketBot
+    fi
+    pane_dead="$(tmux display-message -p -t "$pane_id" '#{pane_dead}')"
+    if [[ "$pane_dead" == "1" ]]; then
+      tmux respawn-pane -t "$pane_id" "$command"
+    fi
+  else
+    pane_id="$(tmux split-window -v -P -F '#{pane_id}' -t "$SESSION":MarketBot "$command")"
+    tmux select-pane -t "$pane_id" -T 'P/L COMPRAS ABIERTAS'
+  fi
+  tmux select-layout -t "$SESSION":MarketBot even-vertical
+}
+
 launch_tmux() {
   command -v uv >/dev/null || { echo "uv is not installed or not in PATH." >&2; exit 1; }
   command -v tmux >/dev/null || {
@@ -540,10 +564,11 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --definition-path "$DEFINITION_PATH" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local control analysis confirmed opportunities order_flow long_portfolio news geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
+  local control analysis confirmed opportunities open_buy_pl order_flow long_portfolio news geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
   printf -v confirmed '%q ' "${base[@]}" --role confirmed
+  printf -v open_buy_pl '%q ' "${base[@]}" --role open-buy-pl
   printf -v opportunities '%q ' "${base[@]}" --role opportunities
   printf -v order_flow '%q ' "${base[@]}" --role order-flow-monitor
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
@@ -564,6 +589,9 @@ launch_tmux() {
   fi
 
   if tmux has-session -t "$SESSION" 2>/dev/null; then
+    if engine_is_active entry-opportunity; then
+      ensure_open_buy_pl_pane "$open_buy_pl"
+    fi
     if engine_is_active entry-opportunity && \
       ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'Opportunities'; then
       tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
@@ -668,6 +696,7 @@ launch_tmux() {
     tmux select-layout -t "$SESSION":0 even-vertical
   fi
   if engine_is_active entry-opportunity; then
+    ensure_open_buy_pl_pane "$open_buy_pl"
     tmux new-window -d -t "$SESSION" -n Opportunities "$opportunities"
     tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
     tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
@@ -736,6 +765,7 @@ case "$ROLE" in
   analysis) run_analysis ;;
   confirmed) run_confirmed ;;
   opportunities) run_opportunities ;;
+  open-buy-pl) run_open_buy_pl ;;
   order-flow-monitor) run_order_flow_monitor ;;
   order-flow) run_manual_plan_process order-flow ;;
   long-portfolio) run_long_portfolio_monitor ;;

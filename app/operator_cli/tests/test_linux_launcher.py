@@ -61,6 +61,19 @@ def test_linux_launcher_adds_event_driven_entry_opportunity_window() -> None:
     assert "list-windows" in script
 
 
+def test_open_buy_pl_is_an_idempotent_pane_in_main_window() -> None:
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    assert "run_open_buy_pl()" in script
+    assert "--role open-buy-pl" in script
+    assert "app.integration.open_buy_pl_monitor" in script
+    helper = script.split("ensure_open_buy_pl_pane()", 1)[1].split("launch_tmux()", 1)[0]
+    assert "P/L COMPRAS ABIERTAS" in helper
+    assert "join-pane" in helper
+    assert "split-window" in helper
+    assert "new-window" not in helper
+    assert script.count('ensure_open_buy_pl_pane "$open_buy_pl"') == 2
+
+
 def test_linux_launcher_starts_order_flow_from_the_runtime_plan() -> None:
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     control = script.split("run_control()", 1)[1].split("launch_tmux()", 1)[0]
