@@ -1070,3 +1070,17 @@ def test_gap_exit_definition_changes_only_entry_opportunity() -> None:
     for slot in assembly.definition.engines:
         if slot is not EngineSlot.ENTRY_OPPORTUNITY:
             assert assembly.spec(slot) == previous.spec(slot)
+
+
+def test_profit_protection_definition_changes_only_entry_opportunity() -> None:
+    from app.entry_opportunity_engine import EntryOpportunityEngineV19
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.63.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.64.0.yaml")
+    assert (
+        type(assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()))
+        is EntryOpportunityEngineV19
+    )
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.ENTRY_OPPORTUNITY:
+            assert assembly.spec(slot) == previous.spec(slot)

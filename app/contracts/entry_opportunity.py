@@ -63,9 +63,22 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
     return_30m: Decimal | None = None
     return_60m: Decimal | None = None
     return_close: Decimal | None = None
+    # Execution protection is separate from the immutable thesis invalidation/target.
+    protection_stop: PositiveDecimal | None = None
+    protection_updated_at: datetime | None = None
+    protection_rule_version: SemVer | None = None
 
     @model_validator(mode="after")
     def validate_checkpoint(self) -> EntryMaturityCheckpoint:
+        protection = (
+            self.protection_stop,
+            self.protection_updated_at,
+            self.protection_rule_version,
+        )
+        if any(value is not None for value in protection) and any(
+            value is None for value in protection
+        ):
+            raise ValueError("protection requires stop, evidence timestamp and rule version")
         if self.checkpoint_id.version != 7:
             raise ValueError("checkpoint_id must be UUIDv7")
         closed = self.status is EntryCheckpointStatus.CLOSED
@@ -120,9 +133,21 @@ class EntryHorizonLeg(StrictFrozenModel):
     gain_loss_percent: Decimal | None = None
     mfe_percent: Decimal = Decimal("0")
     mae_percent: Decimal = Decimal("0")
+    protection_stop: PositiveDecimal | None = None
+    protection_updated_at: datetime | None = None
+    protection_rule_version: SemVer | None = None
 
     @model_validator(mode="after")
     def validate_leg(self) -> EntryHorizonLeg:
+        protection = (
+            self.protection_stop,
+            self.protection_updated_at,
+            self.protection_rule_version,
+        )
+        if any(value is not None for value in protection) and any(
+            value is None for value in protection
+        ):
+            raise ValueError("protection requires stop, evidence timestamp and rule version")
         if self.leg_id.version != 7:
             raise ValueError("leg_id must be UUIDv7")
         opened = self.status is not EntryLegStatus.WATCHING

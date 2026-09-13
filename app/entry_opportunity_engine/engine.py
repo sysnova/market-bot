@@ -54,6 +54,7 @@ _PROGRESS = {
     EntryMaturityLevel.L4: Decimal("100"),
 }
 _TERMINAL_LEGS = {
+    EntryLegStatus.PROTECTION_EXIT,
     EntryLegStatus.TARGET_HIT,
     EntryLegStatus.INVALIDATED,
     EntryLegStatus.SESSION_CLOSED,
@@ -565,12 +566,13 @@ class EntryOpportunityEngine:
         if active.last_market_bar_at is not None and bar.timestamp <= active.last_market_bar_at:
             return ()
         checkpoints = tuple(self._mark_checkpoint(item, bar) for item in active.checkpoints)
-        legs = tuple(self._mark_leg(item, bar) for item in active.legs)
+        legs = self._mark_legs_for_bar(active, bar)
         marked = active.model_copy(update={"checkpoints": checkpoints})
         marked = _record_l2_bar_retest(marked, bar)
         checkpoints = marked.checkpoints
         reasons = _leg_close_reasons(active.legs, legs)
         reasons.extend(_checkpoint_close_reasons(active.checkpoints, checkpoints))
+        reasons.extend(self._protection_reasons(active.checkpoints, checkpoints))
 
         if bar.low <= active.invalidation and self._bar_can_close_opportunity(
             active, legs=legs, checkpoints=checkpoints
@@ -645,6 +647,18 @@ class EntryOpportunityEngine:
         checkpoint: EntryMaturityCheckpoint, bar: MarketBar
     ) -> EntryMaturityCheckpoint:
         return _mark_checkpoint(checkpoint, bar)
+
+    def _mark_legs_for_bar(
+        self, opportunity: EntryOpportunity, bar: MarketBar
+    ) -> tuple[EntryHorizonLeg, ...]:
+        return tuple(self._mark_leg(item, bar) for item in opportunity.legs)
+
+    @staticmethod
+    def _protection_reasons(
+        before: tuple[EntryMaturityCheckpoint, ...],
+        after: tuple[EntryMaturityCheckpoint, ...],
+    ) -> list[str]:
+        return []
 
     @staticmethod
     def _mark_leg(leg: EntryHorizonLeg, bar: MarketBar) -> EntryHorizonLeg:

@@ -22,6 +22,23 @@ from app.opportunity_dashboard import build_dashboard_snapshot, checkpoint_pnl_p
 NOW = datetime(2026, 8, 31, 15, tzinfo=UTC)
 
 
+def test_active_buy_exposes_protection_separately_from_thesis_invalidation() -> None:
+    cp = _checkpoint(20, level=EntryMaturityLevel.L1, current="115").model_copy(
+        update={
+            "protection_stop": Decimal("105"),
+            "protection_updated_at": NOW,
+            "protection_rule_version": "1.0.0",
+        }
+    )
+    item = opportunity().model_copy(update={"checkpoints": (cp,)})
+    row = build_dashboard_snapshot((item,), refreshed_at=NOW)["rows"][0]
+    assert Decimal(row["invalidation"]) == 90
+    assert Decimal(row["protection_stop"]) == Decimal(row["effective_stop"]) == 105
+    assert float(row["risk_to_invalidation_percent"]) == pytest.approx(
+        100 * (115 / 105 - 1), abs=0.0001
+    )
+
+
 def test_closed_buy_uses_its_exit_date_and_has_no_remaining_stop_risk() -> None:
     item = opportunity().model_copy(update={"updated_at": NOW + timedelta(days=5)})
     snapshot = build_dashboard_snapshot((item,), refreshed_at=NOW + timedelta(days=5))

@@ -247,6 +247,7 @@ class EntryLegStatus(ContractEnum):
     THESIS_BROKEN = "THESIS_BROKEN"
     EXPIRED = "EXPIRED"
     TIME_EXIT = "TIME_EXIT"
+    PROTECTION_EXIT = "PROTECTION_EXIT"
 
 
 class EntryCheckpointStatus(ContractEnum):

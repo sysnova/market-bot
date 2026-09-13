@@ -4,6 +4,24 @@ const { join } = require("node:path");
 const { test } = require("node:test");
 const { runInNewContext } = require("node:vm");
 
+test("Protection is visible separately from original invalidation and exit outcome", () => {
+  const app = dashboard();
+  const row = {row_id: "tem", symbol: "TEM", entry_kind: "BUY", thesis_label: "Entrada Core",
+    state: "L1", checkpoint_status: "OPEN", lifecycle_status: "CONFIRMING",
+    entry_price: 62.85, current_price: 66.97, invalidation: 60.7116, protection_stop: 64.8342,
+    risk_to_invalidation_percent: 3.29, pnl_percent: 6.55, mfe_percent: 6.76, mae_percent: -2.59};
+  app.state.filtered = [row];
+  app.drawTable();
+  assert.match(app.element("opportunity-rows").innerHTML, /Inv\. 60\.71/);
+  assert.match(app.element("opportunity-rows").innerHTML, /Protección 64\.83/);
+  assert.match(app.element("opportunity-rows").innerHTML, /a protección/);
+  app.state.filtered = [{...row, checkpoint_status: "CLOSED", outcome: "PROTECTION_EXIT",
+    exit_price: 64.8342, pnl_percent: 3.157}];
+  app.drawTable();
+  assert.match(app.element("opportunity-rows").innerHTML, /SALIDA POR PROTECCIÓN/);
+  assert.doesNotMatch(app.element("opportunity-rows").innerHTML, /a protección/);
+});
+
 function dashboard() {
   const elements = new Map();
   const getElementById = id => {

@@ -166,7 +166,8 @@ def _checkpoint_row(
         if checkpoint.target is not None
         else None
     )
-    risk = (checkpoint.current_price / checkpoint.invalidation - Decimal("1")) * Decimal("100")
+    effective_stop = checkpoint.protection_stop or checkpoint.invalidation
+    risk = (checkpoint.current_price / effective_stop - Decimal("1")) * Decimal("100")
     if family is EntrySignalFamily.CORE_SHORT:
         risk = (checkpoint.invalidation / checkpoint.current_price - 1) * 100
         if target_distance is not None:
@@ -200,6 +201,13 @@ def _checkpoint_row(
         "mfe_percent": _number(checkpoint.mfe_percent),
         "mae_percent": _number(checkpoint.mae_percent),
         "invalidation": _number(checkpoint.invalidation),
+        "protection_stop": _number(checkpoint.protection_stop),
+        "effective_stop": _number(effective_stop),
+        "protection_rule_version": checkpoint.protection_rule_version,
+        "protection_updated_at": (
+            checkpoint.protection_updated_at.isoformat()
+            if checkpoint.protection_updated_at else None
+        ),
         "risk_to_invalidation_percent": _number(risk),
         "target": _number(checkpoint.target),
         "target_distance_percent": _number(target_distance),

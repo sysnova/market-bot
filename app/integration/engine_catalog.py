@@ -41,6 +41,7 @@ from app.entry_opportunity_engine.v15 import EntryOpportunityEngineV15
 from app.entry_opportunity_engine.v16 import EntryOpportunityEngineV16
 from app.entry_opportunity_engine.v17 import EntryOpportunityEngineV17
 from app.entry_opportunity_engine.v18 import EntryOpportunityEngineV18
+from app.entry_opportunity_engine.v19 import EntryOpportunityEngineV19
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
 from app.entry_recovery_engine.strategy import validate_strategy as validate_recovery
@@ -295,6 +296,7 @@ def default_engine_registry() -> EngineRegistry:
                     "16.0.0": EntryOpportunityEngineV16,
                     "17.0.0": EntryOpportunityEngineV17,
                     "18.0.0": EntryOpportunityEngineV18,
+                    "19.0.0": EntryOpportunityEngineV19,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(
