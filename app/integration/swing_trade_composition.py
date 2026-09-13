@@ -448,7 +448,7 @@ def _bootstrap_actionable_signal_is_fresh(bar: MarketBar, *, now: datetime) -> b
 def _operational_stop(item: SwingTradeAssessment) -> Decimal:
     value = _metric(item, "operational_stop")
     if (
-        item.engine_version == "1.7.0"
+        item.engine_version in {"1.7.0", "1.8.0"}
         and _metric(item, "rebound_state") in {"OPEN", "EXITED"}
         and value is not None
     ):
@@ -528,7 +528,7 @@ async def run_swing_trade_process(
             symbols=selected,
             requirements=(
                 SWING_TRADE_MOMENTUM_HISTORY_REQUESTS
-                if engine_version in {"1.6.0", "1.7.0"}
+                if engine_version in {"1.6.0", "1.7.0", "1.8.0"}
                 else SWING_TRADE_HISTORY_REQUESTS
             ),
             as_of=SystemClock().now(),

@@ -147,10 +147,11 @@ class SwingTradeEngineV17(SwingTradeEngineV16):
                 state.update(
                     rebound_state="BREAKOUT", rebound_reference=reference, operational_stop=stop
                 )
-                retest = (
-                    bar.low <= reference + buffer and bar.close > reference and bar.close > bar.open
+                retest, hour, pending = self._entry_acceptance(
+                    bars, i, breakout_index, j, reference, buffer
                 )
-                hour = self._hour_accepted(bars, breakout_index, j, reference)
+                if pending is not None and j == len(bars) - 1:
+                    reasons.append(pending)
                 if not (retest or hour) or j != len(bars) - 1:
                     continue
                 session_vwap = self._session_vwap(bars[: j + 1])
@@ -221,6 +222,19 @@ class SwingTradeEngineV17(SwingTradeEngineV16):
                     rebound_state="BREAKOUT", rebound_reference=reference, operational_stop=stop
                 )
         return self._finish(native, fallback, state, [*reasons, "rebound_confirmation_pending"])
+
+    def _entry_acceptance(
+        self,
+        bars: tuple[MarketBar, ...],
+        touch: int,
+        breakout: int,
+        end: int,
+        level: Decimal,
+        buffer: Decimal,
+    ) -> tuple[bool, bool, str | None]:
+        bar = bars[end]
+        retest = bar.low <= level + buffer and bar.close > level and bar.close > bar.open
+        return retest, self._hour_accepted(bars, breakout, end, level), None
 
     @staticmethod
     def _continuous(bars: tuple[MarketBar, ...]) -> bool:

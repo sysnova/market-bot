@@ -1,5 +1,25 @@
 # Entry Opportunity Engine
 
+## Core Recovery lifecycle (v16, MarketBot 7.60.0)
+
+`CORE_RECOVERY` is admitted by Swing without a bullish Long premise. A Long
+BEARISH/AVOID assessment remains visible as `core_recovery_long_bearish_context`,
+but does not close this family. Matching Long watcher invalidations/expiry also
+close only `CORE_ENTRY`. Core continuation retains its Long invalidation policy.
+An owning Swing BEARISH CAUTION/AVOID assessment closes all Recovery legs and
+checkpoints, including VOLUME_STRUCTURE. Each entry retains its own price stop,
+target and expiration. The original Core stop cannot sweep surviving Recovery
+entries that have different stops. Administrative universe removal still applies.
+
+Analytical exits use the newest available positive price observation from the
+entry, checkpoints, stored analyses or last bar, at most five minutes old and
+never dated in the future. Bookkeeping `updated_at` does not establish freshness.
+If no recent mark exists, the assessment is persisted and reconsidered on the
+next accepted minute bar, after stops and targets. This works after restart;
+newer favorable evidence supersedes a deferred invalidation. Analytical evidence
+predating an entry still cannot invalidate that entry. No historical closed
+entry is reopened or rewritten. Assembly 7.59.0 retains the v15 rollback policy.
+
 ## Independent strategy exits (v10, MarketBot 7.48.0)
 
 Core continuation and SwingTrade Fibonacci recovery have different premises. A bearish

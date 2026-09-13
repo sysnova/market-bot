@@ -403,18 +403,27 @@ async def test_bootstrap_does_not_emit_actionable_signal_from_previous_session()
 
 
 @pytest.mark.asyncio
-async def test_rebound_operational_stop_and_exit_survive_runtime_restart() -> None:
+@pytest.mark.parametrize("definition", ["7.50.0", "7.59.0"])
+async def test_rebound_operational_stop_and_exit_survive_runtime_restart(definition: str) -> None:
     from dataclasses import replace
+    from pathlib import Path
 
     from app.entry_opportunity_engine import (
         EntryOpportunityEngineV11,
         InMemoryEntryOpportunityStore,
     )
+    from app.integration.engine_assembly import MarketBotAssembly
     from app.swing_trade_engine.tests.test_v17 import append_bar, context_at, values
-    from app.swing_trade_engine.v17 import SwingTradeEngineV17
 
-    engine = SwingTradeEngineV17()
+    engine = MarketBotAssembly.from_path(
+        Path("configs/marketbot") / f"{definition}.yaml"
+    ).build_swing_trade()
     ctx = context_at(7)
+    if definition == "7.59.0":
+        last = ctx.confirmation_bars[-1].model_copy(update={"close": Decimal("101.5")})
+        ctx = replace(
+            ctx, confirmation_bars=(*ctx.confirmation_bars[:-1], last), current_price=last.close
+        )
     entered = engine.analyze(ctx)
     publisher = Publisher()
     runtime = SwingTradeRuntime(engine=engine, publisher=publisher)

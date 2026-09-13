@@ -90,6 +90,33 @@ orders are placed. Historical performance comparisons must use the observations
 available at entry, not later quality updates, and still require out-of-sample validation.
 
 
+## Bullish retest after a pullback (1.8.0)
+
+MarketBot `7.59.0` selects implementation `1.8.0` and strategy `1.5.0`.
+For each candidate, any descending pair of completed 15-minute closes since its
+zone touch prevents entry through `1H_CLOSE`, even above session VWAP. The check
+includes the period before a delayed breakout, so rediscovering a breakout in
+the same reaction cannot erase its preceding decline.
+
+After a decline, entry waits for a bullish retest: the last three post-breakout
+closes must be strictly ascending and above the fixed reference, at least one of
+those bars must touch the reference plus the existing stop-buffer tolerance,
+and the final candle must be bullish. The strategy's `rebound_rising_closes`
+parameter defaults to three (two consecutive increases). Equal closes do not
+confirm. The successful route is `RETEST`; while waiting the reason is
+`rebound_bullish_retest_pending`. A later rising hour alone cannot bypass the
+missing retest. Candidates still expire under the existing eight-bar rule.
+
+Without a descending close pair, the prior retest/hour acceptance behavior is
+retained. VWAP, geometry, volume at breakout, risk cap and R/R remain required.
+Open positions and exit cutoffs from `1.7.0` survive upgrade without widening
+their stops. `7.58.0` remains available for rollback.
+
+The SOUN replay for September 1–11 blocks the September 8 18:30 UTC entry at
+6.61 and produces no replacement entry before the window ends. It retains the
+September 4 entry at 6.695, which still loses at its stop. This is a regression
+comparison on a selected case, not evidence of improved out-of-sample returns.
+
 ## Rebound entry and operational risk (1.7.0)
 
 MarketBot `7.50.0` selects SwingTrade implementation `1.7.0`, strategy `1.4.0`,

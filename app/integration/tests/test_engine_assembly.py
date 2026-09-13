@@ -996,3 +996,33 @@ def test_rebound_definition_versions_swing_trade_and_exit_consumer_only() -> Non
     for slot in assembly.definition.engines:
         if slot not in {EngineSlot.SWING_TRADE, EngineSlot.ENTRY_OPPORTUNITY}:
             assert assembly.spec(slot) == previous.spec(slot)
+
+
+def test_pullback_retest_definition_changes_only_swing_trade() -> None:
+    from app.swing_trade_engine import SwingTradeEngineV18
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.58.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.59.0.yaml")
+    engine = assembly.build_swing_trade()
+    assert type(engine) is SwingTradeEngineV18
+    assert engine.strategy_version == "1.5.0"
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.SWING_TRADE:
+            assert assembly.spec(slot) == previous.spec(slot)
+
+
+def test_recovery_lifecycle_definition_changes_only_entry_opportunity() -> None:
+    from app.entry_opportunity_engine import EntryOpportunityEngineV16
+    from app.entry_opportunity_engine.v15 import EntryOpportunityEngineV15
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.59.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.60.0.yaml")
+    assert type(previous.build_entry_opportunity(store=InMemoryEntryOpportunityStore())) is (
+        EntryOpportunityEngineV15
+    )
+    assert type(assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore())) is (
+        EntryOpportunityEngineV16
+    )
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.ENTRY_OPPORTUNITY:
+            assert assembly.spec(slot) == previous.spec(slot)

@@ -203,13 +203,14 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.58.0"
+    assert payload["version"] == "7.60.0"
     assert payload["engines"]["swing"]["implementation"] == "15.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "3.5.0"
     assert payload["engines"]["4hgeri"]["implementation"] == "1.13.0"
     assert payload["engines"]["entry-watcher"]["implementation"] == "5.6.0"
-    assert payload["engines"]["entry-opportunity"]["implementation"] == "15.0.0"
-    assert payload["engines"]["swing-trade"]["implementation"] == "1.7.0"
+    assert payload["engines"]["entry-opportunity"]["implementation"] == "16.0.0"
+    assert payload["engines"]["swing-trade"]["implementation"] == "1.8.0"
+    assert payload["engines"]["swing-trade"]["strategy"]["version"] == "1.5.0"
     assert payload["engines"]["intraday"]["implementation"] == "7.0.0"
     assert payload["engines"]["alert"]["implementation"] == "3.10.0"
     assert payload["engines"]["order-flow"]["implementation"] == "1.2.0"
@@ -252,7 +253,7 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.58.0"
+    assert payload["definition_version"] == "7.60.0"
     assert payload["startup_batches"][0] == ["outbox-relay"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert "news-intelligence-v1" not in processes

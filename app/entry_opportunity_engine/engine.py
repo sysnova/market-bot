@@ -2146,11 +2146,12 @@ class EntryOpportunityEngineV10(EntryOpportunityEngineV9):
         leg_status: EntryLegStatus,
         horizon: AnalysisHorizon | None = None,
         price_breach_only: bool = False,
+        families: frozenset[EntrySignalFamily] = _CORE_FAMILIES,
     ) -> EntryOpportunity:
         legs: list[EntryHorizonLeg] = []
         for leg in opportunity.legs:
             owned = (
-                _leg_family(opportunity, leg) in _CORE_FAMILIES
+                _leg_family(opportunity, leg) in families
                 and (horizon is None or leg.horizon is horizon)
                 and evidence_at >= (leg.opened_at or opportunity.armed_at)
                 and (not price_breach_only or price <= leg.invalidation)
@@ -2161,7 +2162,7 @@ class EntryOpportunityEngineV10(EntryOpportunityEngineV9):
                 legs.append(leg)
         checkpoints = tuple(
             _close_checkpoint(cp, price=price, now=now, outcome=leg_status)
-            if cp.signal_family in _CORE_FAMILIES
+            if cp.signal_family in families
             and cp.status is EntryCheckpointStatus.OPEN
             and evidence_at >= cp.reached_at
             and (horizon is None or horizon in _checkpoint_horizons(opportunity, cp))
