@@ -22,6 +22,7 @@ from .v12 import SwingEngineV12
 from .v13 import SwingEngineV13
 from .v14 import SwingEngineV14
 from .v15 import SwingEngineV15
+from .v16 import SwingEngineV16
 
 __all__ = [
     "FailedBreakoutAssessment",
@@ -45,6 +46,7 @@ __all__ = [
     "SwingEngineV13",
     "SwingEngineV14",
     "SwingEngineV15",
+    "SwingEngineV16",
     "SwingIndicators",
     "SwingLevels",
 ]

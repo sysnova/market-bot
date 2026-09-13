@@ -158,6 +158,7 @@ def entry_signal_from_alert(alert: LocalAlert) -> EntrySignal | None:
         policy_version=policy_version,
         reasons=alert.reasons,
         source_event_ids=(alert.alert_id, *alert.component_analysis_ids),
+        entry_analyses=alert.component_analyses,
     )
 
 

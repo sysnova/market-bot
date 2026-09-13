@@ -54,6 +54,7 @@ _PROGRESS = {
     EntryMaturityLevel.L4: Decimal("100"),
 }
 _TERMINAL_LEGS = {
+    EntryLegStatus.RECOVERY_FAILED,
     EntryLegStatus.PROTECTION_EXIT,
     EntryLegStatus.TARGET_HIT,
     EntryLegStatus.INVALIDATED,
@@ -1051,7 +1052,7 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
         if active is None:
             if not _has_complete_signal_levels(signal):
                 return ()
-            opportunity = self._new_signal_opportunity(signal)
+            opportunity = self._capture_entry_evidence(self._new_signal_opportunity(signal), signal)
             event = self._event(
                 opportunity,
                 occurred_at=signal.created_at,
@@ -1123,7 +1124,9 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
                     ),
                 }
             )
-        changed = changed.model_copy(update={"signal_references": references})
+        changed = self._capture_entry_evidence(
+            changed.model_copy(update={"signal_references": references}), signal
+        )
         event = self._event(
             changed,
             occurred_at=signal.created_at,
@@ -1140,6 +1143,12 @@ class EntryOpportunityEngineV2(EntryOpportunityEngine):
         )
         await self._store.save(changed, event)
         return (event,)
+
+    @staticmethod
+    def _capture_entry_evidence(
+        opportunity: EntryOpportunity, signal: EntrySignal
+    ) -> EntryOpportunity:
+        return opportunity
 
     async def ingest_leveraged_cancellation(
         self,

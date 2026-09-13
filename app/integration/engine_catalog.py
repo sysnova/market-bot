@@ -42,6 +42,7 @@ from app.entry_opportunity_engine.v16 import EntryOpportunityEngineV16
 from app.entry_opportunity_engine.v17 import EntryOpportunityEngineV17
 from app.entry_opportunity_engine.v18 import EntryOpportunityEngineV18
 from app.entry_opportunity_engine.v19 import EntryOpportunityEngineV19
+from app.entry_opportunity_engine.v20 import EntryOpportunityEngineV20
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
 from app.entry_recovery_engine.strategy import validate_strategy as validate_recovery
@@ -137,6 +138,7 @@ from app.swing_engine import (
     SwingEngineV13,
     SwingEngineV14,
     SwingEngineV15,
+    SwingEngineV16,
 )
 from app.swing_engine.strategy import configure_engine as configure_swing
 from app.swing_engine.strategy import validate_strategy as validate_swing
@@ -185,6 +187,7 @@ def default_engine_registry() -> EngineRegistry:
                     "13.0.0": SwingEngineV13,
                     "14.0.0": SwingEngineV14,
                     "15.0.0": SwingEngineV15,
+                    "16.0.0": SwingEngineV16,
                 },
                 required_since="0.0.0",
                 configure=configure_swing,
@@ -297,6 +300,7 @@ def default_engine_registry() -> EngineRegistry:
                     "17.0.0": EntryOpportunityEngineV17,
                     "18.0.0": EntryOpportunityEngineV18,
                     "19.0.0": EntryOpportunityEngineV19,
+                    "20.0.0": EntryOpportunityEngineV20,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(

@@ -4,6 +4,21 @@ const { join } = require("node:path");
 const { test } = require("node:test");
 const { runInNewContext } = require("node:vm");
 
+test("Recovery warnings, pending exits and completed failures are distinct", () => {
+  const app = dashboard();
+  const row = {row_id:"se",symbol:"SE",entry_kind:"BUY",state:"L2",
+    checkpoint_status:"OPEN",lifecycle_status:"OPEN",entry_price:113.218,
+    current_price:112.38,invalidation:110.3523,pnl_percent:-0.74,
+    recovery_management:{status:"WARNING"}};
+  app.state.filtered=[row]; app.drawTable();
+  assert.match(app.element("opportunity-rows").innerHTML,/Recuperación en revisión/);
+  app.state.filtered=[{...row,recovery_management:{status:"EXIT_PENDING"}}]; app.drawTable();
+  assert.match(app.element("opportunity-rows").innerHTML,/Salida preparada/);
+  app.state.filtered=[{...row,checkpoint_status:"CLOSED",outcome:"RECOVERY_FAILED",exit_price:112.35}]; app.drawTable();
+  assert.match(app.element("opportunity-rows").innerHTML,/RECUPERACIÓN FALLIDA/);
+  assert.doesNotMatch(app.element("opportunity-rows").innerHTML,/Recuperación en revisión|Salida preparada/);
+});
+
 test("Protection is visible separately from original invalidation and exit outcome", () => {
   const app = dashboard();
   const row = {row_id: "tem", symbol: "TEM", entry_kind: "BUY", thesis_label: "Entrada Core",

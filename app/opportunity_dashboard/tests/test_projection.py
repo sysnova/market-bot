@@ -17,9 +17,46 @@ from app.contracts import (
     GeriCountertrendMaturity,
     SwingTradeMaturity,
 )
+from app.contracts.entry_opportunity import RecoveryExitState
 from app.opportunity_dashboard import build_dashboard_snapshot, checkpoint_pnl_percent
 
 NOW = datetime(2026, 8, 31, 15, tzinfo=UTC)
+
+
+def test_recovery_management_projection_distinguishes_warning_and_pending_exit() -> None:
+    state = RecoveryExitState(
+        analysis_id=UUID("0199a100-0000-7000-8000-000000000777"),
+        evidence_at=NOW - timedelta(hours=1),
+        pivot_at=NOW - timedelta(days=2),
+        avwap=Decimal("98"),
+        breakout_level=Decimal("99"),
+        rebound_low=Decimal("96"),
+        reaction_low=Decimal("92"),
+    )
+    cp = _checkpoint(
+        20, level=EntryMaturityLevel.L2, family=EntrySignalFamily.CORE_RECOVERY
+    ).model_copy(update={"recovery_exit": state})
+    item = opportunity().model_copy(update={"checkpoints": (cp,)})
+    row = build_dashboard_snapshot((item,), refreshed_at=NOW)["rows"][0]
+    assert row["recovery_management"]["status"] == "MONITORING"
+    for changes, status in (
+        ({"previous_failed_close": Decimal("97"), "previous_failed_bucket": NOW}, "WARNING"),
+        (
+            {
+                "previous_failed_close": Decimal("97"),
+                "previous_failed_bucket": NOW,
+                "pending_exit_at": NOW + timedelta(minutes=1),
+                "last_bar_at": NOW,
+                "bar_count": 15,
+            },
+            "EXIT_PENDING",
+        ),
+    ):
+        changed = cp.model_copy(update={"recovery_exit": state.model_copy(update=changes)})
+        row = build_dashboard_snapshot(
+            (item.model_copy(update={"checkpoints": (changed,)}),), refreshed_at=NOW
+        )["rows"][0]
+        assert row["recovery_management"]["status"] == status
 
 
 def test_active_buy_exposes_protection_separately_from_thesis_invalidation() -> None:

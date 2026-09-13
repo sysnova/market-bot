@@ -31,6 +31,46 @@ from .enums import (
 from .market_analysis import AnalysisResult
 
 
+class RecoveryExitState(StrictFrozenModel):
+    """Frozen recovery geometry plus restart-safe completed-bar confirmation."""
+
+    rule_version: SemVer = "1.0.0"
+    analysis_id: UUID
+    evidence_at: datetime
+    pivot_at: datetime
+    avwap: PositiveDecimal
+    breakout_level: PositiveDecimal
+    rebound_low: PositiveDecimal
+    reaction_low: PositiveDecimal
+    bucket_at: datetime | None = None
+    last_bar_at: datetime | None = None
+    bar_count: int = Field(default=0, ge=0, le=15)
+    previous_failed_close: PositiveDecimal | None = None
+    previous_failed_bucket: datetime | None = None
+    pending_exit_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_recovery_state(self) -> RecoveryExitState:
+        if self.analysis_id.version != 7:
+            raise ValueError("recovery evidence requires UUIDv7 analysis_id")
+        if (
+            self.evidence_at.tzinfo is None
+            or self.pivot_at.tzinfo is None
+            or self.pivot_at > self.evidence_at
+        ):
+            raise ValueError("recovery pivot must precede its timezone-aware evidence")
+        if (self.previous_failed_close is None) != (self.previous_failed_bucket is None):
+            raise ValueError("failed close requires its completed bucket timestamp")
+        if self.pending_exit_at is not None and (
+            self.last_bar_at is None
+            or self.pending_exit_at <= self.last_bar_at
+            or self.previous_failed_close is None
+            or self.bar_count != 15
+        ):
+            raise ValueError("pending recovery exit requires a completed confirmation")
+        return self
+
+
 class EntryMaturityCheckpoint(StrictFrozenModel):
     """One simulated entry at a maturity level within the same opportunity."""
 
@@ -67,9 +107,23 @@ class EntryMaturityCheckpoint(StrictFrozenModel):
     protection_stop: PositiveDecimal | None = None
     protection_updated_at: datetime | None = None
     protection_rule_version: SemVer | None = None
+    entry_analyses: tuple[AnalysisResult, ...] = ()
+    recovery_exit: RecoveryExitState | None = None
 
     @model_validator(mode="after")
     def validate_checkpoint(self) -> EntryMaturityCheckpoint:
+        if self.recovery_exit is not None and (
+            self.signal_family is not EntrySignalFamily.CORE_RECOVERY
+            or self.trade_side is not TradeSide.LONG
+            or self.level
+            not in {
+                EntryMaturityLevel.L1,
+                EntryMaturityLevel.L2,
+                EntryMaturityLevel.L3,
+                EntryMaturityLevel.L4,
+            }
+        ):
+            raise ValueError("recovery exit state belongs only to confirmed Core Recovery buys")
         protection = (
             self.protection_stop,
             self.protection_updated_at,

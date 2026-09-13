@@ -248,6 +248,7 @@ class EntryLegStatus(ContractEnum):
     EXPIRED = "EXPIRED"
     TIME_EXIT = "TIME_EXIT"
     PROTECTION_EXIT = "PROTECTION_EXIT"
+    RECOVERY_FAILED = "RECOVERY_FAILED"
 
 
 class EntryCheckpointStatus(ContractEnum):

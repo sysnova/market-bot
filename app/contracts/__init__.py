@@ -79,6 +79,7 @@ from .entry_opportunity import (
     EntryOpportunityEvent,
     EntryOpportunitySignalReference,
     EntryOpportunitySourceCursor,
+    RecoveryExitState,
 )
 from .entry_setup import EntrySetupAssessment
 from .entry_signal import EntrySignal
@@ -323,6 +324,7 @@ __all__ = [
     "PatternEvidence",
     "PipelineStep",
     "PriceLevel",
+    "RecoveryExitState",
     "RotationSector",
     "RuleBinding",
     "RuleInputDeclaration",

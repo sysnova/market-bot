@@ -204,9 +204,28 @@ def _checkpoint_row(
         "protection_stop": _number(checkpoint.protection_stop),
         "effective_stop": _number(effective_stop),
         "protection_rule_version": checkpoint.protection_rule_version,
+        "entry_evidence_count": len(checkpoint.entry_analyses),
+        "recovery_management": (
+            {
+                "avwap": _number(checkpoint.recovery_exit.avwap),
+                "breakout_level": _number(checkpoint.recovery_exit.breakout_level),
+                "rebound_low": _number(checkpoint.recovery_exit.rebound_low),
+                "status": (
+                    "EXIT_PENDING"
+                    if checkpoint.recovery_exit.pending_exit_at is not None
+                    else "WARNING"
+                    if checkpoint.recovery_exit.previous_failed_close is not None
+                    else "MONITORING"
+                ),
+            }
+            if checkpoint.recovery_exit is not None
+            and checkpoint.status is EntryCheckpointStatus.OPEN
+            else None
+        ),
         "protection_updated_at": (
             checkpoint.protection_updated_at.isoformat()
-            if checkpoint.protection_updated_at else None
+            if checkpoint.protection_updated_at
+            else None
         ),
         "risk_to_invalidation_percent": _number(risk),
         "target": _number(checkpoint.target),

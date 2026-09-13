@@ -15,6 +15,7 @@ from .enums import (
     GeriCountertrendMaturity,
     SwingTradeMaturity,
 )
+from .market_analysis import AnalysisResult
 
 
 class EntrySignal(StrictFrozenModel):
@@ -38,6 +39,7 @@ class EntrySignal(StrictFrozenModel):
     policy_version: SemVer
     reasons: tuple[NonEmptyStr, ...] = Field(min_length=1)
     source_event_ids: tuple[UUID, ...] = ()
+    entry_analyses: tuple[AnalysisResult, ...] = ()
 
     @model_validator(mode="after")
     def validate_signal(self) -> EntrySignal:
