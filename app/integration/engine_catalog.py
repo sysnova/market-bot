@@ -39,6 +39,8 @@ from app.entry_opportunity_engine import (
 )
 from app.entry_opportunity_engine.v15 import EntryOpportunityEngineV15
 from app.entry_opportunity_engine.v16 import EntryOpportunityEngineV16
+from app.entry_opportunity_engine.v17 import EntryOpportunityEngineV17
+from app.entry_opportunity_engine.v18 import EntryOpportunityEngineV18
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
 from app.entry_recovery_engine.strategy import validate_strategy as validate_recovery
@@ -55,6 +57,7 @@ from app.entry_watcher import (
     EntryWatcherV55,
     EntryWatcherV56,
     EntryWatcherV57,
+    EntryWatcherV58,
 )
 from app.entry_watcher.strategy import configure_engine as configure_watcher
 from app.entry_watcher.strategy import validate_strategy as validate_watcher
@@ -266,6 +269,7 @@ def default_engine_registry() -> EngineRegistry:
                     "5.5.0": EntryWatcherV55,
                     "5.6.0": EntryWatcherV56,
                     "5.7.0": EntryWatcherV57,
+                    "5.8.0": EntryWatcherV58,
                 },
                 required_since="0.0.0",
                 configure=configure_watcher,
@@ -289,6 +293,8 @@ def default_engine_registry() -> EngineRegistry:
                     "14.0.0": EntryOpportunityEngineV14,
                     "15.0.0": EntryOpportunityEngineV15,
                     "16.0.0": EntryOpportunityEngineV16,
+                    "17.0.0": EntryOpportunityEngineV17,
+                    "18.0.0": EntryOpportunityEngineV18,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(

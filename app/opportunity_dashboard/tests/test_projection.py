@@ -22,6 +22,18 @@ from app.opportunity_dashboard import build_dashboard_snapshot, checkpoint_pnl_p
 NOW = datetime(2026, 8, 31, 15, tzinfo=UTC)
 
 
+def test_closed_buy_uses_its_exit_date_and_has_no_remaining_stop_risk() -> None:
+    item = opportunity().model_copy(update={"updated_at": NOW + timedelta(days=5)})
+    snapshot = build_dashboard_snapshot((item,), refreshed_at=NOW + timedelta(days=5))
+    row = next(r for r in snapshot["rows"] if r["state"] == "L1")
+    assert row["checkpoint_status"] == "CLOSED"
+    assert row["lifecycle_status"] == "OPEN"
+    assert row["updated_at"] == NOW.isoformat()
+    assert row["risk_to_invalidation_percent"] is None
+    assert row["target_distance_percent"] is None
+    assert snapshot["filters"]["statuses"] == ["CLOSED", "OPEN"]
+
+
 def test_recovery_ct1_is_visible_without_a_buy_or_pnl_checkpoint() -> None:
     ref = EntryOpportunitySignalReference(
         signal_id=UUID("0199a100-0000-7002-8000-000000000001"),
@@ -131,7 +143,7 @@ def test_snapshot_separates_references_from_buys_and_projects_filter_dimensions(
         "CT0",
     }
     assert {row["state"] for row in rows if row["entry_kind"] == "BUY"} == {"L1", "CT1"}
-    assert snapshot["filters"]["statuses"] == ["OPEN"]
+    assert snapshot["filters"]["statuses"] == ["CLOSED", "OPEN"]
     assert snapshot["filters"]["theses"] == [
         {"value": "CORE_ENTRY", "label": "Entrada Core"},
         {"value": "GERI_COUNTERTREND", "label": "GERI Countertrend"},

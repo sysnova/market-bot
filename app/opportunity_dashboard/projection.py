@@ -91,7 +91,7 @@ def build_dashboard_snapshot(
                 key=lambda item: item["label"],
             ),
             "states": sorted({row["state"] for row in rows}),
-            "statuses": sorted({row["lifecycle_status"] for row in rows}),
+            "statuses": sorted({row["checkpoint_status"] for row in rows}),
         },
         "definitions": {
             "pnl": (
@@ -171,6 +171,9 @@ def _checkpoint_row(
         risk = (checkpoint.invalidation / checkpoint.current_price - 1) * 100
         if target_distance is not None:
             target_distance = -target_distance
+    if checkpoint.status is EntryCheckpointStatus.CLOSED:
+        risk = None
+        target_distance = None
     analyses = sorted(opportunity.latest_analyses, key=lambda item: item.as_of, reverse=True)
     return {
         "row_id": str(checkpoint.checkpoint_id),
@@ -203,7 +206,8 @@ def _checkpoint_row(
         "zone_low": _number(checkpoint.zone_low),
         "zone_high": _number(checkpoint.zone_high),
         "reached_at": checkpoint.reached_at.isoformat(),
-        "updated_at": opportunity.updated_at.isoformat(),
+        "updated_at": (checkpoint.closed_at or opportunity.updated_at).isoformat(),
+        "lifecycle_updated_at": opportunity.updated_at.isoformat(),
         "closed_at": checkpoint.closed_at.isoformat() if checkpoint.closed_at else None,
         "is_losing": pnl < 0,
         "latest_reasons": list(latest_reasons),

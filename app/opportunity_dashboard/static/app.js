@@ -34,7 +34,7 @@ function receiveSnapshot(snapshot) {
   $("analyze-failure").disabled = !snapshot.llm_available;
   fillSelect("filter-thesis", snapshot.filters.theses, "Todas las tesis");
   fillSelect("filter-state", snapshot.filters.states.map(value => ({ value, label: value })), "Todos los estados");
-  fillSelect("filter-status", snapshot.filters.statuses.map(value => ({ value, label: value })), "Todo el ciclo");
+  fillSelect("filter-status", snapshot.filters.statuses.map(value => ({ value, label: value })), "Todos los registros");
   applyFilters();
 }
 
@@ -55,7 +55,7 @@ function applyFilters() {
     if (f.kind && row.entry_kind !== f.kind) return false;
     if (f.thesis && row.thesis !== f.thesis) return false;
     if (f.state && row.state !== f.state) return false;
-    if (f.status && row.lifecycle_status !== f.status) return false;
+    if (f.status && row.checkpoint_status !== f.status) return false;
     const pnl = Number(row.pnl_percent);
     if (f.result === "negative" && pnl >= 0) return false;
     if (f.result === "positive" && pnl <= 0) return false;
@@ -111,8 +111,12 @@ function renderTable() {
   const rows = state.filtered, target = $("opportunity-rows");
   $("table-count").textContent = `${rows.length} ${rows.length === 1 ? "fila" : "filas"}`;
   target.innerHTML = rows.map(row => {
-    const pnl = Number(row.pnl_percent), risk = Number(row.risk_to_invalidation_percent);
-    return `<tr data-row="${row.row_id}"><td><span class="ticker-cell">${escapeHtml(row.symbol)}</span><span class="subline">${escapeHtml(row.pnl_basis === "LIVE_MARK" ? "LIVE" : "AUDITADO")}</span></td><td><span class="pill ${row.entry_kind === "REFERENCE" ? "ref" : ""}">${row.entry_kind === "SHORT" ? "SHORT" : row.entry_kind === "BUY" ? "COMPRA" : "REFERENCIA"}</span></td><td><b>${escapeHtml(row.thesis_label)}</b><span class="subline state-code">${escapeHtml(row.state)}</span></td><td>${escapeHtml(row.lifecycle_status)}<span class="subline">${escapeHtml(row.outcome || row.checkpoint_status)}</span></td><td>${money(row.entry_price)}<span class="subline">Inv. ${money(row.invalidation)}</span></td><td>${money(row.current_price)}${row.target ? `<span class="subline">Obj. ${money(row.target)}</span>` : ""}</td><td class="${signedClass(pnl)}"><b>${signed(pnl)}</b></td><td><span class="positive">${signed(Number(row.mfe_percent))}</span><span class="subline negative">${signed(Number(row.mae_percent))}</span></td><td>${risk.toFixed(2)}%<span class="subline">a invalidación</span></td><td>${formatDate(row.updated_at)}<span class="subline">${timeAgo(row.updated_at)}</span></td></tr>`;
+    const pnl = Number(row.pnl_percent), closed = row.checkpoint_status === "CLOSED";
+    const statusLabel = closed ? "CERRADA" : row.checkpoint_status === "OPEN" ? "ABIERTA" : "EN OBSERVACIÓN";
+    const tracking = row.lifecycle_status !== "CLOSED" ? "Ticker en seguimiento" : "Seguimiento cerrado";
+    const mark = closed ? (row.exit_price ?? row.current_price) : row.current_price;
+    const risk = closed || row.risk_to_invalidation_percent == null ? "—" : `${Number(row.risk_to_invalidation_percent).toFixed(2)}%<span class="subline">a invalidación</span>`;
+    return `<tr data-row="${row.row_id}"><td><span class="ticker-cell">${escapeHtml(row.symbol)}</span><span class="subline">${escapeHtml(row.pnl_basis === "LIVE_MARK" ? "LIVE" : "AUDITADO")}</span></td><td><span class="pill ${row.entry_kind === "REFERENCE" ? "ref" : ""}">${row.entry_kind === "SHORT" ? "SHORT" : row.entry_kind === "BUY" ? "COMPRA" : "REFERENCIA"}</span></td><td><b>${escapeHtml(row.thesis_label)}</b><span class="subline state-code">${escapeHtml(row.state)}</span></td><td>${statusLabel}<span class="subline">${escapeHtml(row.outcome || "")}</span><span class="subline">${tracking}</span></td><td>${money(row.entry_price)}<span class="subline">Inv. ${money(row.invalidation)}</span></td><td>${money(mark)}${closed ? `<span class="subline">Salida registrada</span>` : ""}${row.target ? `<span class="subline">Obj. ${money(row.target)}</span>` : ""}</td><td class="${signedClass(pnl)}"><b>${signed(pnl)}</b></td><td><span class="positive">${signed(Number(row.mfe_percent))}</span><span class="subline negative">${signed(Number(row.mae_percent))}</span></td><td>${risk}</td><td>${formatDate(row.updated_at)}<span class="subline">${timeAgo(row.updated_at)}</span></td></tr>`;
   }).join("") || `<tr><td colspan="10" class="empty-state">No hay oportunidades que coincidan.</td></tr>`;
 }
 

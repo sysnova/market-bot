@@ -1,0 +1,554 @@
+{
+  "entry_at": "2026-08-24T16:06:17.586932Z",
+  "entry_price": "263.219",
+  "analyses": [
+    {
+      "analysis_id": "01a03485-c334-71e9-83e5-64ebc8f86dcd",
+      "engine_id": "long-term",
+      "engine_version": "2.0.0",
+      "symbol": "AMZN",
+      "horizon": "LONG_TERM",
+      "as_of": "2026-08-24T16:05:00Z",
+      "verdict": "WATCH",
+      "direction": "BULLISH",
+      "score": "63.15",
+      "confidence": "0.6315",
+      "reasons": [
+        "trend_template_passed",
+        "weekly_above_30w",
+        "weekly_above_50w",
+        "weekly_above_200w",
+        "weekly_30w_rising",
+        "higher_weekly_lows",
+        "no_recent_weekly_distribution",
+        "above_weekly_buy_zone",
+        "market_regime:downtrend",
+        "distance_to_buy_zone_atr:0.6562"
+      ],
+      "metrics": [
+        {
+          "name": "classification",
+          "value": "watch_pullback"
+        },
+        {
+          "name": "reference_price",
+          "value": "263.219"
+        },
+        {
+          "name": "setup_score",
+          "value": "90.00"
+        },
+        {
+          "name": "entry_score",
+          "value": "59.00"
+        },
+        {
+          "name": "risk_flags",
+          "value": [
+            "above_weekly_buy_zone"
+          ]
+        },
+        {
+          "name": "daily_rsi14",
+          "value": "24.5283"
+        },
+        {
+          "name": "weekly_rsi14",
+          "value": "48.0869"
+        },
+        {
+          "name": "daily_rvol20",
+          "value": "0.6211"
+        },
+        {
+          "name": "weekly_rvol10",
+          "value": "0.7032"
+        },
+        {
+          "name": "weekly_sma200",
+          "value": "181.6271"
+        },
+        {
+          "name": "weekly_price_vs_sma200_percent",
+          "value": "44.9228"
+        },
+        {
+          "name": "trend_template_score",
+          "value": "100.00"
+        },
+        {
+          "name": "support",
+          "value": "225.5500"
+        },
+        {
+          "name": "resistance",
+          "value": "287.2000"
+        },
+        {
+          "name": "buy_zone_low",
+          "value": "225.5500"
+        },
+        {
+          "name": "buy_zone_high",
+          "value": "259.0272"
+        },
+        {
+          "name": "invalidation",
+          "value": "218.7835"
+        },
+        {
+          "name": "daily_atr14",
+          "value": "6.3879"
+        },
+        {
+          "name": "daily_atr_percentile",
+          "value": "11.5000"
+        },
+        {
+          "name": "daily_adx14",
+          "value": "37.4022"
+        },
+        {
+          "name": "daily_plus_di14",
+          "value": "9.9296"
+        },
+        {
+          "name": "daily_minus_di14",
+          "value": "28.6538"
+        },
+        {
+          "name": "market_regime",
+          "value": "downtrend"
+        },
+        {
+          "name": "distance_to_buy_zone_atr",
+          "value": "0.6562"
+        }
+      ],
+      "source_event_ids": [
+        "01a03484-97e0-7096-9404-2d06b7a8d77b"
+      ],
+      "context_hash": "sha256:8b3c458e3be3deeb699ef94fcfce5b0f03f39364f347649ed66684f422a1c8f3"
+    },
+    {
+      "analysis_id": "01a03485-bfc3-78fa-a1f6-8f5abb215327",
+      "engine_id": "swing",
+      "engine_version": "13.0.0",
+      "symbol": "AMZN",
+      "horizon": "SWING",
+      "as_of": "2026-08-24T15:45:00Z",
+      "verdict": "FAVORABLE",
+      "direction": "BULLISH",
+      "score": "90.00",
+      "confidence": "0.9000",
+      "reasons": [
+        "bullish_daily_trend",
+        "pullback_near_20d",
+        "above_pivot_low_avwap",
+        "below_breakout_avwap",
+        "market_regime:transitional",
+        "entry_zone_distance_atr:0",
+        "failed_breakout_recovered"
+      ],
+      "metrics": [
+        {
+          "name": "reference_price",
+          "value": "261.365"
+        },
+        {
+          "name": "daily_sma20",
+          "value": "261.3790"
+        },
+        {
+          "name": "daily_sma50",
+          "value": "249.7290"
+        },
+        {
+          "name": "daily_rsi14",
+          "value": "24.5283"
+        },
+        {
+          "name": "atr14",
+          "value": "6.3879"
+        },
+        {
+          "name": "daily_rvol20",
+          "value": "0.6211"
+        },
+        {
+          "name": "intraday_rvol20",
+          "value": "0.7072"
+        },
+        {
+          "name": "pivot_low_anchor_at",
+          "value": "2026-08-18T04:00:00Z"
+        },
+        {
+          "name": "pivot_low_avwap",
+          "value": "261.1680"
+        },
+        {
+          "name": "price_vs_pivot_low_avwap_percent",
+          "value": "0.0754"
+        },
+        {
+          "name": "breakout_anchor_at",
+          "value": "2026-08-03T04:00:00Z"
+        },
+        {
+          "name": "breakout_avwap",
+          "value": "271.3722"
+        },
+        {
+          "name": "price_vs_breakout_avwap_percent",
+          "value": "-3.6876"
+        },
+        {
+          "name": "daily_atr_percentile",
+          "value": "11.5000"
+        },
+        {
+          "name": "daily_adx14",
+          "value": "37.4022"
+        },
+        {
+          "name": "daily_plus_di14",
+          "value": "9.9296"
+        },
+        {
+          "name": "daily_minus_di14",
+          "value": "28.6538"
+        },
+        {
+          "name": "market_regime",
+          "value": "transitional"
+        },
+        {
+          "name": "structure_broken_confirmed",
+          "value": false
+        },
+        {
+          "name": "entry_zone_low",
+          "value": "258.1851"
+        },
+        {
+          "name": "entry_zone_high",
+          "value": "264.5730"
+        },
+        {
+          "name": "price_vs_entry_zone_atr",
+          "value": "0"
+        },
+        {
+          "name": "anchored_vwap_gate_passed",
+          "value": true
+        },
+        {
+          "name": "classification",
+          "value": "pullback"
+        },
+        {
+          "name": "risk_flags",
+          "value": [
+            "below_breakout_avwap"
+          ]
+        },
+        {
+          "name": "support",
+          "value": "257.0350"
+        },
+        {
+          "name": "structural_support",
+          "value": "257.0350"
+        },
+        {
+          "name": "invalidation",
+          "value": "253.1795"
+        },
+        {
+          "name": "invalidation_source",
+          "value": "recent_daily_low"
+        },
+        {
+          "name": "resistance",
+          "value": "284.0200"
+        },
+        {
+          "name": "resistance_source",
+          "value": "completed_daily_closes"
+        },
+        {
+          "name": "liquidity_high",
+          "value": "287.2000"
+        },
+        {
+          "name": "target_2r",
+          "value": "277.7360"
+        },
+        {
+          "name": "risk_percent",
+          "value": "3.1318"
+        },
+        {
+          "name": "risk_atr",
+          "value": "1.2814"
+        },
+        {
+          "name": "reward_risk_to_resistance",
+          "value": "2.7677"
+        },
+        {
+          "name": "failed_breakout",
+          "value": false
+        },
+        {
+          "name": "failed_breakout_state",
+          "value": "RECOVERED"
+        },
+        {
+          "name": "failed_breakout_level",
+          "value": "273.2300"
+        },
+        {
+          "name": "failed_breakout_at",
+          "value": "2026-08-03T04:00:00Z"
+        },
+        {
+          "name": "failed_breakout_failure_at",
+          "value": "2026-08-05T04:00:00Z"
+        },
+        {
+          "name": "failed_breakout_resolved_at",
+          "value": "2026-08-07T04:00:00Z"
+        },
+        {
+          "name": "failed_breakout_atr14_snapshot",
+          "value": "10.0325"
+        },
+        {
+          "name": "failed_breakout_age_bars",
+          "value": 4
+        },
+        {
+          "name": "failed_breakout_reset_reason",
+          "value": "RECOVERED"
+        },
+        {
+          "name": "failed_breakout_superseding_at",
+          "value": null
+        },
+        {
+          "name": "failed_breakout_superseding_level",
+          "value": null
+        },
+        {
+          "name": "swing_entry_gate_passed",
+          "value": true
+        },
+        {
+          "name": "minimum_reward_risk_to_resistance",
+          "value": "1.5"
+        },
+        {
+          "name": "entry_confirmation_rule_version",
+          "value": "3.2.0"
+        },
+        {
+          "name": "resistance_latest_completed_bar_included",
+          "value": true
+        },
+        {
+          "name": "entry_lane",
+          "value": "TREND_CONTINUATION"
+        },
+        {
+          "name": "continuation_entry_gate_passed",
+          "value": true
+        },
+        {
+          "name": "recovery_entry_gate_passed",
+          "value": false
+        }
+      ],
+      "source_event_ids": [
+        "01a0341f-b270-751d-810b-af74082cda98"
+      ],
+      "context_hash": "sha256:843ff66a320cda61a6686693bf9adca00d97dc71f9d4f42eaaab7642b5a0c806"
+    },
+    {
+      "analysis_id": "01a03484-97e0-79bc-97fd-653870451fe4",
+      "engine_id": "intraday",
+      "engine_version": "4.0.0",
+      "symbol": "AMZN",
+      "horizon": "INTRADAY",
+      "as_of": "2026-08-24T16:05:00Z",
+      "verdict": "FAVORABLE",
+      "direction": "BULLISH",
+      "score": "100.00",
+      "confidence": "1.0000",
+      "reasons": [
+        "setup:bullish_breakout",
+        "vwap_alignment:0.5859",
+        "relative_volume:1.4213",
+        "momentum_5m:0.1937",
+        "ema9_vs_ema20:0.0472",
+        "intraday_regime:bullish_trend",
+        "confirmation_quality:strong"
+      ],
+      "metrics": [
+        {
+          "name": "setup",
+          "value": "bullish_breakout"
+        },
+        {
+          "name": "reference_price",
+          "value": "263.219"
+        },
+        {
+          "name": "session_vwap",
+          "value": "261.6858"
+        },
+        {
+          "name": "relative_volume",
+          "value": "1.4213"
+        },
+        {
+          "name": "ema9",
+          "value": "262.8915"
+        },
+        {
+          "name": "ema20",
+          "value": "262.7674"
+        },
+        {
+          "name": "momentum_5_percent",
+          "value": "0.1937"
+        },
+        {
+          "name": "atr14",
+          "value": "0.2360"
+        },
+        {
+          "name": "atr_percent",
+          "value": "0.0897"
+        },
+        {
+          "name": "prior_range_high",
+          "value": "263.15"
+        },
+        {
+          "name": "prior_range_low",
+          "value": "262.4"
+        },
+        {
+          "name": "five_minute_bias",
+          "value": "bullish"
+        },
+        {
+          "name": "risk_flags",
+          "value": []
+        },
+        {
+          "name": "close_location",
+          "value": "0.7750"
+        },
+        {
+          "name": "volume_acceleration",
+          "value": "1.2166"
+        },
+        {
+          "name": "five_minute_higher_low",
+          "value": true
+        },
+        {
+          "name": "intraday_regime",
+          "value": "bullish_trend"
+        },
+        {
+          "name": "confirmation_quality",
+          "value": "strong"
+        },
+        {
+          "name": "invalidation_level",
+          "value": "262.5610"
+        },
+        {
+          "name": "objective_level",
+          "value": "264.2061"
+        },
+        {
+          "name": "risk_percent",
+          "value": "0.2500"
+        },
+        {
+          "name": "reward_risk_ratio",
+          "value": "1.5"
+        },
+        {
+          "name": "risk_ok",
+          "value": true
+        },
+        {
+          "name": "confirmation_persistence",
+          "value": true
+        },
+        {
+          "name": "minimum_tactical_risk",
+          "value": "0.6580"
+        },
+        {
+          "name": "raw_v3_confirmation_gate_passed",
+          "value": true
+        },
+        {
+          "name": "confirmation_gate_passed",
+          "value": true
+        },
+        {
+          "name": "entry_efficiency_gate_passed",
+          "value": true
+        },
+        {
+          "name": "mature_confirmation_gate_passed",
+          "value": true
+        },
+        {
+          "name": "mature_retest_confirmed",
+          "value": true
+        },
+        {
+          "name": "entry_trigger_level",
+          "value": "263.1500"
+        },
+        {
+          "name": "entry_window_low",
+          "value": "263.1500"
+        },
+        {
+          "name": "entry_window_high",
+          "value": "263.2680"
+        },
+        {
+          "name": "breakout_extension_atr",
+          "value": "0.2924"
+        },
+        {
+          "name": "ema20_extension_atr",
+          "value": "1.9136"
+        },
+        {
+          "name": "entry_timing",
+          "value": "efficient_retest"
+        },
+        {
+          "name": "entry_confirmation_rule_version",
+          "value": "1.0.0"
+        }
+      ],
+      "source_event_ids": [
+        "01a03484-97e0-7096-9404-2d06b7a8d77b"
+      ],
+      "context_hash": "sha256:4346eef342e313ae48e4b0fe4d671019841f3878d60008ac484edc4fa8e56d3b"
+    }
+  ]
+}

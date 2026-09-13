@@ -1038,3 +1038,35 @@ def test_observed_pullback_definition_changes_only_entry_watcher() -> None:
     for slot in assembly.definition.engines:
         if slot is not EngineSlot.ENTRY_WATCHER:
             assert assembly.spec(slot) == previous.spec(slot)
+
+
+def test_rule_owned_levels_definition_changes_only_entry_engines() -> None:
+    from app.entry_opportunity_engine import EntryOpportunityEngineV17
+    from app.entry_watcher import EntryWatcherV58
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.61.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.62.0.yaml")
+    engine = assembly.build_entry_watcher(store=InMemoryEntryWatchStore())
+    assert type(engine) is EntryWatcherV58
+    assert assembly.spec(EngineSlot.ENTRY_WATCHER).strategy.version == "1.6.0"
+    assert (
+        type(assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()))
+        is EntryOpportunityEngineV17
+    )
+    for slot in assembly.definition.engines:
+        if slot not in {EngineSlot.ENTRY_WATCHER, EngineSlot.ENTRY_OPPORTUNITY}:
+            assert assembly.spec(slot) == previous.spec(slot)
+
+
+def test_gap_exit_definition_changes_only_entry_opportunity() -> None:
+    from app.entry_opportunity_engine import EntryOpportunityEngineV18
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.62.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.63.0.yaml")
+    assert (
+        type(assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()))
+        is EntryOpportunityEngineV18
+    )
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.ENTRY_OPPORTUNITY:
+            assert assembly.spec(slot) == previous.spec(slot)

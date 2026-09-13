@@ -331,13 +331,13 @@ class EntryOpportunityEngine:
 
         if result.horizon is AnalysisHorizon.INTRADAY:
             updated, retested = _record_l2_retest(updated, result=result, price=price, now=now)
-            if retested and _l2_reclaim_confirmed(updated, result=result, price=price):
-                anchor = _l2_anchor(updated)
-                assert anchor is not None
-                invalidation = _metric_decimal(result, "invalidation_level") or anchor.invalidation
-                if invalidation >= price:
-                    invalidation = anchor.invalidation
-                target = _analysis_target(updated.latest_analyses, price) or anchor.target
+            if (
+                retested
+                and _l2_reclaim_confirmed(updated, result=result, price=price)
+                and (levels := self._l2_reclaim_levels(updated, result=result, price=price))
+                is not None
+            ):
+                invalidation, target = levels
                 changed = self._advance(
                     updated,
                     level=EntryMaturityLevel.L4,
@@ -383,6 +383,18 @@ class EntryOpportunityEngine:
             return (event,)
         await self._store.save(updated, None)
         return ()
+
+    def _l2_reclaim_levels(
+        self, opportunity: EntryOpportunity, *, result: AnalysisResult, price: Decimal,
+    ) -> tuple[Decimal, Decimal | None] | None:
+        """Preserve legacy levels; newer implementations own their selection policy."""
+        anchor = _l2_anchor(opportunity)
+        assert anchor is not None
+        invalidation = _metric_decimal(result, "invalidation_level") or anchor.invalidation
+        if invalidation >= price:
+            invalidation = anchor.invalidation
+        target = _analysis_target(opportunity.latest_analyses, price) or anchor.target
+        return invalidation, target
 
     @staticmethod
     def _analysis_price(active: EntryOpportunity, result: AnalysisResult) -> Decimal:
@@ -552,8 +564,8 @@ class EntryOpportunityEngine:
             return ()
         if active.last_market_bar_at is not None and bar.timestamp <= active.last_market_bar_at:
             return ()
-        checkpoints = tuple(_mark_checkpoint(item, bar) for item in active.checkpoints)
-        legs = tuple(_mark_leg(item, bar) for item in active.legs)
+        checkpoints = tuple(self._mark_checkpoint(item, bar) for item in active.checkpoints)
+        legs = tuple(self._mark_leg(item, bar) for item in active.legs)
         marked = active.model_copy(update={"checkpoints": checkpoints})
         marked = _record_l2_bar_retest(marked, bar)
         checkpoints = marked.checkpoints
@@ -572,7 +584,7 @@ class EntryOpportunityEngine:
             )
             closed = self._close_opportunity(
                 updated,
-                price=active.invalidation,
+                price=self._original_stop_price(active, bar),
                 now=bar.timestamp,
                 reason=EntryCloseReason.ORIGINAL_THESIS_INVALIDATED,
                 leg_status=EntryLegStatus.THESIS_BROKEN,
@@ -627,6 +639,20 @@ class EntryOpportunityEngine:
             event = self._event(updated, occurred_at=bar.timestamp, reasons=tuple(reasons))
         await self._store.save(updated, event)
         return (event,) if event is not None else ()
+
+    @staticmethod
+    def _mark_checkpoint(
+        checkpoint: EntryMaturityCheckpoint, bar: MarketBar
+    ) -> EntryMaturityCheckpoint:
+        return _mark_checkpoint(checkpoint, bar)
+
+    @staticmethod
+    def _mark_leg(leg: EntryHorizonLeg, bar: MarketBar) -> EntryHorizonLeg:
+        return _mark_leg(leg, bar)
+
+    @staticmethod
+    def _original_stop_price(opportunity: EntryOpportunity, bar: MarketBar) -> Decimal:
+        return opportunity.invalidation
 
     @staticmethod
     def _bar_can_close_opportunity(

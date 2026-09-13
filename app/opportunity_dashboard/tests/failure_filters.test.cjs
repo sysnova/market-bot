@@ -10,9 +10,11 @@ function dashboard() {
     if (!elements.has(id)) elements.set(id, {
       value: "", options: [], addEventListener() {},
       set innerHTML(html) {
+        this.html = html;
         this.options = [...html.matchAll(/<option value="([^"]*)"/g)].map(match => ({ value: match[1] }));
         this.value = this.options[0]?.value || "";
       },
+      get innerHTML() { return this.html || ""; },
     });
     return elements.get(id);
   };
@@ -21,8 +23,9 @@ function dashboard() {
     WebSocket: class { addEventListener() {} },
   };
   runInNewContext(readFileSync(join(__dirname, "../static/app.js"), "utf8") + `
+    const drawTable = renderTable;
     renderKpis = renderTickerBars = renderPulse = renderTable = renderRanking = () => {};
-    globalThis.api = { state, applyFilters, receiveSnapshot };
+    globalThis.api = { state, applyFilters, receiveSnapshot, drawTable };
   `, context);
   return { ...context.api, element: getElementById };
 }
@@ -46,7 +49,7 @@ test("Failure Lab follows all main filters and live snapshots, preserving only v
     app.applyFilters();
     assert.deepEqual(values(), app.state.filtered.filter(row => row.is_losing).map(row => `opp|${row.row_id}`));
   }
-  assert.deepEqual(values(), ["opp|buy", "opp|checkpoint_status"]);
+  assert.deepEqual(values(), ["opp|buy", "opp|lifecycle_status"]);
   app.element("failure-select").value = "opp|buy";
   const snapshot = {
     rows, transport: "TEST", definitions: { pnl: "" }, llm_available: true,
@@ -54,7 +57,7 @@ test("Failure Lab follows all main filters and live snapshots, preserving only v
   };
   app.receiveSnapshot(snapshot);
   assert.equal(app.element("failure-select").value, "opp|buy");
-  assert.deepEqual(values(), ["opp|buy", "opp|checkpoint_status"]);
+  assert.deepEqual(values(), ["opp|buy", "opp|lifecycle_status"]);
   app.element("filter-symbol").value = "BKR";
   app.applyFilters();
   assert.deepEqual(values(), ["opp|symbol"]);
@@ -65,4 +68,26 @@ test("Failure Lab follows all main filters and live snapshots, preserving only v
   app.element("filter-result").value = "positive";
   app.applyFilters();
   assert.deepEqual(values(), []);
+});
+
+test("A closed JPM buy is not shown or filtered as an open ticker lifecycle", () => {
+  const app = dashboard();
+  const row = {symbol:"JPM", row_id:"jpm", opportunity_id:"opp", entry_kind:"BUY",
+    thesis_label:"Entrada Core", state:"L1", lifecycle_status:"CONFIRMING",
+    checkpoint_status:"CLOSED", outcome:"INVALIDATED", pnl_basis:"AUDITED_CLOSE",
+    entry_price:357.43, current_price:356.28, exit_price:351.5, pnl_percent:-1.6591,
+    invalidation:353.0933, risk_to_invalidation_percent:null, updated_at:"2026-09-09T12:30:33Z"};
+  app.state.rows = [row];
+  app.element("filter-status").value = "CLOSED";
+  app.applyFilters();
+  assert.equal(app.state.filtered.length, 1);
+  app.drawTable();
+  const html = app.element("opportunity-rows").innerHTML;
+  assert.match(html, /CERRADA/);
+  assert.match(html, /Ticker en seguimiento/);
+  assert.match(html, /351\.50/);
+  assert.doesNotMatch(html, /CONFIRMING|a invalidación|356\.28/);
+  app.element("filter-status").value = "OPEN";
+  app.applyFilters();
+  assert.equal(app.state.filtered.length, 0);
 });
