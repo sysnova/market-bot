@@ -129,3 +129,45 @@ reason. This is an OHLC simulation without fees, borrow costs or fill guarantees
 Activation: apply local PostgreSQL migration 20260910180000_short_opportunity_levels.sql
 and select definition 7.55.0 for the updated consumer and monitors. The base is operational definition 7.52.0; prior definitions and the existing
 Windows default selection are unchanged. Do not blindly replay old alerts into the live ledger.
+
+
+### v21: GERI CT2–CT4 profit protection
+
+Definition `7.66.0` selects Entry Opportunity `21.0.0`, retaining v20's Core
+protection and evidence-based recovery exits. Confirmed LONG GERI CT2–CT4
+checkpoints and the horizon belonging to the same entry now use the same
+risk-based trailing rule (protection rule `1.0.0`). CT0/CT1, including legacy
+CT1 checkpoints, are excluded; closed history is never rewritten.
+
+Initial risk R is entry minus the original invalidation. A final RTH 1-minute
+close at or above entry + R arms the stop at max(entry, close - R). Subsequent
+qualifying closes may raise it, never lower it. Original invalidation and
+target remain unchanged. The new stop is effective only on the next bar;
+wicks and historical MFE cannot arm it. Existing stops/targets execute first,
+and opening gaps execute at the observed open, so a loss remains possible.
+
+Protection persists through restart and produces `profit_protection_updated`
+and `geri_countertrend_ctN_protection_exit` lifecycle events. A protected CT2
+exit closes only its matching horizon, preserving an independent open CT3/CT4
+checkpoint. Existing dashboard protection levels and exit labels consume the
+same contracts; no migration or broker execution is added. Activation requires
+selecting the new definition in the running deployment.
+
+
+### v22: SwingTrade ST3–ST4 profit protection
+
+Definition `7.67.0` selects Entry Opportunity `22.0.0`. LONG SwingTrade ST3 and
+ST4 now use the same close-confirmed protection as Core L1–L4 and GERI CT2–CT4.
+Each checkpoint uses its own initial R (entry minus original invalidation).
+After a final RTH 1-minute close reaches entry + R, protection advances to
+max(entry, close - R, existing protection). It becomes effective next bar,
+never decreases, and does not replace the original stop or target. Stops and
+targets already active execute first; gaps use the observed opening price.
+
+Matching horizon legs share the protection; an independent ST4 checkpoint or
+another setup remains active after an ST3 protection exit. Protection state
+survives serialization/restart and emits `profit_protection_updated` and
+`swing_trade_stN_protection_exit` events, using the existing dashboard labels.
+ST1/ST2 remain references. Closed history is unchanged, old MFE cannot arm a
+stop retroactively, and v21 remains available for rollback. No contract change,
+migration, or broker execution is introduced. Runtime activation is separate.

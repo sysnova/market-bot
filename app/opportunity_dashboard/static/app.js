@@ -118,8 +118,32 @@ function renderTable() {
     const recoveryLabel = recovery?.status === "EXIT_PENDING" ? "Salida preparada" : recovery?.status === "WARNING" ? "Recuperación en revisión" : "";
     const mark = closed ? (row.exit_price ?? row.current_price) : row.current_price;
     const risk = closed || row.risk_to_invalidation_percent == null ? "—" : `${Number(row.risk_to_invalidation_percent).toFixed(2)}%<span class="subline">${row.protection_stop ? "a protección" : "a invalidación"}</span>`;
-    return `<tr data-row="${row.row_id}"><td><span class="ticker-cell">${escapeHtml(row.symbol)}</span><span class="subline">${escapeHtml(row.pnl_basis === "LIVE_MARK" ? "LIVE" : "AUDITADO")}</span></td><td><span class="pill ${row.entry_kind === "REFERENCE" ? "ref" : ""}">${row.entry_kind === "SHORT" ? "SHORT" : row.entry_kind === "BUY" ? "COMPRA" : "REFERENCIA"}</span></td><td><b>${escapeHtml(row.thesis_label)}</b><span class="subline state-code">${escapeHtml(row.state)}</span></td><td>${statusLabel}<span class="subline">${escapeHtml(row.outcome === "PROTECTION_EXIT" ? "SALIDA POR PROTECCIÓN" : row.outcome === "RECOVERY_FAILED" ? "RECUPERACIÓN FALLIDA" : row.outcome || "")}</span><span class="subline">${tracking}</span>${recoveryLabel ? `<span class="subline">${recoveryLabel}</span>` : ""}</td><td>${money(row.entry_price)}<span class="subline">Inv. ${money(row.invalidation)}</span>${row.protection_stop ? `<span class="subline">Protección ${money(row.protection_stop)}</span>` : ""}</td><td>${money(mark)}${closed ? `<span class="subline">Salida registrada</span>` : ""}${row.target ? `<span class="subline">Obj. ${money(row.target)}</span>` : ""}</td><td class="${signedClass(pnl)}"><b>${signed(pnl)}</b></td><td><span class="positive">${signed(Number(row.mfe_percent))}</span><span class="subline negative">${signed(Number(row.mae_percent))}</span></td><td>${risk}</td><td>${formatDate(row.updated_at)}<span class="subline">${timeAgo(row.updated_at)}</span></td></tr>`;
-  }).join("") || `<tr><td colspan="10" class="empty-state">No hay oportunidades que coincidan.</td></tr>`;
+    return `<tr data-row="${row.row_id}"><td><span class="ticker-cell">${escapeHtml(row.symbol)}</span><span class="subline">${escapeHtml(row.pnl_basis === "LIVE_MARK" ? "LIVE" : "AUDITADO")}</span></td><td><span class="pill ${row.entry_kind === "REFERENCE" ? "ref" : ""}">${row.entry_kind === "SHORT" ? "SHORT" : row.entry_kind === "BUY" ? "COMPRA" : "REFERENCIA"}</span></td><td><b>${escapeHtml(row.thesis_label)}</b><span class="subline state-code">${escapeHtml(row.state)}</span></td><td>${statusLabel}<span class="subline">${escapeHtml(row.outcome === "PROTECTION_EXIT" ? "SALIDA POR PROTECCIÓN" : row.outcome === "RECOVERY_FAILED" ? "RECUPERACIÓN FALLIDA" : row.outcome || "")}</span><span class="subline">${tracking}</span>${recoveryLabel ? `<span class="subline">${recoveryLabel}</span>` : ""}</td><td>${money(row.entry_price)}<span class="subline">Inv. ${money(row.invalidation)}</span>${row.protection_stop ? `<span class="subline">Protección ${money(row.protection_stop)}</span>` : ""}</td><td>${money(mark)}${closed ? `<span class="subline">Salida registrada</span>` : ""}${row.target ? `<span class="subline">Obj. ${money(row.target)}</span>` : ""}</td><td class="${signedClass(pnl)}"><b>${signed(pnl)}</b></td><td><span class="positive">${signed(Number(row.mfe_percent))}</span><span class="subline negative">${signed(Number(row.mae_percent))}</span></td><td>${risk}</td><td>${formatDate(row.updated_at)}<span class="subline">${timeAgo(row.updated_at)}</span></td><td><button type="button" class="ghost-button copy-row-button" data-copy-row data-symbol="${escapeHtml(row.symbol)}" aria-label="Copiar fila de ${escapeHtml(row.symbol)} ${escapeHtml(row.thesis_label)} ${escapeHtml(row.state)}">Copiar fila</button></td></tr>`;
+  }).join("") || `<tr><td colspan="11" class="empty-state">No hay oportunidades que coincidan.</td></tr>`;
+}
+
+async function copyOpportunityRow(event) {
+  const button = event.target.closest("button[data-copy-row]");
+  if (!button || button.disabled) return;
+  const row = button.closest("tr"), table = row.closest("table");
+  const markdownCell = cell => cell.innerText.trim()
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n+/g, "<br>");
+  const headers = [...table.tHead.rows[0].cells].slice(0, -1).map(markdownCell);
+  const values = [...row.cells].slice(0, -1).map(markdownCell);
+  const text = [headers, headers.map(() => "---"), values]
+    .map(cells => `| ${cells.join(" | ")} |`).join("\n");
+  const status = $("copy-row-status");
+  button.disabled = true;
+  status.textContent = `Copiando fila de ${button.dataset.symbol}…`;
+  try {
+    await navigator.clipboard.writeText(text);
+    status.textContent = `Fila de ${button.dataset.symbol} copiada.`;
+  } catch {
+    status.textContent = "No se pudo copiar. Revisá el permiso del portapapeles del navegador y volvé a intentar.";
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderRanking() {
@@ -191,4 +215,5 @@ function escapeHtml(value) { return String(value ?? "").replace(/[&<>'"]/g, char
 filters.forEach(name => $(`filter-${name}`).addEventListener(name === "symbol" ? "input" : "change", applyFilters));
 $("clear-filters").addEventListener("click", () => { filters.forEach(name => $(`filter-${name}`).value = ""); applyFilters(); });
 $("analyze-failure").addEventListener("click", analyzeFailure);
+$("opportunity-rows").addEventListener("click", copyOpportunityRow);
 connect();

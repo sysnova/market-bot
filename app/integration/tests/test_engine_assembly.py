@@ -1099,3 +1099,31 @@ def test_recovery_failure_assembly_changes_only_swing_evidence_and_opportunity()
     for slot in assembly.definition.engines:
         if slot not in {EngineSlot.SWING,EngineSlot.ENTRY_OPPORTUNITY}:
             assert assembly.spec(slot)==previous.spec(slot)
+
+
+def test_geri_profit_protection_definition_changes_only_opportunity() -> None:
+    from app.entry_opportunity_engine import EntryOpportunityEngineV21
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.65.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.66.0.yaml")
+    assert (
+        type(assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()))
+        is EntryOpportunityEngineV21
+    )
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.ENTRY_OPPORTUNITY:
+            assert assembly.spec(slot) == previous.spec(slot)
+
+
+def test_swing_trade_profit_protection_definition_changes_only_opportunity() -> None:
+    from app.entry_opportunity_engine import EntryOpportunityEngineV22
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.66.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.67.0.yaml")
+    assert (
+        type(assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore()))
+        is EntryOpportunityEngineV22
+    )
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.ENTRY_OPPORTUNITY:
+            assert assembly.spec(slot) == previous.spec(slot)
