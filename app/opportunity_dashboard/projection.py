@@ -15,6 +15,7 @@ from app.contracts import (
     EntryOpportunitySignalReference,
     EntrySignalFamily,
     GeriCountertrendMaturity,
+    SwingTradeMaturity,
 )
 
 _FOUR_PLACES = Decimal("0.0001")
@@ -83,7 +84,10 @@ def build_dashboard_snapshot(
         "filters": {
             "symbols": sorted({row["symbol"] for row in rows}),
             "theses": sorted(
-                ({"value": row["thesis"], "label": row["thesis_label"]} for row in rows),
+                (
+                    {"value": family.value, "label": _THESIS_LABELS[family]}
+                    for family in {EntrySignalFamily(row["thesis"]) for row in rows}
+                ),
                 key=lambda item: item["label"],
             ),
             "states": sorted({row["state"] for row in rows}),
@@ -97,11 +101,11 @@ def build_dashboard_snapshot(
                 "Los promedios son simples, sin position sizing."
             ),
             "reference": (
-                "ARMED, IN_ZONE y CT0 son referencias; recuperación 1.9 también mantiene CT1 "
+                "ARMED, IN_ZONE, ST1, ST2 y CT0 son referencias; recuperación 1.9 mantiene CT1 "
                 "como observación sin entrada ni P/L."
             ),
             "buy": (
-                "Core L1-L4, SwingTrade ST1-ST4, GERI histórico CT1-CT4; "
+                "Core L1-L4, SwingTrade ST3-ST4, GERI histórico CT1-CT4; "
                 "recuperación 1.9 entra desde CT2 con riesgo válido."
             ),
         },
@@ -156,9 +160,7 @@ def _checkpoint_row(
     pnl = checkpoint_pnl_percent(checkpoint)
     family = checkpoint.signal_family
     state = _checkpoint_state(checkpoint)
-    entry_kind = "BUY" if _is_buy(checkpoint) else "REFERENCE"
-    if family is EntrySignalFamily.CORE_SHORT:
-        entry_kind = "SHORT"
+    entry_kind = checkpoint_entry_kind(checkpoint)
     target_distance = (
         (checkpoint.target / checkpoint.current_price - Decimal("1")) * Decimal("100")
         if checkpoint.target is not None
@@ -230,11 +232,20 @@ def _checkpoint_state(checkpoint: EntryMaturityCheckpoint) -> str:
     return checkpoint.level.value
 
 
+def checkpoint_entry_kind(checkpoint: EntryMaturityCheckpoint) -> str:
+    """Classify the recorded stage, independently of later maturity or closure."""
+    if checkpoint.signal_family is EntrySignalFamily.CORE_SHORT:
+        return "SHORT"
+    return "BUY" if _is_buy(checkpoint) else "REFERENCE"
+
+
 def _is_buy(checkpoint: EntryMaturityCheckpoint) -> bool:
     if checkpoint.signal_family in _CORE_FAMILIES:
         return checkpoint.level in _CORE_BUYS
     if checkpoint.signal_family is EntrySignalFamily.GERI_COUNTERTREND:
         return checkpoint.countertrend_maturity is not GeriCountertrendMaturity.CT0
+    if checkpoint.signal_family is EntrySignalFamily.SWING_TRADE:
+        return checkpoint.swing_trade_maturity in {SwingTradeMaturity.ST3, SwingTradeMaturity.ST4}
     return True
 
 

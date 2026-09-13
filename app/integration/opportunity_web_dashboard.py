@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import http
 import json
-import webbrowser
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -38,6 +37,8 @@ from app.persistence import create_database_engine, create_session_factory
 
 from .distributed_composition import write_ready
 from .entry_opportunity_store import PostgresEntryOpportunityStore
+from .marketbot_definition import load_marketbot_definition
+from .monitor_browser import open_monitor_browser
 
 
 class OpportunityWebBook:
@@ -129,6 +130,7 @@ async def run_opportunity_web_dashboard(
         raise ValueError("refresh interval must be positive")
 
     settings = AppSettings()
+    definition = load_marketbot_definition(settings.definition_path)
     clock = SystemClock()
     database = create_database_engine(
         settings.database_url.get_secret_value(),
@@ -227,7 +229,7 @@ async def run_opportunity_web_dashboard(
             name, content_type = resource
             response = connection.respond(
                 http.HTTPStatus.OK,
-                static_root.joinpath(name).read_text(),
+                static_root.joinpath(name).read_text(encoding="utf-8"),
             )
             response.headers["Content-Type"] = content_type
             response.headers["Cache-Control"] = "no-store"
@@ -273,12 +275,14 @@ async def run_opportunity_web_dashboard(
                 broadcast=broadcast,
             )
         )
-        url = f"http://{host}:{port}/"
+        url_host = f"[{host}]" if host == "::1" else host
+        url = f"http://{url_host}:{port}/"
         if ready_path is not None:
             write_ready(
                 ready_path,
                 {
                     "service": "opportunity-web-dashboard",
+                    "marketbot_definition_version": definition.version,
                     "url": url,
                     "history": history,
                     "refresh_interval_seconds": refresh_interval.total_seconds(),
@@ -287,7 +291,7 @@ async def run_opportunity_web_dashboard(
                 },
             )
         if open_browser:
-            await asyncio.to_thread(webbrowser.open, url)
+            await asyncio.to_thread(open_monitor_browser, url)
         try:
             await web_server.serve_forever()
         finally:

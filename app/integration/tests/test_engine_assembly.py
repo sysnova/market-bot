@@ -1026,3 +1026,15 @@ def test_recovery_lifecycle_definition_changes_only_entry_opportunity() -> None:
     for slot in assembly.definition.engines:
         if slot is not EngineSlot.ENTRY_OPPORTUNITY:
             assert assembly.spec(slot) == previous.spec(slot)
+
+
+def test_observed_pullback_definition_changes_only_entry_watcher() -> None:
+    from app.entry_watcher import EntryWatcherV57
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.60.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.61.0.yaml")
+    assert type(assembly.build_entry_watcher(store=InMemoryEntryWatchStore())) is EntryWatcherV57
+    assert assembly.spec(EngineSlot.ENTRY_WATCHER).strategy.version == "1.5.0"
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.ENTRY_WATCHER:
+            assert assembly.spec(slot) == previous.spec(slot)

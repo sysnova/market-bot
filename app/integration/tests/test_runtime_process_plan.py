@@ -85,6 +85,19 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     assert positions["order-flow"] < positions["leveraged-thesis"]
 
 
+def test_web_dashboard_is_an_automatic_operator_monitor_without_blocking_market_data() -> None:
+    assembly = MarketBotAssembly.from_settings(AppSettings())
+    plan = build_runtime_process_plan(assembly.definition, runtime_root=Path(".runtime"))
+    dashboard = plan.process("opportunity-web-dashboard")
+
+    assert dashboard.operator_monitor is True
+    assert dashboard.dependencies == ("entry-opportunity",)
+    assert dashboard.arguments[:4] == ("run", "marketbot", "monitor", "opportunities-web")
+    assert "--open-browser" in dashboard.arguments
+    assert dashboard.ready_path == Path(".runtime/status/opportunity-web-dashboard.ready.json")
+    assert dashboard.name not in plan.process("alpaca-market-stream").dependencies
+
+
 def test_v727_starts_support_before_the_enriched_swing_engines() -> None:
     definition = load_marketbot_definition(
         Path(__file__).parents[3] / "configs/marketbot/7.27.0.yaml"

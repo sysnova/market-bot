@@ -15,6 +15,7 @@ from app.contracts import (
     EntryOpportunityStatus,
     EntrySignalFamily,
     GeriCountertrendMaturity,
+    SwingTradeMaturity,
 )
 from app.opportunity_dashboard import build_dashboard_snapshot, checkpoint_pnl_percent
 
@@ -41,6 +42,14 @@ def test_recovery_ct1_is_visible_without_a_buy_or_pnl_checkpoint() -> None:
     assert rows[0]["entry_kind"] == "REFERENCE"
     assert rows[0]["entry_price"] is None
     assert rows[0]["pnl_percent"] is None
+
+    mixed = item.model_copy(update={"checkpoints": opportunity().checkpoints})
+    snapshot = build_dashboard_snapshot((mixed,), refreshed_at=NOW)
+    assert len(snapshot["rows"]) == 5
+    assert snapshot["filters"]["theses"] == [
+        {"value": "CORE_ENTRY", "label": "Entrada Core"},
+        {"value": "GERI_COUNTERTREND", "label": "GERI Countertrend"},
+    ]
 
 
 def _checkpoint(
@@ -123,6 +132,10 @@ def test_snapshot_separates_references_from_buys_and_projects_filter_dimensions(
     }
     assert {row["state"] for row in rows if row["entry_kind"] == "BUY"} == {"L1", "CT1"}
     assert snapshot["filters"]["statuses"] == ["OPEN"]
+    assert snapshot["filters"]["theses"] == [
+        {"value": "CORE_ENTRY", "label": "Entrada Core"},
+        {"value": "GERI_COUNTERTREND", "label": "GERI Countertrend"},
+    ]
 
 
 @pytest.mark.unit
@@ -132,3 +145,23 @@ def test_checkpoint_pnl_uses_audited_close_or_live_mark() -> None:
 
     assert checkpoint_pnl_percent(live) == Decimal("-3.00")
     assert checkpoint_pnl_percent(closed) == Decimal("-5.00")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("closed", [False, True])
+def test_swing_checkpoints_only_count_confirmed_st3_st4_as_buys(closed: bool) -> None:
+    checkpoints = tuple(
+        _checkpoint(index, family=EntrySignalFamily.SWING_TRADE, closed=closed).model_copy(
+            update={"swing_trade_maturity": stage}
+        )
+        for index, stage in enumerate(SwingTradeMaturity, start=1)
+    )
+    item = opportunity().model_copy(update={"checkpoints": checkpoints})
+    rows = build_dashboard_snapshot((item,), refreshed_at=NOW)["rows"]
+    assert {row["state"]: row["entry_kind"] for row in rows} == {
+        "ST1": "REFERENCE",
+        "ST2": "REFERENCE",
+        "ST3": "BUY",
+        "ST4": "BUY",
+    }
+    assert all(row["pnl_percent"] == "-5.0000" for row in rows)

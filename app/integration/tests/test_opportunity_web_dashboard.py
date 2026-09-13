@@ -1,4 +1,5 @@
 from datetime import timedelta
+from importlib.resources import files
 
 import pytest
 from typer.testing import CliRunner
@@ -26,3 +27,9 @@ def test_cli_registers_opportunity_web_monitor() -> None:
 
     assert result.exit_code == 0
     assert "real-time filterable Entry Opportunity web dashboard" in result.output
+
+
+def test_dashboard_assets_match_the_advertised_utf8_charset() -> None:
+    static_root = files("app.opportunity_dashboard").joinpath("static")
+    for asset in ("index.html", "app.js", "styles.css"):
+        assert static_root.joinpath(asset).read_text(encoding="utf-8")

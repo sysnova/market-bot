@@ -67,6 +67,13 @@ remain hidden with separate logs under `.runtime/logs`. Use `-NoTileWindows` to 
 positions, `-Once` for the legacy one-process diagnostic, or `-Symbols HIMS,ZETA` for a temporary
 symbol override.
 
+Both launchers also start the opportunities web monitor at `http://127.0.0.1:8765/`
+when Entry Opportunity is active, and open the desktop browser once the server is ready.
+WSL opens the Windows browser; Linux keeps the monitor in the `Opportunities` tmux window
+and reuses its existing pane on subsequent launches. Browser-opening failures leave the
+server available. This monitor does not gate the market-data stream. Its Failure Lab calls
+OpenAI only when the operator selects **Analizar con OpenAI**.
+
 Validate one complete backfill/evaluation and exit:
 
 ```powershell

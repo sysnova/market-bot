@@ -388,6 +388,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "volume-structure-v1",
         "options-gamma-v1",
         "confirmed-buy-monitor",
+        "opportunity-web-dashboard",
         "alpaca-market-stream",
     ]
     assert "dilution-sec" not in plan["active_engine_slots"]

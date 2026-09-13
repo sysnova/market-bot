@@ -388,6 +388,22 @@ def build_runtime_process_plan(
         operator_monitor=True,
     )
 
+    add(
+        "opportunity-web-dashboard",
+        (
+            "run",
+            "marketbot",
+            "monitor",
+            "opportunities-web",
+            "--open-browser",
+            "--ready-path",
+            str(ready("opportunity-web-dashboard")),
+        ),
+        slot=EngineSlot.ENTRY_OPPORTUNITY,
+        dependencies=("entry-opportunity",),
+        operator_monitor=True,
+    )
+
     # Gamma is fail-open context: an options-provider outage must not block equities.
     stream_dependencies = tuple(
         process.name

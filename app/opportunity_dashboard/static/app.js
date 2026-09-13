@@ -35,7 +35,6 @@ function receiveSnapshot(snapshot) {
   fillSelect("filter-thesis", snapshot.filters.theses, "Todas las tesis");
   fillSelect("filter-state", snapshot.filters.states.map(value => ({ value, label: value })), "Todos los estados");
   fillSelect("filter-status", snapshot.filters.statuses.map(value => ({ value, label: value })), "Todo el ciclo");
-  fillFailureSelect();
   applyFilters();
 }
 
@@ -64,6 +63,7 @@ function applyFilters() {
     if (f.result === "open" && row.checkpoint_status === "CLOSED") return false;
     return true;
   });
+  fillFailureSelect();
   renderKpis(); renderTickerBars(); renderPulse(); renderTable(); renderRanking();
 }
 
@@ -73,7 +73,7 @@ function renderKpis() {
   const active = new Set(rows.filter(r => r.lifecycle_status !== "CLOSED").map(r => r.symbol));
   const average = avg(values), positive = values.filter(value => value > 0).length;
   $("kpi-rows").textContent = rows.length;
-  $("kpi-buys").textContent = `${rows.filter(r => r.entry_kind === "BUY").length} compras � ${rows.filter(r => r.entry_kind === "SHORT").length} shorts`;
+  $("kpi-buys").textContent = `${rows.filter(r => r.entry_kind === "BUY").length} compras · ${rows.filter(r => r.entry_kind === "SHORT").length} shorts`;
   setSigned($("kpi-pnl"), average);
   $("kpi-tickers").textContent = tickers.size;
   $("kpi-open").textContent = `${active.size} activos`;
@@ -130,8 +130,9 @@ function renderRanking() {
 
 function fillFailureSelect() {
   const select = $("failure-select"), previous = select.value;
-  const losing = state.rows.filter(row => row.is_losing).sort((a,b) => Number(a.pnl_percent) - Number(b.pnl_percent));
-  select.innerHTML = `<option value="">Seleccionar oportunidad…</option>` + losing.map(row => `<option value="${row.opportunity_id}|${row.row_id}">${escapeHtml(row.symbol)} · ${escapeHtml(row.thesis_label)} ${escapeHtml(row.state)} · ${signed(Number(row.pnl_percent))}</option>`).join("");
+  const losing = state.filtered.filter(row => row.is_losing).sort((a,b) => Number(a.pnl_percent) - Number(b.pnl_percent));
+  const placeholder = losing.length ? "Seleccionar oportunidad…" : "Sin pérdidas para los filtros actuales";
+  select.innerHTML = `<option value="">${placeholder}</option>` + losing.map(row => `<option value="${row.opportunity_id}|${row.row_id}">${escapeHtml(row.symbol)} · ${escapeHtml(row.thesis_label)} ${escapeHtml(row.state)} · ${signed(Number(row.pnl_percent))}</option>`).join("");
   if ([...select.options].some(option => option.value === previous)) select.value = previous;
 }
 

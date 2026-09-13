@@ -1,0 +1,648 @@
+{
+  "entry_at": "2026-08-19T16:17:06.072234+00:00",
+  "entry_price": "98.815",
+  "state": {
+    "peak": "108.2100",
+    "phase": "EARLY_ENTRY",
+    "start": "91.56000000",
+    "pullback_low": "96.2949",
+    "schema_version": "1.0.0"
+  },
+  "analyses": [
+    {
+      "analysis_id": "01a01acf-d9e1-7f5f-9f9d-6e60f0c58c0c",
+      "engine_id": "long-term",
+      "engine_version": "2.0.0",
+      "symbol": "HOOD",
+      "horizon": "LONG_TERM",
+      "as_of": "2026-08-19T16:16:00Z",
+      "verdict": "WATCH",
+      "direction": "BULLISH",
+      "score": "42.55",
+      "confidence": "0.4255",
+      "reasons": [
+        "weekly_above_30w",
+        "weekly_above_200w",
+        "weekly_rsi_constructive",
+        "higher_weekly_lows",
+        "trend_template_failed:sma150_above_sma200",
+        "trend_template_failed:sma200_rising",
+        "trend_template_failed:price_above_sma50",
+        "trend_template_failed:price_within_25pct_52w_high",
+        "above_weekly_buy_zone",
+        "market_regime:clean_uptrend",
+        "distance_to_buy_zone_atr:1.2351"
+      ],
+      "metrics": [
+        {
+          "name": "classification",
+          "value": "watch_pullback"
+        },
+        {
+          "name": "reference_price",
+          "value": "98.815"
+        },
+        {
+          "name": "setup_score",
+          "value": "26.00"
+        },
+        {
+          "name": "entry_score",
+          "value": "59.00"
+        },
+        {
+          "name": "risk_flags",
+          "value": [
+            "trend_template_failed:sma150_above_sma200",
+            "trend_template_failed:sma200_rising",
+            "trend_template_failed:price_above_sma50",
+            "trend_template_failed:price_within_25pct_52w_high",
+            "above_weekly_buy_zone"
+          ]
+        },
+        {
+          "name": "daily_rsi14",
+          "value": "52.7599"
+        },
+        {
+          "name": "weekly_rsi14",
+          "value": "57.6920"
+        },
+        {
+          "name": "daily_rvol20",
+          "value": "0.6696"
+        },
+        {
+          "name": "weekly_rvol10",
+          "value": "0.5243"
+        },
+        {
+          "name": "weekly_sma200",
+          "value": "45.9493"
+        },
+        {
+          "name": "weekly_price_vs_sma200_percent",
+          "value": "115.0522"
+        },
+        {
+          "name": "trend_template_score",
+          "value": "50.00"
+        },
+        {
+          "name": "support",
+          "value": "73.1800"
+        },
+        {
+          "name": "resistance",
+          "value": "120.0500"
+        },
+        {
+          "name": "buy_zone_low",
+          "value": "78.3592"
+        },
+        {
+          "name": "buy_zone_high",
+          "value": "93.2907"
+        },
+        {
+          "name": "invalidation",
+          "value": "70.9846"
+        },
+        {
+          "name": "daily_atr14",
+          "value": "4.4727"
+        },
+        {
+          "name": "daily_atr_percentile",
+          "value": "29.5000"
+        },
+        {
+          "name": "daily_adx14",
+          "value": "34.3162"
+        },
+        {
+          "name": "daily_plus_di14",
+          "value": "23.4276"
+        },
+        {
+          "name": "daily_minus_di14",
+          "value": "19.1561"
+        },
+        {
+          "name": "market_regime",
+          "value": "clean_uptrend"
+        },
+        {
+          "name": "distance_to_buy_zone_atr",
+          "value": "1.2351"
+        }
+      ],
+      "source_event_ids": [
+        "01a01ace-de00-72d9-b61f-8e5e0ebfcda3"
+      ],
+      "context_hash": "sha256:8bd92329dd81d52d50d345d908f8d8d7d1219ef2554f68003a9297014c3e5c09"
+    },
+    {
+      "analysis_id": "01a01ace-ec25-7d46-8930-baa6ce0e6b9b",
+      "engine_id": "swing",
+      "engine_version": "6.0.0",
+      "symbol": "HOOD",
+      "horizon": "SWING",
+      "as_of": "2026-08-19T16:00:00Z",
+      "verdict": "WATCH",
+      "direction": "BULLISH",
+      "score": "3.00",
+      "confidence": "0.0300",
+      "reasons": [
+        "bearish_daily_trend",
+        "above_pivot_low_avwap",
+        "broken_daily_structure",
+        "below_breakout_avwap",
+        "market_regime:transitional",
+        "entry_zone_distance_atr:0",
+        "failed_breakout_recovered",
+        "insufficient_reward_risk_to_close_resistance"
+      ],
+      "metrics": [
+        {
+          "name": "reference_price",
+          "value": "98.4701"
+        },
+        {
+          "name": "daily_sma20",
+          "value": "93.9790"
+        },
+        {
+          "name": "daily_sma50",
+          "value": "99.4336"
+        },
+        {
+          "name": "daily_rsi14",
+          "value": "52.7599"
+        },
+        {
+          "name": "atr14",
+          "value": "4.4727"
+        },
+        {
+          "name": "daily_rvol20",
+          "value": "0.6696"
+        },
+        {
+          "name": "intraday_rvol20",
+          "value": "1.1339"
+        },
+        {
+          "name": "pivot_low_anchor_at",
+          "value": "2026-07-31T04:00:00Z"
+        },
+        {
+          "name": "pivot_low_avwap",
+          "value": "93.1304"
+        },
+        {
+          "name": "price_vs_pivot_low_avwap_percent",
+          "value": "5.7336"
+        },
+        {
+          "name": "breakout_anchor_at",
+          "value": "2026-06-17T04:00:00Z"
+        },
+        {
+          "name": "breakout_avwap",
+          "value": "102.1628"
+        },
+        {
+          "name": "price_vs_breakout_avwap_percent",
+          "value": "-3.6145"
+        },
+        {
+          "name": "daily_atr_percentile",
+          "value": "29.5000"
+        },
+        {
+          "name": "daily_adx14",
+          "value": "34.3162"
+        },
+        {
+          "name": "daily_plus_di14",
+          "value": "23.4276"
+        },
+        {
+          "name": "daily_minus_di14",
+          "value": "19.1561"
+        },
+        {
+          "name": "market_regime",
+          "value": "transitional"
+        },
+        {
+          "name": "structure_broken_confirmed",
+          "value": false
+        },
+        {
+          "name": "entry_zone_low",
+          "value": "97.1973"
+        },
+        {
+          "name": "entry_zone_high",
+          "value": "101.6700"
+        },
+        {
+          "name": "price_vs_entry_zone_atr",
+          "value": "0"
+        },
+        {
+          "name": "anchored_vwap_gate_passed",
+          "value": true
+        },
+        {
+          "name": "classification",
+          "value": "setup"
+        },
+        {
+          "name": "risk_flags",
+          "value": [
+            "broken_daily_structure",
+            "below_breakout_avwap",
+            "structural_invalidation_risk_too_wide"
+          ]
+        },
+        {
+          "name": "support",
+          "value": "90.2100"
+        },
+        {
+          "name": "structural_support",
+          "value": "90.2100"
+        },
+        {
+          "name": "invalidation",
+          "value": "88.8569"
+        },
+        {
+          "name": "invalidation_source",
+          "value": "recent_daily_low"
+        },
+        {
+          "name": "resistance",
+          "value": "106.3600"
+        },
+        {
+          "name": "resistance_source",
+          "value": "completed_daily_closes"
+        },
+        {
+          "name": "liquidity_high",
+          "value": "108.2100"
+        },
+        {
+          "name": "target_2r",
+          "value": "117.6965"
+        },
+        {
+          "name": "risk_percent",
+          "value": "9.7626"
+        },
+        {
+          "name": "risk_atr",
+          "value": "2.1493"
+        },
+        {
+          "name": "reward_risk_to_resistance",
+          "value": "0.8207"
+        },
+        {
+          "name": "failed_breakout",
+          "value": false
+        },
+        {
+          "name": "failed_breakout_state",
+          "value": "RECOVERED"
+        },
+        {
+          "name": "failed_breakout_level",
+          "value": "101.8800"
+        },
+        {
+          "name": "failed_breakout_at",
+          "value": "2026-06-17T04:00:00Z"
+        },
+        {
+          "name": "failed_breakout_failure_at",
+          "value": "2026-06-24T04:00:00Z"
+        },
+        {
+          "name": "failed_breakout_resolved_at",
+          "value": "2026-07-01T04:00:00Z"
+        },
+        {
+          "name": "failed_breakout_atr14_snapshot",
+          "value": "7.6909"
+        },
+        {
+          "name": "failed_breakout_age_bars",
+          "value": 9
+        },
+        {
+          "name": "failed_breakout_reset_reason",
+          "value": "RECOVERED"
+        },
+        {
+          "name": "failed_breakout_superseding_at",
+          "value": null
+        },
+        {
+          "name": "failed_breakout_superseding_level",
+          "value": null
+        },
+        {
+          "name": "swing_entry_gate_passed",
+          "value": false
+        },
+        {
+          "name": "minimum_reward_risk_to_resistance",
+          "value": "1.5"
+        },
+        {
+          "name": "entry_confirmation_rule_version",
+          "value": "2.0.0"
+        }
+      ],
+      "source_event_ids": [
+        "01a01acd-f3a0-7550-b02a-6ebcc05ef07b"
+      ],
+      "context_hash": "sha256:1ff6c2ea8bf2ca3db96e2749799579c55e30f86c5243912d85eb5b97ba2a1342"
+    },
+    {
+      "analysis_id": "01a01ace-de00-7d52-bd03-c063403f6bb8",
+      "engine_id": "intraday",
+      "engine_version": "4.0.0",
+      "symbol": "HOOD",
+      "horizon": "INTRADAY",
+      "as_of": "2026-08-19T16:16:00Z",
+      "verdict": "FAVORABLE",
+      "direction": "BULLISH",
+      "score": "100.00",
+      "confidence": "1.0000",
+      "reasons": [
+        "setup:bullish_breakout",
+        "vwap_alignment:3.3257",
+        "relative_volume:1.3371",
+        "momentum_5m:0.4728",
+        "ema9_vs_ema20:0.0849",
+        "intraday_regime:bullish_trend",
+        "confirmation_quality:strong"
+      ],
+      "metrics": [
+        {
+          "name": "setup",
+          "value": "bullish_breakout"
+        },
+        {
+          "name": "reference_price",
+          "value": "98.815"
+        },
+        {
+          "name": "session_vwap",
+          "value": "95.6345"
+        },
+        {
+          "name": "relative_volume",
+          "value": "1.3371"
+        },
+        {
+          "name": "ema9",
+          "value": "98.5399"
+        },
+        {
+          "name": "ema20",
+          "value": "98.4563"
+        },
+        {
+          "name": "momentum_5_percent",
+          "value": "0.4728"
+        },
+        {
+          "name": "atr14",
+          "value": "0.2267"
+        },
+        {
+          "name": "atr_percent",
+          "value": "0.2294"
+        },
+        {
+          "name": "prior_range_high",
+          "value": "98.8"
+        },
+        {
+          "name": "prior_range_low",
+          "value": "98.18"
+        },
+        {
+          "name": "five_minute_bias",
+          "value": "bullish"
+        },
+        {
+          "name": "risk_flags",
+          "value": []
+        },
+        {
+          "name": "close_location",
+          "value": "0.9302"
+        },
+        {
+          "name": "volume_acceleration",
+          "value": "1.4398"
+        },
+        {
+          "name": "five_minute_higher_low",
+          "value": true
+        },
+        {
+          "name": "intraday_regime",
+          "value": "bullish_trend"
+        },
+        {
+          "name": "confirmation_quality",
+          "value": "strong"
+        },
+        {
+          "name": "invalidation_level",
+          "value": "98.5680"
+        },
+        {
+          "name": "objective_level",
+          "value": "99.1856"
+        },
+        {
+          "name": "risk_percent",
+          "value": "0.2500"
+        },
+        {
+          "name": "reward_risk_ratio",
+          "value": "1.5"
+        },
+        {
+          "name": "risk_ok",
+          "value": true
+        },
+        {
+          "name": "confirmation_persistence",
+          "value": false
+        },
+        {
+          "name": "minimum_tactical_risk",
+          "value": "0.2470"
+        },
+        {
+          "name": "raw_v3_confirmation_gate_passed",
+          "value": true
+        },
+        {
+          "name": "confirmation_gate_passed",
+          "value": true
+        },
+        {
+          "name": "entry_efficiency_gate_passed",
+          "value": true
+        },
+        {
+          "name": "mature_confirmation_gate_passed",
+          "value": true
+        },
+        {
+          "name": "mature_retest_confirmed",
+          "value": true
+        },
+        {
+          "name": "entry_trigger_level",
+          "value": "98.8000"
+        },
+        {
+          "name": "entry_window_low",
+          "value": "98.8000"
+        },
+        {
+          "name": "entry_window_high",
+          "value": "98.9134"
+        },
+        {
+          "name": "breakout_extension_atr",
+          "value": "0.0662"
+        },
+        {
+          "name": "ema20_extension_atr",
+          "value": "1.5823"
+        },
+        {
+          "name": "entry_timing",
+          "value": "efficient_retest"
+        },
+        {
+          "name": "entry_confirmation_rule_version",
+          "value": "1.0.0"
+        }
+      ],
+      "source_event_ids": [
+        "01a01ace-de00-72d9-b61f-8e5e0ebfcda3"
+      ],
+      "context_hash": "sha256:876ea378d6c04fff0f556240b8e79164b303a397b20bd1131f2d0bc94fefaa71"
+    },
+    {
+      "analysis_id": "01a019ff-1aca-7288-9c81-e9bf83203e42",
+      "engine_id": "options-gamma",
+      "engine_version": "1.0.0",
+      "symbol": "HOOD",
+      "horizon": "OPTIONS_GAMMA",
+      "as_of": "2026-08-19T12:28:40.410709Z",
+      "verdict": "CAUTION",
+      "direction": "NEUTRAL",
+      "score": "65.8042",
+      "confidence": "0.6580",
+      "reasons": [
+        "options_gamma_status:degraded",
+        "options_gamma_regime:mixed",
+        "options_gamma_warning:missing_open_interest",
+        "options_gamma_warning:missing_gamma",
+        "options_gamma_warning:incomplete_chain"
+      ],
+      "metrics": [
+        {
+          "name": "reference_price",
+          "value": "91.1200"
+        },
+        {
+          "name": "expires_at",
+          "value": "2026-08-19T12:48:40.410709Z"
+        },
+        {
+          "name": "gamma_status",
+          "value": "DEGRADED"
+        },
+        {
+          "name": "gamma_quality_score",
+          "value": "65.8042"
+        },
+        {
+          "name": "gamma_regime",
+          "value": "MIXED"
+        },
+        {
+          "name": "gamma_directional_bias",
+          "value": "UNRELIABLE"
+        },
+        {
+          "name": "gamma_coverage_ratio",
+          "value": "0.6976"
+        },
+        {
+          "name": "gamma_net_ratio",
+          "value": "-0.0965"
+        },
+        {
+          "name": "gamma_call_wall",
+          "value": "100.0000"
+        },
+        {
+          "name": "gamma_put_wall",
+          "value": "90.0000"
+        },
+        {
+          "name": "gamma_absolute_wall",
+          "value": "90.0000"
+        },
+        {
+          "name": "gamma_max_pain",
+          "value": "94.0000"
+        },
+        {
+          "name": "gamma_flip",
+          "value": "92.9313"
+        },
+        {
+          "name": "gamma_expected_move_low",
+          "value": "86.9900"
+        },
+        {
+          "name": "gamma_expected_move_high",
+          "value": "95.2500"
+        },
+        {
+          "name": "gamma_pin_risk",
+          "value": false
+        },
+        {
+          "name": "gamma_acceleration_risk",
+          "value": false
+        },
+        {
+          "name": "gamma_assessment_id",
+          "value": "01a019ff-1ab3-7306-af89-98c901906530"
+        }
+      ],
+      "source_event_ids": [],
+      "context_hash": "sha256:69b509fafbf9333ad37a4149fc2609aa9148eed9dd302e05461cd1fd8a2376db"
+    }
+  ]
+}

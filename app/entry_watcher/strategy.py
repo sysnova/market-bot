@@ -19,6 +19,7 @@ _CONFIGURED_IMPLEMENTATIONS = {
     "5.4.0",
     "5.5.0",
     "5.6.0",
+    "5.7.0",
 }
 
 
@@ -30,17 +31,17 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
     behavior.positive_int("trigger_rearm_cooldown_minutes")
     behavior.boolean("strong_confirmation_required")
     behavior.boolean("five_minute_higher_low_required")
-    if implementation in {"5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         behavior.boolean("no_retest_higher_low_continuation")
-    if implementation in {"5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         behavior.decimal("zone_exit_buffer_percent")
-    if implementation in {"5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         behavior.decimal("initial_arm_min_score")
         behavior.decimal("initial_arm_max_distance_percent")
         behavior.decimal("initial_arm_max_distance_atr")
-    if implementation in {"5.3.0", "5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.3.0", "5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         behavior.boolean("trigger_on_first_mature_confirmation")
-    if implementation in {"5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         for name in (
             "early_entry_max_extension_percent",
             "early_entry_max_extension_atr",
@@ -51,7 +52,7 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
             "pullback_min_reward_risk",
         ):
             behavior.decimal(name)
-    if implementation == "5.6.0":
+    if implementation in {"5.6.0", "5.7.0"}:
         behavior.positive_int("transition_price_max_age_minutes")
 
 
@@ -66,9 +67,7 @@ def configure_engine(
     behavior = source.behavior()
     policy_value = kwargs.get("policy")
     policy = (
-        EntryWatcherPolicy()
-        if policy_value is None
-        else cast("EntryWatcherPolicy", policy_value)
+        EntryWatcherPolicy() if policy_value is None else cast("EntryWatcherPolicy", policy_value)
     )
     kwargs.update(
         policy=replace(
@@ -80,52 +79,36 @@ def configure_engine(
         minimum_reconfirmation_delay=timedelta(
             minutes=behavior.positive_int("fresh_reconfirmation_delay_minutes")
         ),
-        strong_confirmation_required=behavior.boolean(
-            "strong_confirmation_required"
-        ),
-        five_minute_higher_low_required=behavior.boolean(
-            "five_minute_higher_low_required"
-        ),
+        strong_confirmation_required=behavior.boolean("strong_confirmation_required"),
+        five_minute_higher_low_required=behavior.boolean("five_minute_higher_low_required"),
     )
-    if implementation in {"5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.0.0", "5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         kwargs["no_retest_higher_low_enabled"] = behavior.boolean(
             "no_retest_higher_low_continuation"
         )
-    if implementation in {"5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0"}:
-        kwargs["zone_exit_buffer_percent"] = behavior.decimal(
-            "zone_exit_buffer_percent"
-        )
-    if implementation in {"5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.1.0", "5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
+        kwargs["zone_exit_buffer_percent"] = behavior.decimal("zone_exit_buffer_percent")
+    if implementation in {"5.2.0", "5.3.0", "5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         kwargs.update(
             initial_arm_min_score=behavior.decimal("initial_arm_min_score"),
-            initial_arm_max_distance_percent=behavior.decimal(
-                "initial_arm_max_distance_percent"
-            ),
-            initial_arm_max_distance_atr=behavior.decimal(
-                "initial_arm_max_distance_atr"
-            ),
+            initial_arm_max_distance_percent=behavior.decimal("initial_arm_max_distance_percent"),
+            initial_arm_max_distance_atr=behavior.decimal("initial_arm_max_distance_atr"),
         )
-    if implementation in {"5.3.0", "5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.3.0", "5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         kwargs["trigger_on_first_mature_confirmation"] = behavior.boolean(
             "trigger_on_first_mature_confirmation"
         )
-    if implementation in {"5.4.0", "5.5.0", "5.6.0"}:
+    if implementation in {"5.4.0", "5.5.0", "5.6.0", "5.7.0"}:
         kwargs.update(
-            early_entry_max_extension_percent=behavior.decimal(
-                "early_entry_max_extension_percent"
-            ),
-            early_entry_max_extension_atr=behavior.decimal(
-                "early_entry_max_extension_atr"
-            ),
-            early_entry_min_reward_risk=behavior.decimal(
-                "early_entry_min_reward_risk"
-            ),
+            early_entry_max_extension_percent=behavior.decimal("early_entry_max_extension_percent"),
+            early_entry_max_extension_atr=behavior.decimal("early_entry_max_extension_atr"),
+            early_entry_min_reward_risk=behavior.decimal("early_entry_min_reward_risk"),
             pullback_min_retracement=behavior.decimal("pullback_min_retracement"),
             pullback_max_retracement=behavior.decimal("pullback_max_retracement"),
             pullback_stop_atr_buffer=behavior.decimal("pullback_stop_atr_buffer"),
             pullback_min_reward_risk=behavior.decimal("pullback_min_reward_risk"),
         )
-    if implementation == "5.6.0":
+    if implementation in {"5.6.0", "5.7.0"}:
         kwargs["transition_price_max_age"] = timedelta(
             minutes=behavior.positive_int("transition_price_max_age_minutes")
         )
