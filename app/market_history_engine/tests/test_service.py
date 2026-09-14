@@ -325,3 +325,40 @@ async def test_retention_keeps_a_safety_margin_over_registered_requirements() ->
     await service.ensure(request(BarTimeframe.MINUTE_1, timedelta(days=7), 500))
 
     assert service.retention_limits()[BarTimeframe.MINUTE_1] == 1875
+
+
+async def test_startup_refreshes_old_intraday_tail_even_if_hourly_cache_ttl_has_not_elapsed() -> (
+    None
+):
+    rest = FakeRest()
+    latest = NOW - timedelta(minutes=35)
+    repository = FakeRepository(
+        {
+            "TGT": BarCoverage(count=500, latest=latest, downloaded_at=NOW - timedelta(minutes=20)),
+            "ADUR": BarCoverage(
+                count=500,
+                latest=NOW - timedelta(minutes=1),
+                downloaded_at=NOW - timedelta(minutes=1),
+            ),
+        }
+    )
+    service = MarketHistoryService(rest=rest, repository=repository, feed="sip", batch_size=20)
+    await service.ensure(request(BarTimeframe.MINUTE_1, timedelta(days=5), 500))
+    assert len(rest.calls) == 1
+    assert rest.calls[0]["symbols"] == ("TGT",)
+    assert rest.calls[0]["start"] == latest - timedelta(minutes=2)
+
+
+async def test_recent_provider_check_of_closed_market_does_not_redownload_for_each_worker() -> None:
+    rest = FakeRest()
+    repository = FakeRepository(
+        {
+            symbol: BarCoverage(
+                count=500, latest=NOW - timedelta(days=2), downloaded_at=NOW - timedelta(seconds=30)
+            )
+            for symbol in ("TGT", "ADUR")
+        }
+    )
+    service = MarketHistoryService(rest=rest, repository=repository, feed="sip", batch_size=20)
+    await service.ensure(request(BarTimeframe.MINUTE_1, timedelta(days=5), 500))
+    assert rest.calls == []

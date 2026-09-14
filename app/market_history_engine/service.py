@@ -200,6 +200,19 @@ def _pending_sync_batches(
     force_refresh: bool = False,
 ) -> tuple[tuple[tuple[str, ...], datetime], ...]:
     threshold = as_of - freshness
+    # Hourly refresh is a scheduling interval, not sufficient startup freshness
+    # for intraday evidence. Reuse a current tail or a recent provider check;
+    # otherwise fetch the missing tail incrementally before warming the worker.
+    intraday_minutes = {
+        BarTimeframe.MINUTE_1: 1,
+        BarTimeframe.MINUTE_5: 5,
+        BarTimeframe.MINUTE_15: 15,
+    }.get(requirement.timeframe)
+    tail_threshold = (
+        as_of - min(freshness, timedelta(minutes=intraday_minutes + 2))
+        if intraday_minutes is not None
+        else threshold
+    )
     grouped: dict[datetime, list[str]] = {}
     normalized = tuple(dict.fromkeys(symbol.strip().upper() for symbol in symbols))
     for symbol in normalized:
@@ -210,6 +223,7 @@ def _pending_sync_batches(
             and item.latest is not None
             and item.downloaded_at is not None
             and item.downloaded_at >= threshold
+            and max(item.latest, item.downloaded_at) >= tail_threshold
         ):
             continue
         start = _symbol_sync_start(item, requirement, as_of=as_of)

@@ -252,3 +252,36 @@ async def test_loader_excludes_current_partial_daily_bar() -> None:
     )
 
     assert [item.timestamp for item in bars] == [NOW - timedelta(days=1)]
+
+
+async def test_loader_excludes_forming_rest_bars_even_when_provider_marks_them_final() -> None:
+    at = datetime(2026, 9, 14, 16, 38, 30, tzinfo=UTC)
+    closed = bar(BarTimeframe.MINUTE_15, timestamp=at.replace(minute=15, second=0))
+    forming = bar(BarTimeframe.MINUTE_15, timestamp=at.replace(minute=30, second=0))
+    minute = bar(BarTimeframe.MINUTE_1, timestamp=at.replace(minute=37, second=0))
+    forming_minute = bar(BarTimeframe.MINUTE_1, timestamp=at.replace(second=0))
+    loader = MarketHistoryLoader(
+        client=FakeClient(),
+        repository=FakeRepository(
+            (
+                closed,
+                forming,
+                minute,
+                forming_minute,
+            )
+        ),
+    )  # type: ignore[arg-type]
+    result = await loader.ensure_and_load(
+        engine_id="swing",
+        symbols=("TGT",),
+        as_of=at,
+        requirements=tuple(
+            MarketHistoryRequirement(
+                timeframe=tf,
+                lookback=timedelta(days=5),
+                max_bars_per_symbol=100,
+            )
+            for tf in (BarTimeframe.MINUTE_15, BarTimeframe.MINUTE_1)
+        ),
+    )
+    assert result == (closed, minute)

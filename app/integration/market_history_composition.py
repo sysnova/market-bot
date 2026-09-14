@@ -38,6 +38,13 @@ from app.persistence import create_database_engine
 from .market_bar_repository import PostgresMarketBarRepository
 from .market_history_rpc import NatsMarketHistoryClient, NatsMarketHistoryServer
 
+_INTRADAY_DURATION = {
+    BarTimeframe.MINUTE_1: timedelta(minutes=1),
+    BarTimeframe.MINUTE_5: timedelta(minutes=5),
+    BarTimeframe.MINUTE_15: timedelta(minutes=15),
+    BarTimeframe.HOUR_1: timedelta(hours=1),
+}
+
 
 class HistoryClient(Protocol):
     async def ensure(self, request: MarketHistoryRequest) -> MarketHistoryResponse: ...
@@ -128,9 +135,8 @@ class MarketHistoryLoader:
         output: list[MarketBar] = []
         requirement_profiles: list[HistoryRequirementProfile] = []
         for requirement in requirements:
-            include_premarket = (
-                include_premarket_intraday
-                and requires_regular_session(requirement.timeframe)
+            include_premarket = include_premarket_intraday and requires_regular_session(
+                requirement.timeframe
             )
             repository_limit = (
                 analytical_storage_limit(
@@ -146,8 +152,7 @@ class MarketHistoryLoader:
                 requirement.timeframe,
                 limit_per_symbol=repository_limit,
                 regular_session_only=(
-                    requires_regular_session(requirement.timeframe)
-                    and not include_premarket
+                    requires_regular_session(requirement.timeframe) and not include_premarket
                 ),
             )
             repository_read_ms = _elapsed_ms(repository_started)
@@ -166,6 +171,12 @@ class MarketHistoryLoader:
                 and (
                     bar.timeframe is not BarTimeframe.DAY_1
                     or is_completed_daily_bar(bar, as_of=as_of)
+                )
+                # REST can return the forming interval as an ordinary bar.
+                # Bootstrap must not treat it as closed confirmation evidence.
+                and (
+                    bar.timeframe not in _INTRADAY_DURATION
+                    or bar.timestamp + _INTRADAY_DURATION[bar.timeframe] <= as_of
                 )
             )
             output.extend(eligible)

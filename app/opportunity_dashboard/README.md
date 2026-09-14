@@ -78,3 +78,11 @@ siguiente cierre RTH más 2 minutos; una evaluación detenida o una expiración
 explícita siguen marcando la evidencia antigua. Se usan los segmentos habituales
 del runtime, 09:30–13:30 y 13:30–16:00 de Nueva York, saltando fines de semana.
 Esta política no incorpora un calendario de feriados ni cierres anticipados.
+
+
+En el arranque, Market History también comprueba la vigencia del tramo intradía:
+una caché horaria no basta para 1/5/15 minutos. Si ni su última vela ni su última
+consulta son recientes para ese intervalo (+2 minutos), descarga sólo el tramo
+faltante. El loader excluye las velas REST de 1/5/15 minutos y 1 hora que aún no
+han cerrado. Swing reconstruye los intervalos completos con su historial de
+1 minuto y conserva el intervalo en formación para continuar el stream.
