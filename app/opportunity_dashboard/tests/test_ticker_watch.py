@@ -180,3 +180,101 @@ def test_nested_analyses_and_distinct_horizons_are_retained() -> None:
 def test_invalid_tickers_are_rejected(symbol: str) -> None:
     with pytest.raises(ValueError):
         normalize_symbol(symbol)
+
+
+@pytest.mark.parametrize(
+    "now, assessed, expected",
+    [
+        ("2026-09-14T16:35:00+00:00", "2026-09-14T16:34:00+00:00", "FRESH"),
+        ("2026-09-14T17:31:00+00:00", "2026-09-14T17:30:00+00:00", "FRESH"),
+        ("2026-09-14T17:32:00+00:00", "2026-09-14T17:31:00+00:00", "STALE"),
+        ("2026-09-14T16:35:00+00:00", "2026-09-14T16:10:00+00:00", "STALE"),
+        ("2026-09-14T16:35:00+00:00", None, "UNKNOWN"),
+    ],
+)
+def test_geri_closed_friday_bar_is_valid_until_next_rth_close(
+    now: str, assessed: str | None, expected: str
+) -> None:
+    book = TickerEvidenceBook("ASTS")
+    at = datetime.fromisoformat(now)
+    book.merge(
+        "4hgeri.assessed",
+        {
+            "symbol": "ASTS",
+            "occurred_at": "2026-09-11T17:30:00+00:00",
+            "assessed_at": assessed,
+            "short_eligible": False,
+        },
+        received_at=at,
+    )
+    card = book.snapshot(now=at)["assessments"][0]
+    assert card["freshness"] == expected
+    assert card["next_bar_due_at"] == "2026-09-14T17:32:00+00:00"
+    assert card["gates"][0]["status"] == ("FAIL" if expected == "FRESH" else expected)
+
+
+def test_geri_closed_bar_policy_never_extends_explicit_expiry() -> None:
+    at = datetime.fromisoformat("2026-09-14T16:35:00+00:00")
+    book = TickerEvidenceBook("ASTS")
+    book.merge(
+        "4hgeri.assessed",
+        {
+            "symbol": "ASTS",
+            "occurred_at": "2026-09-11T17:30:00+00:00",
+            "assessed_at": at.isoformat(),
+            "expires_at": (at - timedelta(seconds=1)).isoformat(),
+            "short_eligible": True,
+        },
+        received_at=at,
+    )
+    assert book.snapshot(now=at)["assessments"][0]["freshness"] == "STALE"
+
+
+@pytest.mark.parametrize(
+    "bar_at, now, due, expected",
+    [
+        (
+            "2026-09-14T13:30:00+00:00",
+            "2026-09-14T18:00:00+00:00",
+            "2026-09-14T20:02:00+00:00",
+            "FRESH",
+        ),
+        (
+            "2026-09-14T13:30:00+00:00",
+            "2026-09-14T17:29:00+00:00",
+            "2026-09-14T20:02:00+00:00",
+            "UNKNOWN",
+        ),
+        (
+            "2026-09-10T17:30:00+00:00",
+            "2026-09-14T16:00:00+00:00",
+            "2026-09-11T17:32:00+00:00",
+            "STALE",
+        ),
+        # The ordinary RTH deadline follows New York through the DST weekend.
+        (
+            "2026-10-30T17:30:00+00:00",
+            "2026-11-02T17:00:00+00:00",
+            "2026-11-02T18:32:00+00:00",
+            "FRESH",
+        ),
+    ],
+)
+def test_geri_window_requires_closed_latest_segment_and_handles_dst(
+    bar_at: str, now: str, due: str, expected: str
+) -> None:
+    at = datetime.fromisoformat(now)
+    book = TickerEvidenceBook("ASTS")
+    book.merge(
+        "4hgeri.assessed",
+        {
+            "symbol": "ASTS",
+            "occurred_at": bar_at,
+            "assessed_at": now,
+            "short_eligible": True,
+        },
+        received_at=at,
+    )
+    card = book.snapshot(now=at)["assessments"][0]
+    assert card["freshness"] == expected
+    assert card["next_bar_due_at"] == due

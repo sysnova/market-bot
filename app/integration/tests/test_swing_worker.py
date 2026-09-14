@@ -290,3 +290,52 @@ async def test_swing_worker_passes_latest_order_flow_support_evidence() -> None:
     )
 
     assert analyzer.contexts[-1].order_flow_support == evidence
+
+
+@pytest.mark.unit
+async def test_swing_restart_rebuilds_latest_closed_15m_from_minute_history() -> None:
+    publisher = RecordingPublisher()
+    analyzer = RecordingAnalyzer()
+    worker = SwingWorker(publisher=publisher, analyzer=analyzer)
+    # The 15m cache trails the minute cache at restart. Input order is not guaranteed.
+    minutes = [bar(BarTimeframe.MINUTE_1, NOW + timedelta(minutes=i), "105") for i in range(23)]
+    await worker.bootstrap(
+        tuple(
+            reversed(
+                [
+                    bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+                    bar(BarTimeframe.MINUTE_15, NOW - timedelta(minutes=30)),
+                    *minutes,
+                ]
+            )
+        ),
+        symbols=("HIMS",),
+    )
+    assert analyzer.contexts[-1].as_of == NOW
+    assert analyzer.contexts[-1].intraday_bars[-1].close == Decimal("105")
+    # Keep the current partial interval primed so it closes without another 15m wait.
+    for i in range(23, 31):
+        await worker.handle_market_event(
+            EventEnvelope(
+                event_type=MARKET_BAR_EVENT,
+                source="test",
+                payload=bar(BarTimeframe.MINUTE_1, NOW + timedelta(minutes=i), "106"),
+            )
+        )
+    assert analyzer.contexts[-1].as_of == NOW + timedelta(minutes=15)
+
+
+@pytest.mark.unit
+async def test_swing_bootstrap_does_not_complete_a_gapped_minute_interval() -> None:
+    publisher = RecordingPublisher()
+    analyzer = RecordingAnalyzer()
+    worker = SwingWorker(publisher=publisher, analyzer=analyzer)
+    await worker.bootstrap(
+        (
+            bar(BarTimeframe.DAY_1, NOW - timedelta(days=1)),
+            bar(BarTimeframe.MINUTE_15, NOW - timedelta(minutes=30)),
+            *(bar(BarTimeframe.MINUTE_1, NOW + timedelta(minutes=i)) for i in range(16) if i != 7),
+        ),
+        symbols=("HIMS",),
+    )
+    assert analyzer.contexts[-1].as_of == NOW - timedelta(minutes=30)

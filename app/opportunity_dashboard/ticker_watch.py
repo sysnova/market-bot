@@ -4,8 +4,35 @@ from __future__ import annotations
 
 import copy
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any, cast
+from zoneinfo import ZoneInfo
+
+_NEW_YORK = ZoneInfo("America/New_York")
+
+
+def _four_hour_window(at: datetime) -> tuple[datetime, datetime] | None:
+    """Match the runtime's weekday RTH segments, not a 15m wall-clock TTL.
+
+    This follows the runtime's ordinary-session policy; it is not an exchange
+    holiday/early-close calendar. Unrecognized bar boundaries keep the fallback.
+    """
+    local = at.astimezone(_NEW_YORK)
+    if local.weekday() >= 5:
+        return None
+    if local.time() == time(9, 30):
+        closed = local.replace(hour=13, minute=30)
+        next_close = local.replace(hour=16, minute=0)
+    elif local.time() == time(13, 30):
+        closed = local.replace(hour=16, minute=0)
+        next_close = local + timedelta(days=1)
+        while next_close.weekday() >= 5:
+            next_close += timedelta(days=1)
+        next_close = next_close.replace(hour=13, minute=30)
+    else:
+        return None
+    return closed.astimezone(UTC), (next_close + timedelta(minutes=2)).astimezone(UTC)
+
 
 _SYMBOL = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _NEGATIVE = re.compile(
@@ -195,15 +222,33 @@ class TickerEvidenceBook:
                 else 15
             )
             stale_at = min([*expiries, at + timedelta(minutes=freshness_minutes)]) if at else None
+            structural_window = (
+                _four_hour_window(at)
+                if at is not None and item["event_type"] == "4hgeri.assessed"
+                else None
+            )
+            if structural_window is not None:
+                stale_at = min([*expiries, structural_window[1]])
+                if evaluated is not None:
+                    stale_at = min(stale_at, evaluated + timedelta(minutes=15))
             freshness = (
                 "UNKNOWN"
-                if at is None or at > now
+                if at is None
+                or at > now
+                or (
+                    structural_window is not None
+                    and (evaluated is None or evaluated > now or now < structural_window[0])
+                )
                 else ("STALE" if stale_at is not None and now >= stale_at else "FRESH")
             )
             assessments.append(
                 {
                     **{key: value for key, value in item.items() if key != "order_at"},
                     "freshness": freshness,
+                    "freshness_basis": "closed_4h_bar" if structural_window else "event_age",
+                    "next_bar_due_at": (
+                        structural_window[1].isoformat() if structural_window else None
+                    ),
                     "evaluation_freshness": (
                         "UNKNOWN"
                         if evaluated is None or evaluated > now
@@ -226,7 +271,9 @@ class TickerEvidenceBook:
             "missing_engines": sorted(set(self.engines) - present),
             "freshness_policy": (
                 "Antigüedad desde as_of: Swing 32 min (vela de 15 min, siguiente cierre y "
-                "2 min de entrega); otros motores 15 min. Una expiración anterior prevalece. "
+                "2 min de entrega); 4HGERI exige evaluación reciente y vela cerrada vigente "
+                "hasta el próximo cierre RTH habitual + 2 min; otros motores 15 min. "
+                "Una expiración anterior prevalece. "
                 "Es una política visual, no un TTL de trading."
             ),
             "coverage": (

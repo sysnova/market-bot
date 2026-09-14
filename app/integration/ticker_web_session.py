@@ -145,7 +145,15 @@ class TickerWebSession:
                             await self.bus.subscribe(
                                 subject,
                                 receive,
-                                options=SubscriptionOptions(replay_latest_per_subject=True),
+                                # A restart may publish older bootstrap evidence last.
+                                # Select the newest analytical date from retained history,
+                                # not merely the last message's arrival order.
+                                options=SubscriptionOptions(
+                                    replay_all=subject.startswith("marketbot.v1.analysis.result."),
+                                    replay_latest_per_subject=not subject.startswith(
+                                        "marketbot.v1.analysis.result."
+                                    ),
+                                ),
                             )
                         )
                     await asyncio.gather(

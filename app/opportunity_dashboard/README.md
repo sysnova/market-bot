@@ -63,3 +63,18 @@ Validación enfocada:
 uv run pytest app/opportunity_dashboard/tests app/integration/tests/test_ticker_web_session.py --no-cov
 node --test app/opportunity_dashboard/tests/*.test.cjs
 ```
+
+
+### Recuperación tras reiniciar y velas 4H
+
+El seguimiento recupera los resultados analíticos retenidos del ticker y conserva
+el mayor `as_of` por motor/tipo/horizonte. Un bootstrap atrasado publicado después
+no debe sustituir una lectura más nueva al abrir otra sesión. Los demás subjects
+mantienen su recuperación del último evento por subject.
+
+4HGERI separa la evaluación (`assessed_at`, límite visual de 15 minutos) del inicio
+de su última vela 4H cerrada (`occurred_at`). La vela conserva vigencia hasta el
+siguiente cierre RTH más 2 minutos; una evaluación detenida o una expiración
+explícita siguen marcando la evidencia antigua. Se usan los segmentos habituales
+del runtime, 09:30–13:30 y 13:30–16:00 de Nueva York, saltando fines de semana.
+Esta política no incorpora un calendario de feriados ni cierres anticipados.

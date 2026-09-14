@@ -105,3 +105,16 @@ test('current evaluations expose data and evaluation dates while old alerts have
   app.api.disconnected();
   assert.doesNotMatch(app.get('ticker-assessments').innerHTML+app.get('ticker-history').innerHTML,/Evaluación reciente/);
 });
+
+
+test('4HGERI labels the closed structural interval without calling Friday a recent price',()=>{
+  const app=setup(),data=shortSnapshot();
+  data.assessments.push({id:'geri',engine:'4hgeri',event_type:'4hgeri.assessed',as_of:'2026-09-11T17:30:00Z',freshness:'FRESH',freshness_basis:'closed_4h_bar',next_bar_due_at:'2026-09-14T17:32:00Z',evaluated_at:data.captured_at,evaluation_freshness:'FRESH',payload:{},gates:[]});
+  followShort(app,data);
+  const view=app.get('ticker-assessments').innerHTML;
+  assert.match(view,/Inicio de la última vela 4H cerrada/);
+  assert.match(view,/Vigente para este intervalo/);
+  assert.match(view,/Próxima vela esperada/);
+  app.api.disconnected();
+  assert.doesNotMatch(app.get('ticker-assessments').innerHTML+app.get('ticker-history').innerHTML,/Vigente para este intervalo/);
+});

@@ -86,8 +86,17 @@ class SwingWorker:
         *,
         symbols: tuple[str, ...],
     ) -> int:
-        for bar in bars:
+        completed_history = MinuteBarAggregator(
+            targets=(BarTimeframe.MINUTE_15,), emit_on_complete=True
+        )
+        for bar in sorted(bars, key=lambda item: (item.timestamp, item.symbol)):
             if bar.timeframe is BarTimeframe.MINUTE_1:
+                # Minute history can be newer than the cached 15m series at restart.
+                # Only reconstruct complete intervals; retain the forming interval
+                # in the live aggregator so restart does not lose its first minutes.
+                for aggregated in completed_history.add(bar):
+                    self._store.add(aggregated)
+                self._aggregator.add(bar)
                 if daily := self._daily_aggregator.add(bar):
                     self._store.add(daily)
             elif bar.timeframe in {BarTimeframe.DAY_1, BarTimeframe.MINUTE_15} and (
@@ -188,13 +197,10 @@ class SwingWorker:
         effective_price = current_price if current_price is not None else intraday[-1].close
         support = self._support.get(symbol)
         order_flow_support = self._order_flow_support.get(symbol)
-        if (
-            order_flow_support is not None
-            and (
-                order_flow_support.occurred_at > effective_as_of
-                or support is None
-                or order_flow_support.support_assessment_id != support.assessment_id
-            )
+        if order_flow_support is not None and (
+            order_flow_support.occurred_at > effective_as_of
+            or support is None
+            or order_flow_support.support_assessment_id != support.assessment_id
         ):
             order_flow_support = None
         result = self._analyzer.analyze(

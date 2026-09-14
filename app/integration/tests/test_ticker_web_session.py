@@ -27,7 +27,11 @@ class Bus:
         self.subscriptions = []
 
     async def subscribe(self, subject: str, handler: Any, *, options: Any) -> Subscription:
-        assert options.replay_latest_per_subject
+        assert (
+            options.replay_all
+            if subject.startswith("marketbot.v1.analysis.result.")
+            else options.replay_latest_per_subject
+        )
         self.handlers.append(handler)
         subscription = Subscription()
         self.subscriptions.append(subscription)
@@ -174,3 +178,36 @@ def test_subjects_escape_share_class_and_never_subscribe_to_all_market_data() ->
     subjects = ticker_subjects("brk.b")
     assert "marketbot.v1.analysis.result.*.BRK_B" in subjects
     assert not any("market.bar" in item or item.endswith(">") for item in subjects)
+
+
+async def test_new_session_restores_newest_analysis_even_after_older_bootstrap_publish() -> None:
+    class ReplayBus(Bus):
+        async def subscribe(self, subject: str, handler: Any, *, options: Any) -> Subscription:
+            subscription = Subscription()
+            self.subscriptions.append(subscription)
+            if subject.startswith("marketbot.v1.analysis.result."):
+                recent = envelope()
+                old = envelope().model_copy(
+                    update={
+                        "payload": {
+                            "symbol": "NVDA",
+                            "engine_id": "swing",
+                            "as_of": "2026-09-14T13:45:00Z",
+                        }
+                    }
+                )
+                for event in [recent, old] if options.replay_all else [old]:
+                    await handler(event)
+            return subscription
+
+    async def send(payload: dict[str, Any]) -> None:
+        pass
+
+    session = TickerWebSession(bus=ReplayBus(), send=send, reviewer=None, engines={}, clock=Clock())
+    try:
+        await session.watch("NVDA")
+        card = session.snapshot()["assessments"][0]
+        assert card["as_of"] == NOW.isoformat()
+        assert card["freshness"] == "FRESH"
+    finally:
+        await session.close()
