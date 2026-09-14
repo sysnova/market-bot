@@ -87,6 +87,19 @@ footer { display: flex; justify-content: space-between; padding: 26px max(24px, 
 .assessment-card details li { overflow-wrap: anywhere; line-height: 1.6; }
 .assessment-card pre { max-height: 350px; overflow: auto; padding: 12px; background: #f3f5f0; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ticker-counts { padding: 12px 0 20px; color: var(--ink); font-size: 13px; font-weight: 600; }
+.short-desk { scroll-margin-top: 90px; margin: 26px 0; padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: #f1f3ed; }
+.short-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.short-card { min-width: 0; }
+.short-card h3 { margin: 10px 0; font-size: 19px; }
+.short-card .gate-list { max-height: none; }
+.short-card .gate-list strong { font-size: 13px; }
+.short-notice { padding: 12px; background: #fff5df; border-radius: 8px; font-size: 12px; line-height: 1.6; }
+.short-notice small { display: block; margin-top: 8px; }
+.short-levels { margin: 18px 0; }
+.short-levels div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.short-levels dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .short-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .short-desk { padding: 14px; } }
 .ticker-chat { background: #e9eee6; border-radius: 12px; padding: 22px; position: sticky; top: 90px; min-width: 0; }
 .ticker-chat label { display: block; font-size: 12px; margin: 22px 0 8px; }
 .ticker-chat textarea { display: block; resize: vertical; width: 100%; padding: 12px; background: white; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; }

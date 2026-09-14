@@ -6,6 +6,16 @@ de análisis, assessments, Order Flow, setups, Entry Watcher, señales y alertas
 disponible de Opportunities desde el libro PostgreSQL y el contexto global de Market Rotation.
 No modifica el universo, las reglas ni la ejecución de órdenes.
 
+La sección **SHORT**, accesible desde la navegación superior, usa el mismo ticker y los mismos
+eventos en vivo. Separa la estructura SHORT de Swing, la confirmación madura de Intraday y la
+última alerta `BEARISH_CONSENSUS` con razón `short_entry_confirmed` publicada por Alert Engine.
+No calcula una confirmación combinando gates. Una alerta antigua se identifica como histórica;
+sus niveles no implican que la entrada siga disponible. La ausencia de alertas tampoco representa
+un diagnóstico del estado del motor. El aviso de extensión EMA y la configuración de su bloqueo
+se explican por separado. Los detalles incluyen rutas alternativas, no una lista de condiciones
+que deban pasar todas. Los datos insuficientes y las desconexiones no muestran gates verdes.
+Un ETF inverso conserva su propia evidencia; no hereda automáticamente los gates del subyacente.
+
 Cada assessment muestra motor, versión, fecha del dato, razones, gates publicados y el payload
 completo desplegable. Los indicadores booleanos con polaridad explícita se proyectan a semáforos:
 verde cumple, rojo no cumple o riesgo activo, amarillo antiguo, gris sin evidencia. Los campos

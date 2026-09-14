@@ -47,3 +47,47 @@ test('switching ticker and reconnecting never mixes answers or resubmits GPT req
   assert.equal(app.sent.at(-1).type,'watch_ticker');
   assert.equal(app.sent.filter(m=>m.type==='ask_ticker').length,1);
 });
+
+function shortSnapshot() {
+  const data=snapshot('ASTS');
+  const card=(engine,metrics,extra={})=>({id:engine,engine,event_type:'analysis.result.produced',as_of:data.captured_at,freshness:'FRESH',gates:[],payload:{symbol:'ASTS',direction:'BEARISH',verdict:'FAVORABLE',metrics:Object.entries(metrics).map(([name,value])=>({name,value})),...extra}});
+  data.assessments=[card('swing',{short_structure_gate_passed:true}),card('intraday',{
+    short_mature_confirmation_gate_passed:true,short_ema20_extension_warning:true,short_ema20_extension_hard_gate:false,
+  })];
+  return data;
+}
+function followShort(app,data=shortSnapshot()) {
+  app.get('watch-symbol').value=data.symbol; app.submit('ticker-watch-form'); app.api.handle(data);
+}
+test('SHORT shows published gates and explains EMA warning without inventing confirmation',()=>{
+  const app=setup(); followShort(app);
+  const view=app.get('short-content').innerHTML;
+  assert.match(view,/Estructura bajista/); assert.match(view,/Madurez bajista/);
+  assert.match(view,/Precio extendido bajo la EMA/); assert.match(view,/Bloqueo por extensión: desactivado/);
+  assert.match(view,/Sin confirmación SHORT publicada/); assert.doesNotMatch(view,/SHORT CONFIRMED/);
+});
+test('SHORT keeps old alerts historical and ignores unrelated buy alerts',()=>{
+  const app=setup(),data=shortSnapshot();
+  data.assessments.push({id:'alert',engine:'alert',event_type:'alert.local.produced',as_of:'2026-09-10T15:00:00Z',freshness:'STALE',gates:[],payload:{kind:'BEARISH_CONSENSUS',reasons:['short_entry_confirmed'],title:'ASTS SHORT CONFIRMED',metrics:[{name:'short_entry_price',value:'10.25'}]}});
+  followShort(app,data);
+  assert.match(app.get('short-content').innerHTML,/Confirmación histórica/);
+  assert.match(app.get('short-content').innerHTML,/10.25/);
+  data.revision++; data.assessments.at(-1).payload.kind='BULLISH_CONSENSUS'; app.api.handle(data);
+  assert.match(app.get('short-content').innerHTML,/Sin confirmación SHORT publicada/);
+});
+test('SHORT cannot show live passes after disconnect or insufficient history and clears on ticker change',()=>{
+  const app=setup(),data=shortSnapshot(); followShort(app,data); app.api.disconnected();
+  assert.doesNotMatch(app.get('short-content').innerHTML,/gate-status pass/);
+  data.revision++; data.assessments[1].payload.reasons=['insufficient_1m_history:12/30']; app.api.handle(data);
+  assert.match(app.get('short-content').innerHTML,/Esperando historial de 1 minuto/);
+  app.get('watch-symbol').value='NBIS'; app.submit('ticker-watch-form');
+  assert.doesNotMatch(app.get('short-content').innerHTML,/ASTS|Cumple/);
+});
+test('SHORT escapes metric values and marks stale gates without calling them failures',()=>{
+  const app=setup(),data=shortSnapshot();
+  data.assessments[0].freshness='STALE';
+  data.assessments[1].payload.metrics.push({name:'short_entry_lane',value:'<img onerror=alert(1)>'});
+  followShort(app,data);
+  assert.match(app.get('short-content').innerHTML,/Dato antiguo/);
+  assert.doesNotMatch(app.get('short-content').innerHTML,/<img/);
+});

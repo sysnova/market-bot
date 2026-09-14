@@ -8,6 +8,44 @@
   const labels = { PASS: "Cumple", FAIL: "No cumple / riesgo activo", STALE: "Dato antiguo", UNKNOWN: "Sin dato" };
   const engineNames = { "4hgeri": "4HGERI", "swing-trade": "SwingTrade", "swing": "Swing", "intraday": "Intraday", "long-term": "Long", "entry-watcher": "Entry Watcher", "entry-recovery": "Recovery", "signal-fusion": "Signal Fusion", "order-flow": "Order Flow", "options-gamma": "Gamma", "volume-structure": "Volume Structure", "market-rotation": "Rotación de mercado", "entry-setup": "Setup de entrada", "alert": "Alertas", "entry-opportunity": "Opportunities" };
   const name = engine => engineNames[engine] || engine;
+  // Display published SHORT evidence. Never reconstruct Alert Engine's decision.
+  function renderShort(snapshot) {
+    $("short-symbol").textContent = snapshot.symbol;
+    const cards = snapshot.assessments || [];
+    const latest = items => items.slice().sort((a, b) => (Date.parse(b.as_of) || 0) - (Date.parse(a.as_of) || 0))[0];
+    const analysis = engine => latest(cards.filter(card => card.engine === engine && card.event_type === "analysis.result.produced"));
+    const swing = analysis("swing"), intraday = analysis("intraday");
+    const metrics = card => Object.fromEntries((card?.payload?.metrics || []).map(metric => [metric.name, metric.value]));
+    const im = metrics(intraday);
+    const waiting = (intraday?.payload?.reasons || []).some(reason => String(reason).startsWith("insufficient_1m_history"));
+    const fresh = card => snapshot.transport === "NATS_REPLAY_AND_LIVE" ? card?.freshness : "UNKNOWN";
+    const stamp = card => card ? `Dato: ${html(date(card.as_of))} · ${fresh(card) === "FRESH" ? "Reciente" : fresh(card) === "STALE" ? "Dato antiguo" : "Vigencia desconocida"}` : "Sin assessment publicado";
+    function gate(card, field, title, pending = false) {
+      const value = metrics(card)[field];
+      const status = pending || typeof value !== "boolean" ? "UNKNOWN" : fresh(card) === "STALE" ? "STALE" : fresh(card) !== "FRESH" ? "UNKNOWN" : value ? "PASS" : "FAIL";
+      return `<li><span class="gate-status ${status.toLowerCase()}">${status === "FAIL" ? "No cumple" : labels[status]}</span><div><strong>${html(title)}</strong><small>${html(field)} · publicado: ${html(value ?? "sin dato")}</small></div></li>`;
+    }
+    const stateLine = card => `<p class="ticker-help">${html(card?.payload?.direction || "Sin dirección")} · ${html(card?.payload?.verdict || "Sin veredicto")}</p>`;
+    const warning = im.short_ema20_extension_warning;
+    const extension = typeof warning !== "boolean" ? "Extensión EMA: sin dato publicado." : `${fresh(intraday) === "FRESH" && !waiting ? "" : "Última lectura, sin vigencia confirmada: "}${warning ? "Precio extendido bajo la EMA: la caída ya se alejó de su media; advierte riesgo de rebote. No confirma una entrada SHORT." : "Sin aviso de extensión bajo la EMA en esta lectura. No confirma una entrada SHORT."}`;
+    const hardGate = im.short_ema20_extension_hard_gate;
+    const alert = latest(cards.filter(card => card.engine === "alert" && card.event_type === "alert.local.produced" && card.payload?.kind === "BEARISH_CONSENSUS" && card.payload?.reasons?.includes("short_entry_confirmed")));
+    const am = metrics(alert);
+    const alertTitle = !alert ? "Sin confirmación SHORT publicada" : fresh(alert) === "STALE" ? "Confirmación histórica" : fresh(alert) !== "FRESH" ? "Confirmación de vigencia desconocida" : "Última confirmación SHORT publicada";
+    $("short-content").innerHTML = `<article class="assessment-card short-card"><p class="eyebrow">01 · SWING</p><h3>Estructura bajista</h3><p class="ticker-help">${stamp(swing)}</p>${stateLine(swing)}
+      <ul class="gate-list">${gate(swing, "short_structure_gate_passed", "Estructura SHORT")}</ul>
+      <p class="ticker-help">Este gate resume la estructura evaluada por Swing. Por sí solo no confirma la entrada.</p></article>
+      <article class="assessment-card short-card"><p class="eyebrow">02 · INTRADAY</p><h3>Madurez bajista</h3><p class="ticker-help">${stamp(intraday)}</p>${stateLine(intraday)}
+      ${waiting ? '<p class="short-notice">Esperando historial de 1 minuto. Los gates aún no representan una evaluación completa.</p>' : ""}
+      <ul class="gate-list">${gate(intraday, "short_mature_confirmation_gate_passed", "Confirmación madura", waiting)}</ul>
+      <p class="short-notice">${html(extension)}<small>Bloqueo por extensión: ${hardGate === false ? "desactivado" : hardGate === true ? "activado" : "sin dato"}.</small></p>
+      <details><summary>Detalle de la confirmación</summary><p class="ticker-help">Son condiciones y rutas alternativas del motor; no es necesario que todas sean verdaderas.</p><ul class="gate-list">
+      ${[["short_confirmation_gate_passed", "Confirmación bajista"], ["short_entry_efficiency_gate_passed", "Eficiencia de entrada"], ["short_mature_retest_confirmed", "Retesteo maduro"], ["short_early_breakdown_gate_passed", "Ruta de ruptura temprana"], ["short_displacement_gate_passed", "Ruta de desplazamiento"]].map(([field, title]) => gate(intraday, field, title, waiting)).join("")}</ul>
+      <p class="ticker-help">Setup: ${html(im.setup ?? "sin dato")}<br>Ruta: ${html(im.short_entry_lane ?? "sin dato")}<br>Timing: ${html(im.short_entry_timing ?? "sin dato")}</p></details></article>
+      <article class="assessment-card short-card"><p class="eyebrow">03 · ALERT ENGINE</p><h3>${alertTitle}</h3><p class="ticker-help">${stamp(alert)}</p>
+      ${alert ? `<p class="assessment-state">${html(alert.payload.title || "SHORT CONFIRMED")}</p><dl class="short-levels">${[["short_entry_price", "Entrada"], ["short_invalidation", "Invalidación"], ["short_target", "Objetivo"]].map(([field, title]) => `<div><dt>${title}</dt><dd>${html(am[field] ?? "Sin dato")}</dd></div>`).join("")}</dl><p class="ticker-help">Niveles de esa alerta. No indican que la entrada siga disponible ahora.</p>` : '<p class="ticker-help">No hay una alerta SHORT confirmada en la evidencia recibida. Esto no demuestra que Alert Engine esté detenido.</p>'}
+      <p class="ticker-help">La decisión también depende del alcance de tickers, la vigencia, el setup y los niveles que valida Alert Engine. Los gates verdes no sustituyen esa alerta.</p></article>`;
+  }
   function controls() {
     const connected = state.socket?.readyState === 1;
     $("ticker-ask").disabled = !connected || !state.available || !state.snapshot?.assessments?.length || !!state.ask;
@@ -30,6 +68,8 @@
     $("ticker-answers").replaceChildren(); $("ticker-question-status").textContent = "";
     $("ticker-counts").textContent = ""; $("ticker-missing").textContent = "";
     $("ticker-assessments").textContent = "Recuperando assessments…";
+    $("short-symbol").textContent = symbol;
+    $("short-content").innerHTML = '<p class="empty-state">Recuperando evidencia SHORT…</p>';
     $("ticker-status").textContent = `Conectando ${symbol} con los motores…`;
     try { localStorage.setItem("marketbot-watched-ticker", symbol); } catch { /* optional */ }
     try { send("watch_ticker"); } catch (error) { $("ticker-status").textContent = error.message; }
@@ -46,6 +86,9 @@
     $("ticker-counts").textContent = `${gates.length} gates · ${gates.filter(g => g.status === "PASS").length} cumplen · ${gates.filter(g => g.status === "FAIL").length} no cumplen / riesgo · ${gates.filter(g => g.status === "STALE").length} antiguos · ${gates.filter(g => g.status === "UNKNOWN").length} sin dato`;
     const key = JSON.stringify([snapshot.symbol, snapshot.revision, snapshot.transport, cards.map(card => card.freshness)]);
     if (key !== state.renderKey) {
+      const shortExpanded = [...$("short-content").querySelectorAll("details")].some(item => item.open);
+      renderShort(snapshot);
+      if (shortExpanded) $("short-content").querySelectorAll("details").forEach(item => { item.open = true; });
       const expanded = new Set([...$("ticker-assessments").querySelectorAll("details[open]")].map(item => item.dataset.key));
       const scrollPositions = new Map([...$("ticker-assessments").querySelectorAll("[data-scroll]")].map(item => [item.dataset.scroll, item.scrollTop]));
       state.renderKey = key;
