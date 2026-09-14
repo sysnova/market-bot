@@ -67,6 +67,8 @@ footer { display: flex; justify-content: space-between; padding: 26px max(24px, 
 .assessment-card { border: 1px solid var(--line); border-radius: 12px; background: white; padding: 18px; min-width: 0; }
 .assessment-card header { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .assessment-card h3, .ticker-chat h3 { margin: 0; font-size: 18px; }
+.order-flow-detail h4 { margin: 16px 0 8px; font-size: 14px; }
+.order-flow-detail + .order-flow-detail { border-top: 1px solid var(--line); margin-top: 18px; }
 .assessment-scope, .assessment-state small { color: var(--muted); font-size: 11px; }
 .assessment-state { font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
 .ticker-help { font-size: 12px; color: var(--muted); line-height: 1.6; }

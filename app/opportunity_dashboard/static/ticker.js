@@ -97,21 +97,36 @@
       const expanded = new Set(containers.flatMap(container => [...container.querySelectorAll("details[open]")]).map(item => item.dataset.key));
       const scrollPositions = new Map(containers.flatMap(container => [...container.querySelectorAll("[data-scroll]")]).map(item => [item.dataset.scroll, item.scrollTop]));
       state.renderKey = key;
-      const renderCard = card => {
-        const payload = card.payload || {}, status = payload.maturity ?? payload.verdict ?? payload.state ?? payload.status ?? "Assessment";
+      const renderEvidence = card => {
+        const payload = card.payload || {}, disposition = { CONFIRMS_SUPPORT: "Confirma soporte", WARNS_BREAKDOWN: "Advierte ruptura", NEUTRAL: "Neutral" };
+        const status = payload.maturity ?? payload.verdict ?? payload.state ?? payload.status ?? disposition[payload.disposition] ?? payload.disposition ?? "Assessment";
         const reasons = Array.isArray(payload.reasons) ? payload.reasons : [];
-        return `<article class="assessment-card"><header><h3>${html(name(card.engine))}</h3><span class="assessment-scope">${html(card.scope)}${card.global_scope ? " · GLOBAL" : ""}</span></header>
-          <p class="assessment-state">${html(status)} <small>v${html(payload.engine_version || "—")}</small></p>
+        return `<p class="assessment-state">${html(status)} <small>v${html(payload.engine_version || "—")}</small></p>
+          ${card.event_type === "order-flow.support.assessed" ? `<p class="ticker-help">Zona de soporte: ${html(payload.zone_low ?? "Sin dato")} – ${html(payload.zone_high ?? "Sin dato")}</p>` : ""}
           ${card.evaluated_at ? `<p class="ticker-help">${card.evaluation_freshness === "FRESH" ? "Evaluación reciente" : "Última evaluación"}: ${html(date(card.evaluated_at))}</p>` : ""}
           <p class="ticker-help">${card.freshness_basis === "closed_4h_bar" ? "Inicio de la última vela 4H cerrada" : card.evaluated_at ? "Datos base" : "Fecha del evento / dato"}: ${html(date(card.as_of))} · ${card.freshness === "FRESH" ? (card.freshness_basis === "closed_4h_bar" ? "Vigente para este intervalo" : "Reciente") : card.freshness === "STALE" ? "Antiguo según política visual" : "Vigencia desconocida"}</p>
           ${card.next_bar_due_at ? `<p class="ticker-help">Próxima vela esperada, incluido margen de entrega: ${html(date(card.next_bar_due_at))}. Horario regular habitual.</p>` : ""}
           ${payload.underlying_symbol ? `<p class="ticker-help">Subyacente: ${html(payload.underlying_symbol)} · Instrumento: ${html(payload.instrument_symbol || "sin seleccionar")}</p>` : ""}
           <ul class="gate-list" data-scroll="${html(card.id)}:gates">${card.gates.map(gate => `<li><span class="gate-status ${gate.status.toLowerCase()}">${labels[gate.status] || "Sin dato"}</span><div><code>${html(gate.name)}</code><small>${html(JSON.stringify(gate.value))}${gate.polarity === "negative" ? " · true indica riesgo" : ""}</small></div></li>`).join("") || '<li class="ticker-help">Este assessment no publica gates booleanos explícitos.</li>'}</ul>
           <details data-key="${html(card.id)}:reasons" ${expanded.has(`${card.id}:reasons`) ? "open" : ""}><summary>Razones (${reasons.length})</summary><ul>${reasons.map(reason => `<li>${html(reason)}</li>`).join("")}</ul></details>
-          <details data-key="${html(card.id)}:raw" ${expanded.has(`${card.id}:raw`) ? "open" : ""}><summary>Assessment completo</summary><pre data-scroll="${html(card.id)}:raw">${html(JSON.stringify(payload, null, 2))}</pre></details></article>`;
+          <details data-key="${html(card.id)}:raw" ${expanded.has(`${card.id}:raw`) ? "open" : ""}><summary>Assessment completo</summary><pre data-scroll="${html(card.id)}:raw">${html(JSON.stringify(payload, null, 2))}</pre></details>`;
       };
-      $("ticker-assessments").innerHTML = recent.map(renderCard).join("") || '<p class="empty-state">Sin evaluaciones recientes recibidas. Revisá la evidencia anterior y el estado de la conexión.</p>';
-      $("ticker-history").innerHTML = history.map(renderCard).join("") || '<p class="ticker-help">No hay registros anteriores recibidos.</p>';
+      const renderCard = card => `<article class="assessment-card"><header><h3>${html(name(card.engine))}</h3><span class="assessment-scope">${html(card.scope)}${card.global_scope ? " · GLOBAL" : ""}</span></header>${renderEvidence(card)}</article>`;
+      const orderFlow = cards.filter(card => card.engine === "order-flow");
+      // Group across freshness buckets, retaining each output's own timestamp and gates.
+      const flowIsRecent = orderFlow.some(isRecent);
+      const renderCards = (items, recentSection) => {
+        let flowRendered = false;
+        return items.map(card => {
+          if (card.engine !== "order-flow") return renderCard(card);
+          if (flowRendered || flowIsRecent !== recentSection) return "";
+          flowRendered = true;
+          const ordered = orderFlow.slice().sort((a, b) => Number(a.event_type === "order-flow.support.assessed") - Number(b.event_type === "order-flow.support.assessed"));
+          return `<article class="assessment-card"><header><h3>Order Flow</h3></header>${ordered.map(item => `<section class="order-flow-detail"><h4>${item.event_type === "order-flow.support.assessed" ? "Evaluación sobre soporte" : "Flujo de operaciones"}</h4>${renderEvidence(item)}</section>`).join("")}</article>`;
+        }).join("");
+      };
+      $("ticker-assessments").innerHTML = renderCards(recent, true) || '<p class="empty-state">Sin evaluaciones recientes recibidas. Revisá la evidencia anterior y el estado de la conexión.</p>';
+      $("ticker-history").innerHTML = renderCards(history, false) || '<p class="ticker-help">No hay registros anteriores recibidos fuera de las secciones agrupadas.</p>';
       $("ticker-history-title").textContent = `Evidencia anterior y alertas (${history.length})`;
       containers.forEach(container => container.querySelectorAll("[data-scroll]").forEach(item => { item.scrollTop = scrollPositions.get(item.dataset.scroll) || 0; }));
       const modes = {active: "Activo en la configuración; sin evento recibido para este ticker", "on-demand": "Bajo demanda", scheduled: "Programado", disabled: "Desactivado"};

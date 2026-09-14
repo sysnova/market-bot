@@ -59,6 +59,55 @@ function shortSnapshot() {
 function followShort(app,data=shortSnapshot()) {
   app.get('watch-symbol').value=data.symbol; app.submit('ticker-watch-form'); app.api.handle(data);
 }
+
+function flowSnapshot(flowFreshness='FRESH',supportFreshness='FRESH') {
+  const data=snapshot();
+  const card=(kind,freshness,payload)=>({id:`flow-${kind}`,engine:'order-flow',event_type:`order-flow.${kind}.assessed`,
+    as_of:data.captured_at,freshness,gates:[],payload:{engine_version:'1.2.0',...payload}});
+  data.assessments.push(card('state',flowFreshness,{state:'BUY_PRESSURE',pulse_state:'NEUTRAL'}),
+    card('support',supportFreshness,{disposition:'CONFIRMS_SUPPORT',zone_low:'100',zone_high:'105',reasons:['<unsafe>']}));
+  return data;
+}
+
+test('Order Flow groups state and support into one section with their published detail',()=>{
+  const app=setup(); followShort(app,flowSnapshot());
+  const view=app.get('ticker-assessments').innerHTML;
+  assert.equal((view.match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
+  assert.match(view,/Flujo de operaciones/); assert.match(view,/BUY_PRESSURE/);
+  assert.match(view,/Evaluación sobre soporte/); assert.match(view,/Confirma soporte/);
+  assert.match(view,/Zona de soporte: 100 – 105/);
+  assert.match(view,/pulse_state/); assert.match(view,/&lt;unsafe&gt;/);
+  assert.doesNotMatch(view.slice(view.indexOf('<h3>Order Flow</h3>')),/<unsafe>|assessment-state">Assessment/);
+});
+
+test('Order Flow retains separate freshness inside a single section, including disconnects',()=>{
+  for (const [flow,support] of [['FRESH','STALE'],['STALE','FRESH'],['STALE','STALE']]) {
+    const app=setup(); followShort(app,flowSnapshot(flow,support));
+    const current=app.get('ticker-assessments').innerHTML,history=app.get('ticker-history').innerHTML;
+    assert.equal(((current+history).match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
+    const view=flow==='FRESH'||support==='FRESH'?current:history;
+    assert.match(view,/BUY_PRESSURE/); assert.match(view,/Confirma soporte/);
+    assert.match(view,/Antiguo según política visual/);
+    app.api.disconnected();
+    assert.doesNotMatch(app.get('ticker-assessments').innerHTML,/<h3>Order Flow/);
+    assert.equal((app.get('ticker-history').innerHTML.match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
+    assert.match(app.get('ticker-history').innerHTML,/Vigencia desconocida/);
+  }
+});
+
+test('Order Flow supports either output arriving alone and updates without duplicate sections',()=>{
+  for (const kind of ['state','support']) {
+    const app=setup(),data=flowSnapshot();
+    data.assessments=data.assessments.filter(card=>card.engine!=='order-flow'||card.id===`flow-${kind}`);
+    followShort(app,data);
+    assert.equal((app.get('ticker-assessments').innerHTML.match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
+    const update=flowSnapshot(); update.revision++;
+    update.assessments.at(-1).payload.disposition='WARNS_BREAKDOWN'; app.api.handle(update);
+    const view=app.get('ticker-assessments').innerHTML;
+    assert.equal((view.match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
+    assert.match(view,/Advierte ruptura/); assert.doesNotMatch(view,/Confirma soporte/);
+  }
+});
 test('SHORT shows published gates and explains EMA warning without inventing confirmation',()=>{
   const app=setup(); followShort(app);
   const view=app.get('short-content').innerHTML;
