@@ -56,7 +56,12 @@
       <p class="ticker-help">Cada color describe una condición de su tesis; no equivale a una orden. Swing fecha sus velas desde el inicio del intervalo: se marca antiguo después de 32 minutos, contemplando el siguiente cierre y la entrega. Para los demás motores, el límite visual es 15 minutos. Una expiración anterior prevalece.</p>
       <div id="ticker-counts" class="ticker-counts"></div>
       <div class="ticker-workspace">
-        <div><div id="ticker-assessments" class="assessment-grid"><p class="empty-state">Los assessments y gates aparecerán aquí.</p></div><div id="ticker-missing" class="ticker-missing"></div></div>
+        <div>
+          <h3>Evaluaciones recientes</h3>
+          <div id="ticker-assessments" class="assessment-grid"><p class="empty-state">Los assessments y gates aparecerán aquí.</p></div>
+          <details class="ticker-history-panel"><summary id="ticker-history-title">Evidencia anterior y alertas</summary><p class="ticker-help">Eventos conservados para consulta. La fecha de una alerta no indica si el motor está conectado.</p><div id="ticker-history" class="assessment-grid"></div></details>
+          <div id="ticker-missing" class="ticker-missing"></div>
+        </div>
         <aside class="ticker-chat" aria-label="Consultas a GPT">
           <p class="eyebrow">CONSULTA BAJO DEMANDA</p><h3>Preguntale a GPT</h3>
           <p id="ticker-gpt-model" class="ticker-help">Verificando disponibilidad…</p>

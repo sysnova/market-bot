@@ -55,6 +55,36 @@ class Reviewer:
         return "Respuesta de prueba"
 
 
+async def test_instrument_watch_receives_underlying_subject_without_mixing_other_pairs() -> None:
+    assert "marketbot.v1.leveraged-thesis.assessment.*" in ticker_subjects("ASTN")
+    sent = []
+
+    async def send(payload: dict[str, Any]) -> None:
+        sent.append(payload)
+
+    bus = Bus()
+    session = TickerWebSession(
+        bus=bus, send=send, reviewer=None, engines={"leveraged-thesis": "active"}, clock=Clock()
+    )
+    try:
+        await session.watch("ASTN")
+        await bus.handlers[0](
+            EventEnvelope(
+                source="leveraged-thesis",
+                event_type="leveraged-thesis.assessed",
+                payload={
+                    "underlying_symbol": "ASTS",
+                    "instrument_symbol": "ASTN",
+                    "occurred_at": NOW.isoformat(),
+                },
+            )
+        )
+        assert session.snapshot()["missing_engines"] == []
+        assert session.snapshot()["assessments"][0]["engine"] == "leveraged-thesis"
+    finally:
+        await session.close()
+
+
 def envelope(symbol: str = "NVDA", passed: bool = True) -> EventEnvelope:
     return EventEnvelope(
         source="swing",

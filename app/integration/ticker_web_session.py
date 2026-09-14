@@ -25,6 +25,8 @@ def ticker_subjects(symbol: str) -> tuple[str, ...]:
     return (
         f"marketbot.v1.analysis.result.*.{token}",
         f"marketbot.v1.*.assessment.{token}",
+        # These subjects use the underlying ticker; filter the selected instrument in the book.
+        "marketbot.v1.leveraged-thesis.assessment.*",
         f"marketbot.v1.order-flow.state.{token}",
         f"marketbot.v1.order-flow.support.{token}",
         f"marketbot.v1.entry-setup.*.{token}",
@@ -181,6 +183,7 @@ class TickerWebSession:
         if self._transport != "NATS_REPLAY_AND_LIVE":
             for assessment in snapshot["assessments"]:
                 assessment["freshness"] = "UNKNOWN"
+                assessment["evaluation_freshness"] = "UNKNOWN"
                 for gate in assessment["gates"]:
                     gate["status"] = "UNKNOWN"
         return snapshot

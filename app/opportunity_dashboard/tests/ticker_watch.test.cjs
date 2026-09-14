@@ -42,7 +42,7 @@ test('switching ticker and reconnecting never mixes answers or resubmits GPT req
   app.api.handle({type:'ticker_answer',symbol:'NVDA',request_id:request.request_id,question:'old',answer:'old'});
   assert.equal(app.get('ticker-answers').children.length,0);
   app.api.disconnected(); assert.equal(app.get('ticker-ask').disabled,true);
-  assert.match(app.get('ticker-assessments').innerHTML,/Sin dato/);
+  assert.match(app.get('ticker-assessments').innerHTML+app.get('ticker-history').innerHTML,/Sin dato/);
   app.api.connected({readyState:1,send(raw){app.sent.push(JSON.parse(raw));}});
   assert.equal(app.sent.at(-1).type,'watch_ticker');
   assert.equal(app.sent.filter(m=>m.type==='ask_ticker').length,1);
@@ -90,4 +90,18 @@ test('SHORT escapes metric values and marks stale gates without calling them fai
   followShort(app,data);
   assert.match(app.get('short-content').innerHTML,/Dato antiguo/);
   assert.doesNotMatch(app.get('short-content').innerHTML,/<img/);
+});
+
+test('current evaluations expose data and evaluation dates while old alerts have their own section',()=>{
+  const app=setup(),data=shortSnapshot();
+  data.assessments.push({id:'geri',engine:'4hgeri',event_type:'4hgeri.assessed',as_of:'2026-09-11T17:30:00Z',freshness:'STALE',evaluated_at:data.captured_at,evaluation_freshness:'FRESH',payload:{},gates:[]});
+  data.assessments.push({id:'old-alert',engine:'alert',event_type:'entry-signal.confirmed',as_of:'2026-09-10T17:30:00Z',freshness:'STALE',payload:{state:'OLD ALERT'},gates:[]});
+  followShort(app,data);
+  assert.match(app.get('ticker-assessments').innerHTML,/Evaluación reciente/);
+  assert.match(app.get('ticker-assessments').innerHTML,/Datos base/);
+  assert.doesNotMatch(app.get('ticker-assessments').innerHTML,/OLD ALERT/);
+  assert.match(app.get('ticker-history').innerHTML,/OLD ALERT/);
+  assert.match(app.get('ticker-stream').textContent,/NATS conectado/);
+  app.api.disconnected();
+  assert.doesNotMatch(app.get('ticker-assessments').innerHTML+app.get('ticker-history').innerHTML,/Evaluación reciente/);
 });

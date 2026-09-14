@@ -87,6 +87,8 @@ footer { display: flex; justify-content: space-between; padding: 26px max(24px, 
 .assessment-card details li { overflow-wrap: anywhere; line-height: 1.6; }
 .assessment-card pre { max-height: 350px; overflow: auto; padding: 12px; background: #f3f5f0; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ticker-counts { padding: 12px 0 20px; color: var(--ink); font-size: 13px; font-weight: 600; }
+.ticker-history-panel { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 18px; }
+.ticker-history-panel > summary { cursor: pointer; color: var(--green); font-weight: 600; }
 .short-desk { scroll-margin-top: 90px; margin: 26px 0; padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: #f1f3ed; }
 .short-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .short-card { min-width: 0; }

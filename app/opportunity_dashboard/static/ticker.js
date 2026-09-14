@@ -4,9 +4,9 @@
   const $ = id => document.getElementById(id);
   const state = { symbol: "", socket: null, snapshot: null, ask: null, analysis: null, sequence: 0, renderKey: "", available: false };
   const html = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-  const date = value => value ? new Date(value).toLocaleString("es-AR") : "Sin fecha";
+  const date = value => value ? new Date(value).toLocaleString("es-AR", {hour12: false}) : "Sin fecha publicada";
   const labels = { PASS: "Cumple", FAIL: "No cumple / riesgo activo", STALE: "Dato antiguo", UNKNOWN: "Sin dato" };
-  const engineNames = { "4hgeri": "4HGERI", "swing-trade": "SwingTrade", "swing": "Swing", "intraday": "Intraday", "long-term": "Long", "entry-watcher": "Entry Watcher", "entry-recovery": "Recovery", "signal-fusion": "Signal Fusion", "order-flow": "Order Flow", "options-gamma": "Gamma", "volume-structure": "Volume Structure", "market-rotation": "Rotación de mercado", "entry-setup": "Setup de entrada", "alert": "Alertas", "entry-opportunity": "Opportunities" };
+  const engineNames = { "4hgeri": "4HGERI", "swing-trade": "SwingTrade", "swing": "Swing", "intraday": "Intraday", "long-term": "Long", "entry-watcher": "Entry Watcher", "entry-recovery": "Recovery", "signal-fusion": "Signal Fusion", "order-flow": "Order Flow", "options-gamma": "Gamma", "volume-structure": "Volume Structure", "market-rotation": "Rotación de mercado", "entry-setup": "Setup de entrada", "alert": "Alertas", "entry-opportunity": "Opportunities", "leveraged-thesis": "Leveraged Thesis" };
   const name = engine => engineNames[engine] || engine;
   // Display published SHORT evidence. Never reconstruct Alert Engine's decision.
   function renderShort(snapshot) {
@@ -68,6 +68,8 @@
     $("ticker-answers").replaceChildren(); $("ticker-question-status").textContent = "";
     $("ticker-counts").textContent = ""; $("ticker-missing").textContent = "";
     $("ticker-assessments").textContent = "Recuperando assessments…";
+    $("ticker-history").innerHTML = "";
+    $("ticker-history-title").textContent = "Evidencia anterior y alertas";
     $("short-symbol").textContent = symbol;
     $("short-content").innerHTML = '<p class="empty-state">Recuperando evidencia SHORT…</p>';
     $("ticker-status").textContent = `Conectando ${symbol} con los motores…`;
@@ -78,32 +80,41 @@
   function render(snapshot) {
     state.snapshot = snapshot;
     state.available = snapshot.llm_available;
-    $("ticker-stream").textContent = snapshot.transport === "NATS_REPLAY_AND_LIVE" ? `${snapshot.symbol} · En vivo` : `${snapshot.symbol} · ${snapshot.transport === "CONNECTING" ? "Conectando" : "Sin conexión a eventos"}`;
+    $("ticker-stream").textContent = snapshot.transport === "NATS_REPLAY_AND_LIVE" ? `${snapshot.symbol} · NATS conectado` : `${snapshot.symbol} · ${snapshot.transport === "CONNECTING" ? "Conectando" : "Sin conexión a eventos"}`;
     $("ticker-gpt-model").textContent = snapshot.llm_available ? `Modelo: ${snapshot.llm_model}` : "GPT no disponible: falta configurar la clave de OpenAI en MarketBot.";
     const cards = snapshot.assessments || [];
+    const isRecent = card => !/^(alert\.local\.|entry-signal\.)/.test(card.event_type || "") && !(card.engine === "entry-opportunity" && card.payload?.closed_at) && (card.freshness === "FRESH" || card.evaluation_freshness === "FRESH");
+    const recent = cards.filter(isRecent), history = cards.filter(card => !isRecent(card));
     if (!state.analysis) $("ticker-status").textContent = `${cards.length} assessments · Contexto actualizado ${date(snapshot.captured_at)}. ${cards.length ? "" : "Sin evidencia publicada: podés solicitar análisis."}`;
-    const gates = cards.flatMap(card => card.gates || []);
-    $("ticker-counts").textContent = `${gates.length} gates · ${gates.filter(g => g.status === "PASS").length} cumplen · ${gates.filter(g => g.status === "FAIL").length} no cumplen / riesgo · ${gates.filter(g => g.status === "STALE").length} antiguos · ${gates.filter(g => g.status === "UNKNOWN").length} sin dato`;
-    const key = JSON.stringify([snapshot.symbol, snapshot.revision, snapshot.transport, cards.map(card => card.freshness)]);
+    const gates = recent.flatMap(card => card.gates || []);
+    $("ticker-counts").textContent = `${recent.length} evaluaciones recientes · ${history.length} registros anteriores o alertas · Gates de evaluaciones recientes: ${gates.filter(g => g.status === "PASS").length} cumplen · ${gates.filter(g => g.status === "FAIL").length} no cumplen / riesgo · ${gates.filter(g => g.status === "STALE").length} con datos base antiguos · ${gates.filter(g => g.status === "UNKNOWN").length} sin dato`;
+    const key = JSON.stringify([snapshot.symbol, snapshot.revision, snapshot.transport, cards.map(card => [card.freshness, card.evaluation_freshness])]);
     if (key !== state.renderKey) {
       const shortExpanded = [...$("short-content").querySelectorAll("details")].some(item => item.open);
       renderShort(snapshot);
       if (shortExpanded) $("short-content").querySelectorAll("details").forEach(item => { item.open = true; });
-      const expanded = new Set([...$("ticker-assessments").querySelectorAll("details[open]")].map(item => item.dataset.key));
-      const scrollPositions = new Map([...$("ticker-assessments").querySelectorAll("[data-scroll]")].map(item => [item.dataset.scroll, item.scrollTop]));
+      const containers = [$("ticker-assessments"), $("ticker-history")];
+      const expanded = new Set(containers.flatMap(container => [...container.querySelectorAll("details[open]")]).map(item => item.dataset.key));
+      const scrollPositions = new Map(containers.flatMap(container => [...container.querySelectorAll("[data-scroll]")]).map(item => [item.dataset.scroll, item.scrollTop]));
       state.renderKey = key;
-      $("ticker-assessments").innerHTML = cards.map(card => {
+      const renderCard = card => {
         const payload = card.payload || {}, status = payload.maturity ?? payload.verdict ?? payload.state ?? payload.status ?? "Assessment";
         const reasons = Array.isArray(payload.reasons) ? payload.reasons : [];
         return `<article class="assessment-card"><header><h3>${html(name(card.engine))}</h3><span class="assessment-scope">${html(card.scope)}${card.global_scope ? " · GLOBAL" : ""}</span></header>
           <p class="assessment-state">${html(status)} <small>v${html(payload.engine_version || "—")}</small></p>
-          <p class="ticker-help">Dato: ${html(date(card.as_of))} · ${card.freshness === "FRESH" ? "Reciente" : card.freshness === "STALE" ? "Antiguo" : "Vigencia desconocida"}</p>
+          ${card.evaluated_at ? `<p class="ticker-help">${card.evaluation_freshness === "FRESH" ? "Evaluación reciente" : "Última evaluación"}: ${html(date(card.evaluated_at))}</p>` : ""}
+          <p class="ticker-help">${card.evaluated_at ? "Datos base" : "Fecha del evento / dato"}: ${html(date(card.as_of))} · ${card.freshness === "FRESH" ? "Reciente" : card.freshness === "STALE" ? "Antiguo según política visual" : "Vigencia desconocida"}</p>
+          ${payload.underlying_symbol ? `<p class="ticker-help">Subyacente: ${html(payload.underlying_symbol)} · Instrumento: ${html(payload.instrument_symbol || "sin seleccionar")}</p>` : ""}
           <ul class="gate-list" data-scroll="${html(card.id)}:gates">${card.gates.map(gate => `<li><span class="gate-status ${gate.status.toLowerCase()}">${labels[gate.status] || "Sin dato"}</span><div><code>${html(gate.name)}</code><small>${html(JSON.stringify(gate.value))}${gate.polarity === "negative" ? " · true indica riesgo" : ""}</small></div></li>`).join("") || '<li class="ticker-help">Este assessment no publica gates booleanos explícitos.</li>'}</ul>
           <details data-key="${html(card.id)}:reasons" ${expanded.has(`${card.id}:reasons`) ? "open" : ""}><summary>Razones (${reasons.length})</summary><ul>${reasons.map(reason => `<li>${html(reason)}</li>`).join("")}</ul></details>
           <details data-key="${html(card.id)}:raw" ${expanded.has(`${card.id}:raw`) ? "open" : ""}><summary>Assessment completo</summary><pre data-scroll="${html(card.id)}:raw">${html(JSON.stringify(payload, null, 2))}</pre></details></article>`;
-      }).join("") || '<p class="empty-state">No hay assessments publicados para este ticker.</p>';
-      $("ticker-assessments").querySelectorAll("[data-scroll]").forEach(item => { item.scrollTop = scrollPositions.get(item.dataset.scroll) || 0; });
-      $("ticker-missing").innerHTML = `<details open><summary>Motores sin evidencia (${snapshot.missing_engines.length})</summary><p>Ausencia de datos no equivale a gate fallido. Algunos motores dependen de tenencias, horario o ejecución bajo demanda.</p><ul>${snapshot.missing_engines.map(engine => `<li>${html(name(engine))} · ${html(snapshot.engines[engine])}</li>`).join("")}</ul></details>`;
+      };
+      $("ticker-assessments").innerHTML = recent.map(renderCard).join("") || '<p class="empty-state">Sin evaluaciones recientes recibidas. Revisá la evidencia anterior y el estado de la conexión.</p>';
+      $("ticker-history").innerHTML = history.map(renderCard).join("") || '<p class="ticker-help">No hay registros anteriores recibidos.</p>';
+      $("ticker-history-title").textContent = `Evidencia anterior y alertas (${history.length})`;
+      containers.forEach(container => container.querySelectorAll("[data-scroll]").forEach(item => { item.scrollTop = scrollPositions.get(item.dataset.scroll) || 0; }));
+      const modes = {active: "Activo en la configuración; sin evento recibido para este ticker", "on-demand": "Bajo demanda", scheduled: "Programado", disabled: "Desactivado"};
+      $("ticker-missing").innerHTML = `<details><summary>Otros motores: sin evento recibido (${snapshot.missing_engines.length})</summary><p>Este listado indica cobertura de eventos, no estado de conexión ni un gate fallido.</p><ul>${snapshot.missing_engines.map(engine => `<li>${html(name(engine))} · ${html(modes[snapshot.engines[engine]] || snapshot.engines[engine])}</li>`).join("")}</ul></details>`;
     }
     controls();
   }
@@ -135,7 +146,7 @@
     disconnected() {
       state.socket = null; state.ask = null; state.analysis = null;
       $("ticker-question-status").textContent = "Conexión interrumpida. No se reenvían consultas automáticamente.";
-      if (state.snapshot) render({ ...state.snapshot, transport: "DISCONNECTED", assessments: state.snapshot.assessments.map(card => ({ ...card, freshness: "UNKNOWN", gates: card.gates.map(g => ({ ...g, status: "UNKNOWN" })) })) });
+      if (state.snapshot) render({ ...state.snapshot, transport: "DISCONNECTED", assessments: state.snapshot.assessments.map(card => ({ ...card, freshness: "UNKNOWN", evaluation_freshness: "UNKNOWN", gates: card.gates.map(g => ({ ...g, status: "UNKNOWN" })) })) });
       controls();
     },
     handle(message) {

@@ -79,6 +79,83 @@ def test_swing_cadence_does_not_extend_expiry_other_engines_or_unknown_dates() -
         )
 
 
+def test_generated_date_is_recognized_without_replacing_explicit_old_data_time() -> None:
+    for event, payload in (
+        ("options-gamma.assessed", {"symbol": "ASTS", "generated_at": NOW.isoformat()}),
+        ("market-rotation.analyzed", {"generated_at": NOW.isoformat()}),
+    ):
+        book = TickerEvidenceBook("ASTS")
+        book.merge(event, payload, received_at=NOW)
+        card = book.snapshot(now=NOW)["assessments"][0]
+        assert card["as_of"] == NOW.isoformat()
+        assert card["freshness"] == "FRESH"
+    book = TickerEvidenceBook("ASTS")
+    old = (NOW - timedelta(days=3)).isoformat()
+    book.merge(
+        "4hgeri.assessed",
+        {
+            "symbol": "ASTS",
+            "occurred_at": old,
+            "assessed_at": NOW.isoformat(),
+            "gates": {"short_eligible": True},
+        },
+        received_at=NOW,
+    )
+    card = book.snapshot(now=NOW)["assessments"][0]
+    assert card["as_of"] == old
+    assert card["evaluated_at"] == NOW.isoformat()
+    assert card["evaluation_freshness"] == "FRESH"
+    assert card["gates"][0]["status"] == "STALE"
+
+
+def test_newer_assessment_of_same_data_cannot_be_overwritten_by_old_replay() -> None:
+    book = TickerEvidenceBook("ASTS")
+    newer = {
+        "symbol": "ASTS",
+        "occurred_at": (NOW - timedelta(days=1)).isoformat(),
+        "assessed_at": NOW.isoformat(),
+        "state": "NEW",
+    }
+    book.merge("4hgeri.assessed", newer, received_at=NOW)
+    assert not book.merge(
+        "4hgeri.assessed",
+        {
+            **newer,
+            "assessed_at": (NOW - timedelta(minutes=5)).isoformat(),
+            "state": "OLD",
+        },
+        received_at=NOW + timedelta(minutes=1),
+    )
+
+
+def test_leveraged_assessment_matches_underlying_or_instrument_only() -> None:
+    payload = {
+        "underlying_symbol": "ASTS",
+        "instrument_symbol": "ASTN",
+        "occurred_at": NOW.isoformat(),
+        "state": "OBSERVING",
+    }
+    for symbol, accepted in (("ASTS", True), ("ASTN", True), ("NBIS", False), ("ASTX", False)):
+        book = TickerEvidenceBook(symbol)
+        assert book.merge("leveraged-thesis.assessed", payload, received_at=NOW) is accepted
+        if accepted:
+            assert book.snapshot(now=NOW)["assessments"][0]["payload"] == payload
+
+
+def test_configuration_switch_is_not_a_failed_trading_gate() -> None:
+    book = TickerEvidenceBook("NVDA")
+    book.merge(
+        "analysis.result.produced",
+        evidence(
+            metrics=[
+                {"name": "short_ema20_extension_hard_gate", "value": False},
+            ]
+        ),
+        received_at=NOW,
+    )
+    assert book.snapshot(now=NOW)["assessments"][0]["gates"] == []
+
+
 def test_nested_analyses_and_distinct_horizons_are_retained() -> None:
     book = TickerEvidenceBook("NVDA")
     book.merge(

@@ -66,6 +66,8 @@ def _fields(payload: dict[str, Any], prefix: str = "") -> list[tuple[str, str, o
 def project_gates(payload: dict[str, Any], *, freshness: str) -> list[dict[str, Any]]:
     gates: list[dict[str, Any]] = []
     for name, path, value in _fields(payload):
+        if name == "short_ema20_extension_hard_gate":
+            continue  # Configuration switch, explained separately in the SHORT section.
         if name.endswith(("_at", "_id", "_price", "_until", "_score", "_percent", "_level")):
             continue
         negative = bool(_NEGATIVE.search(name))
@@ -115,7 +117,16 @@ class TickerEvidenceBook:
                 payload = cast("dict[str, Any]", payload[wrapper])
                 break
         global_scope = event_type == "market-rotation.analyzed"
-        if not global_scope and str(payload.get("symbol", "")).upper() != self.symbol:
+        symbols = {str(payload.get("symbol", "")).upper()}
+        if event_type == "leveraged-thesis.assessed":
+            symbols.update(
+                str(payload.get(field, "")).upper()
+                for field in (
+                    "underlying_symbol",
+                    "instrument_symbol",
+                )
+            )
+        if not global_scope and self.symbol not in symbols:
             return False
         engine = str(payload.get("engine_id") or source_engine or event_type.split(".")[0])
         engine = {"entry-watch": "entry-watcher", "entry-signal": "alert"}.get(engine, engine)
@@ -128,9 +139,15 @@ class TickerEvidenceBook:
             or _date(payload.get("assessed_at"))
             or _date(payload.get("updated_at"))
             or _date(payload.get("created_at"))
+            or _date(payload.get("generated_at"))
+        )
+        evaluated = (
+            _date(payload.get("assessed_at"))
+            or _date(payload.get("generated_at"))
+            or _date(payload.get("updated_at"))
         )
         current = self._items.get(identity)
-        order_at = observed or received_at
+        order_at = evaluated or observed or received_at
         if current and order_at < current["order_at"]:
             return False
         if current and current["payload"] == payload:
@@ -142,6 +159,7 @@ class TickerEvidenceBook:
             "scope": scope,
             "global_scope": global_scope,
             "as_of": observed.isoformat() if observed else None,
+            "evaluated_at": evaluated.isoformat() if evaluated else None,
             "received_at": received_at.isoformat(),
             "order_at": order_at,
             "payload": copy.deepcopy(payload),
@@ -162,6 +180,7 @@ class TickerEvidenceBook:
         for item in sorted(self._items.values(), key=lambda item: item["id"]):
             payload = item["payload"]
             at = _date(item["as_of"])
+            evaluated = _date(item["evaluated_at"])
             expiries = [
                 expiry
                 for name, _, value in _fields(payload)
@@ -175,9 +194,7 @@ class TickerEvidenceBook:
                 if item["engine"] == "swing" and item["event_type"] == "analysis.result.produced"
                 else 15
             )
-            stale_at = (
-                min([*expiries, at + timedelta(minutes=freshness_minutes)]) if at else None
-            )
+            stale_at = min([*expiries, at + timedelta(minutes=freshness_minutes)]) if at else None
             freshness = (
                 "UNKNOWN"
                 if at is None or at > now
@@ -187,6 +204,13 @@ class TickerEvidenceBook:
                 {
                     **{key: value for key, value in item.items() if key != "order_at"},
                     "freshness": freshness,
+                    "evaluation_freshness": (
+                        "UNKNOWN"
+                        if evaluated is None or evaluated > now
+                        else "FRESH"
+                        if now - evaluated < timedelta(minutes=15)
+                        else "STALE"
+                    ),
                     "age_seconds": max(0, (now - at).total_seconds()) if at else None,
                     "gates": project_gates(payload, freshness=freshness),
                 }

@@ -16,6 +16,15 @@ se explican por separado. Los detalles incluyen rutas alternativas, no una lista
 que deban pasar todas. Los datos insuficientes y las desconexiones no muestran gates verdes.
 Un ETF inverso conserva su propia evidencia; no hereda automáticamente los gates del subyacente.
 
+La web separa **Evaluaciones recientes** de **Evidencia anterior y alertas**. Distingue
+`assessed_at`/`generated_at` (fecha de evaluación) de la fecha de sus datos base: una evaluación
+nueva no vuelve recientes sus datos antiguos ni habilita sus gates. `generated_at` también es
+reconocido cuando es la única fecha publicada, como en Rotación y el assessment de Gamma.
+Una evaluación anterior del mismo dato no puede sobrescribir otra más nueva por llegar tarde.
+Las tesis apalancadas se filtran por `underlying_symbol` e `instrument_symbol` y muestran ambos
+campos; sus subjects están nombrados por el subyacente. «NATS conectado» describe el transporte,
+y el listado de motores sin evento distingue configuración activa, programada y bajo demanda.
+
 Cada assessment muestra motor, versión, fecha del dato, razones, gates publicados y el payload
 completo desplegable. Los indicadores booleanos con polaridad explícita se proyectan a semáforos:
 verde cumple, rojo no cumple o riesgo activo, amarillo antiguo, gris sin evidencia. Los campos
