@@ -312,10 +312,28 @@ class EntryOpportunity(StrictFrozenModel):
     source_cursors: tuple[EntryOpportunitySourceCursor, ...] = Field(default=(), max_length=16)
     latest_analyses: tuple[AnalysisResult, ...] = ()
     legs: tuple[EntryHorizonLeg, ...] = ()
-    checkpoints: tuple[EntryMaturityCheckpoint, ...] = Field(min_length=1)
+    checkpoints: tuple[EntryMaturityCheckpoint, ...]
 
     @model_validator(mode="after")
     def validate_opportunity(self) -> EntryOpportunity:
+        if not self.checkpoints:
+            observation_stages = {None, GeriCountertrendMaturity.CT0, GeriCountertrendMaturity.CT1}
+            observation_only = (
+                self.primary_signal_family is EntrySignalFamily.GERI_COUNTERTREND
+                and self.status is not EntryOpportunityStatus.OPEN
+                and self.current_maturity is EntryMaturityLevel.ARMED
+                and self.peak_maturity is EntryMaturityLevel.ARMED
+                and bool(self.signal_references)
+                and all(
+                    ref.family is EntrySignalFamily.GERI_COUNTERTREND
+                    and ref.current_ct in observation_stages
+                    and ref.peak_ct in observation_stages
+                    for ref in self.signal_references
+                )
+                and all(leg.entry_price is None and leg.opened_at is None for leg in self.legs)
+            )
+            if not observation_only:
+                raise ValueError("opportunity checkpoints are required outside CT0/CT1 observation")
         if self.opportunity_id.version != 7:
             raise ValueError("opportunity_id must be UUIDv7")
         if self.original_watch_id is not None and self.original_watch_id.version != 7:

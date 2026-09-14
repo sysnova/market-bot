@@ -150,6 +150,11 @@ class SwingTradeEngineV17(SwingTradeEngineV16):
                 retest, hour, pending = self._entry_acceptance(
                     bars, i, breakout_index, j, reference, buffer
                 )
+                support_source = self._entry_support(
+                    native, bars, i, breakout_index, j, reference, buffer
+                )
+                if support_source == "LOCAL_RETEST":
+                    retest, hour, pending = True, False, None
                 if pending is not None and j == len(bars) - 1:
                     reasons.append(pending)
                 if not (retest or hour) or j != len(bars) - 1:
@@ -177,7 +182,7 @@ class SwingTradeEngineV17(SwingTradeEngineV16):
                     rr <= self._minimum_rr
                     or context.current_price
                     > native.zone_high + native.atr14 * self._maximum_distance_atr
-                    or not native.support_confluence
+                    or support_source is None
                 ):
                     reasons.append("rebound_geometry_or_reward_risk_pending")
                     continue
@@ -193,12 +198,15 @@ class SwingTradeEngineV17(SwingTradeEngineV16):
                     )
                 state.update(
                     rebound_state="OPEN",
+                    rebound_support_source=support_source,
                     rebound_entry_price=context.current_price,
                     rebound_entry_at=context.as_of.isoformat(),
                     rebound_bars_open=0,
                     rebound_failed_closes=0,
                     rebound_max_price=context.current_price,
-                    rebound_acceptance="RETEST" if retest else "1H_CLOSE",
+                    rebound_acceptance=(
+                        "RETEST" if retest or support_source == "LOCAL_RETEST" else "1H_CLOSE"
+                    ),
                 )
                 native = native.model_copy(
                     update={
@@ -222,6 +230,18 @@ class SwingTradeEngineV17(SwingTradeEngineV16):
                     rebound_state="BREAKOUT", rebound_reference=reference, operational_stop=stop
                 )
         return self._finish(native, fallback, state, [*reasons, "rebound_confirmation_pending"])
+
+    def _entry_support(
+        self,
+        native: SwingTradeAssessment,
+        bars: tuple[MarketBar, ...],
+        touch: int,
+        breakout: int,
+        end: int,
+        level: Decimal,
+        buffer: Decimal,
+    ) -> str | None:
+        return "DAILY_CONFLUENCE" if native.support_confluence else None
 
     def _entry_acceptance(
         self,

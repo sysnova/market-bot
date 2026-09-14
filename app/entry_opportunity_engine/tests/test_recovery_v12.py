@@ -1,7 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
-from app.contracts import EntryLegStatus, GeriCountertrendMaturity
+from app.contracts import EntryLegStatus, EntryOpportunityEvent, GeriCountertrendMaturity
 from app.entry_opportunity_engine import InMemoryEntryOpportunityStore
 from app.entry_opportunity_engine.tests.test_geri_countertrend_v5 import NOW, countertrend_signal
 from app.entry_opportunity_engine.v12 import EntryOpportunityEngineV12
@@ -10,7 +10,8 @@ from app.entry_opportunity_engine.v12 import EntryOpportunityEngineV12
 async def test_ct1_tracks_without_a_paper_position_or_pnl_checkpoint() -> None:
     store = InMemoryEntryOpportunityStore()
     engine = EntryOpportunityEngineV12(store=store)
-    await engine.ingest_signal(countertrend_signal(GeriCountertrendMaturity.CT1))
+    events = await engine.ingest_signal(countertrend_signal(GeriCountertrendMaturity.CT1))
+    assert EntryOpportunityEvent.model_validate_json(events[0].model_dump_json()) == events[0]
     active = await store.load_active("AAPL")
     assert active is not None
     assert active.legs[0].status is EntryLegStatus.WATCHING

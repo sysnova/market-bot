@@ -1115,6 +1115,19 @@ def test_geri_profit_protection_definition_changes_only_opportunity() -> None:
             assert assembly.spec(slot) == previous.spec(slot)
 
 
+def test_recovered_support_definition_changes_only_swing_trade() -> None:
+    from app.swing_trade_engine import SwingTradeEngineV19
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.67.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.68.0.yaml")
+    engine = assembly.build_swing_trade()
+    assert type(engine) is SwingTradeEngineV19
+    assert engine.strategy_version == "1.6.0"
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.SWING_TRADE:
+            assert assembly.spec(slot) == previous.spec(slot)
+
+
 def test_swing_trade_profit_protection_definition_changes_only_opportunity() -> None:
     from app.entry_opportunity_engine import EntryOpportunityEngineV22
 

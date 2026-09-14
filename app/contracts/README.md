@@ -176,3 +176,12 @@ still unbroken; N3 is the first N1 crossing candle low. It requires standalone
 LONG, chronological extrema and N3 < N1 < N2. Four-hour confirmation corresponds
 to N2.broken_at. In this policy invalidation may equal the zone floor. The
 breakout buffer permits zero for an exact structural break without ATR padding.
+
+## Countertrend observations without entries
+
+`EntryOpportunity.checkpoints` may be empty for a GERI CT0/CT1 observation
+that has no entered legs, no buy maturity and is not OPEN. This makes the
+observation-only snapshots emitted since Entry Opportunity 12.0 serializable.
+Core/SwingTrade snapshots and CT2+ entries still require checkpoints. Existing
+nonempty snapshots retain their validation rules; no persisted buy is converted
+into an observation and no migration of existing records is required.

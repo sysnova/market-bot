@@ -171,3 +171,37 @@ unfinished bar, absent history or stale MACD cannot block entry or invalidate an
 open trade. Negative/improving/deteriorating MACD changes observations only.
 Validation covers deterministic entry, risk, exits, serialization and publication;
 profitability and parameter selection still require out-of-sample historical testing.
+
+## Confirmed local support alternative (1.9.0)
+
+The candidate definition `7.68.0` selects SwingTrade `1.9.0`, strategy `1.6.0`, retaining
+Entry Opportunity `22.0.0` and its ST3/ST4 gain protection. `7.67.0` remains
+the default. Only the SwingTrade slot changes in the candidate. Historical
+comparisons added losing trades as well as a profitable HPE recovery; this
+alternative is not promoted automatically on the basis of those selected cases.
+Those comparisons are provisional: the native multi-session replay currently
+loads daily geometry at bootstrap but streams only 1m bars, so the daily history
+used for Fibonacci does not advance with each session. Feed completed daily bars
+at their actual availability time and repeat both versions before using these
+results to decide promotion. Delivery cadence does not resolve that missing input.
+
+The existing daily-support/Fibonacci overlap path retains its acceptance rules.
+When that overlap is absent, a recovered local resistance can serve as support:
+after the volume-confirmed breakout, three completed 15m candles must close
+strictly higher, all above the fixed reference. At least one of those candles
+must retest the reference within the existing volatility buffer; all three lows
+must stay above the original touch low and the final candle must close bullish.
+A breakout candle cannot confirm itself. An hour above the level or contextual
+support annotation alone cannot enable this alternative.
+
+`rebound_support_source` identifies `DAILY_CONFLUENCE` or `LOCAL_RETEST` on entry.
+The latter does not change the factual `support_confluence` field. Session VWAP,
+same-slot volume, expiry, extension, maximum 4% risk and primary R/R > 1.5 still
+apply. The stop remains beneath the original defended touch using the existing
+buffer; the alternative does not tighten it artificially to pass the risk cap
+or borrow another thesis's target. Stop/acceptance/no-progress exits and profit
+protection remain in force. Persisted OPEN/EXITED states from 1.7/1.8 retain
+their geometry and reentry cutoff during upgrade.
+
+This is a deterministic entry alternative. Its effect on profitability must be
+measured across trades, including new losses and missed profitable recoveries.
