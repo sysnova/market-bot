@@ -403,7 +403,7 @@ async def test_bootstrap_does_not_emit_actionable_signal_from_previous_session()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("definition", ["7.50.0", "7.59.0", "7.68.0", "7.70.0"])
+@pytest.mark.parametrize("definition", ["7.50.0", "7.59.0", "7.68.0", "7.70.0", "7.71.0"])
 async def test_rebound_operational_stop_and_exit_survive_runtime_restart(definition: str) -> None:
     from dataclasses import replace
     from pathlib import Path
@@ -424,7 +424,7 @@ async def test_rebound_operational_stop_and_exit_survive_runtime_restart(definit
         ctx = replace(
             ctx, confirmation_bars=(*ctx.confirmation_bars[:-1], last), current_price=last.close
         )
-    elif definition == "7.68.0":
+    elif definition in {"7.68.0", "7.71.0"}:
         from app.swing_trade_engine.tests.test_v19 import recovered_support
 
         ctx = recovered_support()

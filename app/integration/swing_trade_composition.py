@@ -535,7 +535,7 @@ async def run_swing_trade_process(
             symbols=selected,
             requirements=(
                 SWING_TRADE_MOMENTUM_HISTORY_REQUESTS
-                if engine_version in {"1.6.0", "1.7.0", "1.8.0", "1.9.0"}
+                if engine_version in {"1.6.0", "1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0"}
                 else SWING_TRADE_HISTORY_REQUESTS
             ),
             as_of=SystemClock().now(),

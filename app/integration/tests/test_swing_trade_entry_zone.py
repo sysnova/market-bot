@@ -15,8 +15,11 @@ from app.swing_trade_engine.v110 import SwingTradeEngineV110
 
 
 @pytest.mark.asyncio
-async def test_se_st2_reaches_dashboard_as_valid_reference_without_changing_stop() -> None:
-    assembly = MarketBotAssembly.from_path(Path("configs/marketbot/7.70.0.yaml"))
+@pytest.mark.parametrize("definition", ["7.70.0", "7.71.0"])
+async def test_se_st2_reaches_dashboard_as_valid_reference_without_changing_stop(
+    definition: str,
+) -> None:
+    assembly = MarketBotAssembly.from_path(Path("configs/marketbot") / f"{definition}.yaml")
     native = analyze("97").model_copy(
         update={
             "symbol": "SE",
