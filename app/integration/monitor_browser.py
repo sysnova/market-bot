@@ -35,6 +35,8 @@ def open_monitor_browser(url: str) -> bool:
                     "-Command",
                     f"Start-Process -FilePath '{url}'",
                 ],
+                # PowerShell must not read the parent launcher's pending startup batches.
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 timeout=10,
                 check=False,

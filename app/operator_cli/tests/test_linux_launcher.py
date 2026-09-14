@@ -1,8 +1,52 @@
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 PROJECT_ROOT = Path(__file__).parents[3]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "linux" / "start-market-bot.sh"
 STOP_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "linux" / "stop-market-bot.sh"
+
+
+def test_background_process_cannot_consume_remaining_startup_batches(tmp_path: Path) -> None:
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("Bash is required to exercise the Linux launcher")
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    start_background = (
+        "start_background()"
+        + script.split("start_background()", 1)[1].split("  check_children()", 1)[0]
+    )
+    # A child that drains stdin reproduces PowerShell consuming the remaining plan.
+    # Wait for it after each start to make that failure deterministic.
+    harness = (
+        """
+set -euo pipefail
+MARKETBOT_EXECUTABLE=unused
+LOG_ROOT=.
+MARKETBOT_CHILD_PIDS=()
+MARKETBOT_CHILD_NAMES=()
+setsid() { cat >/dev/null; }
+"""
+        + start_background
+        + """
+while IFS= read -r name; do
+    start_background "$name" run marketbot
+    wait "${MARKETBOT_CHILD_PIDS[-1]}"
+done < <(printf '%s\\n' dashboard swing-trade leveraged-thesis alpaca-market-stream)
+printf 'completed=%s\\n' "${MARKETBOT_CHILD_NAMES[*]}"
+"""
+    )
+    result = subprocess.run(  # noqa: S603 - installed Bash and repository-owned test harness.
+        [bash, "-s"],
+        input=harness.encode(),
+        cwd=tmp_path,
+        capture_output=True,
+        timeout=15,
+        check=True,
+    )
+    assert b"completed=dashboard swing-trade leveraged-thesis alpaca-market-stream" in result.stdout
 
 
 def test_linux_launcher_starts_long_portfolio_engine_and_tmux_pane() -> None:

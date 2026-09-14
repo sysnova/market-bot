@@ -47,9 +47,36 @@ def test_old_other_symbol_and_expired_evidence_never_turn_green() -> None:
         evidence(as_of=(NOW - timedelta(minutes=5)).isoformat()),
         received_at=NOW,
     )
-    stale = book.snapshot(now=NOW + timedelta(minutes=20))["assessments"][0]
+    stale = book.snapshot(now=NOW + timedelta(minutes=40))["assessments"][0]
     assert stale["freshness"] == "STALE"
     assert all(gate["status"] in {"STALE", "UNKNOWN"} for gate in stale["gates"])
+
+
+def test_swing_open_timestamp_remains_recent_until_next_closed_bar_is_due() -> None:
+    book = TickerEvidenceBook("NVDA")
+    book.merge("analysis.result.produced", evidence(), received_at=NOW + timedelta(minutes=16))
+    current = book.snapshot(now=NOW + timedelta(minutes=20))["assessments"][0]
+    assert current["freshness"] == "FRESH"
+    assert current["as_of"] == NOW.isoformat()
+    assert book.snapshot(now=NOW + timedelta(minutes=32))["assessments"][0]["freshness"] == "STALE"
+    # A replay received now cannot rejuvenate a halted source.
+    book.merge("analysis.result.produced", evidence(), received_at=NOW + timedelta(hours=1))
+    assert book.snapshot(now=NOW + timedelta(hours=1))["assessments"][0]["freshness"] == "STALE"
+
+
+def test_swing_cadence_does_not_extend_expiry_other_engines_or_unknown_dates() -> None:
+    for payload, expected in (
+        (evidence(expires_at=(NOW + timedelta(minutes=18)).isoformat()), "STALE"),
+        (evidence(engine_id="intraday", horizon="INTRADAY"), "STALE"),
+        (evidence(as_of=None), "UNKNOWN"),
+        (evidence(as_of=(NOW + timedelta(hours=1)).isoformat()), "UNKNOWN"),
+    ):
+        book = TickerEvidenceBook("NVDA")
+        book.merge("analysis.result.produced", payload, received_at=NOW)
+        assert (
+            book.snapshot(now=NOW + timedelta(minutes=20))["assessments"][0]["freshness"]
+            == expected
+        )
 
 
 def test_nested_analyses_and_distinct_horizons_are_retained() -> None:

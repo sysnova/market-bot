@@ -22,7 +22,10 @@ verde cumple, rojo no cumple o riesgo activo, amarillo antiguo, gris sin evidenc
 adversos como `structure_broken_confirmed` invierten la polaridad. No se reconstruyen reglas ni
 umbrales a partir de scores. Los motores que no publican gates lo indican expresamente.
 
-La antigüedad de 15 minutos es una política de presentación conservadora, no un TTL de trading.
+La antigüedad se calcula desde `as_of`, nunca desde la recepción o el replay. El límite visual
+de Swing es 32 minutos: su vela de 15 minutos se fecha desde la apertura, se espera el próximo
+cierre de 15 minutos y se permiten dos minutos de entrega. Para los demás assessments se mantienen
+15 minutos. Es una política de presentación, no un TTL de trading ni una confirmación de entrada.
 Una expiración explícita anterior prevalece. Un dato sin fecha, futuro o sin conexión al bus no
 puede presentarse verde. Los assessments diarios pueden estar antiguos aunque el mercado esté
 cerrado. Los motores ausentes se enumeran con su modo operativo; ausencia no equivale a veto.

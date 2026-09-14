@@ -464,7 +464,8 @@ run_control() {
       echo "Invalid MarketBot process command for $name: $*" >&2
       return 2
     fi
-    setsid "$MARKETBOT_EXECUTABLE" "${@:3}" \
+    # Children must not consume the plan_startup_batches pipe on the control loop's stdin.
+    setsid "$MARKETBOT_EXECUTABLE" "${@:3}" </dev/null \
       >>"$LOG_ROOT/$name.out.log" 2>>"$LOG_ROOT/$name.err.log" &
     MARKETBOT_CHILD_PIDS+=("$!")
     MARKETBOT_CHILD_NAMES+=("$name")

@@ -21,6 +21,7 @@ def test_wsl_opens_windows_browser_without_launching_a_linux_text_browser(
         assert open_monitor_browser("http://127.0.0.1:8765/") is True
         assert run.call_args.args[0][-1] == "Start-Process -FilePath 'http://127.0.0.1:8765/'"
         assert run.call_args.kwargs["timeout"] == 10
+        assert run.call_args.kwargs["stdin"] == subprocess.DEVNULL
         native.assert_not_called()
 
 

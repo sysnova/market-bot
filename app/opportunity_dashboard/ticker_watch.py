@@ -167,7 +167,17 @@ class TickerEvidenceBook:
                 for name, _, value in _fields(payload)
                 if name in {"expires_at", "fresh_until"} and (expiry := _date(value))
             ]
-            stale_at = min([*(expiries), at + timedelta(minutes=15)]) if at else None
+            # Swing's as_of can be the opening time of its latest completed 15m bar.
+            # Allow that bar to close, the next 15m evaluation, and 2m delivery grace.
+            # This is display freshness only; explicit engine expiries still prevail.
+            freshness_minutes = (
+                32
+                if item["engine"] == "swing" and item["event_type"] == "analysis.result.produced"
+                else 15
+            )
+            stale_at = (
+                min([*expiries, at + timedelta(minutes=freshness_minutes)]) if at else None
+            )
             freshness = (
                 "UNKNOWN"
                 if at is None or at > now
@@ -191,7 +201,9 @@ class TickerEvidenceBook:
             "engines": self.engines,
             "missing_engines": sorted(set(self.engines) - present),
             "freshness_policy": (
-                "Sin actualización durante 15 min: dato antiguo; no es un gate fallido."
+                "Antigüedad desde as_of: Swing 32 min (vela de 15 min, siguiente cierre y "
+                "2 min de entrega); otros motores 15 min. Una expiración anterior prevalece. "
+                "Es una política visual, no un TTL de trading."
             ),
             "coverage": (
                 "Último evento disponible por motor, tipo y horizonte. No es historial completo."
