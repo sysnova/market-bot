@@ -185,3 +185,12 @@ observation-only snapshots emitted since Entry Opportunity 12.0 serializable.
 Core/SwingTrade snapshots and CT2+ entries still require checkpoints. Existing
 nonempty snapshots retain their validation rules; no persisted buy is converted
 into an observation and no migration of existing records is required.
+# SwingTrade entry geometry
+
+`SwingTradeAssessment.zone_low/zone_high` retain the Fibonacci context. The optional
+`entry_zone_low`, `entry_zone_high`, and `entry_invalidation` are an all-or-none
+group requiring `entry_invalidation < entry_zone_low <= entry_zone_high`.
+Legacy assessments without the group remain readable. SwingTrade policy `1.7.0`
+uses this entry geometry in transitions and EntrySignals and rejects a signal
+whose invalidation is at or above its entry zone. Existing v1 signal policies
+retain their historical validation so stored evidence remains readable.

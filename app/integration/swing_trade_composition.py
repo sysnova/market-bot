@@ -338,6 +338,11 @@ class SwingTradeRuntime:
         previous_maturity = previous.maturity if previous is not None else None
         if item.maturity is None and previous_maturity is None:
             return
+        signal_basis = item if item.maturity is not None else previous
+        if signal_basis is None:
+            raise AssertionError("SwingTrade thesis loss requires a previous assessment")
+        zone_low = signal_basis.entry_zone_low or signal_basis.zone_low
+        zone_high = signal_basis.entry_zone_high or signal_basis.zone_high
         transition = SwingTradeTransition(
             assessment_id=item.assessment_id,
             symbol=item.symbol,
@@ -347,9 +352,9 @@ class SwingTradeRuntime:
             previous_maturity=previous_maturity,
             maturity=item.maturity,
             current_price=item.current_price,
-            zone_low=item.zone_low,
-            zone_high=item.zone_high,
-            invalidation=_operational_stop(item),
+            zone_low=zone_low,
+            zone_high=zone_high,
+            invalidation=_operational_stop(signal_basis),
             primary_target=item.primary_target,
             reward_risk=item.reward_risk,
             eligible=item.eligible,
@@ -371,9 +376,6 @@ class SwingTradeRuntime:
             SwingTradeMaturity.ST4,
         }:
             return
-        signal_basis = item if item.maturity is not None else previous
-        if signal_basis is None:
-            raise AssertionError("SwingTrade thesis loss requires a previous assessment")
         setup_id = str(
             next(metric.value for metric in signal_basis.metrics if metric.name == "setup_id")
         )
@@ -390,8 +392,8 @@ class SwingTradeRuntime:
                 else item.current_price
             ),
             horizons=(AnalysisHorizon.SWING,),
-            zone_low=signal_basis.zone_low,
-            zone_high=signal_basis.zone_high,
+            zone_low=zone_low,
+            zone_high=zone_high,
             invalidation=_operational_stop(signal_basis),
             targets=(signal_basis.primary_target, signal_basis.extended_target),
             policy_id="swing-trade",
@@ -428,6 +430,9 @@ def _material_change(previous: SwingTradeAssessment, current: SwingTradeAssessme
         or previous.impulse_high_at != current.impulse_high_at
         or previous.zone_low != current.zone_low
         or previous.zone_high != current.zone_high
+        or previous.entry_zone_low != current.entry_zone_low
+        or previous.entry_zone_high != current.entry_zone_high
+        or previous.entry_invalidation != current.entry_invalidation
         or _metric(previous, "rebound_state") != _metric(current, "rebound_state")
         or _metric(previous, "operational_stop") != _metric(current, "operational_stop")
         or previous.invalidation != current.invalidation
@@ -446,6 +451,8 @@ def _bootstrap_actionable_signal_is_fresh(bar: MarketBar, *, now: datetime) -> b
 
 
 def _operational_stop(item: SwingTradeAssessment) -> Decimal:
+    if item.entry_invalidation is not None:
+        return item.entry_invalidation
     value = _metric(item, "operational_stop")
     if (
         item.engine_version in {"1.7.0", "1.8.0", "1.9.0"}

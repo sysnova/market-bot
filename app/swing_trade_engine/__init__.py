@@ -10,6 +10,7 @@ from .v16 import SwingTradeEngineV16
 from .v17 import SwingTradeEngineV17
 from .v18 import SwingTradeEngineV18
 from .v19 import SwingTradeEngineV19
+from .v110 import SwingTradeEngineV110
 
 __all__ = [
     "SwingTradeContext",
@@ -23,4 +24,5 @@ __all__ = [
     "SwingTradeEngineV17",
     "SwingTradeEngineV18",
     "SwingTradeEngineV19",
+    "SwingTradeEngineV110",
 ]

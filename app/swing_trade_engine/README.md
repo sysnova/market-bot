@@ -205,3 +205,25 @@ their geometry and reentry cutoff during upgrade.
 
 This is a deterministic entry alternative. Its effect on profitability must be
 measured across trades, including new losses and missed profitable recoveries.
+## Valid entry zones (1.10.0)
+
+MarketBot `7.70.0` selects implementation `1.10.0` with strategy `1.7.0`, based on
+the operating `7.69.0` assembly and its `1.8.0` confirmation rules. Other engine
+selections are unchanged; `7.69.0` remains the rollback definition.
+
+The Fibonacci interval remains context. Before entry, the entry interval starts
+at `max(fibonacci_618, support_band_low)` and ends at `fibonacci_50`. Its structural
+invalidation is unchanged. If this interval is empty or not strictly above the
+stop, maturity is withheld with `no_valid_entry_zone_above_invalidation`; the
+engine never lowers a stop or invents a one-tick zone to permit registration.
+Accepted rebounds register their frozen entry price as a point zone with their
+original operational stop. The same geometry survives management, exit and
+upgrade from an existing 1.7/1.8/1.9 rebound.
+
+Transitions, EntrySignals, Opportunities and their web rows use the entry
+interval. The assessment and SwingTrade monitor also expose the full Fibonacci
+context separately. PostgreSQL's levels constraint is unchanged.
+
+SE regression: Fibonacci 103.3451–108.8050, support band low 105.1810, stop
+104.1820 becomes entry zone 105.1810–108.8050 with the same 104.1820 stop. It
+remains an ST2 reference; this correction does not confirm a buy.

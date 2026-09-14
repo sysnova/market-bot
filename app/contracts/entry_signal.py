@@ -85,6 +85,8 @@ class EntrySignal(StrictFrozenModel):
             if self.family is EntrySignalFamily.SWING_TRADE:
                 if zone_low > zone_high:
                     raise ValueError("SwingTrade signal zone levels are out of order")
+                if self.policy_version == "1.7.0" and invalidation >= zone_low:
+                    raise ValueError("SwingTrade actionable zone must be above invalidation")
                 if self.swing_trade_maturity is not None and invalidation >= self.entry_price:
                     raise ValueError(
                         "actionable SwingTrade signal requires entry above invalidation"

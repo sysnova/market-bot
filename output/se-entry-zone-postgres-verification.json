@@ -1,0 +1,12 @@
+{
+  "symbol": "SE",
+  "stage": "ST2",
+  "zone_low": "105.1810",
+  "zone_high": "108.8050",
+  "invalidation": "104.1820",
+  "original_fibonacci": ["103.3451", "108.8050"],
+  "actual_postgres_insert": "PASSED",
+  "constraints_unchanged": true,
+  "test_transaction_rolled_back": true,
+  "live_deployment": "PENDING_EXPLICIT_WSL_AUTHORIZATION"
+}

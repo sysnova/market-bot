@@ -1128,6 +1128,19 @@ def test_recovered_support_definition_changes_only_swing_trade() -> None:
             assert assembly.spec(slot) == previous.spec(slot)
 
 
+def test_valid_entry_zone_definition_preserves_running_engine_selection() -> None:
+    from app.swing_trade_engine import SwingTradeEngineV110
+
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.69.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.70.0.yaml")
+    engine = assembly.build_swing_trade()
+    assert type(engine) is SwingTradeEngineV110
+    assert engine.strategy_version == "1.7.0"
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.SWING_TRADE:
+            assert assembly.spec(slot) == previous.spec(slot)
+
+
 def test_swing_trade_profit_protection_definition_changes_only_opportunity() -> None:
     from app.entry_opportunity_engine import EntryOpportunityEngineV22
 

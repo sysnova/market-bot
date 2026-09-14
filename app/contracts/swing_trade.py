@@ -39,6 +39,9 @@ class SwingTradeAssessment(StrictFrozenModel):
     fibonacci_1618: PositiveDecimal
     zone_low: PositiveDecimal
     zone_high: PositiveDecimal
+    entry_zone_low: PositiveDecimal | None = None
+    entry_zone_high: PositiveDecimal | None = None
+    entry_invalidation: PositiveDecimal | None = None
     support_20d: PositiveDecimal
     resistance_20d: PositiveDecimal
     support_band_low: PositiveDecimal
@@ -62,6 +65,11 @@ class SwingTradeAssessment(StrictFrozenModel):
 
     @model_validator(mode="after")
     def validate_assessment(self) -> SwingTradeAssessment:
+        levels = (self.entry_invalidation, self.entry_zone_low, self.entry_zone_high)
+        if any(value is not None for value in levels):
+            stop, low, high = levels
+            if stop is None or low is None or high is None or not stop < low <= high:
+                raise ValueError("SwingTrade entry zone requires invalidation < low <= high")
         if self.assessment_id.version != 7:
             raise ValueError("assessment_id must be UUIDv7")
         if not self.impulse_low < self.impulse_high:

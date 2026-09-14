@@ -179,7 +179,11 @@ def _format_assessment(item: SwingTradeAssessment, *, color: bool) -> list[str]:
             f"  FIB 61.8 {item.fibonacci_618} | FIB 50 {item.fibonacci_50} | "
             f"FIB 161.8 {item.fibonacci_1618}"
         ),
-        f"  ZONA {item.zone_low}-{item.zone_high} | SPOT EN ZONA {zone} | ATR14 {item.atr14}",
+        f"  ZONA FIB {item.zone_low}-{item.zone_high} | SPOT EN ZONA {zone} | ATR14 {item.atr14}",
+        (
+            f"  ZONA ENTRADA {_range(item.entry_zone_low, item.entry_zone_high)} | "
+            f"INVALIDACION ENTRADA {item.entry_invalidation or '-'}"
+        ),
         (
             f"  SOPORTE 20D {item.support_20d} | "
             f"BANDA {item.support_band_low}-{item.support_band_high} | "

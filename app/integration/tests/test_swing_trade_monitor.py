@@ -104,7 +104,7 @@ def test_dashboard_renders_all_swing_trade_analysis_levels() -> None:
         "HOOD | ST4 | ELIGIBLE SI | SPOT 82 | R:R 7",
         "IMPULSO 70",
         "FIB 61.8 81.46 | FIB 50 85 | FIB 161.8 118.54",
-        "ZONA 81.46-85 | SPOT EN ZONA SI",
+        "ZONA FIB 81.46-85 | SPOT EN ZONA SI",
         "SOPORTE 20D 82 | BANDA 81.50-82.50 | CONFLUENCIA SI",
         "INVALIDA 80 | TARGET 20D 96 | TARGET EXT 118.54",
         "GERI ZONA 81.75-82.25 | CONFLUENCIA SI",
