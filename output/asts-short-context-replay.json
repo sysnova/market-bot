@@ -1,0 +1,101 @@
+{
+  "source_snapshot_sha256": "82a7b56a6647cc32e0eb8fe4dcf0a6a53239fb09fecc969486dce90ca51c67df",
+  "captured_at": "2026-09-14T19:47:33.378361+00:00",
+  "model": "gpt-5.4-nano-2026-03-17",
+  "question": "por que no es short si viene perdiendo PL del dia",
+  "short_context": {
+    "route": {
+      "decision_owner": "alert",
+      "implementation": "3.10.0",
+      "required_analysis_engines": [
+        "swing",
+        "intraday"
+      ],
+      "requirements": [
+        "Swing fresco: BEARISH, CAUTION/AVOID y short_structure_gate_passed=true.",
+        "Intraday fresco: BEARISH, FAVORABLE, setup bearish_breakdown o bearish_vwap_rejection y short_mature_confirmation_gate_passed=true.",
+        "Niveles publicados: invalidation_level > reference_price > objective_level; short_setup_id de Swing y short_confirmation_rule_version de Intraday.",
+        "Alert debe estar habilitado y emitir short_entry_confirmed. Los gates visibles no reconstruyen su decisión ni su deduplicación."
+      ],
+      "symbol_scope": "La configuración de Order Flow y los subyacentes de Leveraged Thesis delimitan el universo SHORT. Este resumen no verifica esa selección.",
+      "not_confirmation_gates": [
+        "4hgeri",
+        "leveraged-thesis.state",
+        "portfolio-flow",
+        "order-flow.state",
+        "order-flow.quote_fresh"
+      ]
+    },
+    "structure": {
+      "assessment_id": "swing:analysis.result.produced:SWING",
+      "engine": "swing",
+      "engine_version": "15.0.0",
+      "as_of": "2026-09-14T19:30:00+00:00",
+      "freshness": "FRESH",
+      "verdict": "AVOID",
+      "direction": "BEARISH",
+      "fields": {
+        "reference_price": "60.07",
+        "short_thesis_broken": true,
+        "short_structure_gate_passed": true,
+        "short_setup_id": "swing-short:ASTS:2026-08-12T04:00:00+00:00",
+        "short_thesis_rule_version": "3.5.0"
+      },
+      "reasons": [
+        "bearish_daily_trend",
+        "relative_volume_confirmed",
+        "invalidation_risk_too_wide",
+        "broken_daily_structure",
+        "below_pivot_low_avwap",
+        "below_breakout_avwap",
+        "market_regime:transitional",
+        "entry_zone_distance_atr:-0.0014",
+        "failed_breakout_structure_invalidated",
+        "failed_breakout_short_thesis_broken"
+      ]
+    },
+    "timing": {
+      "assessment_id": "intraday:analysis.result.produced:INTRADAY",
+      "engine": "intraday",
+      "engine_version": "8.0.0",
+      "as_of": "2026-09-14T19:46:00+00:00",
+      "freshness": "FRESH",
+      "verdict": "WATCH",
+      "direction": "NEUTRAL",
+      "fields": {
+        "setup": "no_trigger",
+        "reference_price": "60.04",
+        "intraday_regime": "bullish_trend",
+        "confirmation_quality": "weak",
+        "short_confirmation_persistence": false,
+        "short_confirmation_gate_passed": false,
+        "short_entry_efficiency_gate_passed": false,
+        "short_mature_retest_confirmed": false,
+        "short_confirmation_rule_version": "1.4.0",
+        "short_ema20_extension_warning": false,
+        "short_ema20_extension_hard_gate": false,
+        "short_displacement_gate_passed": false,
+        "short_extension_override_applied": false,
+        "short_mature_confirmation_gate_passed": false,
+        "short_entry_timing": "not_applicable",
+        "short_entry_lane": "STANDARD",
+        "short_displacement_minimum_momentum_percent": "0.5",
+        "short_displacement_minimum_rvol": "2.0",
+        "short_early_breakdown_gate_passed": false,
+        "short_early_minimum_momentum_percent": "0.5",
+        "short_early_minimum_rvol": "1.3"
+      },
+      "reasons": [
+        "no_confirmed_intraday_trigger",
+        "weak_relative_volume",
+        "no_trigger",
+        "intraday_regime:bullish_trend",
+        "confirmation_quality:weak"
+      ]
+    },
+    "confirmation": null,
+    "full_session_history": false,
+    "coverage": "Últimas lecturas recibidas, no la secuencia completa del día. No permiten descartar una señal anterior ni explicar toda la caída o el P/L diario. Una alerta ausente significa sin confirmación recibida en este snapshot."
+  },
+  "answer": "1) **Ticker, hora y conclusión:** **ASTS**, captured_at **2026-09-14T19:47:33Z**. En ESTE snapshot **no hay confirmación SHORT recibida** (no aparece una alerta **short_entry_confirmed** en la ruta **alert / 3.10.0**; solo se observa un **entry-signal.confirmed:PORTFOLIO_FLOW**, que no prueba SHORT).\n\n2) **Estructura Swing:** **short_structure_gate_passed = true** (gate **short_structure_gate_passed**, **as_of 2026-09-14T19:30:00Z**). **Interpretación:** favorece la estructura para **SHORT**. **short_thesis_broken = true** también está publicado (as_of el mismo **2026-09-14T19:30:00Z**), lo cual es **adverso para la tesis LONG**, **no** un bloqueo por sí mismo para SHORT.\n\n3) **Timing Intraday:** **short_mature_confirmation_gate_passed = false** (gate **short_mature_confirmation_gate_passed**, **as_of 2026-09-14T19:46:00Z**). Setup: **no_trigger**; razones publicadas: **no_confirmed_intraday_trigger** y **weak_relative_volume** (intraday_regime: **bullish_trend**, confirmation_quality: **weak**). Como esta gate es **FAIL**, no se completa la maduración SHORT.\n\n4) **Límite temporal:** el snapshot indica **no contar la secuencia completa del día**; por eso no puedo descartar oportunidades SHORT anteriores, ni concluir nada solo por el P/L del día."
+}

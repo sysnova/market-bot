@@ -4,14 +4,14 @@ const {join} = require('node:path');
 const {runInNewContext} = require('node:vm');
 const {test} = require('node:test');
 
-function setup() {
+function setup(storage = new Map()) {
   const elements = new Map(), sent = [];
   const element = () => ({value:'', disabled:false, textContent:'', innerHTML:'', handlers:{},
     children:[], addEventListener(type,fn){this.handlers[type]=fn;}, querySelectorAll(){return [];},
     replaceChildren(){this.children=[];}, append(...items){this.children.push(...items);},
     prepend(item){this.children.unshift(item);}});
   const get = id => {if(!elements.has(id)) elements.set(id,element()); return elements.get(id);};
-  const context = {document:{getElementById:get,createElement:element},localStorage:{getItem(){return '';},setItem(){}},JSON,Date,Set};
+  const context = {document:{getElementById:get,createElement:element},localStorage:{getItem(key){return storage.get(key) || '';},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},JSON,Date,Set};
   runInNewContext(readFileSync(join(__dirname,'../static/ticker.js'),'utf8'),context);
   context.MarketBotTicker.connected({readyState:1,send(raw){sent.push(JSON.parse(raw));}});
   return {api:context.MarketBotTicker,get,sent,submit(id){get(id).handlers.submit({preventDefault(){}});}};
@@ -60,6 +60,42 @@ function followShort(app,data=shortSnapshot()) {
   app.get('watch-symbol').value=data.symbol; app.submit('ticker-watch-form'); app.api.handle(data);
 }
 
+test('stop from SHORT cancels the session, ignores late events and stays stopped on reconnect and reload',()=>{
+  const storage=new Map(),app=setup(storage); followShort(app);
+  app.get('ticker-reanalyze').handlers.click();
+  const analysis=app.sent.at(-1);
+  app.get('short-stop').handlers.click();
+  const stop=app.sent.at(-1);
+  assert.equal(stop.type,'stop_ticker'); assert.equal(stop.symbol,'ASTS');
+  assert.equal(storage.has('marketbot-watched-ticker'),false);
+  app.api.handle({...shortSnapshot(),revision:99});
+  app.api.handle({type:'ticker_analysis_done',symbol:'ASTS',request_id:analysis.request_id,report:{completed:1}});
+  assert.doesNotMatch(app.get('short-content').innerHTML,/Estructura bajista/);
+  app.api.handle({type:'ticker_stopped',symbol:'ASTS',request_id:stop.request_id});
+  assert.match(app.get('ticker-status').textContent,/detenido/i);
+  assert.equal(app.get('ticker-ask').disabled,true);
+  assert.equal(app.get('ticker-reanalyze').disabled,true);
+  app.api.disconnected();
+  const count=app.sent.length;
+  app.api.connected({readyState:1,send(raw){app.sent.push(JSON.parse(raw));}});
+  assert.equal(app.sent.length,count);
+  assert.equal(setup(storage).sent.length,0);
+  followShort(app);
+  assert.equal(app.sent.at(-1).type,'watch_ticker');
+  assert.match(app.get('short-content').innerHTML,/Estructura bajista/);
+});
+
+test('stop remains usable while disconnected and prevents auto resume',()=>{
+  const storage=new Map(),app=setup(storage); followShort(app); app.api.disconnected();
+  assert.equal(app.get('ticker-stop').disabled,false);
+  app.get('ticker-stop').handlers.click();
+  assert.equal(storage.has('marketbot-watched-ticker'),false);
+  app.get('watch-symbol').value='ASTS'; // Typing alone must not resume a stopped watch.
+  const count=app.sent.length;
+  app.api.connected({readyState:1,send(raw){app.sent.push(JSON.parse(raw));}});
+  assert.equal(app.sent.length,count);
+});
+
 function flowSnapshot(flowFreshness='FRESH',supportFreshness='FRESH') {
   const data=snapshot();
   const card=(kind,freshness,payload)=>({id:`flow-${kind}`,engine:'order-flow',event_type:`order-flow.${kind}.assessed`,
@@ -78,6 +114,17 @@ test('Order Flow groups state and support into one section with their published 
   assert.match(view,/Zona de soporte: 100 – 105/);
   assert.match(view,/pulse_state/); assert.match(view,/&lt;unsafe&gt;/);
   assert.doesNotMatch(view.slice(view.indexOf('<h3>Order Flow</h3>')),/<unsafe>|assessment-state">Assessment/);
+});
+
+test('SHORT gate labels explain which thesis broke and escape evidence text',()=>{
+  const app=setup(),data=snapshot();
+  data.assessments[0].gates=[{name:'short_thesis_broken',value:true,status:'PASS',polarity:'positive',
+    label:'Estructura LONG rota: condición de estructura para SHORT',
+    meaning:'No significa SHORT roto. <script>untrusted</script>'}];
+  app.get('watch-symbol').value=data.symbol; app.submit('ticker-watch-form'); app.api.handle(data);
+  const view=app.get('ticker-assessments').innerHTML;
+  assert.match(view,/Estructura LONG rota/); assert.match(view,/No significa SHORT roto/);
+  assert.match(view,/gate-status pass/); assert.doesNotMatch(view,/<script>|true indica riesgo/);
 });
 
 test('Order Flow retains separate freshness inside a single section, including disconnects',()=>{

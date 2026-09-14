@@ -259,6 +259,9 @@ async def run_opportunity_web_dashboard(
                 send=send_ticker,
                 reviewer=reviewer,
                 engines={slot.value: spec.mode.value for slot, spec in definition.engines.items()},
+                engine_versions={
+                    slot.value: spec.implementation for slot, spec in definition.engines.items()
+                },
                 analyze=analyze_ticker,
                 opportunities=book.items,
             )
@@ -356,7 +359,10 @@ async def _handle_client_message(
             raise ValueError("message must be an object")
         message = cast("dict[str, object]", parsed)
         message_type = message.get("type")
-        if message_type in {"watch_ticker", "ask_ticker", "analyze_ticker"} and ticker:
+        if (
+            message_type in {"watch_ticker", "stop_ticker", "ask_ticker", "analyze_ticker"}
+            and ticker
+        ):
             await ticker.handle(message)
             return
         if message_type == "refresh":

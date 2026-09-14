@@ -14,6 +14,7 @@ from app.common.clock import SystemClock
 from app.contracts import EntryOpportunity, EventEnvelope, Subscription, SubscriptionOptions
 from app.event_bus import NatsJetStreamEventBus
 from app.opportunity_dashboard.failure_review import FailureReviewError, OpenAIFailureReviewer
+from app.opportunity_dashboard.short_context import build_short_context
 from app.opportunity_dashboard.ticker_watch import TickerEvidenceBook, normalize_symbol
 
 Send = Callable[[dict[str, Any]], Awaitable[None]]
@@ -45,6 +46,7 @@ class TickerWebSession:
         send: Send,
         reviewer: OpenAIFailureReviewer | None,
         engines: dict[str, str],
+        engine_versions: dict[str, str] | None = None,
         analyze: Analyze | None = None,
         clock: SystemClock | None = None,
         ledger_root: Path = Path(".runtime/ticker-reviews"),
@@ -54,6 +56,7 @@ class TickerWebSession:
         self.send = send
         self.reviewer = reviewer
         self.engines = engines
+        self.engine_versions = engine_versions or {}
         self.analyze = analyze
         self.clock = clock or SystemClock()
         self.ledger_root = ledger_root
@@ -73,6 +76,14 @@ class TickerWebSession:
             symbol = normalize_symbol(str(message.get("symbol", "")))
             if kind == "watch_ticker":
                 await self.watch(symbol)
+                return
+            if kind == "stop_ticker":
+                if self.book is not None and self.book.symbol != symbol:
+                    raise ValueError("El ticker indicado ya no es el seleccionado.")
+                await self.close()
+                await self.send(
+                    {"type": "ticker_stopped", "symbol": symbol, "request_id": request_id}
+                )
                 return
             if self.book is None or self.book.symbol != symbol:
                 raise ValueError("Seleccioná primero el ticker que querés consultar.")
@@ -110,7 +121,11 @@ class TickerWebSession:
 
     async def watch(self, symbol: str) -> None:
         await self.close()
-        self.book = TickerEvidenceBook(symbol, engines=self.engines)
+        self.book = TickerEvidenceBook(
+            symbol,
+            engines=self.engines,
+            engine_versions=self.engine_versions,
+        )
         self._history = []
         self._transport = "CONNECTING" if self.bus else "UNAVAILABLE"
         await self.send(self.snapshot())
@@ -194,6 +209,10 @@ class TickerWebSession:
                 assessment["evaluation_freshness"] = "UNKNOWN"
                 for gate in assessment["gates"]:
                     gate["status"] = "UNKNOWN"
+            snapshot["short_context"] = build_short_context(
+                snapshot["assessments"],
+                alert_version=self.engine_versions.get("alert"),
+            )
         return snapshot
 
     async def _pump(self) -> None:
@@ -290,6 +309,8 @@ class TickerWebSession:
             )
 
     async def close(self) -> None:
+        # Invalidate callbacks before awaiting cancellation/unsubscription.
+        self.book = None
         tasks = [*self._jobs.values()]
         if self._pump_task is not None:
             tasks.append(self._pump_task)
@@ -303,3 +324,6 @@ class TickerWebSession:
             with suppress(Exception):
                 await subscription.unsubscribe()
         self._subscriptions.clear()
+        self._history.clear()
+        self._dirty.clear()
+        self._transport = "STOPPED"

@@ -2,7 +2,7 @@
 
 (() => {
   const $ = id => document.getElementById(id);
-  const state = { symbol: "", socket: null, snapshot: null, ask: null, analysis: null, sequence: 0, renderKey: "", available: false };
+  const state = { symbol: "", socket: null, snapshot: null, ask: null, analysis: null, stop: null, stopped: false, sequence: 0, renderKey: "", available: false };
   const html = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const date = value => value ? new Date(value).toLocaleString("es-AR", {hour12: false}) : "Sin fecha publicada";
   const labels = { PASS: "Cumple", FAIL: "No cumple / riesgo activo", STALE: "Dato antiguo", UNKNOWN: "Sin dato" };
@@ -51,6 +51,8 @@
     $("ticker-ask").disabled = !connected || !state.available || !state.snapshot?.assessments?.length || !!state.ask;
     $("ticker-reanalyze").disabled = !connected || !state.symbol || !!state.analysis;
     $("ticker-copy").disabled = !state.snapshot;
+    $("ticker-stop").disabled = !state.symbol;
+    $("short-stop").disabled = !state.symbol;
   }
   function send(type, extra = {}) {
     if (state.socket?.readyState !== 1) throw new Error("No hay conexión con MarketBot.");
@@ -63,7 +65,7 @@
     if (!/^[A-Z][A-Z0-9.-]{0,14}$/.test(symbol)) {
       $("ticker-status").textContent = "Ingresá un ticker válido."; return;
     }
-    state.symbol = symbol; state.snapshot = null; state.ask = null; state.analysis = null; state.renderKey = "";
+    state.symbol = symbol; state.snapshot = null; state.ask = null; state.analysis = null; state.stop = null; state.stopped = false; state.renderKey = "";
     $("watch-symbol").value = symbol;
     $("ticker-answers").replaceChildren(); $("ticker-question-status").textContent = "";
     $("ticker-counts").textContent = ""; $("ticker-missing").textContent = "";
@@ -75,6 +77,29 @@
     $("ticker-status").textContent = `Conectando ${symbol} con los motores…`;
     try { localStorage.setItem("marketbot-watched-ticker", symbol); } catch { /* optional */ }
     try { send("watch_ticker"); } catch (error) { $("ticker-status").textContent = error.message; }
+    controls();
+  }
+  function stop() {
+    if (!state.symbol) return;
+    const symbol = state.symbol;
+    let request = null, error = "";
+    if (state.socket?.readyState === 1) {
+      try { request = send("stop_ticker"); }
+      catch (cause) { error = cause.message; }
+    }
+    state.stop = request ? {symbol, request_id: request} : null;
+    state.stopped = true;
+    state.symbol = ""; state.snapshot = null; state.ask = null; state.analysis = null; state.renderKey = "";
+    try { localStorage.removeItem("marketbot-watched-ticker"); } catch { /* optional */ }
+    $("watch-symbol").value = "";
+    $("ticker-stream").textContent = `${symbol} · Detenido`;
+    $("short-symbol").textContent = `${symbol} · Detenido`;
+    $("short-content").innerHTML = '<p class="empty-state">Análisis detenido. Usá «Seguir ticker» para volver a iniciarlo.</p>';
+    $("ticker-assessments").replaceChildren(); $("ticker-history").replaceChildren();
+    $("ticker-answers").replaceChildren(); $("ticker-counts").textContent = "";
+    $("ticker-missing").textContent = ""; $("ticker-question-status").textContent = "";
+    $("ticker-history-title").textContent = "Evidencia anterior y alertas";
+    $("ticker-status").textContent = error ? `Vista detenida. No se pudo confirmar la cancelación: ${error}` : request ? `Deteniendo análisis de ${symbol}…` : `Seguimiento de ${symbol} detenido. No se reanudará al reconectar.`;
     controls();
   }
   function render(snapshot) {
@@ -107,7 +132,7 @@
           <p class="ticker-help">${card.freshness_basis === "closed_4h_bar" ? "Inicio de la última vela 4H cerrada" : card.evaluated_at ? "Datos base" : "Fecha del evento / dato"}: ${html(date(card.as_of))} · ${card.freshness === "FRESH" ? (card.freshness_basis === "closed_4h_bar" ? "Vigente para este intervalo" : "Reciente") : card.freshness === "STALE" ? "Antiguo según política visual" : "Vigencia desconocida"}</p>
           ${card.next_bar_due_at ? `<p class="ticker-help">Próxima vela esperada, incluido margen de entrega: ${html(date(card.next_bar_due_at))}. Horario regular habitual.</p>` : ""}
           ${payload.underlying_symbol ? `<p class="ticker-help">Subyacente: ${html(payload.underlying_symbol)} · Instrumento: ${html(payload.instrument_symbol || "sin seleccionar")}</p>` : ""}
-          <ul class="gate-list" data-scroll="${html(card.id)}:gates">${card.gates.map(gate => `<li><span class="gate-status ${gate.status.toLowerCase()}">${labels[gate.status] || "Sin dato"}</span><div><code>${html(gate.name)}</code><small>${html(JSON.stringify(gate.value))}${gate.polarity === "negative" ? " · true indica riesgo" : ""}</small></div></li>`).join("") || '<li class="ticker-help">Este assessment no publica gates booleanos explícitos.</li>'}</ul>
+          <ul class="gate-list" data-scroll="${html(card.id)}:gates">${card.gates.map(gate => `<li><span class="gate-status ${gate.status.toLowerCase()}">${labels[gate.status] || "Sin dato"}</span><div>${gate.label ? `<strong>${html(gate.label)}</strong><br>` : ""}<code>${html(gate.name)}</code><small>${html(JSON.stringify(gate.value))}${gate.polarity === "negative" ? " · true indica riesgo" : ""}${gate.meaning ? ` · ${html(gate.meaning)}` : ""}</small></div></li>`).join("") || '<li class="ticker-help">Este assessment no publica gates booleanos explícitos.</li>'}</ul>
           <details data-key="${html(card.id)}:reasons" ${expanded.has(`${card.id}:reasons`) ? "open" : ""}><summary>Razones (${reasons.length})</summary><ul>${reasons.map(reason => `<li>${html(reason)}</li>`).join("")}</ul></details>
           <details data-key="${html(card.id)}:raw" ${expanded.has(`${card.id}:raw`) ? "open" : ""}><summary>Assessment completo</summary><pre data-scroll="${html(card.id)}:raw">${html(JSON.stringify(payload, null, 2))}</pre></details>`;
       };
@@ -135,6 +160,8 @@
     controls();
   }
   $("ticker-watch-form").addEventListener("submit", event => { event.preventDefault(); watch(); });
+  $("ticker-stop").addEventListener("click", stop);
+  $("short-stop").addEventListener("click", stop);
   $("ticker-question-form").addEventListener("submit", event => {
     event.preventDefault(); if (state.ask || $("ticker-ask").disabled) return;
     const question = $("ticker-question").value.trim(); if (!question) return;
@@ -155,17 +182,29 @@
   globalThis.MarketBotTicker = {
     connected(socket) {
       state.socket = socket;
-      if (!state.symbol) { try { $("watch-symbol").value = localStorage.getItem("marketbot-watched-ticker") || ""; } catch { /* optional */ } }
-      if (state.symbol || $("watch-symbol").value) watch();
+      if (!state.symbol && !state.stopped) { try { $("watch-symbol").value = localStorage.getItem("marketbot-watched-ticker") || ""; } catch { /* optional */ } }
+      if (state.symbol || (!state.stopped && $("watch-symbol").value)) watch();
       controls();
     },
     disconnected() {
       state.socket = null; state.ask = null; state.analysis = null;
+      if (state.stopped) {
+        state.stop = null;
+        $("ticker-status").textContent = "Seguimiento detenido. No se reanudará al reconectar.";
+        controls(); return;
+      }
       $("ticker-question-status").textContent = "Conexión interrumpida. No se reenvían consultas automáticamente.";
       if (state.snapshot) render({ ...state.snapshot, transport: "DISCONNECTED", assessments: state.snapshot.assessments.map(card => ({ ...card, freshness: "UNKNOWN", evaluation_freshness: "UNKNOWN", gates: card.gates.map(g => ({ ...g, status: "UNKNOWN" })) })) });
       controls();
     },
     handle(message) {
+      if (message.type === "ticker_stopped" || (message.type === "error" && message.action === "stop_ticker")) {
+        if (state.stop?.symbol === message.symbol && state.stop?.request_id === message.request_id) {
+          $("ticker-status").textContent = message.type === "ticker_stopped" ? `Análisis de ${message.symbol} detenido. Usá «Seguir ticker» para retomarlo.` : `Vista detenida. El servidor no confirmó la cancelación: ${message.message}`;
+          state.stop = null;
+        }
+        controls(); return true;
+      }
       if (message.type === "snapshot") {
         state.available = message.llm_available;
         if (!state.snapshot) $("ticker-gpt-model").textContent = message.llm_available ? `Modelo: ${message.llm_model}` : "GPT no disponible: falta configurar la clave de OpenAI en MarketBot.";

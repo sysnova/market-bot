@@ -136,6 +136,32 @@ async def test_question_freezes_context_while_live_data_keeps_changing(tmp_path:
         await session.close()
 
 
+async def test_short_context_uses_configured_alert_and_loses_freshness_with_connection() -> None:
+    async def send(payload: dict[str, Any]) -> None:
+        pass
+
+    session = TickerWebSession(
+        bus=Bus(),
+        send=send,
+        reviewer=None,
+        engines={"swing": "active"},
+        engine_versions={"alert": "3.10.0"},
+        clock=Clock(),
+    )
+    try:
+        await session.watch("NVDA")
+        assert session.book is not None
+        session.book.merge("analysis.result.produced", envelope().payload, received_at=NOW)
+        current = session.snapshot()
+        assert current["short_context"]["route"]["implementation"] == "3.10.0"
+        assert current["short_context"]["structure"]["freshness"] == "FRESH"
+        session._transport = "UNAVAILABLE"
+        assert session.snapshot()["short_context"]["structure"]["freshness"] == "UNKNOWN"
+        assert current["short_context"]["structure"]["freshness"] == "FRESH"
+    finally:
+        await session.close()
+
+
 async def test_switch_unsubscribes_and_ignores_previous_ticker_callback() -> None:
     async def send(payload: dict[str, Any]) -> None:
         pass
@@ -151,6 +177,74 @@ async def test_switch_unsubscribes_and_ignores_previous_ticker_callback() -> Non
         assert all(item.closed for item in previous)
         assert session.snapshot()["assessments"] == []
         assert session.snapshot()["symbol"] == "AAPL"
+    finally:
+        await session.close()
+
+
+async def test_stop_cancels_analysis_and_question_unsubscribes_and_allows_restart(
+    tmp_path: Path,
+) -> None:
+    sent = []
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def send(payload: dict[str, Any]) -> None:
+        sent.append(payload)
+
+    async def analyze(symbol: str) -> dict[str, object]:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+        return {}
+
+    bus, reviewer = Bus(), Reviewer()
+    session = TickerWebSession(
+        bus=bus, send=send, reviewer=reviewer, engines={}, clock=Clock(),
+        analyze=analyze, ledger_root=tmp_path,
+    )
+    try:
+        await session.watch("ASTS")
+        old_handler = bus.handlers[0]
+        await old_handler(envelope("ASTS"))
+        await session.handle({"type": "analyze_ticker", "symbol": "ASTS"})
+        await session.handle({"type": "ask_ticker", "symbol": "ASTS", "question": "Short?"})
+        await asyncio.wait_for(started.wait(), 1)
+        await asyncio.wait_for(reviewer.called.wait(), 1)
+        jobs = list(session._jobs.values())
+        await session.handle({"type": "stop_ticker", "symbol": "ASTS", "request_id": "stop-1"})
+        assert sent[-1] == {
+            "type": "ticker_stopped", "symbol": "ASTS", "request_id": "stop-1",
+        }
+        assert cancelled.is_set()
+        assert all(job.cancelled() for job in jobs)
+        assert all(subscription.closed for subscription in bus.subscriptions)
+        assert session.book is None
+        assert session._pump_task is None
+        assert session._jobs == {}
+        await old_handler(envelope("ASTS"))
+        assert session.book is None
+        await session.handle({"type": "stop_ticker", "symbol": "ASTS"})
+        assert sent[-1]["type"] == "ticker_stopped"
+        await session.watch("ASTS")
+        await old_handler(envelope("ASTS"))
+        assert session.snapshot()["assessments"] == []
+    finally:
+        await session.close()
+
+
+async def test_stop_for_an_old_ticker_does_not_stop_current_selection() -> None:
+    sent = []
+
+    async def send(payload: dict[str, Any]) -> None:
+        sent.append(payload)
+
+    session = TickerWebSession(bus=Bus(), send=send, reviewer=None, engines={})
+    try:
+        await session.watch("NBIS")
+        await session.handle({"type": "stop_ticker", "symbol": "ASTS"})
+        assert sent[-1]["type"] == "error"
+        assert session.book is not None and session.book.symbol == "NBIS"
     finally:
         await session.close()
 

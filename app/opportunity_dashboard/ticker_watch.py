@@ -8,6 +8,8 @@ from datetime import UTC, datetime, time, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
+from .short_context import build_short_context
+
 _NEW_YORK = ZoneInfo("America/New_York")
 
 
@@ -97,8 +99,13 @@ def project_gates(payload: dict[str, Any], *, freshness: str) -> list[dict[str, 
             continue  # Configuration switch, explained separately in the SHORT section.
         if name.endswith(("_at", "_id", "_price", "_until", "_score", "_percent", "_level")):
             continue
-        negative = bool(_NEGATIVE.search(name))
-        positive = bool(_POSITIVE.search(name))
+        short_long_break = (
+            name == "short_thesis_broken"
+            and payload.get("engine_id") == "swing"
+            and payload.get("engine_version") in {"14.0.0", "15.0.0"}
+        )
+        negative = bool(_NEGATIVE.search(name)) and not short_long_break
+        positive = bool(_POSITIVE.search(name)) or short_long_break
         if not (negative or positive):
             continue
         # Numeric risk estimates and text explanations remain in the assessment, not gates.
@@ -116,6 +123,16 @@ def project_gates(payload: dict[str, Any], *, freshness: str) -> list[dict[str, 
                 "value": value,
                 "status": status,
                 "polarity": "negative" if negative else "positive",
+                **(
+                    {
+                        "label": "Estructura LONG rota: condición de estructura para SHORT",
+                        "thesis_scope": "SHORT",
+                        "meaning": "true favorece la estructura SHORT; no significa SHORT roto "
+                        "ni confirma por sí solo una entrada. Es adverso para la tesis LONG.",
+                    }
+                    if short_long_break
+                    else {}
+                ),
             }
         )
     return gates
@@ -124,9 +141,16 @@ def project_gates(payload: dict[str, Any], *, freshness: str) -> list[dict[str, 
 class TickerEvidenceBook:
     """One selected symbol; newest event per engine, event kind and horizon/family."""
 
-    def __init__(self, symbol: str, *, engines: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        symbol: str,
+        *,
+        engines: dict[str, str] | None = None,
+        engine_versions: dict[str, str] | None = None,
+    ) -> None:
         self.symbol = normalize_symbol(symbol)
         self.engines = engines or {}
+        self.engine_versions = engine_versions or {}
         self._items: dict[str, dict[str, Any]] = {}
         self.revision = 0
 
@@ -268,6 +292,11 @@ class TickerEvidenceBook:
             "captured_at": now.isoformat(),
             "assessments": copy.deepcopy(assessments),
             "engines": self.engines,
+            "engine_versions": dict(self.engine_versions),
+            "short_context": build_short_context(
+                assessments,
+                alert_version=self.engine_versions.get("alert"),
+            ),
             "missing_engines": sorted(set(self.engines) - present),
             "freshness_policy": (
                 "Antigüedad desde as_of: Swing 32 min (vela de 15 min, siguiente cierre y "
