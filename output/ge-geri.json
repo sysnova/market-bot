@@ -1,0 +1,471 @@
+{
+  "event_id": "01a09030-595d-7912-b7c3-4b1bd68aa969",
+  "event_type": "4hgeri.assessed",
+  "schema_version": "1.0.0",
+  "occurred_at": "2026-09-11T11:18:02.845263Z",
+  "source": "4hgeri-v1",
+  "trace_id": null,
+  "correlation_id": null,
+  "causation_id": null,
+  "market_session": null,
+  "subject": "GE",
+  "payload": {
+    "active_level_kind": "SUPPORT",
+    "active_level_price": "321.16000000",
+    "active_level_sequence": 3,
+    "assessed_at": "2026-09-11T11:18:02.845263Z",
+    "assessment_id": "01a09030-5954-703a-b117-93c224a4c25c",
+    "atr14": "5.094832855456238340588604329",
+    "bounce_confirmed": false,
+    "breakout_buffer": "0",
+    "context_hash": "sha256:e32c0489a29e3335463d0d61eb524d43b6e453d9089ddc82923a6402ce5f55d6",
+    "continuation_confirmation": false,
+    "current_price": "324.15000000",
+    "current_swing_zone_high": null,
+    "current_swing_zone_low": null,
+    "daily_swing_aligned": false,
+    "engine_version": "1.13.0",
+    "existing_maturity_aligned": false,
+    "fast_confirmation": false,
+    "four_hour_confirmation": false,
+    "invalidation": "321.16000000",
+    "levels": [
+      {
+        "broken_at": "2026-09-09T13:30:00Z",
+        "confirmed_at": "2026-09-03T13:30:00Z",
+        "kind": "SUPPORT",
+        "price": "329.31000000",
+        "sequence": 1,
+        "source_at": "2026-09-02T17:30:00Z"
+      },
+      {
+        "broken_at": null,
+        "confirmed_at": "2026-09-09T13:30:00Z",
+        "kind": "RESISTANCE",
+        "price": "342.73000000",
+        "sequence": 2,
+        "source_at": "2026-09-08T13:30:00Z"
+      },
+      {
+        "broken_at": null,
+        "confirmed_at": "2026-09-09T13:30:00Z",
+        "kind": "SUPPORT",
+        "price": "321.16000000",
+        "sequence": 3,
+        "source_at": "2026-09-09T13:30:00Z"
+      }
+    ],
+    "maturity": "IN_ZONE_4H",
+    "metrics": [
+      {
+        "name": "structure",
+        "value": "clean_support_swing"
+      },
+      {
+        "name": "zone_policy",
+        "value": "N3_TO_N2"
+      },
+      {
+        "name": "break_confirmation",
+        "value": "completed_4h_close_above_n2"
+      },
+      {
+        "name": "n1_break_policy",
+        "value": "first_low_below_support"
+      },
+      {
+        "name": "n3_policy",
+        "value": "fixed_first_cross_low"
+      },
+      {
+        "name": "clean_support_peak_price",
+        "value": "342.73000000"
+      },
+      {
+        "name": "clean_support_peak_at",
+        "value": "2026-09-08T13:30:00+00:00"
+      },
+      {
+        "name": "clean_support_invalidated_at",
+        "value": null
+      },
+      {
+        "name": "structural_invalidation_level",
+        "value": "321.16000000"
+      },
+      {
+        "name": "emits_opportunities",
+        "value": false
+      },
+      {
+        "name": "places_orders",
+        "value": false
+      },
+      {
+        "name": "structural_selection_policy",
+        "value": "LATEST_VALID_N3_THEN_LATEST_N1"
+      },
+      {
+        "name": "structural_candidate_count",
+        "value": 5
+      },
+      {
+        "name": "structural_fibonacci_policy",
+        "value": "DOMINANT_PRE_N3_IMPULSE_38_2_TO_61_8"
+      },
+      {
+        "name": "structural_fibonacci_confluence",
+        "value": false
+      },
+      {
+        "name": "structural_fibonacci_status",
+        "value": "AVAILABLE"
+      },
+      {
+        "name": "structural_fibonacci_required",
+        "value": false
+      },
+      {
+        "name": "structural_fibonacci_low",
+        "value": "361.51000000"
+      },
+      {
+        "name": "structural_fibonacci_high",
+        "value": "375.58000000"
+      },
+      {
+        "name": "structural_fibonacci_low_at",
+        "value": "2026-08-14T13:30:00+00:00"
+      },
+      {
+        "name": "structural_fibonacci_high_at",
+        "value": "2026-08-18T17:30:00+00:00"
+      },
+      {
+        "name": "structural_fibonacci_zone_low",
+        "value": "366.88474000000"
+      },
+      {
+        "name": "structural_fibonacci_zone_high",
+        "value": "370.20526000000"
+      },
+      {
+        "name": "structural_fibonacci_retracement",
+        "value": "3.867803837953091684434968017"
+      },
+      {
+        "name": "countertrend_side",
+        "value": "LONG"
+      },
+      {
+        "name": "countertrend_setup_kind",
+        "value": "STRUCTURE_RECOVERY"
+      },
+      {
+        "name": "countertrend_state",
+        "value": "IN_ZONE_4H"
+      },
+      {
+        "name": "countertrend_maturity",
+        "value": "CT1"
+      },
+      {
+        "name": "countertrend_level_kind",
+        "value": "SUPPORT"
+      },
+      {
+        "name": "countertrend_level_price",
+        "value": "321.16000000"
+      },
+      {
+        "name": "countertrend_level_source_at",
+        "value": "2026-09-09T13:30:00Z"
+      },
+      {
+        "name": "countertrend_level_confirmed_at",
+        "value": "2026-09-09T20:00:00Z"
+      },
+      {
+        "name": "countertrend_recovery_reference",
+        "value": "338.11000000"
+      },
+      {
+        "name": "countertrend_zone_low",
+        "value": "336.7503312871944250008648589"
+      },
+      {
+        "name": "countertrend_zone_high",
+        "value": "339.4696687128055749991351411"
+      },
+      {
+        "name": "countertrend_invalidation",
+        "value": "320.6161325148777700003459436"
+      },
+      {
+        "name": "countertrend_target",
+        "value": "342.2896007795014194913165556"
+      },
+      {
+        "name": "countertrend_reward_risk",
+        "value": "5.133073284686000031352375305"
+      },
+      {
+        "name": "countertrend_minimum_reward_risk",
+        "value": "1.5"
+      },
+      {
+        "name": "countertrend_eligible",
+        "value": true
+      },
+      {
+        "name": "countertrend_session_age",
+        "value": 1
+      },
+      {
+        "name": "countertrend_expired",
+        "value": false
+      },
+      {
+        "name": "countertrend_ttl_sessions",
+        "value": 5
+      },
+      {
+        "name": "countertrend_eligibility_reasons",
+        "value": [
+          "recovery_setup_eligible"
+        ]
+      },
+      {
+        "name": "countertrend_fast_confirmation",
+        "value": false
+      },
+      {
+        "name": "countertrend_four_hour_confirmation",
+        "value": false
+      },
+      {
+        "name": "countertrend_continuation_confirmation",
+        "value": false
+      },
+      {
+        "name": "countertrend_accepted_at",
+        "value": null
+      },
+      {
+        "name": "countertrend_entry_reference",
+        "value": null
+      },
+      {
+        "name": "countertrend_places_orders",
+        "value": false
+      },
+      {
+        "name": "countertrend_fibonacci_confluence",
+        "value": false
+      },
+      {
+        "name": "countertrend_confluence_priority",
+        "value": 0
+      },
+      {
+        "name": "countertrend_fibonacci_low",
+        "value": "323.58188000000"
+      },
+      {
+        "name": "countertrend_fibonacci_high",
+        "value": "324.330000000"
+      },
+      {
+        "name": "countertrend_fibonacci_anchor_low_at",
+        "value": "2026-09-09T13:30:00Z"
+      },
+      {
+        "name": "countertrend_fibonacci_anchor_high_at",
+        "value": "2026-09-10T13:30:00Z"
+      },
+      {
+        "name": "countertrend_fibonacci_confirmed_at",
+        "value": "2026-09-10T20:00:00Z"
+      },
+      {
+        "name": "countertrend_fibonacci_support",
+        "value": null
+      },
+      {
+        "name": "countertrend_lifecycle",
+        "value": "PROGRESSIVE_RECOVERY"
+      },
+      {
+        "name": "countertrend_target_policy",
+        "value": "NEAREST_DAILY_MA_OR_RECENT_DAILY_RESISTANCE"
+      },
+      {
+        "name": "countertrend_minimum_rvol",
+        "value": "1.2"
+      },
+      {
+        "name": "countertrend_ma_status",
+        "value": "AVAILABLE"
+      },
+      {
+        "name": "countertrend_entry_rvol",
+        "value": null
+      },
+      {
+        "name": "countertrend_ema21_daily",
+        "value": "342.2896007795014194913165556"
+      },
+      {
+        "name": "countertrend_ema21_slope",
+        "value": "-1.8139600779501419491316556"
+      },
+      {
+        "name": "countertrend_ema21_state",
+        "value": "UNAVAILABLE"
+      },
+      {
+        "name": "countertrend_sma50_daily",
+        "value": "354.57420000"
+      },
+      {
+        "name": "countertrend_sma50_slope",
+        "value": "-0.99160000"
+      },
+      {
+        "name": "countertrend_sma50_state",
+        "value": "UNAVAILABLE"
+      },
+      {
+        "name": "countertrend_ma_as_of",
+        "value": "2026-09-10T20:00:00Z"
+      },
+      {
+        "name": "countertrend_ma_cluster",
+        "value": false
+      },
+      {
+        "name": "countertrend_next_daily_ma",
+        "value": "342.2896007795014194913165556"
+      },
+      {
+        "name": "countertrend_target_source",
+        "value": "EMA21_DAILY"
+      },
+      {
+        "name": "countertrend_target_as_of",
+        "value": "2026-09-10T20:00:00Z"
+      },
+      {
+        "name": "countertrend_rr_to_next_ma",
+        "value": "5.133073284686000031352375305"
+      },
+      {
+        "name": "countertrend_intermediate_horizontal_levels",
+        "value": [
+          "326.40000000",
+          "327.50000000",
+          "329.31000000",
+          "329.51000000",
+          "332.04000000",
+          "332.48500000",
+          "333.72000000",
+          "333.86000000",
+          "334.44000000",
+          "336.53000000",
+          "338.60000000",
+          "339.60000000",
+          "339.89000000",
+          "340.54000000"
+        ]
+      },
+      {
+        "name": "short_side",
+        "value": "SHORT"
+      },
+      {
+        "name": "short_eligible",
+        "value": false
+      },
+      {
+        "name": "short_places_orders",
+        "value": false
+      },
+      {
+        "name": "short_setup_kind",
+        "value": "STRUCTURAL_BREAKDOWN"
+      },
+      {
+        "name": "short_state",
+        "value": "INELIGIBLE"
+      },
+      {
+        "name": "short_reasons",
+        "value": [
+          "pivot_vwap_not_broken",
+          "bearish_rvol_insufficient",
+          "bearish_price_confirmation_missing",
+          "insufficient_reward_risk"
+        ]
+      },
+      {
+        "name": "short_ema8_daily",
+        "value": "332.4586224000436273712394409"
+      },
+      {
+        "name": "short_sma21_daily",
+        "value": "346.2147619047619047619047619"
+      },
+      {
+        "name": "short_sma50_daily",
+        "value": "354.57420000"
+      },
+      {
+        "name": "short_broken_daily_support",
+        "value": "329.31000000"
+      },
+      {
+        "name": "short_pivot_vwap",
+        "value": "323.9352183735542578848150086"
+      },
+      {
+        "name": "short_pivot_at",
+        "value": "2026-09-10T13:30:00Z"
+      },
+      {
+        "name": "short_rvol",
+        "value": "0.8987718549170050907333924593"
+      },
+      {
+        "name": "short_minimum_rvol",
+        "value": "1.5"
+      },
+      {
+        "name": "short_target",
+        "value": "321.80000000"
+      },
+      {
+        "name": "short_invalidation",
+        "value": "327.50000000"
+      },
+      {
+        "name": "short_reward_risk",
+        "value": "0.7014925373134328358208955224"
+      },
+      {
+        "name": "atr_duration_normalized",
+        "value": true
+      }
+    ],
+    "occurred_at": "2026-09-10T17:30:00Z",
+    "reasons": [
+      "n3_fixed_waiting_n2_break"
+    ],
+    "standalone_swing": true,
+    "structure_policy": "clean_support_swing",
+    "symbol": "GE",
+    "trade_side": "LONG",
+    "zone_high": "342.73000000",
+    "zone_low": "321.16000000"
+  },
+  "attributes": []
+}

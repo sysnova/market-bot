@@ -1,0 +1,54 @@
+{
+  "completed": 0,
+  "degraded": 7,
+  "engines": [
+    {
+      "engine": "core",
+      "error_type": "TimeoutError",
+      "status": "TIMED_OUT"
+    },
+    {
+      "engine": "market-rotation",
+      "error_type": "TimeoutError",
+      "status": "TIMED_OUT"
+    },
+    {
+      "engine": "long-portfolio",
+      "error_type": "TimeoutError",
+      "status": "TIMED_OUT"
+    },
+    {
+      "engine": "patreon-caps",
+      "error_type": "TimeoutError",
+      "status": "TIMED_OUT"
+    },
+    {
+      "engine": "elliott-wave",
+      "error_type": "TimeoutError",
+      "status": "TIMED_OUT"
+    },
+    {
+      "engine": "support-confirmation",
+      "error_type": "TimeoutError",
+      "status": "TIMED_OUT"
+    },
+    {
+      "engine": "portfolio-flow",
+      "reason": "requires_live_quote_trade_window",
+      "status": "SKIPPED"
+    },
+    {
+      "engine": "signal-fusion",
+      "error_type": "TimeoutError",
+      "status": "TIMED_OUT"
+    }
+  ],
+  "excluded_engines": {
+    "dilution-sec": "excluded_by_design_slow_provider",
+    "peter-lynch": "excluded_by_design_slow_provider"
+  },
+  "execution_enabled": false,
+  "generated_at": "2026-09-11T11:50:02.952871+00:00",
+  "skipped": 1,
+  "symbol": "GE"
+}

@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export UV_PROJECT_ENVIRONMENT="$PROJECT_ROOT/.venv-linux"
-DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.60.0.yaml"
+DEFINITION_PATH="$PROJECT_ROOT/configs/marketbot/7.69.0.yaml"
 MARKETBOT_EXECUTABLE="$UV_PROJECT_ENVIRONMENT/bin/marketbot"
 SCRIPT_PATH="$PROJECT_ROOT/scripts/linux/start-market-bot.sh"
 ROLE="launcher"
@@ -47,7 +47,7 @@ Options:
   --symbols AAPL,MSFT   Override the PostgreSQL universe for this run.
   --runtime-root PATH   Runtime directory (default: .runtime).
   --definition-path PATH
-                        Explicit immutable MarketBot definition (default: 7.60.0).
+                        Explicit immutable MarketBot definition (default: 7.69.0).
   --no-bell             Disable alert bells.
   --detach              Create the tmux runtime without attaching a client.
   --ready-timeout SEC   Readiness timeout (default: 1800).
@@ -225,11 +225,6 @@ run_opportunities() {
   cd "$PROJECT_ROOT"
   exec_marketbot run marketbot monitor entry-opportunity \
     --ready-path "$STATUS_ROOT/entry-opportunity-monitor.ready.json"
-}
-
-run_opportunities_web() {
-  wait_ready "$STATUS_ROOT/entry-opportunity.ready.json"
-  run_manual_plan_process opportunity-web-dashboard
 }
 
 run_opportunity_summary() {
@@ -565,18 +560,6 @@ ensure_opportunity_summary_pane() {
   tmux select-layout -t "$SESSION":Opportunities even-vertical
 }
 
-ensure_opportunity_web_pane() {
-  local command="$1" pane_id
-  pane_id="$(tmux list-panes -t "$SESSION":Opportunities -F '#{pane_id}|#{pane_title}' | awk -F'|' '$2 == "OPPORTUNITIES WEB — localhost:8765" { print $1; exit }')"
-  if [[ -z "$pane_id" ]]; then
-    pane_id="$(tmux split-window -d -v -P -F '#{pane_id}' -t "$SESSION":Opportunities "$command")"
-    tmux select-pane -t "$pane_id" -T 'OPPORTUNITIES WEB — localhost:8765'
-  elif [[ "$(tmux display-message -p -t "$pane_id" '#{pane_dead}')" == "1" ]]; then
-    tmux respawn-pane -t "$pane_id" "$command"
-  fi
-  tmux select-layout -t "$SESSION":Opportunities even-vertical
-}
-
 launch_tmux() {
   command -v uv >/dev/null || { echo "uv is not installed or not in PATH." >&2; exit 1; }
   command -v tmux >/dev/null || {
@@ -598,7 +581,7 @@ launch_tmux() {
   local base=("$SCRIPT_PATH" --runtime-root "$RUNTIME_ROOT" --definition-path "$DEFINITION_PATH" --ready-timeout "$READY_TIMEOUT" --session "$SESSION")
   [[ -n "$SYMBOLS" ]] && base+=(--symbols "$SYMBOLS")
   ((NO_BELL)) && base+=(--no-bell)
-  local opportunity_summary opportunities_web
+  local opportunity_summary
   local control analysis confirmed opportunities open_buy_pl order_flow long_portfolio news geri_4h swing_trade patreon_analysis patreon_alerts elliott_wave support_confirmation signal_fusion_analysis signal_fusion_buys
   printf -v control '%q ' "${base[@]}" --role control
   printf -v analysis '%q ' "${base[@]}" --role analysis
@@ -606,7 +589,6 @@ launch_tmux() {
   printf -v open_buy_pl '%q ' "${base[@]}" --role open-buy-pl
   printf -v opportunity_summary '%q ' "${base[@]}" --role opportunity-summary
   printf -v opportunities '%q ' "${base[@]}" --role opportunities
-  printf -v opportunities_web '%q ' "${base[@]}" --role opportunities-web
   printf -v order_flow '%q ' "${base[@]}" --role order-flow-monitor
   printf -v long_portfolio '%q ' "${base[@]}" --role long-portfolio
   printf -v news '%q ' "${base[@]}" --role news
@@ -637,7 +619,6 @@ launch_tmux() {
     fi
     if engine_is_active entry-opportunity; then
       ensure_opportunity_summary_pane "$opportunity_summary"
-      ensure_opportunity_web_pane "$opportunities_web"
     fi
     if engine_is_active order-flow && \
       ! tmux list-windows -t "$SESSION" -F '#W' | grep -Fxq 'OrderFlow'; then
@@ -742,7 +723,6 @@ launch_tmux() {
     tmux set-window-option -t "$SESSION":Opportunities remain-on-exit on
     tmux select-pane -t "$SESSION":Opportunities.0 -T 'ENTRY OPPORTUNITIES'
     ensure_opportunity_summary_pane "$opportunity_summary"
-    ensure_opportunity_web_pane "$opportunities_web"
   fi
   if engine_is_active order-flow; then
     tmux new-window -d -t "$SESSION" -n OrderFlow "$order_flow"
@@ -808,7 +788,6 @@ case "$ROLE" in
   analysis) run_analysis ;;
   confirmed) run_confirmed ;;
   opportunities) run_opportunities ;;
-  opportunities-web) run_opportunities_web ;;
   opportunity-summary) run_opportunity_summary ;;
   open-buy-pl) run_open_buy_pl ;;
   order-flow-monitor) run_order_flow_monitor ;;

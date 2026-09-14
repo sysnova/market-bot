@@ -401,14 +401,15 @@ def build_runtime_process_plan(
         ),
         slot=EngineSlot.ENTRY_OPPORTUNITY,
         dependencies=("entry-opportunity",),
-        operator_monitor=True,
     )
 
     # Gamma is fail-open context: an options-provider outage must not block equities.
     stream_dependencies = tuple(
         process.name
         for process in processes
-        if not process.operator_monitor and process.engine_slot is not EngineSlot.OPTIONS_GAMMA
+        if not process.operator_monitor
+        and process.engine_slot is not EngineSlot.OPTIONS_GAMMA
+        and process.name != "opportunity-web-dashboard"
     )
     add(
         "alpaca-market-stream",

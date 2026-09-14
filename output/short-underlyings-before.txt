@@ -1,0 +1,133 @@
+.FF.F..FF.F...F.                                                         [100%]
+================================== FAILURES ===================================
+_____________ test_short_confirmation_uses_order_flow_scope[ASTX] _____________
+
+symbol = 'ASTX'
+
+    @pytest.mark.parametrize("symbol", ["ASTS", "ASTX", "ASTN", "NBIS", "NBIZ", "AAPL"])
+    def test_short_confirmation_uses_order_flow_scope(symbol: str) -> None:
+        assembly = MarketBotAssembly.from_path(DEFINITION)
+        engine = assembly.build_alert()
+        engine.ingest(_swing().model_copy(update={"symbol": symbol}), now=NOW)
+        result = engine.ingest(_intraday().model_copy(update={"symbol": symbol}), now=NOW)
+        confirmed = result is not None and "short_entry_confirmed" in result.reasons
+>       assert confirmed == (symbol in {"ASTS", "NBIS"})
+E       AssertionError: assert True == ('ASTX' in {'ASTS', 'NBIS'})
+
+app\integration\tests\test_order_flow_short_scope.py:26: AssertionError
+_____________ test_short_confirmation_uses_order_flow_scope[ASTN] _____________
+
+symbol = 'ASTN'
+
+    @pytest.mark.parametrize("symbol", ["ASTS", "ASTX", "ASTN", "NBIS", "NBIZ", "AAPL"])
+    def test_short_confirmation_uses_order_flow_scope(symbol: str) -> None:
+        assembly = MarketBotAssembly.from_path(DEFINITION)
+        engine = assembly.build_alert()
+        engine.ingest(_swing().model_copy(update={"symbol": symbol}), now=NOW)
+        result = engine.ingest(_intraday().model_copy(update={"symbol": symbol}), now=NOW)
+        confirmed = result is not None and "short_entry_confirmed" in result.reasons
+>       assert confirmed == (symbol in {"ASTS", "NBIS"})
+E       AssertionError: assert True == ('ASTN' in {'ASTS', 'NBIS'})
+
+app\integration\tests\test_order_flow_short_scope.py:26: AssertionError
+_____________ test_short_confirmation_uses_order_flow_scope[NBIZ] _____________
+
+symbol = 'NBIZ'
+
+    @pytest.mark.parametrize("symbol", ["ASTS", "ASTX", "ASTN", "NBIS", "NBIZ", "AAPL"])
+    def test_short_confirmation_uses_order_flow_scope(symbol: str) -> None:
+        assembly = MarketBotAssembly.from_path(DEFINITION)
+        engine = assembly.build_alert()
+        engine.ingest(_swing().model_copy(update={"symbol": symbol}), now=NOW)
+        result = engine.ingest(_intraday().model_copy(update={"symbol": symbol}), now=NOW)
+        confirmed = result is not None and "short_entry_confirmed" in result.reasons
+>       assert confirmed == (symbol in {"ASTS", "NBIS"})
+E       AssertionError: assert True == ('NBIZ' in {'ASTS', 'NBIS'})
+
+app\integration\tests\test_order_flow_short_scope.py:26: AssertionError
+__________ test_only_underlyings_can_open_short_opportunities[ASTX] ___________
+
+symbol = 'ASTX'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("symbol", ["ASTS", "ASTX", "ASTN", "NBIS", "NBIZ", "AAPL"])
+    async def test_only_underlyings_can_open_short_opportunities(symbol: str) -> None:
+        assembly = MarketBotAssembly.from_path(DEFINITION)
+        store = InMemoryEntryOpportunityStore()
+        entries = assembly.build(EngineSlot.ENTRY_OPPORTUNITY, store=store, now=lambda: ENTRY_NOW)
+        assert isinstance(entries, EntryOpportunityEngineV15)
+        opened = await entries.ingest_alert(alert().model_copy(update={"symbol": symbol}))
+>       assert bool(opened) == (symbol in {"ASTS", "NBIS"})
+E       AssertionError: assert True == ('ASTX' in {'ASTS', 'NBIS'})
+E        +  where True = bool((EntryOpportunityEvent(event_id=UUID('01a08ebf-52cb-7e35-b26b-1abc75cd91d1'), occurred_at=datetime.datetime(2026, 9, 1...ne, return_30m=None, return_60m=None, return_close=None),)), reasons=('short_paper_opened', 'short_entry_confirmed')),))
+
+app\integration\tests\test_order_flow_short_scope.py:37: AssertionError
+__________ test_only_underlyings_can_open_short_opportunities[ASTN] ___________
+
+symbol = 'ASTN'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("symbol", ["ASTS", "ASTX", "ASTN", "NBIS", "NBIZ", "AAPL"])
+    async def test_only_underlyings_can_open_short_opportunities(symbol: str) -> None:
+        assembly = MarketBotAssembly.from_path(DEFINITION)
+        store = InMemoryEntryOpportunityStore()
+        entries = assembly.build(EngineSlot.ENTRY_OPPORTUNITY, store=store, now=lambda: ENTRY_NOW)
+        assert isinstance(entries, EntryOpportunityEngineV15)
+        opened = await entries.ingest_alert(alert().model_copy(update={"symbol": symbol}))
+>       assert bool(opened) == (symbol in {"ASTS", "NBIS"})
+E       AssertionError: assert True == ('ASTN' in {'ASTS', 'NBIS'})
+E        +  where True = bool((EntryOpportunityEvent(event_id=UUID('01a08ebf-52f8-7a8a-90ff-12dc6f639f72'), occurred_at=datetime.datetime(2026, 9, 1...ne, return_30m=None, return_60m=None, return_close=None),)), reasons=('short_paper_opened', 'short_entry_confirmed')),))
+
+app\integration\tests\test_order_flow_short_scope.py:37: AssertionError
+__________ test_only_underlyings_can_open_short_opportunities[NBIZ] ___________
+
+symbol = 'NBIZ'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("symbol", ["ASTS", "ASTX", "ASTN", "NBIS", "NBIZ", "AAPL"])
+    async def test_only_underlyings_can_open_short_opportunities(symbol: str) -> None:
+        assembly = MarketBotAssembly.from_path(DEFINITION)
+        store = InMemoryEntryOpportunityStore()
+        entries = assembly.build(EngineSlot.ENTRY_OPPORTUNITY, store=store, now=lambda: ENTRY_NOW)
+        assert isinstance(entries, EntryOpportunityEngineV15)
+        opened = await entries.ingest_alert(alert().model_copy(update={"symbol": symbol}))
+>       assert bool(opened) == (symbol in {"ASTS", "NBIS"})
+E       AssertionError: assert True == ('NBIZ' in {'ASTS', 'NBIS'})
+E        +  where True = bool((EntryOpportunityEvent(event_id=UUID('01a08ebf-5344-7489-b1b7-542e90863a4a'), occurred_at=datetime.datetime(2026, 9, 1...ne, return_30m=None, return_60m=None, return_close=None),)), reasons=('short_paper_opened', 'short_entry_confirmed')),))
+
+app\integration\tests\test_order_flow_short_scope.py:37: AssertionError
+__________ test_changed_order_flow_scope_controls_alerts_and_entries __________
+
+tmp_path = WindowsPath('C:/Users/lgonz/AppData/Local/Temp/pytest-of-lgonz/pytest-561/test_changed_order_flow_scope_0')
+
+    @pytest.mark.asyncio
+    async def test_changed_order_flow_scope_controls_alerts_and_entries(tmp_path: Path) -> None:
+        assembly = MarketBotAssembly.from_path(DEFINITION)
+        policy = yaml.safe_load(assembly.strategy_artifact(EngineSlot.ORDER_FLOW).read_text())
+        policy["tracked_symbols"] = ["NBIS", "ASTX", "ASTN", "AAPL"]
+        path = tmp_path / "order-flow.yaml"
+        path.write_text(yaml.safe_dump(policy))
+        specs = dict(assembly.definition.engines)
+        spec = specs[EngineSlot.ORDER_FLOW]
+        specs[EngineSlot.ORDER_FLOW] = replace(spec, strategy=replace(spec.strategy, artifact=path))
+        assembly = MarketBotAssembly(replace(assembly.definition, engines=specs))
+        for symbol, expected in (
+            ("NBIS", True), ("ASTS", False), ("ASTX", False), ("ASTN", False), ("AAPL", False)
+        ):
+            alerts = assembly.build_alert()
+            alerts.ingest(_swing().model_copy(update={"symbol": symbol}), now=NOW)
+            result = alerts.ingest(_intraday().model_copy(update={"symbol": symbol}), now=NOW)
+>           assert (result is not None and "short_entry_confirmed" in result.reasons) == expected
+E           AssertionError: assert ((LocalAlert(alert_id=UUID('01a08ebf-5422-7135-8af5-4ffafb23958f'), symbol='ASTX', created_at=datetime.datetime(2026, 8,...ARISH_CONSENSUS: 'BEARISH_CONSENSUS'>, expires_at=datetime.datetime(2026, 8, 28, 15, 15, tzinfo=datetime.timezone.utc)) is not None and 'short_entry_confirmed' in ('bearish_consensus', 'swing:avoid:80', 'intraday:favorable:80', 'dilution_analysis_unavailable', 'short_entry_confirmed', 'swing_long_thesis_broken', ...))) == False
+E            +  where ('bearish_consensus', 'swing:avoid:80', 'intraday:favorable:80', 'dilution_analysis_unavailable', 'short_entry_confirmed', 'swing_long_thesis_broken', ...) = LocalAlert(alert_id=UUID('01a08ebf-5422-7135-8af5-4ffafb23958f'), symbol='ASTX', created_at=datetime.datetime(2026, 8,...ARISH_CONSENSUS: 'BEARISH_CONSENSUS'>, expires_at=datetime.datetime(2026, 8, 28, 15, 15, tzinfo=datetime.timezone.utc)).reasons
+
+app\integration\tests\test_order_flow_short_scope.py:87: AssertionError
+=========================== short test summary info ===========================
+FAILED app/integration/tests/test_order_flow_short_scope.py::test_short_confirmation_uses_order_flow_scope[ASTX]
+FAILED app/integration/tests/test_order_flow_short_scope.py::test_short_confirmation_uses_order_flow_scope[ASTN]
+FAILED app/integration/tests/test_order_flow_short_scope.py::test_short_confirmation_uses_order_flow_scope[NBIZ]
+FAILED app/integration/tests/test_order_flow_short_scope.py::test_only_underlyings_can_open_short_opportunities[ASTX]
+FAILED app/integration/tests/test_order_flow_short_scope.py::test_only_underlyings_can_open_short_opportunities[ASTN]
+FAILED app/integration/tests/test_order_flow_short_scope.py::test_only_underlyings_can_open_short_opportunities[NBIZ]
+FAILED app/integration/tests/test_order_flow_short_scope.py::test_changed_order_flow_scope_controls_alerts_and_entries
+7 failed, 9 passed in 1.82s

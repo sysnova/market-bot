@@ -1,0 +1,647 @@
+{
+  "completed": 4,
+  "degraded": 0,
+  "engines": [
+    {
+      "engine": "core",
+      "result": {
+        "alert_path": "C:\\Users\\lgonz\\Projects\\market-bot\\.runtime\\alerts\\marketbot-alerts-2026-09-11.ndjson",
+        "analyses": [
+          {
+            "analysis_id": "01a0904f-09fc-7948-8774-341290286bee",
+            "as_of": "2026-09-10T04:00:00Z",
+            "confidence": "0.3789",
+            "context_hash": "sha256:5e9a67b396e5aa84a2fd19fb6d5d74f7777f4f030d46b4092beba6fbbccf71b2",
+            "direction": "BEARISH",
+            "engine_id": "long-term",
+            "engine_version": "2.0.0",
+            "horizon": "LONG_TERM",
+            "metrics": [
+              {
+                "name": "classification",
+                "value": "avoid"
+              },
+              {
+                "name": "reference_price",
+                "value": "324.15"
+              },
+              {
+                "name": "setup_score",
+                "value": "41.75"
+              },
+              {
+                "name": "entry_score",
+                "value": "65.00"
+              },
+              {
+                "name": "risk_flags",
+                "value": [
+                  "trend_template_failed:price_above_sma150",
+                  "trend_template_failed:price_above_sma50",
+                  "trend_template_failed:price_30pct_above_52w_low",
+                  "weekly_distribution",
+                  "weekly_structure_broken"
+                ]
+              },
+              {
+                "name": "daily_rsi14",
+                "value": "34.9978"
+              },
+              {
+                "name": "weekly_rsi14",
+                "value": "54.8880"
+              },
+              {
+                "name": "daily_rvol20",
+                "value": "0.9520"
+              },
+              {
+                "name": "weekly_rvol10",
+                "value": "0.7626"
+              },
+              {
+                "name": "weekly_sma200",
+                "value": "195.8832"
+              },
+              {
+                "name": "weekly_price_vs_sma200_percent",
+                "value": "65.4813"
+              },
+              {
+                "name": "trend_template_score",
+                "value": "62.50"
+              },
+              {
+                "name": "support",
+                "value": "318.2500"
+              },
+              {
+                "name": "resistance",
+                "value": "388.8400"
+              },
+              {
+                "name": "buy_zone_low",
+                "value": "318.1768"
+              },
+              {
+                "name": "buy_zone_high",
+                "value": "343.8624"
+              },
+              {
+                "name": "invalidation",
+                "value": "308.6315"
+              },
+              {
+                "name": "daily_atr14",
+                "value": "7.8364"
+              },
+              {
+                "name": "daily_atr_percentile",
+                "value": "0.5000"
+              },
+              {
+                "name": "daily_adx14",
+                "value": "49.1507"
+              },
+              {
+                "name": "daily_plus_di14",
+                "value": "15.2858"
+              },
+              {
+                "name": "daily_minus_di14",
+                "value": "35.6486"
+              },
+              {
+                "name": "market_regime",
+                "value": "downtrend"
+              },
+              {
+                "name": "distance_to_buy_zone_atr",
+                "value": "0"
+              }
+            ],
+            "reasons": [
+              "weekly_above_50w",
+              "weekly_above_200w",
+              "weekly_30w_rising",
+              "weekly_rsi_constructive",
+              "in_weekly_buy_zone",
+              "trend_template_failed:price_above_sma150",
+              "trend_template_failed:price_above_sma50",
+              "trend_template_failed:price_30pct_above_52w_low",
+              "weekly_distribution",
+              "weekly_structure_broken",
+              "market_regime:downtrend",
+              "distance_to_buy_zone_atr:0"
+            ],
+            "score": "37.89",
+            "source_event_ids": [],
+            "symbol": "GE",
+            "verdict": "AVOID"
+          },
+          {
+            "analysis_id": "01a0904f-0a22-7b40-aa33-50a9bca7706d",
+            "as_of": "2026-09-10T19:45:00Z",
+            "confidence": "0.0000",
+            "context_hash": "sha256:222a5cae5515b6acf2b6604b755d7d6c003c84bf88bfeca2f13dbd31a4c7a92b",
+            "direction": "BEARISH",
+            "engine_id": "swing",
+            "engine_version": "15.0.0",
+            "horizon": "SWING",
+            "metrics": [
+              {
+                "name": "reference_price",
+                "value": "324.15"
+              },
+              {
+                "name": "daily_sma20",
+                "value": "345.2620"
+              },
+              {
+                "name": "daily_sma50",
+                "value": "354.5754"
+              },
+              {
+                "name": "daily_rsi14",
+                "value": "34.9978"
+              },
+              {
+                "name": "atr14",
+                "value": "7.8364"
+              },
+              {
+                "name": "daily_rvol20",
+                "value": "0.9520"
+              },
+              {
+                "name": "intraday_rvol20",
+                "value": "4.1459"
+              },
+              {
+                "name": "pivot_low_anchor_at",
+                "value": "2026-09-02T04:00:00Z"
+              },
+              {
+                "name": "pivot_low_avwap",
+                "value": "329.9662"
+              },
+              {
+                "name": "price_vs_pivot_low_avwap_percent",
+                "value": "-1.7627"
+              },
+              {
+                "name": "breakout_anchor_at",
+                "value": "2026-08-05T04:00:00Z"
+              },
+              {
+                "name": "breakout_avwap",
+                "value": "351.4323"
+              },
+              {
+                "name": "price_vs_breakout_avwap_percent",
+                "value": "-7.7632"
+              },
+              {
+                "name": "daily_atr_percentile",
+                "value": "0.5000"
+              },
+              {
+                "name": "daily_adx14",
+                "value": "49.1507"
+              },
+              {
+                "name": "daily_plus_di14",
+                "value": "15.2858"
+              },
+              {
+                "name": "daily_minus_di14",
+                "value": "35.6486"
+              },
+              {
+                "name": "market_regime",
+                "value": "downtrend"
+              },
+              {
+                "name": "structure_broken_confirmed",
+                "value": true
+              },
+              {
+                "name": "entry_zone_low",
+                "value": "317.2418"
+              },
+              {
+                "name": "entry_zone_high",
+                "value": "325.0782"
+              },
+              {
+                "name": "price_vs_entry_zone_atr",
+                "value": "0"
+              },
+              {
+                "name": "anchored_vwap_gate_passed",
+                "value": false
+              },
+              {
+                "name": "support",
+                "value": "321.1600"
+              },
+              {
+                "name": "structural_support",
+                "value": "321.1600"
+              },
+              {
+                "name": "invalidation",
+                "value": "316.3426"
+              },
+              {
+                "name": "invalidation_source",
+                "value": "recent_daily_low"
+              },
+              {
+                "name": "resistance",
+                "value": "375.0900"
+              },
+              {
+                "name": "resistance_source",
+                "value": "completed_daily_closes"
+              },
+              {
+                "name": "liquidity_high",
+                "value": "375.5800"
+              },
+              {
+                "name": "target_2r",
+                "value": "339.7648"
+              },
+              {
+                "name": "risk_percent",
+                "value": "2.4086"
+              },
+              {
+                "name": "risk_atr",
+                "value": "0.9963"
+              },
+              {
+                "name": "reward_risk_to_resistance",
+                "value": "6.5246"
+              },
+              {
+                "name": "failed_breakout",
+                "value": false
+              },
+              {
+                "name": "failed_breakout_state",
+                "value": "STRUCTURE_INVALIDATED"
+              },
+              {
+                "name": "failed_breakout_level",
+                "value": "378.8500"
+              },
+              {
+                "name": "failed_breakout_at",
+                "value": "2026-08-05T04:00:00Z"
+              },
+              {
+                "name": "failed_breakout_failure_at",
+                "value": "2026-08-06T04:00:00Z"
+              },
+              {
+                "name": "failed_breakout_resolved_at",
+                "value": "2026-08-24T04:00:00Z"
+              },
+              {
+                "name": "failed_breakout_atr14_snapshot",
+                "value": "10.3207"
+              },
+              {
+                "name": "failed_breakout_age_bars",
+                "value": 13
+              },
+              {
+                "name": "failed_breakout_reset_reason",
+                "value": "STRUCTURE_INVALIDATED"
+              },
+              {
+                "name": "failed_breakout_superseding_at",
+                "value": null
+              },
+              {
+                "name": "failed_breakout_superseding_level",
+                "value": null
+              },
+              {
+                "name": "swing_entry_gate_passed",
+                "value": false
+              },
+              {
+                "name": "minimum_reward_risk_to_resistance",
+                "value": "1.5"
+              },
+              {
+                "name": "entry_confirmation_rule_version",
+                "value": "3.5.0"
+              },
+              {
+                "name": "resistance_latest_completed_bar_included",
+                "value": false
+              },
+              {
+                "name": "entry_lane",
+                "value": "NONE"
+              },
+              {
+                "name": "continuation_entry_gate_passed",
+                "value": false
+              },
+              {
+                "name": "recovery_entry_gate_passed",
+                "value": false
+              },
+              {
+                "name": "classification",
+                "value": "avoid"
+              },
+              {
+                "name": "risk_flags",
+                "value": [
+                  "broken_daily_structure",
+                  "below_pivot_low_avwap",
+                  "below_breakout_avwap",
+                  "short_thesis_broken"
+                ]
+              },
+              {
+                "name": "short_thesis_broken",
+                "value": true
+              },
+              {
+                "name": "short_structure_gate_passed",
+                "value": true
+              },
+              {
+                "name": "short_setup_id",
+                "value": "swing-short:GE:2026-08-05T04:00:00+00:00"
+              },
+              {
+                "name": "short_thesis_rule_version",
+                "value": "3.5.0"
+              }
+            ],
+            "reasons": [
+              "bearish_daily_trend",
+              "relative_volume_confirmed",
+              "broken_daily_structure",
+              "below_pivot_low_avwap",
+              "below_breakout_avwap",
+              "market_regime:downtrend",
+              "entry_zone_distance_atr:0",
+              "confirmed_daily_structure_break",
+              "failed_breakout_structure_invalidated",
+              "failed_breakout_short_thesis_broken"
+            ],
+            "score": "0.00",
+            "source_event_ids": [],
+            "symbol": "GE",
+            "verdict": "AVOID"
+          },
+          {
+            "analysis_id": "01a0904b-c580-7c3c-b126-c1b1348646a6",
+            "as_of": "2026-09-11T11:48:00Z",
+            "confidence": "0.0000",
+            "context_hash": "sha256:7209a27dfe44f69eb70c38fe53031f6faed08ea9cc5b43aee3b7c37e1c041716",
+            "direction": "NEUTRAL",
+            "engine_id": "intraday",
+            "engine_version": "7.0.0",
+            "horizon": "INTRADAY",
+            "metrics": [
+              {
+                "name": "setup",
+                "value": "insufficient_data"
+              },
+              {
+                "name": "confirmation_persistence",
+                "value": false
+              },
+              {
+                "name": "entry_efficiency_gate_passed",
+                "value": false
+              },
+              {
+                "name": "mature_retest_confirmed",
+                "value": false
+              },
+              {
+                "name": "entry_confirmation_rule_version",
+                "value": "1.3.0"
+              },
+              {
+                "name": "five_minute_lower_high",
+                "value": false
+              },
+              {
+                "name": "short_confirmation_persistence",
+                "value": false
+              },
+              {
+                "name": "short_confirmation_gate_passed",
+                "value": false
+              },
+              {
+                "name": "short_entry_efficiency_gate_passed",
+                "value": false
+              },
+              {
+                "name": "short_mature_retest_confirmed",
+                "value": false
+              },
+              {
+                "name": "short_confirmation_rule_version",
+                "value": "1.3.0"
+              },
+              {
+                "name": "short_ema20_extension_warning",
+                "value": false
+              },
+              {
+                "name": "short_ema20_extension_hard_gate",
+                "value": false
+              },
+              {
+                "name": "short_displacement_gate_passed",
+                "value": false
+              },
+              {
+                "name": "short_extension_override_applied",
+                "value": false
+              },
+              {
+                "name": "short_mature_confirmation_gate_passed",
+                "value": false
+              },
+              {
+                "name": "short_entry_timing",
+                "value": "not_applicable"
+              },
+              {
+                "name": "short_entry_lane",
+                "value": "STANDARD"
+              },
+              {
+                "name": "short_displacement_minimum_momentum_percent",
+                "value": "0.5"
+              },
+              {
+                "name": "short_displacement_minimum_rvol",
+                "value": "2.0"
+              },
+              {
+                "name": "confirmation_gate_passed",
+                "value": false
+              },
+              {
+                "name": "mature_confirmation_gate_passed",
+                "value": false
+              },
+              {
+                "name": "entry_timing",
+                "value": "not_applicable"
+              }
+            ],
+            "reasons": [
+              "insufficient_1m_history:25/30",
+              "insufficient_history"
+            ],
+            "score": "0.00",
+            "source_event_ids": [],
+            "symbol": "GE",
+            "verdict": "INSUFFICIENT_DATA"
+          }
+        ],
+        "engine_implementations": {
+          "alert": "3.10.0",
+          "entry-opportunity": "15.0.0",
+          "entry-watcher": "5.6.0",
+          "intraday": "7.0.0",
+          "long-term": "2.0.0",
+          "swing": "15.0.0"
+        },
+        "entry_watcher_enabled": true,
+        "execution_enabled": false,
+        "market_events": 1141,
+        "marketbot_definition_version": "7.58.0",
+        "nats_mirroring": true,
+        "orchestrated_engines": [
+          "long-term",
+          "swing",
+          "intraday",
+          "entry-watcher",
+          "alert"
+        ],
+        "sec_enabled": false,
+        "symbols": [
+          "GE"
+        ],
+        "universe_source": "manual-symbols"
+      },
+      "status": "COMPLETED"
+    },
+    {
+      "engine": "market-rotation",
+      "result": {
+        "requested_symbol": "GE",
+        "run_id": "bae7bac1-8400-4350-adba-0fa27f7e7784",
+        "scope": "global-market",
+        "sectors": 15,
+        "service": "market-rotation-v1",
+        "subject": "marketbot.v1.rotation.result",
+        "universe_policy": "fixed-configured-sector-profiles-and-proxies",
+        "warmup_policy": "configured-symbol-history-before-rotation-run",
+        "watchlist_additions": [
+          "VLO",
+          "PSX",
+          "DVN"
+        ]
+      },
+      "status": "COMPLETED"
+    },
+    {
+      "engine": "long-portfolio",
+      "reason": "PORT_YTD_allocation_required",
+      "status": "SKIPPED"
+    },
+    {
+      "engine": "patreon-caps",
+      "result": {
+        "engine_implementation": "1.0.0",
+        "engine_strategy_version": "1.1.0",
+        "macro_symbols": [
+          "UUP",
+          "VIXY",
+          "TLT",
+          "IEF",
+          "SPY"
+        ],
+        "marketbot_definition_version": "7.58.0",
+        "mode": "ACTIVE",
+        "persistence": "postgresql",
+        "rule_version": "1.1.0",
+        "service": "patreon-caps-v1",
+        "symbols": 1,
+        "universe_policy": "core-snapshot-plus-configured-macro-symbols",
+        "universe_symbols": [
+          "GE"
+        ],
+        "warmup_policy": "startup-market-history-and-latest-analysis-replay"
+      },
+      "status": "COMPLETED"
+    },
+    {
+      "engine": "elliott-wave",
+      "reason": "positive_holding_required",
+      "status": "SKIPPED"
+    },
+    {
+      "engine": "support-confirmation",
+      "result": {
+        "assessments_published": 0,
+        "engine_strategy_version": "0.3.0",
+        "engine_version": "0.3.0",
+        "feeds_patreon_caps": false,
+        "fixed_thesis_underlyings": [
+          "ASTS",
+          "NBIS"
+        ],
+        "marketbot_definition_version": "7.58.0",
+        "mode": "ACTIVE",
+        "persistence": "nats-jetstream-7d",
+        "service": "support-confirmation-v0",
+        "symbols": [
+          "GE"
+        ],
+        "universe": "shared-swing-universe",
+        "universe_policy": "active-watchlist-plus-positive-holdings",
+        "universe_source": "postgresql-local",
+        "warmup_policy": "per-symbol-history-before-universe-activation"
+      },
+      "status": "COMPLETED"
+    },
+    {
+      "engine": "portfolio-flow",
+      "reason": "requires_live_quote_trade_window",
+      "status": "SKIPPED"
+    },
+    {
+      "engine": "signal-fusion",
+      "reason": "positive_holding_required",
+      "status": "SKIPPED"
+    }
+  ],
+  "excluded_engines": {
+    "dilution-sec": "excluded_by_design_slow_provider",
+    "peter-lynch": "excluded_by_design_slow_provider"
+  },
+  "execution_enabled": false,
+  "generated_at": "2026-09-11T11:51:51.837908+00:00",
+  "skipped": 4,
+  "symbol": "GE"
+}

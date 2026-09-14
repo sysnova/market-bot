@@ -16,6 +16,7 @@ from uuid import UUID
 
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
+from websockets.typing import Origin
 
 from app.common.clock import SystemClock
 from app.common.settings import AppSettings, Environment
@@ -39,6 +40,8 @@ from .distributed_composition import write_ready
 from .entry_opportunity_store import PostgresEntryOpportunityStore
 from .marketbot_definition import load_marketbot_definition
 from .monitor_browser import open_monitor_browser
+from .symbol_analysis_composition import run_market_analyzer
+from .ticker_web_session import TickerWebSession
 
 
 class OpportunityWebBook:
@@ -104,9 +107,7 @@ class OpportunityWebBook:
         retained = self.items()[: self.history]
         retained_ids = {item.opportunity_id for item in retained}
         self._items = {item.opportunity_id: item for item in retained}
-        self._reasons = {
-            key: value for key, value in self._reasons.items() if key in retained_ids
-        }
+        self._reasons = {key: value for key, value in self._reasons.items() if key in retained_ids}
 
 
 async def run_opportunity_web_dashboard(
@@ -215,6 +216,7 @@ async def run_opportunity_web_dashboard(
                 "/": ("index.html", "text/html; charset=utf-8"),
                 "/index.html": ("index.html", "text/html; charset=utf-8"),
                 "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                "/ticker.js": ("ticker.js", "text/javascript; charset=utf-8"),
                 "/styles.css": ("styles.css", "text/css; charset=utf-8"),
             }.get(path)
             if path == "/health":
@@ -241,6 +243,25 @@ async def run_opportunity_web_dashboard(
             return response
 
         async def websocket_handler(connection: ServerConnection) -> None:
+            async def send_ticker(payload: dict[str, Any]) -> None:
+                await connection.send(json.dumps(payload, ensure_ascii=False))
+
+            async def analyze_ticker(symbol: str) -> dict[str, object]:
+                return await run_market_analyzer(
+                    symbol=symbol,
+                    timeout_seconds=90,
+                    runtime_root=Path(".runtime"),
+                    mirror_to_nats=True,
+                )
+
+            ticker = TickerWebSession(
+                bus=bus,
+                send=send_ticker,
+                reviewer=reviewer,
+                engines={slot.value: spec.mode.value for slot, spec in definition.engines.items()},
+                analyze=analyze_ticker,
+                opportunities=book.items,
+            )
             clients.add(connection)
             try:
                 await connection.send(json.dumps(await snapshot(), ensure_ascii=False))
@@ -253,9 +274,11 @@ async def run_opportunity_web_dashboard(
                         reviewer=reviewer,
                         ledger_root=Path(".runtime/thesis-reviews"),
                         snapshot=snapshot,
+                        ticker=ticker,
                     )
             finally:
                 clients.discard(connection)
+                await ticker.close()
 
         web_server = await serve(
             websocket_handler,
@@ -264,6 +287,12 @@ async def run_opportunity_web_dashboard(
             process_request=process_request,
             server_header="MarketBot Opportunity Dashboard",
             max_size=64 * 1024,
+            origins=[
+                None,
+                Origin(f"http://127.0.0.1:{port}"),
+                Origin(f"http://localhost:{port}"),
+                Origin(f"http://[::1]:{port}"),
+            ],
         )
         refresh_task = asyncio.create_task(
             _refresh_loop(
@@ -319,6 +348,7 @@ async def _handle_client_message(
     reviewer: OpenAIFailureReviewer | None,
     ledger_root: Path,
     snapshot: Callable[[], Awaitable[dict[str, Any]]],
+    ticker: TickerWebSession | None = None,
 ) -> None:
     try:
         parsed: object = json.loads(raw)
@@ -326,6 +356,9 @@ async def _handle_client_message(
             raise ValueError("message must be an object")
         message = cast("dict[str, object]", parsed)
         message_type = message.get("type")
+        if message_type in {"watch_ticker", "ask_ticker", "analyze_ticker"} and ticker:
+            await ticker.handle(message)
+            return
         if message_type == "refresh":
             await connection.send(json.dumps(await snapshot(), ensure_ascii=False))
             return
@@ -383,9 +416,7 @@ async def _reload_book(
             by_id[opportunity.opportunity_id] = opportunity
     opportunities = tuple(by_id.values())
     latest_events = await store.latest_events(tuple(by_id))
-    reasons = {
-        event.opportunity.opportunity_id: event.reasons for event in latest_events
-    }
+    reasons = {event.opportunity.opportunity_id: event.reasons for event in latest_events}
     book.replace(opportunities, reasons_by_id=reasons)
 
 

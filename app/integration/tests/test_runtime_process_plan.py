@@ -85,12 +85,16 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     assert positions["order-flow"] < positions["leveraged-thesis"]
 
 
-def test_web_dashboard_is_an_automatic_operator_monitor_without_blocking_market_data() -> None:
+def test_web_dashboard_runs_headless_without_blocking_market_data() -> None:
     assembly = MarketBotAssembly.from_settings(AppSettings())
     plan = build_runtime_process_plan(assembly.definition, runtime_root=Path(".runtime"))
     dashboard = plan.process("opportunity-web-dashboard")
 
-    assert dashboard.operator_monitor is True
+    assert dashboard.operator_monitor is False
+    assert dashboard in plan.headless_processes
+    batches = startup_batches(plan.headless_processes)
+    positions = {name: index for index, batch in enumerate(batches) for name in batch}
+    assert positions["entry-opportunity"] < positions[dashboard.name]
     assert dashboard.dependencies == ("entry-opportunity",)
     assert dashboard.arguments[:4] == ("run", "marketbot", "monitor", "opportunities-web")
     assert "--open-browser" in dashboard.arguments

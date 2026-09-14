@@ -1,0 +1,509 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\lgonz\Projects\tmp\short-commit-d0ngw2xt
+configfile: pyproject.toml
+testpaths: app
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1373 items
+
+app\alert_engine\tests\test_confirmed.py .........                       [  0%]
+app\alert_engine\tests\test_engine.py ................                   [  1%]
+app\alert_engine\tests\test_opportunity_alerts.py ...                    [  2%]
+app\alert_engine\tests\test_outcomes.py ..                               [  2%]
+app\alert_engine\tests\test_sinks.py .......................             [  3%]
+app\alert_engine\tests\test_v2.py .........                              [  4%]
+app\alert_engine\tests\test_v3.py .....                                  [  4%]
+app\alert_engine\tests\test_v32.py ..                                    [  5%]
+app\alert_engine\tests\test_v33.py ....                                  [  5%]
+app\alert_engine\tests\test_v34.py ..                                    [  5%]
+app\alert_engine\tests\test_v35.py ..                                    [  5%]
+app\alert_engine\tests\test_v36.py ..                                    [  5%]
+app\alert_engine\tests\test_v37.py .                                     [  5%]
+app\alert_engine\tests\test_v38.py ....                                  [  6%]
+app\alert_engine\tests\test_v39.py ...                                   [  6%]
+app\alpaca_market_data\tests\test_engine.py ........                     [  6%]
+app\alpaca_market_data\tests\test_microstructure_replay.py ..            [  7%]
+app\alpaca_market_data\tests\test_normalizer.py .......                  [  7%]
+app\alpaca_market_data\tests\test_replay.py ......                       [  8%]
+app\alpaca_market_data\tests\test_rest.py .....                          [  8%]
+app\alpaca_market_data\tests\test_stream.py ......                       [  8%]
+app\audit_engine\tests\test_service.py ...                               [  9%]
+app\audit_engine\tests\test_store.py ......                              [  9%]
+app\common\tests\test_canonical.py ..                                    [  9%]
+app\common\tests\test_clock.py ....                                      [  9%]
+app\common\tests\test_ids.py ...                                         [ 10%]
+app\common\tests\test_logging.py ..                                      [ 10%]
+app\common\tests\test_market_session.py .......                          [ 10%]
+app\common\tests\test_settings.py ...........                            [ 11%]
+app\contracts\tests\test_analysis_events.py ..                           [ 11%]
+app\contracts\tests\test_core.py .....                                   [ 12%]
+app\contracts\tests\test_elliott_wave.py ...                             [ 12%]
+app\contracts\tests\test_entry_opportunity.py ....                       [ 12%]
+app\contracts\tests\test_entry_setup.py ..                               [ 12%]
+app\contracts\tests\test_entry_signal.py .....                           [ 13%]
+app\contracts\tests\test_entry_watch.py ......                           [ 13%]
+app\contracts\tests\test_geri_4h.py ...                                  [ 13%]
+app\contracts\tests\test_leveraged_thesis.py ..                          [ 13%]
+app\contracts\tests\test_market_analysis.py ...                          [ 14%]
+app\contracts\tests\test_market_history.py ...                           [ 14%]
+app\contracts\tests\test_microstructure_events.py ..                     [ 14%]
+app\contracts\tests\test_options_gamma.py ...                            [ 14%]
+app\contracts\tests\test_order_flow.py .........                         [ 15%]
+app\contracts\tests\test_order_flow_support.py ...                       [ 15%]
+app\contracts\tests\test_patreon_caps.py ..                              [ 15%]
+app\contracts\tests\test_signal_fusion.py ....                           [ 16%]
+app\contracts\tests\test_strategy_and_domain.py ..........               [ 16%]
+app\contracts\tests\test_support_confirmation.py .....                   [ 17%]
+app\contracts\tests\test_universe.py ..                                  [ 17%]
+app\dilution_sec_engine\tests\test_engine.py .........                   [ 17%]
+app\dilution_sec_engine\tests\test_sec_adapter.py ...........            [ 18%]
+app\dilution_sec_engine\tests\test_ticker_resolver.py ..                 [ 18%]
+app\elliott_wave_engine\tests\test_engine.py ....                        [ 19%]
+app\entry_opportunity_engine\tests\test_engine.py ...................... [ 20%]
+...........                                                              [ 21%]
+app\entry_opportunity_engine\tests\test_geri_countertrend_v5.py ........ [ 22%]
+.......                                                                  [ 22%]
+app\entry_opportunity_engine\tests\test_ownership_v10.py ............... [ 23%]
+......                                                                   [ 24%]
+app\entry_opportunity_engine\tests\test_progressive_v13.py ..            [ 24%]
+app\entry_opportunity_engine\tests\test_rebound_exit.py ...              [ 24%]
+app\entry_opportunity_engine\tests\test_recovery_v12.py ..               [ 24%]
+app\entry_opportunity_engine\tests\test_short_v14.py .........           [ 25%]
+app\entry_opportunity_engine\tests\test_swing_trade_v4.py .............. [ 26%]
+............                                                             [ 27%]
+app\entry_recovery_engine\tests\test_engine.py .....                     [ 27%]
+app\entry_watcher\tests\test_engine.py ..............................    [ 29%]
+app\entry_watcher\tests\test_v55.py .                                    [ 29%]
+app\entry_watcher\tests\test_v56.py ..                                   [ 30%]
+app\event_bus\tests\test_codec.py ...                                    [ 30%]
+app\event_bus\tests\test_consumer_maintenance.py .                       [ 30%]
+app\event_bus\tests\test_memory.py ..........                            [ 31%]
+app\event_bus\tests\test_nats_integration.py ss                          [ 31%]
+app\event_bus\tests\test_nats_unit.py .......................            [ 32%]
+app\event_bus\tests\test_stream_maintenance.py ..                        [ 32%]
+app\event_bus\tests\test_subjects_and_options.py ..............          [ 34%]
+app\external_connector\tests\test_catalog.py ....                        [ 34%]
+app\external_connector\tests\test_models.py ...                          [ 34%]
+app\external_connector\tests\test_nats_integration.py ss                 [ 34%]
+app\external_connector\tests\test_subscriber.py .....                    [ 35%]
+app\integration\tests\test_alert_decision_state_store.py .....           [ 35%]
+app\integration\tests\test_alert_publisher.py ...                        [ 35%]
+app\integration\tests\test_alert_sounds.py ............                  [ 36%]
+app\integration\tests\test_analysis_runtime.py ....                      [ 36%]
+app\integration\tests\test_bar_aggregator.py ......                      [ 37%]
+app\integration\tests\test_confirmed_buy_monitor.py ....                 [ 37%]
+app\integration\tests\test_confirmed_signal_projection.py .............. [ 38%]
+.......                                                                  [ 39%]
+app\integration\tests\test_distributed_composition.py ...............    [ 40%]
+app\integration\tests\test_elliott_wave_composition.py .....             [ 40%]
+app\integration\tests\test_engine_assembly.py .......................... [ 42%]
+................................                                         [ 44%]
+app\integration\tests\test_entry_opportunity_bar_recovery.py ..          [ 44%]
+app\integration\tests\test_entry_opportunity_history_maintenance.py .... [ 45%]
+                                                                         [ 45%]
+app\integration\tests\test_entry_opportunity_monitor.py ............     [ 46%]
+app\integration\tests\test_entry_opportunity_report.py .....             [ 46%]
+app\integration\tests\test_entry_opportunity_store.py ....               [ 46%]
+app\integration\tests\test_entry_recovery_composition.py .               [ 46%]
+app\integration\tests\test_entry_signal_adapter.py ........              [ 47%]
+app\integration\tests\test_entry_watch_store.py ......                   [ 47%]
+app\integration\tests\test_event_fanout.py ..                            [ 47%]
+app\integration\tests\test_foundation_e2e.py .                           [ 47%]
+app\integration\tests\test_geri_recovery_runtime.py .......              [ 48%]
+app\integration\tests\test_intraday_worker.py ....                       [ 48%]
+app\integration\tests\test_invalidated_long_short.py ...                 [ 49%]
+app\integration\tests\test_leveraged_thesis_composition.py ...........   [ 49%]
+app\integration\tests\test_live_analysis_service.py .....                [ 50%]
+app\integration\tests\test_long_portfolio_monitor.py ...                 [ 50%]
+app\integration\tests\test_long_term_worker.py ....                      [ 50%]
+app\integration\tests\test_market_bar_repository.py ....                 [ 50%]
+app\integration\tests\test_market_bar_store.py ....                      [ 51%]
+app\integration\tests\test_market_history_architecture.py ..             [ 51%]
+app\integration\tests\test_market_history_composition.py ......          [ 51%]
+app\integration\tests\test_market_history_rpc.py ..                      [ 52%]
+app\integration\tests\test_market_rotation_store.py .                    [ 52%]
+app\integration\tests\test_market_stream_recovery.py .....               [ 52%]
+app\integration\tests\test_news_intelligence_store.py .                  [ 52%]
+app\integration\tests\test_news_monitor.py ..                            [ 52%]
+app\integration\tests\test_opportunity_web_dashboard.py ..               [ 52%]
+app\integration\tests\test_options_gamma_alpaca.py ....                  [ 53%]
+app\integration\tests\test_options_gamma_composition.py ..               [ 53%]
+app\integration\tests\test_order_flow_composition.py ..                  [ 53%]
+app\integration\tests\test_order_flow_monitor.py ......                  [ 53%]
+app\integration\tests\test_outbox_relay.py ..                            [ 53%]
+app\integration\tests\test_patreon_caps_composition.py ................  [ 55%]
+app\integration\tests\test_peter_lynch_composition.py ....               [ 55%]
+app\integration\tests\test_peter_lynch_sec_adapter.py ..                 [ 55%]
+app\integration\tests\test_peter_lynch_store.py ....                     [ 55%]
+app\integration\tests\test_postgres_universe.py ......                   [ 56%]
+app\integration\tests\test_progressive_recovery.py .....                 [ 56%]
+app\integration\tests\test_runtime_process_plan.py ....                  [ 56%]
+app\integration\tests\test_sec_daily_composition.py .                    [ 57%]
+app\integration\tests\test_sec_document_loader.py .                      [ 57%]
+app\integration\tests\test_sec_refresher.py ..                           [ 57%]
+app\integration\tests\test_short_opportunity.py .                        [ 57%]
+app\integration\tests\test_signal_backtest.py ...............            [ 58%]
+app\integration\tests\test_signal_fusion_composition.py ..........       [ 59%]
+app\integration\tests\test_support_confirmation_composition.py ......... [ 59%]
+...                                                                      [ 60%]
+app\integration\tests\test_swing_4h_geri_composition.py ........         [ 60%]
+app\integration\tests\test_swing_4h_geri_monitor.py ...                  [ 60%]
+app\integration\tests\test_swing_trade_composition.py .............      [ 61%]
+app\integration\tests\test_swing_trade_monitor.py ...                    [ 61%]
+app\integration\tests\test_swing_worker.py .....                         [ 62%]
+app\integration\tests\test_symbol_analysis_composition.py ....           [ 62%]
+app\integration\tests\test_tradingview_projection.py .......             [ 63%]
+app\integration\tests\test_universe_events.py .                          [ 63%]
+app\integration\tests\test_universe_policy.py .                          [ 63%]
+app\integration\tests\test_volume_structure_composition.py ..            [ 63%]
+app\integration\tests\test_weekly_refresh_schedule.py .                  [ 63%]
+app\intraday_engine\tests\test_engine.py ........                        [ 64%]
+app\intraday_engine\tests\test_models.py ..                              [ 64%]
+app\intraday_engine\tests\test_v5.py ..                                  [ 64%]
+app\intraday_engine\tests\test_v6.py ..                                  [ 64%]
+app\intraday_engine\tests\test_v7.py ...                                 [ 64%]
+app\intraday_engine\tests\test_v8.py ................                    [ 65%]
+app\leveraged_thesis_engine\tests\test_engine.py ...........             [ 66%]
+app\long_portfolio_engine\tests\test_config.py .                         [ 66%]
+app\long_portfolio_engine\tests\test_engine.py .........                 [ 67%]
+app\long_term_engine\tests\test_engine.py ...........                    [ 68%]
+app\market_history_engine\tests\test_service.py ..........               [ 68%]
+app\market_rotation_engine\tests\test_engine.py .                        [ 69%]
+app\news_intelligence_engine\tests\test_engine.py ...                    [ 69%]
+app\news_intelligence_engine\tests\test_openai_adapter.py ..             [ 69%]
+app\operator_cli\tests\test_cli.py ......................                [ 71%]
+app\operator_cli\tests\test_linux_launcher.py .......................... [ 72%]
+                                                                         [ 72%]
+app\operator_cli\tests\test_windows_launcher.py ....................     [ 74%]
+app\opportunity_dashboard\tests\test_failure_review.py ...               [ 74%]
+app\opportunity_dashboard\tests\test_projection.py ...                   [ 74%]
+app\options_gamma_engine\tests\test_engine.py ...                        [ 75%]
+app\order_flow_engine\tests\test_config.py .                             [ 75%]
+app\order_flow_engine\tests\test_engine.py ............                  [ 75%]
+app\order_flow_engine\tests\test_support.py ....                         [ 76%]
+app\patreon_caps_engine\tests\test_config.py ..                          [ 76%]
+app\patreon_caps_engine\tests\test_engine.py ......                      [ 76%]
+app\patreon_caps_engine\tests\test_indicators.py ....                    [ 77%]
+app\patreon_caps_engine\tests\test_lesson.py ...                         [ 77%]
+app\patreon_caps_engine\tests\test_macro.py ..                           [ 77%]
+app\patreon_caps_engine\tests\test_replay.py ..                          [ 77%]
+app\patreon_caps_engine\tests\test_sizing.py ..                          [ 77%]
+app\persistence\tests\test_database.py .......                           [ 78%]
+app\persistence\tests\test_models.py ............                        [ 79%]
+app\persistence\tests\test_repositories.py ..................            [ 80%]
+app\persistence\tests\test_schema_artifacts.py .............             [ 81%]
+app\persistence\tests\test_unit_of_work.py ....                          [ 81%]
+app\peter_lynch_engine\tests\test_engine.py ................             [ 82%]
+app\portfolio_flow_engine\tests\test_portfolio_flow_engine.py .....      [ 83%]
+app\reference_engine\tests\test_context.py ....                          [ 83%]
+app\reference_engine\tests\test_engine.py ....                           [ 83%]
+app\rule_registry\tests\test_discovery.py ....                           [ 84%]
+app\rule_registry\tests\test_registry.py ..............                  [ 85%]
+app\rulepacks\synthetic_core\tests\test_provider.py ....                 [ 85%]
+app\rulepacks\synthetic_core\tests\test_rules.py ........                [ 86%]
+app\rulepacks\synthetic_core\tests\test_strategies.py ..                 [ 86%]
+app\signal_fusion_engine\tests\test_engine.py ........                   [ 86%]
+app\strategy_runtime\tests\test_loader_compiler.py .......               [ 87%]
+app\strategy_runtime\tests\test_runtime.py .....                         [ 87%]
+app\strategy_runtime\tests\test_subprocess_runner.py ..                  [ 87%]
+app\support_confirmation_engine\tests\test_engine.py ............        [ 88%]
+app\support_confirmation_engine\tests\test_enrichment.py ....            [ 88%]
+app\swing_4h_geri_engine\tests\test_geri_engine.py ...................   [ 90%]
+app\swing_4h_geri_engine\tests\test_recovery.py .............            [ 91%]
+app\swing_4h_geri_engine\tests\test_recovery_progression.py ......       [ 91%]
+app\swing_4h_geri_engine\tests\test_short_structure.py ....              [ 91%]
+app\swing_4h_geri_engine\tests\test_v15.py ..                            [ 92%]
+app\swing_4h_geri_engine\tests\test_v17.py .                             [ 92%]
+app\swing_4h_geri_engine\tests\test_v18.py ..                            [ 92%]
+app\swing_engine\tests\test_engine.py ..............                     [ 93%]
+app\swing_engine\tests\test_v10.py ..                                    [ 93%]
+app\swing_engine\tests\test_v11.py ...                                   [ 93%]
+app\swing_engine\tests\test_v12.py ..                                    [ 93%]
+app\swing_engine\tests\test_v13.py ..                                    [ 94%]
+app\swing_engine\tests\test_v14.py ..                                    [ 94%]
+app\swing_engine\tests\test_v15.py .........                             [ 94%]
+app\swing_engine\tests\test_v5.py ...                                    [ 95%]
+app\swing_engine\tests\test_v6.py ...........                            [ 95%]
+app\swing_engine\tests\test_v8.py ...                                    [ 96%]
+app\swing_engine\tests\test_v9.py .                                      [ 96%]
+app\swing_trade_engine\tests\test_engine.py ......................       [ 97%]
+app\swing_trade_engine\tests\test_v12.py ....                            [ 98%]
+app\swing_trade_engine\tests\test_v15.py .                               [ 98%]
+app\swing_trade_engine\tests\test_v16.py ..........                      [ 98%]
+app\swing_trade_engine\tests\test_v17.py .............                   [ 99%]
+app\volume_structure_engine\tests\test_engine.py ...                     [100%]
+
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.6-final-0 _______________
+
+Name                                                       Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------------------------------------
+app\alert_engine\confirmed.py                                 40      2     14      2    93%   32, 37
+app\alert_engine\engine.py                                   205     22     78     15    85%   77, 102-103, 108-109, 167, 213->215, 255, 261, 291, 302, 305, 313-319, 354, 398, 426, 452
+app\alert_engine\formatter.py                                237     32     78     10    86%   85-86, 114->116, 140, 171->176, 274, 328-329, 333-334, 346-356, 374-385, 426, 432-434, 440-442
+app\alert_engine\outcomes.py                                 104     18     34     11    75%   56, 122-133, 139->138, 141->139, 143, 173, 176, 190, 194-195, 216, 219-220
+app\alert_engine\policy.py                                    47      9     18      9    72%   20, 22, 65, 67, 69, 71, 73, 75, 77
+app\alert_engine\sinks.py                                     89     12     16      3    86%   46-49, 84, 110-114, 119-120
+app\alert_engine\strategy.py                                  46      6     28      4    81%   41, 59-61, 83-84, 85->93
+app\alert_engine\v2.py                                       180     11     88      8    92%   41, 47, 82, 115, 124-125, 268-269, 279, 316, 336
+app\alert_engine\v3.py                                        79      5     26      5    90%   47, 62, 104, 116, 175
+app\alert_engine\v31.py                                       28      0      8      1    97%   66->64
+app\alert_engine\v32.py                                       44      6     20      7    80%   53, 55, 68, 70, 80, 87, 114->122
+app\alert_engine\v33.py                                       97     11     38      9    85%   64, 92-93, 139, 141, 150, 155, 198, 222-223, 247, 249->235
+app\alert_engine\v34.py                                       56      7     20      5    84%   40, 42, 47, 61, 138, 141-142
+app\alert_engine\v35.py                                       80     13     30      6    79%   113-114, 115->118, 119-120, 122-127, 140->138, 142, 154-155
+app\alert_engine\v36.py                                       53     11     18      5    72%   32, 38, 44, 80-82, 106-109, 115
+app\alert_engine\v37.py                                       40      7      6      0    80%   53-56, 77-79
+app\alert_engine\v38.py                                       67     10     24      9    79%   67, 76, 86, 99, 102, 116, 127, 178, 181-182
+app\alert_engine\v39.py                                       51      6     12      4    84%   40, 92, 102, 143, 146-147
+app\alpaca_market_data\engine.py                              95      7     30      6    90%   61, 65, 94, 160, 170, 183, 209
+app\alpaca_market_data\factory.py                             17      8      4      0    43%   23-30
+app\alpaca_market_data\microstructure_replay.py               68     14     32     10    74%   35, 37, 53, 55, 64-66, 74, 83, 102, 114, 117-118, 120
+app\alpaca_market_data\normalizer.py                         180     13     56     11    90%   108-116, 158, 300, 326->exit, 378->376, 384, 388, 394, 397-398, 404, 411, 432
+app\alpaca_market_data\replay.py                              82     13     30      8    81%   43, 46, 56, 75, 115-116, 130, 139, 158, 162-165, 167
+app\alpaca_market_data\rest.py                               191     47     96     38    70%   48, 53, 55, 77, 79, 81, 99, 102, 107, 113, 115, 164, 180, 182, 184, 194, 201, 204, 210, 212, 215, 228, 230, 232, 248, 253, 257, 264-267, 274-275, 277, 283-284, 286, 293, 304, 306, 308, 310, 313, 316, 328-329, 339
+app\alpaca_market_data\transports.py                          25     14      6      0    35%   15-17, 26, 29, 43-50, 53
+app\alpaca_market_data\websocket.py                          126     16     50     17    81%   29, 32, 34, 59, 68, 96, 105, 115, 118->117, 121->118, 158, 215->214, 238, 245, 248-249, 251, 255, 263
+app\audit_engine\__main__.py                                  12     12      0      0     0%   3-23
+app\audit_engine\service.py                                   52      6      8      4    83%   71, 75, 80, 82, 85-86
+app\audit_engine\store.py                                    161     17     46     10    86%   86, 107, 115, 121-122, 141-142, 176, 187, 191, 209->211, 216-223
+app\common\canonical.py                                       50      8     26      4    84%   26-27, 33-35, 38-39, 50
+app\common\ids.py                                             24      4      6      2    80%   21-22, 26-27
+app\common\logging.py                                         20      2      2      1    86%   16-17
+app\common\market_session.py                                  41      4     16      4    86%   26, 71, 79, 81
+app\common\strategy.py                                        53      9     20      9    75%   22, 25, 28, 44, 52, 58, 64, 68, 71
+app\contracts\analysis_events.py                             108      7     16      7    89%   87, 102, 113, 124, 139, 150, 182
+app\contracts\domain.py                                      201     30     58     25    76%   46, 49, 51, 53, 74, 77, 83, 128, 130, 132, 135, 138, 162, 164, 169, 171-178, 197, 199, 219, 221, 223, 225, 250, 253
+app\contracts\elliott_wave.py                                 59      5     14      5    86%   61, 63, 91, 97, 100
+app\contracts\entry_opportunity.py                           220     38     94     38    76%   70, 73, 75, 77, 79, 83, 86, 88, 90, 92, 95, 97, 127, 130, 136, 143, 145, 159, 183, 185, 191, 194, 196, 199, 201, 241, 243, 245, 249, 252, 255, 258, 260, 262, 265, 277, 292, 294
+app\contracts\entry_setup.py                                  53      9     22     10    75%   38, 40, 42, 47, 49, 51, 53, 55->67, 57, 64
+app\contracts\entry_signal.py                                 67     13     40     13    76%   45, 47, 49, 51, 53, 58, 61, 64, 73, 77, 82, 85, 87
+app\contracts\entry_watch.py                                  44      5     18      5    84%   37, 39, 43, 45, 52
+app\contracts\enums.py                                       246      1      2      1    99%   33
+app\contracts\event_bus.py                                    33      1     10      1    95%   29
+app\contracts\geri_4h.py                                     161     31     80     30    74%   36, 38, 78, 81, 86, 89, 95, 104, 107, 112, 122, 124, 126, 128, 135, 138, 143, 146, 148, 151, 153, 164, 168, 170, 198, 205, 208, 215, 219-221
+app\contracts\leveraged_thesis.py                            112     12     32     12    83%   87, 91, 99, 123, 132, 139, 142, 144, 146, 171, 177, 183
+app\contracts\market_analysis.py                              64      9     24      9    80%   55, 80, 85, 111, 113, 115, 118, 120, 123
+app\contracts\market_history.py                               51      3     10      3    90%   41, 48, 67
+app\contracts\options_gamma.py                                89      7     20      7    87%   51, 57, 102, 106, 108, 134, 137
+app\contracts\order_flow.py                                  216     21     58     21    85%   105, 107, 109, 142, 148, 164, 168, 183, 212, 214, 249, 254, 262, 268, 270, 272, 274, 276, 278, 300, 330
+app\contracts\order_flow_support.py                           55      7     18      7    81%   66, 68, 72, 74, 76, 78, 80
+app\contracts\patreon_caps.py                                 89      6     16      6    89%   50, 54, 56, 97, 101, 103
+app\contracts\rules.py                                       125      8     18      8    89%   48, 87, 89, 91, 116, 140, 144, 147
+app\contracts\signal_fusion.py                                90     10     28     10    83%   61, 63, 65, 67, 88, 110, 116, 122, 148, 150
+app\contracts\strategy.py                                    143     15     52     15    85%   27, 29, 42, 68, 71, 94, 109, 122, 125, 128, 130, 162, 164, 170, 177
+app\contracts\support_confirmation.py                        116     13     32     13    82%   80, 82, 98, 100, 102, 105, 107, 117, 123, 125, 128, 155, 157
+app\contracts\swing_trade.py                                  96     13     26     13    79%   66, 68, 70, 72, 74, 81, 83, 85, 87, 89, 115, 117, 119
+app\contracts\universe.py                                     33      2     10      2    91%   30, 49
+app\dilution_sec_engine\engine.py                            158     24     66     14    77%   86, 93, 199, 260-269, 282->306, 288-293, 294->306, 308->330, 312-315, 316->330, 342, 358, 360
+app\dilution_sec_engine\models.py                            115      3      6      3    95%   104, 136, 139
+app\dilution_sec_engine\sec_adapter.py                       394     59    120     33    81%   136-138, 168, 170, 172, 177, 182, 257, 259, 324, 329-336, 347, 351, 381->384, 385, 416, 418, 420, 442, 450, 455-456, 463, 496-497, 514-515, 521, 544, 582, 586, 609-615, 616->618, 629-630, 648-649, 678-679, 693, 696, 708, 716-717, 722, 725-726, 728, 741, 749, 753, 767, 804->802, 808
+app\dilution_sec_engine\ticker_resolver.py                    76     20     24      9    69%   48, 56, 59-60, 70, 83->85, 98-101, 103-105, 107, 110-111, 113, 117, 122, 127, 130
+app\elliott_wave_engine\engine.py                            178      9     58     14    89%   48, 108, 153->155, 155->158, 158->161, 161->164, 219, 229, 232-235, 240->242, 242->245, 245->248, 249, 253
+app\elliott_wave_engine\models.py                             18      4      8      4    69%   19, 24, 26, 28
+app\entry_opportunity_engine\engine.py                      1095    108    432     65    87%   339, 438-445, 476, 652-657, 1038, 1115, 1117, 1120, 1130, 1231, 1235, 1304, 1320-1321, 1335-1349, 1368-1369, 1381, 1400->1410, 1606, 1622, 1626-1629, 1642->1652, 1685, 1742-1784, 1810-1822, 1836->1838, 1838->1827, 1849, 1973, 2082, 2092, 2100-2101, 2233, 2283, 2302, 2406-2407, 2414-2424, 2633, 2635, 2655, 2709, 2759, 2775, 2793, 2815, 2849->2851, 2852, 2860->2854, 2972->2974, 3016-3025, 3042, 3083, 3086, 3096, 3117->3113, 3121, 3135, 3149, 3152->3154, 3157, 3163, 3171->3168, 3173-3184, 3202->3200, 3204, 3212-3213, 3299, 3324
+app\entry_opportunity_engine\memory.py                        26      1      4      1    93%   51
+app\entry_opportunity_engine\v12.py                           34     10     14      1    65%   80-96
+app\entry_opportunity_engine\v13.py                           12      1      4      1    88%   29
+app\entry_opportunity_engine\v14.py                          117     22     46      9    77%   54, 71, 78-79, 87-95, 98, 104, 194-196, 199-201, 206-208, 213, 231, 285, 324->323
+app\entry_recovery_engine\engine.py                           80     11     32     13    79%   56, 58, 60->exit, 65, 67->exit, 72, 80, 86, 93, 111, 114, 118, 121
+app\entry_recovery_engine\v11.py                              12      1      2      1    86%   18
+app\entry_watcher\engine.py                                  270     30    114     27    85%   74, 76, 78, 80, 82, 84, 94, 96, 122, 235->237, 280, 426, 443, 473, 477, 503->494, 507, 543-544, 545->547, 548, 560, 612, 619, 621, 634-635, 643, 645, 647, 652-653, 656
+app\entry_watcher\memory.py                                   36      5     10      5    78%   38, 47, 49, 56, 58
+app\entry_watcher\models.py                                   39      4      8      4    83%   43, 45, 47, 55
+app\entry_watcher\strategy.py                                 50      1     30      3    95%   65, 90->94, 94->98
+app\entry_watcher\v2.py                                       40      3      8      3    88%   46, 75, 81
+app\entry_watcher\v3.py                                       34      8      8      3    74%   27-29, 38, 50, 82-84
+app\entry_watcher\v4.py                                       74      3     28      5    92%   43, 53->61, 78, 79->exit, 102
+app\entry_watcher\v5.py                                       51      6     16      3    87%   63, 100, 122-125
+app\entry_watcher\v51.py                                      83     11     30      7    84%   55, 75, 95, 97->107, 101-102, 105->98, 116-117, 119->exit, 121-124
+app\entry_watcher\v52.py                                      45      8     18      4    78%   55, 74, 75->84, 90-95
+app\entry_watcher\v53.py                                      33      5      6      2    77%   58, 72-74, 97
+app\entry_watcher\v54.py                                     171     14     56     15    87%   83, 85, 202, 205, 217, 223, 226, 233, 236, 306, 327, 343->342, 345->343, 347, 362->357, 387-388
+app\entry_watcher\v55.py                                      20      3      6      3    77%   24, 31, 36
+app\entry_watcher\v56.py                                      27      2      6      2    88%   52, 86
+app\event_bus\consumer_maintenance.py                         42      9      8      3    76%   32, 58, 71->75, 73->72, 89-103
+app\event_bus\memory.py                                       98      9     40      7    84%   90->89, 93-98, 109, 137->exit, 139, 143->137, 150
+app\event_bus\nats_jetstream.py                              150      9     30      5    91%   119-121, 202-203, 219, 258, 275, 283->285, 326
+app\event_bus\stream_maintenance.py                           37      8      2      0    79%   42, 88-101
+app\external_connector\catalog.py                              2      2      0      0     0%   3-10
+app\external_connector\models.py                               2      2      0      0     0%   3-10
+app\external_connector\subscriber.py                           2      2      0      0     0%   3-9
+app\integration\alert_decision_state_store.py                 67      9     14      2    81%   28-42, 89, 94
+app\integration\alert_sounds.py                               43      4      2      0    91%   97, 121-123
+app\integration\analysis_runtime.py                          137     29     60     17    70%   135, 139, 153->160, 155-159, 164, 166->169, 168, 172, 175-176, 178, 180-183, 192-193, 209, 215->223, 217, 225, 231-246, 261, 283, 304, 333
+app\integration\bar_aggregator.py                            169     25     82     21    81%   29, 31, 40, 65-67, 69-70, 72, 97, 98->100, 115->110, 128, 130, 139-143, 154, 156, 163, 169, 181, 183, 187, 188->190, 228
+app\integration\confirmed_buy_monitor.py                      91     14     40      9    78%   48, 63, 71, 82, 88, 94, 125-130, 146, 171
+app\integration\confirmed_signal_projection.py                77      2     38      7    92%   64, 82, 131->133, 133->135, 143->145, 145->147, 147->149
+app\integration\distributed_composition.py                   654    543    178      2    14%   118, 214-446, 455-761, 791-803, 816, 821, 849-1084, 1090-1155, 1161-1405, 1411-1441, 1448-1459, 1463-1470, 1474, 1483, 1487-1491, 1503, 1510-1517, 1549, 1591, 1626
+app\integration\elliott_wave_composition.py                  101     40     30      5    53%   64, 86->85, 90->89, 95-111, 116, 120, 155-223
+app\integration\elliott_wave_monitor.py                       32     17      4      0    42%   24-67
+app\integration\engine_assembly.py                           102     10     14      4    86%   110, 205, 258, 264, 267, 271, 276, 294-296
+app\integration\engine_registry.py                            66      7     10      5    84%   61, 76, 98, 116, 121-122, 139
+app\integration\entry_opportunity_bar_recovery.py             37      6     16      5    75%   33, 35, 41, 73, 78-79
+app\integration\entry_opportunity_history_maintenance.py      90     19     12      4    77%   86, 88, 90, 128-132, 157->163, 183-186, 210-227
+app\integration\entry_opportunity_monitor.py                 253     30     74     16    85%   50, 92->95, 138, 147-148, 173, 199, 205, 230->234, 250-275, 301->299, 337-338, 434-435, 515, 545->547, 548, 624, 639
+app\integration\entry_opportunity_report.py                  167     16     66      7    88%   42-57, 125-133, 164->166, 166->168, 202->204, 342, 345, 353->350
+app\integration\entry_opportunity_store.py                    59     21      4      2    63%   47-49, 52-54, 57-59, 62-64, 67-68, 74-76, 87-92, 108, 109->exit
+app\integration\entry_recovery_composition.py                 64     48     22      0    19%   37-157
+app\integration\entry_setup_publisher.py                       4      1      0      0    75%   19
+app\integration\entry_signal_adapter.py                      102      8     38      6    90%   61, 100-101, 108, 129, 174, 218, 305
+app\integration\entry_watch_store.py                          52     12      6      2    72%   49-51, 54-56, 70, 83, 87-94
+app\integration\event_fanout.py                               18      0      4      1    95%   36->32
+app\integration\foundation.py                                 68      2      8      2    95%   128, 133
+app\integration\intraday_worker.py                            83     10     30      5    83%   69-76, 92-94, 102, 105, 113, 114->exit
+app\integration\leveraged_thesis_composition.py               52      7     14      4    80%   272, 386, 391, 393, 412-414
+app\integration\live_analysis_service.py                     125     31     32     10    70%   96, 110, 126, 129, 134->136, 151, 218-244, 254, 256, 265-269, 271, 288
+app\integration\live_composition.py                          135     93     32      1    27%   55-257, 265-273, 281
+app\integration\long_portfolio_composition.py                 77     57     20      0    21%   44-169
+app\integration\long_portfolio_monitor.py                    230    106     84     11    53%   69-165, 178-190, 202-236, 249-294, 322, 326, 377-378, 381, 384, 405->407, 414, 416, 420, 426-427, 437-441, 467-472
+app\integration\long_portfolio_store.py                       53     33      8      0    33%   22, 25-36, 39-41, 55-56, 63-67, 70-71, 74-82, 89, 99-100, 125-128, 132-135
+app\integration\long_term_worker.py                           74     10     28      6    80%   63-70, 84-85, 92, 97, 106, 108->exit, 128
+app\integration\market_bar_repository.py                      62      8     12      5    82%   22-26, 61, 86, 106, 182, 206
+app\integration\market_bar_store.py                           29      2     14      2    91%   13, 43
+app\integration\market_history_composition.py                120     47     12      0    57%   75, 79, 200, 225-242, 250-313, 317-321, 332-333
+app\integration\market_history_rpc.py                         65     17     16      6    67%   55, 66-74, 84, 86, 90-91, 115-123, 127, 134->137, 137->exit, 145-154
+app\integration\market_rotation_composition.py                47     28      4      0    37%   43-142
+app\integration\market_rotation_store.py                      37      5     10      1    83%   24-46, 129->82
+app\integration\market_stream_recovery.py                    108      9     38     10    87%   36, 38, 40, 48, 66, 102, 135->exit, 151, 178, 198
+app\integration\marketbot_definition.py                      110      8     24      8    88%   81, 88, 127, 130, 133, 137, 145, 151
+app\integration\news_intelligence_composition.py             115    115     34      0     0%   3-237
+app\integration\news_intelligence_store.py                    80     30     24      6    63%   24, 27-41, 55-93, 98-117, 127, 130, 137->128, 149, 153-154, 168-171
+app\integration\news_monitor.py                              145     78     44      3    39%   58-145, 149-163, 177-181, 202, 214->216, 217->219, 231-240, 248-254, 264-269, 273-274, 278
+app\integration\opportunity_web_dashboard.py                 225    167     66      2    21%   48, 70->72, 81-82, 100, 122-306, 319-357, 371-385, 397-401, 405-407, 415-420, 427-430, 434-436
+app\integration\options_gamma_alpaca.py                      176     38     76     30    71%   39, 41, 58, 63, 65, 86, 88, 97, 105, 109, 115->107, 120-123, 135, 141, 158, 168, 186, 188, 201, 206, 213->204, 218-223, 237, 243, 256, 301, 312, 328-329, 335, 338-339, 348-349
+app\integration\options_gamma_composition.py                 182     67     42     10    58%   121, 125, 132, 133->exit, 138-145, 149, 193, 241-359, 392, 396, 402, 405, 410, 413-414, 420, 423-424
+app\integration\order_flow_composition.py                     26      3      2      0    82%   245-247
+app\integration\order_flow_monitor.py                        172     29     64     16    76%   74, 90, 92, 101, 108, 118, 121, 225, 261, 282, 284, 291-302, 313, 316, 322-324, 435-437, 449
+app\integration\outbox_relay.py                               63     14     12      5    75%   37, 39, 41, 43, 45, 86-97
+app\integration\patreon_caps_composition.py                  222     59     76     15    69%   170, 177, 192, 199, 201, 206-208, 212-216, 217->229, 229->exit, 247, 250, 271, 300, 335, 348->exit, 359-466
+app\integration\patreon_caps_monitor.py                       63     37     20      2    34%   46-119, 137->139, 139->143
+app\integration\peter_lynch_composition.py                   156     37     32      5    74%   81, 83, 86, 147-153, 215-265, 340, 343-344, 350, 353-354
+app\integration\peter_lynch_sec_adapter.py                   318     52    104     36    78%   127, 129, 140, 148, 151-152, 183->173, 263, 265-269, 287-288, 293, 300->302, 312-315, 319-321, 323, 329, 332, 351, 354, 360->342, 370, 374, 395, 397->391, 415, 418, 421, 445, 471, 481, 485, 492, 497, 512, 515, 518-519, 520->510, 527, 533, 536-537, 539, 546, 555-556, 561
+app\integration\peter_lynch_store.py                         111     15     28      7    84%   48, 87-88, 95, 98-99, 124, 155, 175-176, 213, 219, 227, 230-231
+app\integration\portfolio_flow_composition.py                 44     44      8      0     0%   3-81
+app\integration\postgres_universe.py                          85     28      8      1    65%   95, 106-123, 132-161, 203-204, 220-221, 248-249, 275-276, 281-284
+app\integration\runtime_process_plan.py                      110      3     46      3    96%   53, 59, 211->213, 407
+app\integration\sec_daily_composition.py                     104     70     24      0    27%   70-75, 79, 82-96, 110-255, 263
+app\integration\sec_document_loader.py                        77     15     18      8    76%   38, 40, 42, 67->81, 70-71, 73->67, 76-79, 115-116, 122-124, 126
+app\integration\sec_refresher.py                              57      6     14      5    85%   64, 77, 93-94, 100, 103
+app\integration\signal_backtest.py                           439     78    134     31    76%   119, 121, 133, 135, 212, 247->249, 254->256, 264, 343, 346, 355, 366, 369-376, 379-384, 387-391, 394->exit, 398-401, 404-407, 414, 540, 552, 622, 630->629, 650-658, 689, 728-740, 747-748, 753-754, 767, 769, 771, 988, 1000, 1013, 1020, 1031, 1061->1063, 1079, 1100-1101, 1116->1114, 1150, 1155-1159
+app\integration\signal_fusion_composition.py                 162     42     58      5    70%   91, 120->exit, 140, 143->147, 257-337, 356->exit, 374-390
+app\integration\signal_fusion_monitor.py                      71      9     20      6    81%   58, 60, 66-74, 78, 86->exit, 123
+app\integration\support_confirmation_composition.py          139     41     44      4    69%   91, 134->exit, 165, 173, 270-372
+app\integration\support_confirmation_monitor.py               98     13     28     10    79%   44, 54, 61, 62->64, 84, 140, 142, 144, 151, 183-187
+app\integration\swing_4h_geri_composition.py                 328    131    148     28    54%   134-143, 147, 155, 162, 164, 167-179, 189, 191-193, 201-206, 214, 221, 223-225, 240-242, 244, 252-253, 262-277, 280-297, 349-350, 370, 372->exit, 380->exit, 383, 411, 423, 522, 532, 564, 602, 605, 627, 629, 633-636, 646-649, 669-809
+app\integration\swing_4h_geri_monitor.py                      68     23     18      5    63%   40-85, 123-127, 143, 152, 167-168, 197
+app\integration\swing_trade_composition.py                   236     65     82     14    68%   131, 134->exit, 138-143, 147, 150->exit, 157, 160-165, 173, 195, 198, 200-202, 204->206, 207->exit, 215, 307, 376, 466-573
+app\integration\swing_trade_monitor.py                        98     27     28      5    70%   53->55, 72-127, 149, 170, 200, 209
+app\integration\swing_worker.py                              116     20     52     16    76%   70-77, 91-92, 101, 106-107, 110, 112-113, 116, 118, 120->exit, 125, 133, 140, 141->exit, 146, 154, 156->exit, 199
+app\integration\symbol_analysis_composition.py               107      7     24      9    88%   50, 52, 76->89, 89->97, 170, 190, 278, 286, 288
+app\integration\tradingview_projection.py                    265     72     70     13    71%   139, 261-270, 296, 298, 300, 322-323, 327, 358-360, 368->381, 378-379, 405-496, 508-519, 523-525, 529-532, 544-545, 549-552, 605, 627-628, 639->636, 652, 667, 687-690, 711
+app\integration\universe_policy.py                            30      2      0      0    93%   112-113
+app\integration\volume_structure_composition.py               98     39     30      2    57%   68-79, 94, 114, 156-240
+app\intraday_engine\engine.py                                151      8     48      7    92%   163, 196-197, 205, 251, 278, 280, 306
+app\intraday_engine\indicators.py                             50      8     22      8    78%   15, 21, 31, 34, 44, 48, 54, 70
+app\intraday_engine\models.py                                 75      3     12      3    93%   44, 61, 65
+app\intraday_engine\strategy.py                               43      2     26      2    94%   17, 48
+app\intraday_engine\v2.py                                     79      1     16      2    97%   48->51, 149
+app\intraday_engine\v3.py                                     73      5     12      5    88%   89, 118, 120, 123, 154
+app\intraday_engine\v4.py                                     64      2      8      2    94%   91, 152
+app\intraday_engine\v5.py                                     91      5     18      5    91%   194, 196, 199, 207, 246
+app\intraday_engine\v8.py                                     35      1     12      1    96%   27
+app\leveraged_thesis_engine\engine.py                        264     44    112     30    79%   136-137, 154->161, 165-166, 180, 189-190, 192-193, 198-199, 211-212, 217-218, 223-224, 229-230, 232->235, 323-328, 338, 347, 403, 405, 418, 425, 426->428, 429, 431, 433, 435, 437, 443, 456, 549, 562, 573-577, 620, 626
+app\leveraged_thesis_engine\models.py                         53     10     20      9    74%   24, 39, 45, 47, 63, 68, 70, 72, 80, 84
+app\long_portfolio_engine\config.py                           28      4      8      4    78%   20, 51, 58, 61
+app\long_portfolio_engine\engine.py                          101     10     32      9    86%   50, 55, 69, 76->79, 85, 96, 242, 245-246, 251, 254
+app\long_portfolio_engine\models.py                           56      2      4      2    93%   62, 67
+app\long_portfolio_engine\strategy.py                         29      4      8      4    78%   47, 50, 59, 62
+app\long_term_engine\engine.py                               193     15     82     15    88%   287, 310, 312, 315->317, 328, 332, 341, 385, 388, 402-404, 425, 430->432, 447, 449, 460
+app\long_term_engine\indicators.py                            48      7     16      7    78%   20, 26, 36, 51, 54, 60, 70
+app\long_term_engine\models.py                               106      4     14      4    93%   47, 59, 61, 63
+app\long_term_engine\v2.py                                   100     11     28      7    83%   31, 58-61, 66, 141, 156, 159, 167-168
+app\market_history_engine\service.py                         124      4     44      4    95%   62, 64, 172, 176
+app\market_rotation_engine\engine.py                          80      3      8      3    93%   68, 72, 116
+app\news_intelligence_engine\engine.py                        47      9     18      3    72%   145, 149-156
+app\news_intelligence_engine\openai_adapter.py                58     14     24     10    68%   33, 72-73, 82-83, 86-87, 93, 96, 99, 102, 103->94, 105, 108, 110->103, 112
+app\operator_cli\__main__.py                                   1      1      0      0     0%   1
+app\operator_cli\infrastructure_commands.py                   66     35      6      0    43%   113-130, 150-166, 182-196, 222-234
+app\operator_cli\main.py                                     324    115     36      1    61%   89-90, 173-185, 199-211, 228, 245, 262, 279-289, 306-316, 330-338, 373-375, 386-388, 399-401, 415-421, 444-456, 472-482, 494-498, 510-516, 528-532, 552-564, 576-578, 598-608, 624-626, 690-691, 723-725, 749-751, 773-775, 798-800, 822-824, 846-848, 865-867, 881-885, 901-903, 932-934, 968-970, 993-995, 1012-1014, 1026-1028, 1052-1054, 1080-1082, 1098-1101, 1120-1122, 1141-1143, 1159-1162, 1189-1190, 1407
+app\opportunity_dashboard\failure_review.py                   85     14     24     10    76%   62, 92-93, 95, 101-102, 107-108, 122, 194, 197, 200, 201->195, 203, 205->201, 207
+app\opportunity_dashboard\projection.py                       58      1     20      2    96%   170->172, 229
+app\options_gamma_engine\engine.py                           203     15     56     11    89%   221, 351, 379->371, 383-399, 409, 425, 447, 500, 503, 505, 515
+app\options_gamma_engine\models.py                            60     13     28     13    70%   29, 31, 33, 35, 37, 42, 59, 62, 64, 66, 68, 70, 72
+app\order_flow_engine\config.py                               46      8     22      6    79%   20, 24, 27, 30, 68, 71-72, 77
+app\order_flow_engine\engine.py                              331     32    100     23    85%   68, 70, 73, 75, 84, 86, 88, 93, 102, 155->exit, 164, 197, 200, 228, 243-245, 310, 426, 428, 430, 435-438, 443, 551, 557-561, 612
+app\order_flow_engine\strategy.py                             18      3     10      3    79%   13, 16, 29
+app\order_flow_engine\support.py                              76      7     30      7    87%   44, 50, 66, 69, 90, 94, 96
+app\order_flow_engine\v11.py                                  15      1      4      1    89%   20
+app\order_flow_engine\v12.py                                  74      7     18      4    88%   48-49, 64, 66-67, 81, 118
+app\patreon_caps_engine\engine.py                            303     55    130     44    73%   84, 96, 124, 207-218, 259, 266, 292, 300->303, 312->329, 314-328, 335, 350, 352->347, 365-366, 367->372, 370-371, 375-376, 381-382, 389-394, 417, 429, 434, 445, 458-459, 465, 482-483, 490, 493, 505->507, 593, 597->599, 599->601, 601->603, 625, 646, 666-670, 693, 701, 704, 706, 839, 841, 845, 851
+app\patreon_caps_engine\lesson.py                            117     15     52     14    83%   38, 74->77, 77->79, 79->81, 81->84, 97-98, 100-101, 103-104, 106-107, 109-110, 169, 196, 208, 228
+app\patreon_caps_engine\macro.py                              60      3     26      3    93%   31, 86, 95
+app\patreon_caps_engine\models.py                            140      4     10      4    95%   67, 90, 98, 100
+app\patreon_caps_engine\sizing.py                             26      2      6      2    88%   26, 43
+app\patreon_caps_engine\strategy.py                           20      2      4      2    83%   37, 40
+app\persistence\repositories.py                              203     68     32      2    63%   153, 302-306, 313-318, 325-329, 338-361, 370-393, 402-427, 461, 492, 520-529, 532-538, 541-546, 549-556, 559-562, 568-580, 588-599, 608-646, 671-676, 679-686, 730-735, 738-743
+app\peter_lynch_engine\engine.py                              96      2     32      2    97%   174, 187
+app\portfolio_flow_engine\config.py                           20      2      4      2    83%   18, 38
+app\portfolio_flow_engine\engine.py                           86     14     18      3    80%   68, 71, 79, 99-100, 103-115
+app\portfolio_flow_engine\strategy.py                         14      2      4      2    78%   13, 25
+app\portfolio_flow_engine\v2.py                               44      2     10      2    93%   47, 72
+app\reference_engine\__main__.py                               5      5      0      0     0%   3-15
+app\reference_engine\context.py                               30      6     14      3    75%   23, 28, 32-35
+app\reference_engine\engine.py                                62      3     10      3    92%   33, 40, 44
+app\rule_registry\discovery.py                                29      1      8      1    95%   27
+app\rule_registry\registry.py                                 57      3     24      1    95%   67-68, 126
+app\rulepacks\synthetic_core\parameters.py                    25      1      2      1    93%   34
+app\rulepacks\synthetic_core\rules.py                         27      3      2      1    86%   54, 124-125
+app\signal_fusion_engine\engine.py                           189     11     76     10    91%   135, 145, 243-245, 257->259, 259->261, 262, 274, 296, 325-326, 413->415, 460->462, 463
+app\signal_fusion_engine\models.py                            27      5     10      5    73%   30, 38, 41, 43, 45
+app\signal_fusion_engine\v04.py                               30      3      6      1    89%   71, 74-75
+app\signal_fusion_engine\v05.py                               64     14     20      6    71%   75, 87->90, 91-92, 94-95, 97-102, 112, 115-116
+app\strategy_runtime\compiler.py                             139     16     60     13    84%   42, 48-50, 72->70, 76, 102, 122, 146, 152, 164, 168, 174-175, 179, 181, 210
+app\strategy_runtime\loader.py                                18      2      2      1    85%   22, 26
+app\strategy_runtime\runtime.py                              113     15     46     10    83%   68, 83, 99-100, 126, 147-148, 167, 221, 225, 228, 232->231, 238-240, 243
+app\strategy_runtime\subprocess_runner.py                    105     29     42     13    70%   43-49, 57, 59, 81, 87, 96, 119, 127-128, 147-148, 153-158, 168, 170-172, 177, 182-183
+app\support_confirmation_engine\engine.py                    237     13     88     11    92%   57, 232, 249, 251, 297, 302, 311-315, 325, 431, 450, 503
+app\support_confirmation_engine\enrichment.py                 54     10     34     10    77%   64, 75, 79, 86, 88, 90, 92, 104, 110, 112
+app\support_confirmation_engine\models.py                     40      2     18      2    93%   48, 50
+app\support_confirmation_engine\v03.py                       188     28     62     16    81%   74, 172, 183, 264-281, 296, 336, 340, 345, 353, 378, 388, 391, 399, 403, 441-452, 474
+app\swing_4h_geri_engine\engine.py                           577     85    266     74    81%   53, 55, 57, 59, 61, 76, 78, 80, 82, 84, 213, 262, 264, 266, 268, 270, 272, 277, 347, 355, 358, 360, 364, 373, 395-396, 398, 423, 439-455, 494, 581-583, 671, 673, 901, 975, 977, 981, 983, 986, 992, 1006, 1009, 1011, 1017, 1019, 1021, 1026, 1032, 1037, 1040, 1042, 1044, 1047, 1049, 1051, 1060, 1069, 1081, 1083, 1085, 1093, 1113, 1169-1176, 1203, 1205, 1209, 1216, 1258, 1269, 1289, 1301, 1364, 1410, 1413, 1426, 1429
+app\swing_4h_geri_engine\recovery.py                         120      6     46      9    91%   73, 113->115, 130, 134, 140, 226, 232->224, 234->224, 256
+app\swing_4h_geri_engine\recovery_progression.py              98      7     44      9    89%   94-95, 106, 146->150, 148->150, 154, 156, 168, 173
+app\swing_4h_geri_engine\short_structure.py                   67      8     32     12    80%   53, 59, 64->76, 67->75, 77, 79, 81->92, 90->92, 93, 95, 114, 116
+app\swing_4h_geri_engine\strategy.py                          39      4     34      4    89%   22, 30, 34, 36
+app\swing_4h_geri_engine\tactical_levels.py                   58      2     28      2    95%   31, 46
+app\swing_4h_geri_engine\v15.py                               74     18     22      7    70%   54, 85, 88-90, 139, 151-167, 169, 173, 182
+app\swing_4h_geri_engine\v17.py                               48     12     10      4    69%   37, 66, 76-93, 114, 119
+app\swing_4h_geri_engine\v18.py                               44      5     10      3    85%   33, 55-56, 58, 62
+app\swing_4h_geri_engine\v19.py                               45     14     12      3    60%   39, 63-79, 108-109
+app\swing_engine\engine.py                                   156      8     72      8    93%   188, 219, 243, 258, 273, 302, 326, 334
+app\swing_engine\indicators.py                                83     15     42     15    76%   19, 25, 35, 48, 65, 68, 75, 77, 86, 99, 101, 103, 128, 130, 132
+app\swing_engine\models.py                                   107     10     30     10    85%   48, 52, 57, 60, 66, 68, 74, 80, 82, 84
+app\swing_engine\strategy.py                                  64      5     42      5    91%   37, 60, 78, 83, 93
+app\swing_engine\v2.py                                       139      9     46      9    90%   37, 82, 97, 132, 165, 167, 170, 218, 275
+app\swing_engine\v4.py                                        29      1      4      1    94%   35
+app\swing_engine\v5.py                                       118     11     46     14    85%   42, 44, 46, 48, 62, 72, 76, 127->129, 129->132, 135->137, 198, 208, 234, 244
+app\swing_engine\v6.py                                       189      8     62      9    93%   105, 119, 146, 189, 223, 351, 382->394, 522, 532
+app\swing_engine\v8.py                                       159     18     50     16    83%   86, 88, 90, 92, 97, 147, 149, 233, 241, 248, 274, 291, 301, 310, 396-398, 403
+app\swing_engine\v10.py                                       24      3      2      0    88%   95, 102-105
+app\swing_engine\v11.py                                       77     11     26      8    80%   48, 87, 89, 92-94, 141, 156, 158, 164, 169
+app\swing_engine\v13.py                                       49      6     12      2    80%   89-93, 115
+app\swing_engine\v14.py                                       67      6     14      4    85%   49, 144-147, 161, 165
+app\swing_trade_engine\engine.py                             262     34    122     34    82%   55, 60, 62, 64, 72, 74, 114, 116, 118, 120, 122, 133, 246, 263, 360, 363, 431, 433, 515, 517, 522, 524, 530, 532, 534, 536, 542, 547, 550, 552, 554, 564, 580, 598
+app\swing_trade_engine\recovery_quality.py                    64      5     22      5    88%   27, 55, 58, 75, 77
+app\swing_trade_engine\strategy.py                            52      7     46      7    86%   30, 50, 54, 68, 79, 82, 92
+app\swing_trade_engine\v12.py                                118     16     42     14    80%   56, 85->92, 91, 126, 128, 131-133, 167, 178, 197, 224, 228, 233, 247, 249, 251
+app\swing_trade_engine\v15.py                                 34      2      4      2    89%   29, 77
+app\swing_trade_engine\v16.py                                 38      2     12      2    92%   29, 31
+app\swing_trade_engine\v17.py                                173     14     68     13    89%   54, 59, 73, 87, 113->115, 116, 126, 138, 140->146, 158-159, 181-182, 243, 311-312
+app\volume_structure_engine\engine.py                        142      7     40      7    91%   43, 78, 202->206, 214-215, 318, 320, 346
+app\volume_structure_engine\models.py                         21      5     10      5    68%   19, 21, 23, 26, 28
+------------------------------------------------------------------------------------------------------
+TOTAL                                                      28498   5008   8736   1989    78%
+
+93 files skipped due to complete coverage.
+Required test coverage of 77% reached. Total coverage: 78.32%
+====================== 1369 passed, 4 skipped in 52.00s =======================

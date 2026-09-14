@@ -14,6 +14,7 @@
     </a>
     <nav aria-label="Secciones">
       <a href="#monitor">Monitor</a>
+      <a href="#ticker-desk">Mi ticker</a>
       <a href="#theses">Tesis</a>
       <a href="#failure-lab">Failure Lab</a>
     </nav>
@@ -31,6 +32,36 @@
         <small>ÚLTIMO SNAPSHOT</small>
         <strong id="snapshot-time">—</strong>
         <span id="transport">Esperando datos</span>
+      </div>
+    </section>
+
+    <section id="ticker-desk" class="panel ticker-desk" aria-labelledby="ticker-desk-title">
+      <div class="section-head"><div><p class="eyebrow">TU OPERACIÓN · TODOS LOS MOTORES</p><h2 id="ticker-desk-title">Mi ticker en vivo</h2></div><span id="ticker-stream" class="method-pill">Sin seleccionar</span></div>
+      <p class="ticker-description">Seguí los gates publicados de cada tesis y abrí sus assessments completos. Consultá a GPT con una copia de toda la evidencia del momento.</p>
+      <form id="ticker-watch-form" class="ticker-toolbar">
+        <label><span>TICKER QUE ESTÁS OPERANDO</span><input id="watch-symbol" placeholder="Ej. NVDA" maxlength="15" pattern="[A-Za-z][A-Za-z0-9.\-]{0,14}" autocomplete="off" required></label>
+        <button type="submit" class="primary-button">Seguir ticker</button>
+        <button id="ticker-reanalyze" type="button" class="ghost-button" disabled>Solicitar análisis</button>
+        <button id="ticker-copy" type="button" class="ghost-button" disabled>Copiar contexto</button>
+      </form>
+      <p id="ticker-status" role="status" aria-live="polite">Ingresá un ticker para empezar, aunque no figure en Opportunities.</p>
+      <div class="gate-legend"><span class="gate-status pass">Cumple</span><span class="gate-status fail">No cumple / riesgo activo</span><span class="gate-status stale">Dato antiguo</span><span class="gate-status unknown">Sin dato</span></div>
+      <p class="ticker-help">Cada color describe una condición de su tesis; no equivale a una orden. Sin actualización por 15 minutos, la evidencia se marca antigua.</p>
+      <div id="ticker-counts" class="ticker-counts"></div>
+      <div class="ticker-workspace">
+        <div><div id="ticker-assessments" class="assessment-grid"><p class="empty-state">Los assessments y gates aparecerán aquí.</p></div><div id="ticker-missing" class="ticker-missing"></div></div>
+        <aside class="ticker-chat" aria-label="Consultas a GPT">
+          <p class="eyebrow">CONSULTA BAJO DEMANDA</p><h3>Preguntale a GPT</h3>
+          <p id="ticker-gpt-model" class="ticker-help">Verificando disponibilidad…</p>
+          <form id="ticker-question-form">
+            <label for="ticker-question">Tu pregunta sobre esta operación</label>
+            <textarea id="ticker-question" maxlength="4000" rows="5" required placeholder="¿Qué gates faltan? ¿Hay contradicciones entre Swing y 4HGERI?"></textarea>
+            <button id="ticker-ask" type="submit" class="primary-button" disabled>Enviar contexto y preguntar</button>
+          </form>
+          <p class="ticker-help">Se envían los assessments completos, sus gates y las últimas 6 consultas de este ticker. GPT se ejecuta sólo al presionar el botón.</p>
+          <p id="ticker-question-status" role="status" aria-live="polite"></p>
+          <div id="ticker-answers" class="ticker-answers"></div>
+        </aside>
       </div>
     </section>
 
@@ -101,6 +132,7 @@
   </main>
 
   <footer><span>MARKETBOT · ANALYSIS ONLY</span><span>Sin ejecución de órdenes · P/L de paper trades</span></footer>
+  <script src="/ticker.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

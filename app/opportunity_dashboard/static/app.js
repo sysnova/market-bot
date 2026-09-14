@@ -8,11 +8,12 @@ function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const socket = new WebSocket(`${protocol}//${location.host}/ws`);
   state.socket = socket;
-  socket.addEventListener("open", () => setConnection(true, "Live"));
-  socket.addEventListener("close", () => { setConnection(false, "Reconectando…"); setTimeout(connect, 1800); });
+  socket.addEventListener("open", () => { setConnection(true, "Live"); globalThis.MarketBotTicker?.connected(socket); });
+  socket.addEventListener("close", () => { setConnection(false, "Reconectando…"); globalThis.MarketBotTicker?.disconnected(); setTimeout(connect, 1800); });
   socket.addEventListener("error", () => setConnection(false, "Sin conexión"));
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
+    if (globalThis.MarketBotTicker?.handle(message)) return;
     if (message.type === "snapshot") receiveSnapshot(message);
     if (message.type === "failure_review") receiveReview(message);
     if (message.type === "error") receiveError(message);
