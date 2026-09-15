@@ -6,7 +6,7 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
         'Uso: bash start-order-flow-websocket.sh' \
         'Inicia el WebSocket de Order Flow en primer plano (puerto predeterminado: 8766).' \
         'Requiere el entorno .venv, NATS y el Engine Order Flow existentes.' \
-        'Lee .env y MARKETBOT_ORDER_FLOW_WS_*; pide el token si falta.' \
+        'Lee app/order_flow_export/.env y MARKETBOT_ORDER_FLOW_WS_*; pide el token si falta.' \
         'MARKETBOT_PROJECT_ROOT permite seleccionar otro checkout.' \
         'Ctrl+C detiene el WebSocket. Ngrok se inicia por separado.'
     exit 0
@@ -30,11 +30,11 @@ export PYTHONDONTWRITEBYTECODE=1
 # Read settings through MarketBot; never source .env as shell code or print secrets.
 configuration="$("$python" -B -c '
 import sys
-from app.common.settings import AppSettings
+from app.integration.order_flow_websocket import load_order_flow_websocket_settings
 try:
-    settings = AppSettings()
+    settings = load_order_flow_websocket_settings()
 except Exception:
-    print("Configuracion invalida. Revisa .env y las variables MARKETBOT_*.", file=sys.stderr)
+    print("Revisa app/order_flow_export/.env, .env y las variables MARKETBOT_*.", file=sys.stderr)
     sys.exit(2)
 has_token = bool(settings.order_flow_ws_token and settings.order_flow_ws_token.get_secret_value().strip())
 print("configured" if has_token else "missing", settings.order_flow_ws_port)

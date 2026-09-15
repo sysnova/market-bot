@@ -4,6 +4,7 @@ import json
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -97,6 +98,29 @@ def test_cli_and_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def test_service_env_is_private_and_environment_can_override_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MARKETBOT_ORDER_FLOW_WS_TOKEN", raising=False)
+    monkeypatch.delenv("MARKETBOT_ORDER_FLOW_WS_PORT", raising=False)
+    (tmp_path / ".env").write_text("MARKETBOT_ORDER_FLOW_WS_PORT=8767\n", encoding="utf-8")
+    service_env = tmp_path / "app/order_flow_export/.env"
+    service_env.parent.mkdir(parents=True)
+    service_env.write_text(
+        "MARKETBOT_ORDER_FLOW_WS_TOKEN=service-test-secret\nMARKETBOT_ORDER_FLOW_WS_PORT=8766\n",
+        encoding="utf-8",
+    )
+    settings = module.load_order_flow_websocket_settings(project_root=tmp_path)
+    assert settings.order_flow_ws_token.get_secret_value() == "service-test-secret"
+    assert settings.order_flow_ws_port == 8766
+    assert "service-test-secret" not in repr(settings)
+    assert AppSettings(_env_file=tmp_path / ".env").order_flow_ws_token is None
+    monkeypatch.setenv("MARKETBOT_ORDER_FLOW_WS_TOKEN", "environment-test-secret")
+    assert module.load_order_flow_websocket_settings(
+        project_root=tmp_path,
+    ).order_flow_ws_token.get_secret_value() == "environment-test-secret"
+
+
 @pytest.mark.integration
 async def test_loopback_auth_readiness_and_wire_delivery(caplog: pytest.LogCaptureFixture) -> None:
     gateway = OrderFlowGateway(("ASTS",))
@@ -151,7 +175,7 @@ async def test_real_nats_to_websocket(monkeypatch: pytest.MonkeyPatch) -> None:
     if not url:
         pytest.skip("Set ORDER_FLOW_WS_TEST_NATS_URL to an isolated NATS server")
     settings = AppSettings(_env_file=None, nats_url=SecretStr(url), order_flow_ws_token=TOKEN)
-    monkeypatch.setattr(module, "AppSettings", lambda: settings)
+    monkeypatch.setattr(module, "load_order_flow_websocket_settings", lambda: settings)
     started = asyncio.Event()
     servers = []
     original = module.start_websocket_server
@@ -232,7 +256,7 @@ async def test_runtime_reconnect_readiness_and_cleanup(monkeypatch: pytest.Monke
         return server
 
     settings = AppSettings(_env_file=None, order_flow_ws_token=TOKEN)
-    monkeypatch.setattr(module, "AppSettings", lambda: settings)
+    monkeypatch.setattr(module, "load_order_flow_websocket_settings", lambda: settings)
     monkeypatch.setattr(module, "NatsClient", lambda: core)
     monkeypatch.setattr(module, "start_websocket_server", start)
     task = asyncio.create_task(module.run_order_flow_websocket())
@@ -256,7 +280,7 @@ async def test_runtime_reconnect_readiness_and_cleanup(monkeypatch: pytest.Monke
 
 async def test_missing_token_fails_before_connecting(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = AppSettings(_env_file=None, order_flow_ws_token=None)
-    monkeypatch.setattr(module, "AppSettings", lambda: settings)
+    monkeypatch.setattr(module, "load_order_flow_websocket_settings", lambda: settings)
     with pytest.raises(ValueError, match="TOKEN"):
         await module.run_order_flow_websocket()
 

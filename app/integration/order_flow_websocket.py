@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 from http import HTTPStatus
+from pathlib import Path
 
 from nats.aio.client import Client as NatsClient
 from nats.aio.msg import Msg
@@ -30,6 +31,15 @@ from app.order_flow_export.gateway import OrderFlowGateway
 from .engine_assembly import MarketBotAssembly
 
 _LOG = logging.getLogger(__name__)
+
+
+def load_order_flow_websocket_settings(*, project_root: Path | None = None) -> AppSettings:
+    """Overlay the private service env; other MarketBot processes don't read it."""
+    root = project_root if project_root is not None else Path(__file__).resolve().parents[2]
+    # BaseSettings supports _env_file; Pydantic's synthesized model signature omits it.
+    return AppSettings(
+        _env_file=(root / ".env", root / "app/order_flow_export/.env"),  # pyright: ignore[reportCallIssue]
+    )
 
 
 def input_subjects(symbols: tuple[str, ...]) -> tuple[str, ...]:
@@ -88,7 +98,7 @@ async def start_websocket_server(
 
 
 async def run_order_flow_websocket() -> None:
-    settings = AppSettings()
+    settings = load_order_flow_websocket_settings()
     secret = settings.order_flow_ws_token
     if secret is None or not secret.get_secret_value().strip():
         raise ValueError("MARKETBOT_ORDER_FLOW_WS_TOKEN is required")
