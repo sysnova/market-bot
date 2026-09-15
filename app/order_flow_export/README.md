@@ -19,19 +19,19 @@ También se admiten estas variables en el `.env` local (no versionado).
 | Variable | Valor por defecto |
 | --- | --- |
 | `MARKETBOT_ORDER_FLOW_WS_HOST` | `127.0.0.1` |
-| `MARKETBOT_ORDER_FLOW_WS_PORT` | `8765` |
+| `MARKETBOT_ORDER_FLOW_WS_PORT` | `8766` |
 | `MARKETBOT_ORDER_FLOW_WS_TOKEN` | Obligatorio; sin valor por defecto |
 | `MARKETBOT_NATS_URL` | Configuración NATS habitual del proyecto |
 | `MARKETBOT_DEFINITION_PATH` | Definición MarketBot vigente |
 
-Endpoint: `ws://127.0.0.1:8765/ws/order-flow`.
+Endpoint: `ws://127.0.0.1:8766/ws/order-flow`.
 El servidor escribe la lista de símbolos habilitados al arrancar. Se obtiene de
 la política seleccionada; una lista vacía no habilita todos los símbolos.
 Cambiar la política requiere reiniciar el exportador para actualizar esa lista.
 No inicia automáticamente el Engine. Si hace falta, se arranca por separado con
 `uv run marketbot engine order-flow`. Detener el exportador con Ctrl+C.
 
-Ngrok se configura por separado, apuntando al puerto 8765 desde un agente que
+Ngrok se configura por separado, apuntando al puerto 8766 desde un agente que
 pueda alcanzar ese listener. El cliente externo usa
 `wss://<dominio-ngrok>/ws/order-flow`, conservando el encabezado Authorization.
 El listener predeterminado sólo acepta conexiones del equipo local; el enlace

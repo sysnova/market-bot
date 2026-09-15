@@ -89,7 +89,7 @@ def test_cli_and_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MARKETBOT_ORDER_FLOW_WS_TOKEN", TOKEN)
     settings = AppSettings(_env_file=None)
     assert settings.order_flow_ws_host == "127.0.0.1"
-    assert settings.order_flow_ws_port == 8765
+    assert settings.order_flow_ws_port == 8766
     assert TOKEN not in repr(settings)
     assert module.input_subjects(("ASTS",)) == (
         "marketbot.v1.order-flow.state.ASTS",

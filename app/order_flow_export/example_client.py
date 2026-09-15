@@ -89,7 +89,7 @@ async def listen(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Listen to live MarketBot Order Flow events.")
     parser.add_argument("symbols", nargs="*", help="Tickers habilitados; se solicitan si se omiten")
-    parser.add_argument("--url", default="ws://127.0.0.1:8765/ws/order-flow")
+    parser.add_argument("--url", default="ws://127.0.0.1:8766/ws/order-flow")
     parser.add_argument("--json", action="store_true", help="Mostrar el JSON completo")
     parser.add_argument("--once", action="store_true", help="Salir despues del primer evento")
     args = parser.parse_args()
