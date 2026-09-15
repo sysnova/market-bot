@@ -63,6 +63,19 @@ está detenido o el ticker no recibe actualizaciones.
 `--json` muestra los mensajes completos; `--once` termina tras el primer evento
 de estado o transición (no tras la confirmación). Ctrl+C termina la escucha.
 
+## Cliente de prueba para macOS
+
+El lanzador `test-order-flow.command` usa el mismo cliente, con un entorno uv
+independiente del proyecto:
+
+```bash
+bash test-order-flow.command ASTS NBIS --url wss://<dominio-ngrok>/ws/order-flow
+```
+
+También puede distribuirse junto a `example_client.py` sin el resto del repo.
+Ver [instrucciones para macOS](README_MACOS.md). Solicita el token con entrada
+oculta y envía automáticamente la suscripción.
+
 ### Invocación Python directa
 
 En otra terminal, configurar el mismo token y ejecutar:
