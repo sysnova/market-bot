@@ -18,6 +18,7 @@ from app.integration.foundation import prepare_foundation_engine
 from .async_support import run_async as _run_async
 from .infrastructure_commands import register_infrastructure_commands
 from .runtime_commands import register_runtime_commands
+from .serve_commands import register_serve_commands
 
 _GROUPS: tuple[tuple[str, str], ...] = (
     ("rules", "Inspect and manage trading rules."),
@@ -114,6 +115,7 @@ for group_name, group_help in _GROUPS:
 
 register_runtime_commands(app)
 register_infrastructure_commands(app)
+register_serve_commands(app)
 
 
 @app.command("analyzer")

@@ -37,17 +37,20 @@ def test_secret_values_are_redacted_from_repr_and_json() -> None:
     settings = AppSettings(
         _env_file=None,
         database_url=SecretStr("postgresql://user:password@db/marketbot"),
-        nats_url=SecretStr("nats://token@nats:4222"),
+        nats_url=SecretStr("nats://nats-private-credential@nats:4222"),
+        order_flow_ws_token=SecretStr("ws-private-credential"),
     )
 
     rendered = repr(settings)
     serialized = json.dumps(settings.redacted())
 
     assert "password" not in rendered
-    assert "token" not in rendered
+    assert "nats-private-credential" not in rendered
+    assert "ws-private-credential" not in rendered
     assert "password" not in serialized
-    assert "token" not in serialized
-    assert serialized.count("**********") == 2
+    assert "nats-private-credential" not in serialized
+    assert "ws-private-credential" not in serialized
+    assert serialized.count("**********") == 3
 
 
 def test_alpaca_settings_load_as_paired_redacted_secrets(

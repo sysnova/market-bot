@@ -36,6 +36,9 @@ class AppSettings(BaseSettings):
     definition_path: Path = Path("configs/marketbot/7.71.0.yaml")
     entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0", "5.0.0"] | None = None
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
+    order_flow_ws_host: str = Field(default="127.0.0.1", min_length=1)
+    order_flow_ws_port: int = Field(default=8765, ge=1, le=65535)
+    order_flow_ws_token: SecretStr | None = None
     alpaca_api_key_id: SecretStr | None = None
     alpaca_api_secret_key: SecretStr | None = None
     alpaca_data_feed: Literal["iex", "sip", "delayed_sip", "boats", "overnight"] = "iex"
