@@ -91,7 +91,7 @@ def test_operational_assembly_subscribes_to_native_asts_confirmations() -> None:
 
     root = Path(__file__).resolve().parents[3]
     engine = MarketBotAssembly.from_path(
-        root / "configs/marketbot/7.73.0.yaml"
+        root / "configs/marketbot/7.74.0.yaml"
     ).build_leveraged_thesis()
     assert isinstance(engine, LeveragedThesisEngineV12)
     subjects = leveraged_thesis_source_subjects(engine)

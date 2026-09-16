@@ -10,11 +10,14 @@ from app.swing_trade_engine.tests.test_v17 import append_bar, context_at, values
 from app.swing_trade_engine.v18 import SwingTradeEngineV18
 from app.swing_trade_engine.v110 import SwingTradeEngineV110
 from app.swing_trade_engine.v111 import SwingTradeEngineV111
+from app.swing_trade_engine.v112 import SwingTradeEngineV112
 
-Candidate = type[SwingTradeEngineV110] | type[SwingTradeEngineV111]
+Candidate = type[SwingTradeEngineV110] | type[SwingTradeEngineV111] | type[SwingTradeEngineV112]
 
 
-@pytest.mark.parametrize("candidate", [SwingTradeEngineV110, SwingTradeEngineV111])
+@pytest.mark.parametrize(
+    "candidate", [SwingTradeEngineV110, SwingTradeEngineV111, SwingTradeEngineV112]
+)
 def test_se_reference_keeps_fibonacci_but_exports_only_valid_entry_zone(
     candidate: Candidate,
 ) -> None:
@@ -40,7 +43,9 @@ def test_se_reference_keeps_fibonacci_but_exports_only_valid_entry_zone(
     assert result.maturity is SwingTradeMaturity.ST2
 
 
-@pytest.mark.parametrize("candidate", [SwingTradeEngineV110, SwingTradeEngineV111])
+@pytest.mark.parametrize(
+    "candidate", [SwingTradeEngineV110, SwingTradeEngineV111, SwingTradeEngineV112]
+)
 def test_no_valid_zone_does_not_move_stop_or_emit_reference(candidate: Candidate) -> None:
     native = analyze("97").model_copy(
         update={
@@ -61,7 +66,9 @@ def test_no_valid_zone_does_not_move_stop_or_emit_reference(candidate: Candidate
     assert "no_valid_entry_zone_above_invalidation" in result.reasons
 
 
-@pytest.mark.parametrize("candidate", [SwingTradeEngineV110, SwingTradeEngineV111])
+@pytest.mark.parametrize(
+    "candidate", [SwingTradeEngineV110, SwingTradeEngineV111, SwingTradeEngineV112]
+)
 def test_confirmed_rebound_uses_frozen_entry_above_its_operational_stop(
     candidate: Candidate,
 ) -> None:
@@ -81,7 +88,9 @@ def test_confirmed_rebound_uses_frozen_entry_above_its_operational_stop(
     assert result.entry_invalidation == Decimal("108.3025")
 
 
-@pytest.mark.parametrize("candidate", [SwingTradeEngineV110, SwingTradeEngineV111])
+@pytest.mark.parametrize(
+    "candidate", [SwingTradeEngineV110, SwingTradeEngineV111, SwingTradeEngineV112]
+)
 def test_upgrade_preserves_original_entry_zone_and_stop_after_stop_exit(
     candidate: Candidate,
 ) -> None:

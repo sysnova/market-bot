@@ -28,7 +28,7 @@ def history_manifest(settings: AppSettings) -> tuple[MarketHistoryRequirement, .
             SWING_TRADE_MOMENTUM_HISTORY_REQUESTS
             if EngineSlot.SWING_TRADE in assembly.definition.engines
             and assembly.spec(EngineSlot.SWING_TRADE).implementation
-            in {"1.6.0", "1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0"}
+            in {"1.6.0", "1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0", "1.12.0"}
             else SWING_TRADE_HISTORY_REQUESTS
         ),
         EngineSlot.SUPPORT_CONFIRMATION: SUPPORT_HISTORY_REQUESTS,

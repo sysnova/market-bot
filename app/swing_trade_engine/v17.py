@@ -147,8 +147,8 @@ class SwingTradeEngineV17(SwingTradeEngineV16):
                 state.update(
                     rebound_state="BREAKOUT", rebound_reference=reference, operational_stop=stop
                 )
-                retest, hour, pending = self._entry_acceptance(
-                    bars, i, breakout_index, j, reference, buffer
+                retest, hour, pending = self._entry_confirmation(
+                    context, native, bars, i, breakout_index, j, reference, buffer
                 )
                 support_source = self._entry_support(
                     native, bars, i, breakout_index, j, reference, buffer
@@ -255,6 +255,20 @@ class SwingTradeEngineV17(SwingTradeEngineV16):
         bar = bars[end]
         retest = bar.low <= level + buffer and bar.close > level and bar.close > bar.open
         return retest, self._hour_accepted(bars, breakout, end, level), None
+
+    def _entry_confirmation(
+        self,
+        context: SwingTradeContext,
+        native: SwingTradeAssessment,
+        bars: tuple[MarketBar, ...],
+        touch: int,
+        breakout: int,
+        end: int,
+        level: Decimal,
+        buffer: Decimal,
+    ) -> tuple[bool, bool, str | None]:
+        del context, native
+        return self._entry_acceptance(bars, touch, breakout, end, level, buffer)
 
     @staticmethod
     def _continuous(bars: tuple[MarketBar, ...]) -> bool:

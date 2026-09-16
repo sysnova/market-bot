@@ -227,3 +227,21 @@ context separately. PostgreSQL's levels constraint is unchanged.
 SE regression: Fibonacci 103.3451–108.8050, support band low 105.1810, stop
 104.1820 becomes entry zone 105.1810–108.8050 with the same 104.1820 stop. It
 remains an ST2 reference; this correction does not confirm a buy.
+
+## Mature rebound under damaged daily structure (1.12.0)
+
+MarketBot `7.74.0` selects implementation `1.12.0` and strategy `1.9.0`.
+It does not consume the separate Swing verdict or require a bullish Swing thesis.
+Instead it reads completed daily candles directly. Daily structure is considered
+damaged when price is below SMA20 while SMA20 is not above SMA50, or when price
+breaks the lowest low of the latest three completed daily candles.
+
+In that state ST3/ST4 requires two independent confirmation stages. The first is
+the existing bullish 15-minute breakout above the fixed four-bar reference with
+same-slot RVOL. The second is a mature retest made of three post-breakout closes:
+all above the reference and original touch low, strictly rising, at least one
+touching the recovered reference within the volatility buffer, and the final
+candle bullish. The breakout candle never counts among those three. `1H_CLOSE`
+alone cannot complete the damaged-structure route. Session VWAP, support, risk,
+R/R, expiry and lifecycle protections remain unchanged. `7.73.0` is retained for
+rollback.

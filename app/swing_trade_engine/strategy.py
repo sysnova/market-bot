@@ -17,6 +17,7 @@ _CONFIGURED_IMPLEMENTATIONS = {
     "1.9.0",
     "1.10.0",
     "1.11.0",
+    "1.12.0",
 }
 _INTRADAY_CONFIRMATION_IMPLEMENTATIONS = _CONFIGURED_IMPLEMENTATIONS - {"1.0.0"}
 _SUPPORT_CONFIRMATION_IMPLEMENTATIONS = {
@@ -30,6 +31,7 @@ _SUPPORT_CONFIRMATION_IMPLEMENTATIONS = {
     "1.9.0",
     "1.10.0",
     "1.11.0",
+    "1.12.0",
 }
 
 
@@ -63,7 +65,15 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
         behavior.boolean("require_vwap_gate")
     if implementation in _SUPPORT_CONFIRMATION_IMPLEMENTATIONS:
         behavior.positive_int("support_freshness_sessions")
-    if implementation in {"1.6.0", "1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0"}:
+    if implementation in {
+        "1.6.0",
+        "1.7.0",
+        "1.8.0",
+        "1.9.0",
+        "1.10.0",
+        "1.11.0",
+        "1.12.0",
+    }:
         for name in (
             "macd_fast_period",
             "macd_slow_period",
@@ -75,7 +85,7 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
         if behavior.positive_int("macd_fast_period") >= behavior.positive_int("macd_slow_period"):
             raise ValueError("SwingTrade MACD fast period must be smaller than slow period")
 
-    if implementation in {"1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0"}:
+    if implementation in {"1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0", "1.12.0"}:
         for name in (
             "rebound_reference_bars",
             "rebound_expiry_bars",
@@ -89,10 +99,16 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
             if behavior.decimal(name) <= 0:
                 raise ValueError(f"SwingTrade {name} must be positive")
     if (
-        implementation in {"1.8.0", "1.9.0", "1.10.0", "1.11.0"}
+        implementation in {"1.8.0", "1.9.0", "1.10.0", "1.11.0", "1.12.0"}
         and behavior.positive_int("rebound_rising_closes") < 2
     ):
         raise ValueError("SwingTrade rebound rising closes must be at least two")
+    if implementation == "1.12.0":
+        fast = behavior.positive_int("damaged_daily_fast_sessions")
+        slow = behavior.positive_int("damaged_daily_slow_sessions")
+        if not 1 < fast < slow:
+            raise ValueError("SwingTrade damaged daily sessions require 1 < fast < slow")
+        behavior.positive_int("damaged_daily_recent_low_sessions")
 
 
 def configure_engine(
@@ -127,7 +143,15 @@ def configure_engine(
         )
     if implementation in _SUPPORT_CONFIRMATION_IMPLEMENTATIONS:
         kwargs["support_freshness_sessions"] = behavior.positive_int("support_freshness_sessions")
-    if implementation in {"1.6.0", "1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0"}:
+    if implementation in {
+        "1.6.0",
+        "1.7.0",
+        "1.8.0",
+        "1.9.0",
+        "1.10.0",
+        "1.11.0",
+        "1.12.0",
+    }:
         for name in (
             "macd_fast_period",
             "macd_slow_period",
@@ -136,7 +160,7 @@ def configure_engine(
             "recovery_reference_bars",
         ):
             kwargs[name] = behavior.positive_int(name)
-    if implementation in {"1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0"}:
+    if implementation in {"1.7.0", "1.8.0", "1.9.0", "1.10.0", "1.11.0", "1.12.0"}:
         for name in (
             "rebound_reference_bars",
             "rebound_expiry_bars",
@@ -146,6 +170,13 @@ def configure_engine(
             kwargs[name] = behavior.positive_int(name)
         for name in ("maximum_entry_risk_percent", "rebound_stop_buffer", "minimum_progress_r"):
             kwargs[name] = behavior.decimal(name)
-    if implementation in {"1.8.0", "1.9.0", "1.10.0", "1.11.0"}:
+    if implementation in {"1.8.0", "1.9.0", "1.10.0", "1.11.0", "1.12.0"}:
         kwargs["rebound_rising_closes"] = behavior.positive_int("rebound_rising_closes")
+    if implementation == "1.12.0":
+        for name in (
+            "damaged_daily_fast_sessions",
+            "damaged_daily_slow_sessions",
+            "damaged_daily_recent_low_sessions",
+        ):
+            kwargs[name] = behavior.positive_int(name)
     return args, kwargs
