@@ -118,6 +118,14 @@ explícita siguen marcando la evidencia antigua. Se usan los segmentos habituale
 del runtime, 09:30–13:30 y 13:30–16:00 de Nueva York, saltando fines de semana.
 Esta política no incorpora un calendario de feriados ni cierres anticipados.
 
+Support Confirmation separa `assessed_at` de la sesión de su referencia diaria
+(`data_as_of`, medianoche de Nueva York). La referencia se conserva vigente hasta
+el siguiente cierre habitual de lunes a viernes más 2 minutos, respetando las
+expiraciones publicadas. No se aplica el límite de 15 minutos a la vela diaria.
+La hora de evaluación se muestra independientemente: una referencia vigente no
+acredita que el motor se haya ejecutado hace pocos minutos. Los nuevos assessments
+de la misma vela actualizan el estado, los gates y las razones de la pantalla.
+
 
 En el arranque, Market History también comprueba la vigencia del tramo intradía:
 una caché horaria no basta para 1/5/15 minutos. Si ni su última vela ni su última

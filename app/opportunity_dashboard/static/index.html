@@ -47,21 +47,18 @@
         <button id="ticker-copy" type="button" class="ghost-button" disabled>Copiar contexto</button>
       </form>
       <p id="ticker-status" role="status" aria-live="polite">Ingresá un ticker para empezar, aunque no figure en Opportunities.</p>
-      <section id="short-desk" class="short-desk" aria-labelledby="short-title">
-        <div class="section-head"><div><p class="eyebrow">SEGUIMIENTO BAJISTA · PAPER ONLY</p><h2 id="short-title">SHORT</h2></div><span id="short-symbol" class="method-pill">Sin seleccionar</span></div>
-        <p class="ticker-description">Swing muestra la estructura; Intraday, la madurez de la entrada. La confirmación corresponde a una alerta SHORT publicada por Alert Engine.</p>
-        <button id="short-stop" type="button" class="ghost-button" disabled>Detener análisis</button>
-        <p class="ticker-help">Detiene el seguimiento de este ticker en esta pestaña, incluido SHORT, y cancela sus consultas en curso. Las alertas generales del monitor siguen activas.</p>
-        <div id="short-content" class="short-grid"><p class="empty-state">Elegí un ticker en «Mi ticker» para ver su evidencia SHORT.</p></div>
-        <p class="ticker-help">Los gates pertenecen al ticker seleccionado. Un ETF inverso no hereda los gates de su subyacente. Order Flow y 4HGERI aportan contexto en los assessments de abajo.</p>
-      </section>
-      <div class="gate-legend"><span class="gate-status pass">Cumple</span><span class="gate-status fail">No cumple / riesgo activo</span><span class="gate-status stale">Dato antiguo</span><span class="gate-status unknown">Sin dato</span></div>
-      <p class="ticker-help">Cada color describe una condición de su tesis; no equivale a una orden. Swing fecha sus velas desde el inicio del intervalo: se marca antiguo después de 32 minutos, contemplando el siguiente cierre y la entrega. 4HGERI requiere una evaluación reciente y una vela cerrada vigente hasta el próximo cierre regular más 2 minutos. Para los demás motores, el límite visual es 15 minutos. Una expiración anterior prevalece.</p>
-      <div id="ticker-counts" class="ticker-counts"></div>
+      <div class="ticker-overview">
+        <div class="gate-legend"><span class="gate-status pass">Cumple</span><span class="gate-status fail">No cumple / riesgo activo</span><span class="gate-status stale">Dato antiguo</span><span class="gate-status unknown">Sin dato</span></div>
+        <div id="ticker-counts" class="ticker-counts"></div>
+      </div>
       <div class="ticker-workspace">
-        <div>
-          <h3>Evaluaciones recientes</h3>
-          <div id="ticker-assessments" class="assessment-grid"><p class="empty-state">Los assessments y gates aparecerán aquí.</p></div>
+        <div class="ticker-engine-column">
+          <div class="engine-board-head"><div><p class="eyebrow">LECTURA MULTI-TIMEFRAME</p><h3>Mesa de motores</h3></div><span class="engine-board-note">Datos publicados</span></div>
+          <div id="ticker-assessments" class="engine-board"><p class="empty-state">Los assessments y gates aparecerán aquí.</p></div>
+          <section id="short-desk" class="short-desk" aria-labelledby="short-title">
+            <div class="section-head"><div><p class="eyebrow">RUTA DE CONFIRMACIÓN · PAPER ONLY</p><h3 id="short-title">SHORT</h3></div><div class="short-actions"><span id="short-symbol" class="method-pill">Sin seleccionar</span><button id="short-stop" type="button" class="ghost-button" disabled>Detener</button></div></div>
+            <div id="short-content" class="short-grid"><p class="empty-state">Elegí un ticker en «Mi ticker» para ver su evidencia SHORT.</p></div>
+          </section>
           <details class="ticker-history-panel"><summary id="ticker-history-title">Evidencia anterior y alertas</summary><p class="ticker-help">Eventos conservados para consulta. La fecha de una alerta no indica si el motor está conectado.</p><div id="ticker-history" class="assessment-grid"></div></details>
           <div id="ticker-missing" class="ticker-missing"></div>
         </div>

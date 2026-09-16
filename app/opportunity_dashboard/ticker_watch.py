@@ -13,6 +13,18 @@ from .short_context import build_short_context
 _NEW_YORK = ZoneInfo("America/New_York")
 
 
+def _daily_window(at: datetime) -> tuple[datetime, datetime] | None:
+    """Display the daily reference against ordinary weekday closes, not event age."""
+    local = at.astimezone(_NEW_YORK)
+    if local.weekday() >= 5 or local.time() != time(0):
+        return None
+    closed = local.replace(hour=16)
+    next_close = closed + timedelta(days=1)
+    while next_close.weekday() >= 5:
+        next_close += timedelta(days=1)
+    return closed.astimezone(UTC), (next_close + timedelta(minutes=2)).astimezone(UTC)
+
+
 def _four_hour_window(at: datetime) -> tuple[datetime, datetime] | None:
     """Match the runtime's weekday RTH segments, not a 15m wall-clock TTL.
 
@@ -251,6 +263,13 @@ class TickerEvidenceBook:
                 if at is not None and item["event_type"] == "4hgeri.assessed"
                 else None
             )
+            daily_window = (
+                _daily_window(at)
+                if at is not None and item["event_type"] == "support-confirmation.assessed"
+                else None
+            )
+            if daily_window is not None:
+                stale_at = min([*expiries, daily_window[1]])
             if structural_window is not None:
                 stale_at = min([*expiries, structural_window[1]])
                 if evaluated is not None:
@@ -259,19 +278,32 @@ class TickerEvidenceBook:
                 "UNKNOWN"
                 if at is None
                 or at > now
+                or (daily_window is not None and now < daily_window[0])
                 or (
                     structural_window is not None
                     and (evaluated is None or evaluated > now or now < structural_window[0])
                 )
                 else ("STALE" if stale_at is not None and now >= stale_at else "FRESH")
             )
+            reference_window = daily_window or structural_window
             assessments.append(
                 {
                     **{key: value for key, value in item.items() if key != "order_at"},
                     "freshness": freshness,
-                    "freshness_basis": "closed_4h_bar" if structural_window else "event_age",
+                    "freshness_basis": (
+                        "closed_daily_bar"
+                        if daily_window
+                        else "closed_4h_bar"
+                        if structural_window
+                        else "event_age"
+                    ),
+                    "data_session_date": (
+                        at.astimezone(_NEW_YORK).date().isoformat() if daily_window and at else None
+                    ),
                     "next_bar_due_at": (
-                        structural_window[1].isoformat() if structural_window else None
+                        reference_window[1].isoformat()
+                        if reference_window
+                        else None
                     ),
                     "evaluation_freshness": (
                         "UNKNOWN"
@@ -301,7 +333,9 @@ class TickerEvidenceBook:
             "freshness_policy": (
                 "Antigüedad desde as_of: Swing 32 min (vela de 15 min, siguiente cierre y "
                 "2 min de entrega); 4HGERI exige evaluación reciente y vela cerrada vigente "
-                "hasta el próximo cierre RTH habitual + 2 min; otros motores 15 min. "
+                "hasta el próximo cierre RTH habitual + 2 min; Support Confirmation usa "
+                "el cierre diario siguiente + 2 min para su referencia diaria, separado "
+                "de la hora de evaluación; otros motores 15 min. "
                 "Una expiración anterior prevalece. "
                 "Es una política visual, no un TTL de trading."
             ),

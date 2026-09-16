@@ -12,8 +12,23 @@
   const html = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const date = value => value ? new Date(value).toLocaleString("es-AR", {hour12: false}) : "Sin fecha publicada";
   const labels = { PASS: "Cumple", FAIL: "No cumple / riesgo activo", STALE: "Dato antiguo", UNKNOWN: "Sin dato" };
-  const engineNames = { "4hgeri": "4HGERI", "swing-trade": "SwingTrade", "swing": "Swing", "intraday": "Intraday", "long-term": "Long", "entry-watcher": "Entry Watcher", "entry-recovery": "Recovery", "signal-fusion": "Signal Fusion", "order-flow": "Order Flow", "options-gamma": "Gamma", "volume-structure": "Volume Structure", "market-rotation": "Rotación de mercado", "entry-setup": "Setup de entrada", "alert": "Alertas", "entry-opportunity": "Opportunities", "leveraged-thesis": "Leveraged Thesis" };
+  const engineNames = { "4hgeri": "4HGERI", "swing-trade": "SwingTrade", "swing": "Swing", "intraday": "Intraday", "long-term": "Long Term", "entry-watcher": "Entry Watcher", "entry-recovery": "Recovery", "signal-fusion": "Signal Fusion", "order-flow": "Order Flow", "options-gamma": "Gamma", "volume-structure": "Volume Structure", "market-rotation": "Rotación de mercado", "entry-setup": "Setup de entrada", "alert": "Alertas", "entry-opportunity": "Opportunities", "leveraged-thesis": "Leveraged Thesis" };
+  const primaryEngines = ["long-term", "swing", "4hgeri", "swing-trade", "intraday", "order-flow"];
   const name = engine => engineNames[engine] || engine;
+  const setText = (element, value) => { if (element.textContent !== value) element.textContent = value; };
+  const setHTML = (element, value) => { if (element.innerHTML !== value) element.innerHTML = value; };
+  const evidenceKey = snapshot => JSON.stringify([
+    snapshot.symbol,
+    snapshot.transport,
+    snapshot.reconnect_enabled,
+    snapshot.missing_engines,
+    snapshot.engines,
+    (snapshot.assessments || []).map(card => [
+      card.id, card.engine, card.event_type, card.scope, card.global_scope, card.as_of,
+      card.freshness, card.evaluation_freshness, card.evaluated_at, card.data_session_date,
+      card.freshness_basis, card.next_bar_due_at, card.payload, card.gates,
+    ]),
+  ]);
   const transportNotice = snapshot => ({
     CONNECTING: "Conectando con los eventos del ticker…",
     SYNCING: "Sincronizando historial. El seguimiento continúa cargando; todavía no se confirma la vigencia de la evidencia.",
@@ -22,7 +37,7 @@
   })[snapshot.transport] || "";
   // Display published SHORT evidence. Never reconstruct Alert Engine's decision.
   function renderShort(snapshot) {
-    $("short-symbol").textContent = snapshot.symbol;
+    setText($("short-symbol"), snapshot.symbol);
     const cards = snapshot.assessments || [];
     const latest = items => items.slice().sort((a, b) => (Date.parse(b.as_of) || 0) - (Date.parse(a.as_of) || 0))[0];
     const analysis = engine => latest(cards.filter(card => card.engine === engine && card.event_type === "analysis.result.produced"));
@@ -45,7 +60,7 @@
     const alert = latest(cards.filter(card => card.engine === "alert" && card.event_type === "alert.local.produced" && card.payload?.kind === "BEARISH_CONSENSUS" && card.payload?.reasons?.includes("short_entry_confirmed")));
     const am = metrics(alert);
     const alertTitle = !alert ? "Sin confirmación SHORT publicada" : fresh(alert) === "STALE" ? "Confirmación histórica" : fresh(alert) !== "FRESH" ? "Confirmación de vigencia desconocida" : "Última confirmación SHORT publicada";
-    $("short-content").innerHTML = `${transportNotice(snapshot) ? `<p class="short-notice" role="status">${html(transportNotice(snapshot))}</p>` : ""}<article class="assessment-card short-card"><p class="eyebrow">01 · SWING</p><h3>Estructura bajista</h3><p class="ticker-help">${stamp(swing)}</p>${stateLine(swing)}
+    setHTML($("short-content"), `${transportNotice(snapshot) ? `<p class="short-notice" role="status">${html(transportNotice(snapshot))}</p>` : ""}<article class="assessment-card short-card"><p class="eyebrow">01 · SWING</p><h3>Estructura bajista</h3><p class="ticker-help">${stamp(swing)}</p>${stateLine(swing)}
       <ul class="gate-list">${gate(swing, "short_structure_gate_passed", "Estructura SHORT")}</ul>
       <p class="ticker-help">Este gate resume la estructura evaluada por Swing. Por sí solo no confirma la entrada.</p></article>
       <article class="assessment-card short-card"><p class="eyebrow">02 · INTRADAY</p><h3>Madurez bajista</h3><p class="ticker-help">${stamp(intraday)}</p>${stateLine(intraday)}
@@ -57,7 +72,7 @@
       <p class="ticker-help">Setup: ${html(im.setup ?? "sin dato")}<br>Ruta: ${html(im.short_entry_lane ?? "sin dato")}<br>Timing: ${html(im.short_entry_timing ?? "sin dato")}</p></details></article>
       <article class="assessment-card short-card"><p class="eyebrow">03 · ALERT ENGINE</p><h3>${alertTitle}</h3><p class="ticker-help">${stamp(alert)}</p>
       ${alert ? `<p class="assessment-state">${html(alert.payload.title || "SHORT CONFIRMED")}</p><dl class="short-levels">${[["short_entry_price", "Entrada"], ["short_invalidation", "Invalidación"], ["short_target", "Objetivo"]].map(([field, title]) => `<div><dt>${title}</dt><dd>${html(am[field] ?? "Sin dato")}</dd></div>`).join("")}</dl><p class="ticker-help">Niveles de esa alerta. No indican que la entrada siga disponible ahora.</p>` : '<p class="ticker-help">No hay una alerta SHORT confirmada en la evidencia recibida. Esto no demuestra que Alert Engine esté detenido.</p>'}
-      <p class="ticker-help">La decisión también depende del alcance de tickers, la vigencia, el setup y los niveles que valida Alert Engine. Los gates verdes no sustituyen esa alerta.</p></article>`;
+      <p class="ticker-help">La decisión también depende del alcance de tickers, la vigencia, el setup y los niveles que valida Alert Engine. Los gates verdes no sustituyen esa alerta.</p></article>`);
   }
   function controls() {
     const connected = state.socket?.readyState === 1;
@@ -119,57 +134,76 @@
   function render(snapshot) {
     state.snapshot = snapshot;
     state.available = snapshot.llm_available;
-    $("ticker-stream").textContent = snapshot.transport === "NATS_REPLAY_AND_LIVE" ? `${snapshot.symbol} · NATS conectado` : `${snapshot.symbol} · ${transportNotice(snapshot)}`;
-    $("ticker-gpt-model").textContent = snapshot.llm_available ? `Modelo: ${snapshot.llm_model}` : "GPT no disponible: falta configurar la clave de OpenAI en MarketBot.";
+    setText($("ticker-stream"), snapshot.transport === "NATS_REPLAY_AND_LIVE" ? `${snapshot.symbol} · NATS conectado` : `${snapshot.symbol} · ${transportNotice(snapshot)}`);
+    setText($("ticker-gpt-model"), snapshot.llm_available ? `Modelo: ${snapshot.llm_model}` : "GPT no disponible: falta configurar la clave de OpenAI en MarketBot.");
     const cards = snapshot.assessments || [];
     const isRecent = card => !/^(alert\.local\.|entry-signal\.)/.test(card.event_type || "") && !(card.engine === "entry-opportunity" && card.payload?.closed_at) && (card.freshness === "FRESH" || card.evaluation_freshness === "FRESH");
-    const recent = cards.filter(isRecent), history = cards.filter(card => !isRecent(card));
-    if (!state.analysis) $("ticker-status").textContent = transportNotice(snapshot) || `${cards.length} assessments · Contexto actualizado ${date(snapshot.captured_at)}. ${cards.length ? "" : "Sin evidencia publicada: podés solicitar análisis."}`;
+    const primary = cards.filter(card => primaryEngines.includes(card.engine));
+    const recent = cards.filter(isRecent);
+    const secondaryRecent = recent.filter(card => !primaryEngines.includes(card.engine));
+    const history = cards.filter(card => !isRecent(card) && !primaryEngines.includes(card.engine));
+    if (!state.analysis) setText($("ticker-status"), transportNotice(snapshot) || `${cards.length} assessments · Contexto actualizado ${date(snapshot.captured_at)}. ${cards.length ? "" : "Sin evidencia publicada: podés solicitar análisis."}`);
     const gates = recent.flatMap(card => card.gates || []);
-    $("ticker-counts").textContent = `${recent.length} evaluaciones recientes · ${history.length} registros anteriores o alertas · Gates de evaluaciones recientes: ${gates.filter(g => g.status === "PASS").length} cumplen · ${gates.filter(g => g.status === "FAIL").length} no cumplen / riesgo · ${gates.filter(g => g.status === "STALE").length} con datos base antiguos · ${gates.filter(g => g.status === "UNKNOWN").length} sin dato`;
-    const key = JSON.stringify([snapshot.symbol, snapshot.revision, snapshot.transport, cards.map(card => [card.freshness, card.evaluation_freshness])]);
+    setText($("ticker-counts"), `${primaryEngines.length} motores principales · ${secondaryRecent.length} complementarios vigentes · ${history.length} anteriores o alertas · Gates vigentes: ${gates.filter(g => g.status === "PASS").length} cumplen · ${gates.filter(g => g.status === "FAIL").length} en riesgo`);
+    const key = evidenceKey(snapshot);
     if (key !== state.renderKey) {
       const shortExpanded = [...$("short-content").querySelectorAll("details")].some(item => item.open);
-      renderShort(snapshot);
-      if (shortExpanded) $("short-content").querySelectorAll("details").forEach(item => { item.open = true; });
       const containers = [$("ticker-assessments"), $("ticker-history")];
       const expanded = new Set(containers.flatMap(container => [...container.querySelectorAll("details[open]")]).map(item => item.dataset.key));
       const scrollPositions = new Map(containers.flatMap(container => [...container.querySelectorAll("[data-scroll]")]).map(item => [item.dataset.scroll, item.scrollTop]));
       state.renderKey = key;
+      renderShort(snapshot);
+      if (shortExpanded) $("short-content").querySelectorAll("details").forEach(item => { item.open = true; });
+      const gateSummary = card => {
+        const cardGates = card.gates || [];
+        return ["PASS", "FAIL", "STALE", "UNKNOWN"].map(status => {
+          const count = cardGates.filter(gate => gate.status === status).length;
+          return count ? `<span class="gate-status ${status.toLowerCase()}">${count} ${html(labels[status].toLowerCase())}</span>` : "";
+        }).join("") || '<span class="ticker-help">Sin gates publicados</span>';
+      };
       const renderEvidence = card => {
         const payload = card.payload || {}, disposition = { CONFIRMS_SUPPORT: "Confirma soporte", WARNS_BREAKDOWN: "Advierte ruptura", NEUTRAL: "Neutral" };
         const status = payload.maturity ?? payload.verdict ?? payload.state ?? payload.status ?? disposition[payload.disposition] ?? payload.disposition ?? "Assessment";
         const reasons = Array.isArray(payload.reasons) ? payload.reasons : [];
-        return `<p class="assessment-state">${html(status)} <small>v${html(payload.engine_version || "—")}</small></p>
+        const cardGates = card.gates || [];
+        const daily = card.freshness_basis === "closed_daily_bar";
+        const dataLabel = daily ? "Vela diaria de referencia · sesión" : card.freshness_basis === "closed_4h_bar" ? "Inicio de la última vela 4H cerrada" : card.evaluated_at ? "Datos base" : "Fecha del evento / dato";
+        const dataDate = daily ? card.data_session_date : date(card.as_of);
+        const dataStatus = card.freshness === "FRESH" ? (daily ? "Referencia diaria vigente" : card.freshness_basis === "closed_4h_bar" ? "Vigente para este intervalo" : "Reciente") : card.freshness === "STALE" ? (daily ? "Referencia diaria pendiente de actualización o vencida" : "Antiguo según política visual") : "Vigencia desconocida";
+        const freshness = card.freshness === "FRESH" ? "fresh" : card.freshness === "STALE" ? "stale" : "unknown";
+        return `<div class="engine-output-head"><p class="assessment-state">${html(status)} <small>v${html(payload.engine_version || "—")}</small></p><span class="engine-freshness ${freshness}">${html(dataStatus)}</span></div>
           ${card.event_type === "order-flow.support.assessed" ? `<p class="ticker-help">Zona de soporte: ${html(payload.zone_low ?? "Sin dato")} – ${html(payload.zone_high ?? "Sin dato")}</p>` : ""}
           ${card.evaluated_at ? `<p class="ticker-help">${card.evaluation_freshness === "FRESH" ? "Evaluación reciente" : "Última evaluación"}: ${html(date(card.evaluated_at))}</p>` : ""}
-          <p class="ticker-help">${card.freshness_basis === "closed_4h_bar" ? "Inicio de la última vela 4H cerrada" : card.evaluated_at ? "Datos base" : "Fecha del evento / dato"}: ${html(date(card.as_of))} · ${card.freshness === "FRESH" ? (card.freshness_basis === "closed_4h_bar" ? "Vigente para este intervalo" : "Reciente") : card.freshness === "STALE" ? "Antiguo según política visual" : "Vigencia desconocida"}</p>
+          <p class="ticker-help">${dataLabel}: ${html(dataDate)} · ${dataStatus}</p>
           ${card.next_bar_due_at ? `<p class="ticker-help">Próxima vela esperada, incluido margen de entrega: ${html(date(card.next_bar_due_at))}. Horario regular habitual.</p>` : ""}
           ${payload.underlying_symbol ? `<p class="ticker-help">Subyacente: ${html(payload.underlying_symbol)} · Instrumento: ${html(payload.instrument_symbol || "sin seleccionar")}</p>` : ""}
-          <ul class="gate-list" data-scroll="${html(card.id)}:gates">${card.gates.map(gate => `<li><span class="gate-status ${gate.status.toLowerCase()}">${labels[gate.status] || "Sin dato"}</span><div>${gate.label ? `<strong>${html(gate.label)}</strong><br>` : ""}<code>${html(gate.name)}</code><small>${html(JSON.stringify(gate.value))}${gate.polarity === "negative" ? " · true indica riesgo" : ""}${gate.meaning ? ` · ${html(gate.meaning)}` : ""}</small></div></li>`).join("") || '<li class="ticker-help">Este assessment no publica gates booleanos explícitos.</li>'}</ul>
+          <div class="engine-gate-summary">${gateSummary(card)}</div>
+          <details data-key="${html(card.id)}:gates" ${expanded.has(`${card.id}:gates`) ? "open" : ""}><summary>Gates (${cardGates.length})</summary><ul class="gate-list" data-scroll="${html(card.id)}:gates">${cardGates.map(gate => `<li><span class="gate-status ${gate.status.toLowerCase()}">${labels[gate.status] || "Sin dato"}</span><div>${gate.label ? `<strong>${html(gate.label)}</strong><br>` : ""}<code>${html(gate.name)}</code><small>${html(JSON.stringify(gate.value))}${gate.polarity === "negative" ? " · true indica riesgo" : ""}${gate.meaning ? ` · ${html(gate.meaning)}` : ""}</small></div></li>`).join("") || '<li class="ticker-help">Este assessment no publica gates booleanos explícitos.</li>'}</ul></details>
           <details data-key="${html(card.id)}:reasons" ${expanded.has(`${card.id}:reasons`) ? "open" : ""}><summary>Razones (${reasons.length})</summary><ul>${reasons.map(reason => `<li>${html(reason)}</li>`).join("")}</ul></details>
           <details data-key="${html(card.id)}:raw" ${expanded.has(`${card.id}:raw`) ? "open" : ""}><summary>Assessment completo</summary><pre data-scroll="${html(card.id)}:raw">${html(JSON.stringify(payload, null, 2))}</pre></details>`;
       };
-      const renderCard = card => `<article class="assessment-card"><header><h3>${html(name(card.engine))}</h3><span class="assessment-scope">${html(card.scope)}${card.global_scope ? " · GLOBAL" : ""}</span></header>${renderEvidence(card)}</article>`;
-      const orderFlow = cards.filter(card => card.engine === "order-flow");
-      // Group across freshness buckets, retaining each output's own timestamp and gates.
-      const flowIsRecent = orderFlow.some(isRecent);
-      const renderCards = (items, recentSection) => {
-        let flowRendered = false;
-        return items.map(card => {
-          if (card.engine !== "order-flow") return renderCard(card);
-          if (flowRendered || flowIsRecent !== recentSection) return "";
-          flowRendered = true;
-          const ordered = orderFlow.slice().sort((a, b) => Number(a.event_type === "order-flow.support.assessed") - Number(b.event_type === "order-flow.support.assessed"));
-          return `<article class="assessment-card"><header><h3>Order Flow</h3></header>${ordered.map(item => `<section class="order-flow-detail"><h4>${item.event_type === "order-flow.support.assessed" ? "Evaluación sobre soporte" : "Flujo de operaciones"}</h4>${renderEvidence(item)}</section>`).join("")}</article>`;
-        }).join("");
+      const outputTitle = card => card.engine === "order-flow" ? (card.event_type === "order-flow.support.assessed" ? "Evaluación sobre soporte" : "Flujo de operaciones") : (card.scope || card.event_type || "Última evaluación");
+      const renderGroup = (engine, items, placeholder = false) => {
+        const ordered = items.slice().sort((a, b) => (Date.parse(b.as_of) || 0) - (Date.parse(a.as_of) || 0));
+        if (!ordered.length && placeholder) {
+          const mode = snapshot.engines?.[engine];
+          return `<article class="assessment-card placeholder" data-engine="${html(engine)}"><header><h3>${html(name(engine))}</h3><span class="assessment-scope">${html(mode || "sin evento")}</span></header><p class="assessment-state">Sin evidencia recibida</p><p class="ticker-help">Sin assessment publicado para este ticker.</p></article>`;
+        }
+        if (!ordered.length) return "";
+        return `<article class="assessment-card" data-engine="${html(engine)}"><header><h3>${html(name(engine))}</h3><span class="assessment-scope">${ordered.length > 1 ? `${ordered.length} salidas` : `${html(ordered[0].scope || "")}${ordered[0].global_scope ? " · GLOBAL" : ""}`}</span></header>${ordered.map(card => `<section class="engine-output">${ordered.length > 1 ? `<div class="engine-output-head"><h4>${html(outputTitle(card))}</h4></div>` : ""}${renderEvidence(card)}</section>`).join("")}</article>`;
       };
-      $("ticker-assessments").innerHTML = renderCards(recent, true) || '<p class="empty-state">Sin evaluaciones recientes recibidas. Revisá la evidencia anterior y el estado de la conexión.</p>';
-      $("ticker-history").innerHTML = renderCards(history, false) || '<p class="ticker-help">No hay registros anteriores recibidos fuera de las secciones agrupadas.</p>';
-      $("ticker-history-title").textContent = `Evidencia anterior y alertas (${history.length})`;
+      const primaryMarkup = primaryEngines.map(engine => renderGroup(engine, primary.filter(card => card.engine === engine), true)).join("");
+      const secondaryEngines = [...new Set(secondaryRecent.map(card => card.engine))];
+      const secondaryMarkup = secondaryEngines.map(engine => renderGroup(engine, secondaryRecent.filter(card => card.engine === engine))).join("");
+      const secondaryOpen = expanded.has("secondary-engines") ? "open" : "";
+      setHTML($("ticker-assessments"), `<section class="engine-sector"><div class="engine-sector-head"><h4>Motores principales</h4><span>${primary.length} salidas recibidas</span></div><div class="primary-engine-grid">${primaryMarkup}</div></section>${secondaryMarkup ? `<details class="secondary-engine-sector" data-key="secondary-engines" ${secondaryOpen}><summary>Motores complementarios (${secondaryEngines.length})</summary><div class="assessment-grid">${secondaryMarkup}</div></details>` : ""}`);
+      const historyEngines = [...new Set(history.map(card => card.engine))];
+      setHTML($("ticker-history"), historyEngines.map(engine => renderGroup(engine, history.filter(card => card.engine === engine))).join("") || '<p class="ticker-help">No hay registros anteriores recibidos fuera de los motores principales.</p>');
+      setText($("ticker-history-title"), `Evidencia anterior y alertas (${history.length})`);
       containers.forEach(container => container.querySelectorAll("[data-scroll]").forEach(item => { item.scrollTop = scrollPositions.get(item.dataset.scroll) || 0; }));
       const modes = {active: "Activo en la configuración; sin evento recibido para este ticker", "on-demand": "Bajo demanda", scheduled: "Programado", disabled: "Desactivado"};
-      $("ticker-missing").innerHTML = `<details><summary>Otros motores: sin evento recibido (${snapshot.missing_engines.length})</summary><p>Este listado indica cobertura de eventos, no estado de conexión ni un gate fallido.</p><ul>${snapshot.missing_engines.map(engine => `<li>${html(name(engine))} · ${html(modes[snapshot.engines[engine]] || snapshot.engines[engine])}</li>`).join("")}</ul></details>`;
+      const otherMissing = (snapshot.missing_engines || []).filter(engine => !primaryEngines.includes(engine));
+      setHTML($("ticker-missing"), otherMissing.length ? `<details><summary>Otros motores sin evento (${otherMissing.length})</summary><ul>${otherMissing.map(engine => `<li>${html(name(engine))} · ${html(modes[snapshot.engines[engine]] || snapshot.engines[engine])}</li>`).join("")}</ul></details>` : "");
     }
     controls();
   }

@@ -278,3 +278,42 @@ def test_geri_window_requires_closed_latest_segment_and_handles_dst(
     card = book.snapshot(now=at)["assessments"][0]
     assert card["freshness"] == expected
     assert card["next_bar_due_at"] == due
+
+
+@pytest.mark.parametrize(
+    ("data_at", "now", "expected"),
+    [
+        ("2026-09-15T04:00:00Z", "2026-09-16T14:03:52Z", "FRESH"),
+        ("2026-09-15T04:00:00Z", "2026-09-16T19:59:00Z", "FRESH"),
+        ("2026-09-15T04:00:00Z", "2026-09-16T20:02:00Z", "STALE"),
+        ("2026-09-14T04:00:00Z", "2026-09-16T14:03:52Z", "STALE"),
+        ("2026-09-11T04:00:00Z", "2026-09-14T14:00:00Z", "FRESH"),
+        ("2026-09-16T04:00:00Z", "2026-09-16T14:00:00Z", "UNKNOWN"),
+    ],
+)
+def test_support_daily_reference_respects_closed_bar_interval(
+    data_at: str,
+    now: str,
+    expected: str,
+) -> None:
+    observed = datetime.fromisoformat(now)
+    book = TickerEvidenceBook("ASTS")
+    book.merge(
+        "support-confirmation.assessed",
+        {
+            "symbol": "ASTS",
+            "data_as_of": data_at,
+            "assessed_at": (observed - timedelta(hours=1)).isoformat(),
+            "state": "SINGLE_SUPPORT_NEARBY",
+            "higher_low": True,
+        },
+        received_at=observed,
+    )
+    card = book.snapshot(now=observed)["assessments"][0]
+    assert card["freshness"] == expected
+    assert card["freshness_basis"] == "closed_daily_bar"
+    assert card["evaluation_freshness"] == "STALE"
+    assert (
+        card["gates"][0]["status"]
+        == {"FRESH": "PASS", "STALE": "STALE", "UNKNOWN": "UNKNOWN"}[expected]
+    )

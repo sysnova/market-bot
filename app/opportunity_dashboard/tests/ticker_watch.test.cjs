@@ -7,10 +7,15 @@ const {test} = require('node:test');
 function setup(storage = new Map(), sessionStorage = new Map()) {
   const lifecycle = {};
   const elements = new Map(), sent = [];
-  const element = () => ({value:'', disabled:false, textContent:'', innerHTML:'', handlers:{},
-    children:[], addEventListener(type,fn){this.handlers[type]=fn;}, querySelectorAll(){return [];},
-    replaceChildren(){this.children=[];}, append(...items){this.children.push(...items);},
-    prepend(item){this.children.unshift(item);}});
+  const element = () => {
+    let markup='';
+    const item={value:'', disabled:false, textContent:'', innerHTMLWrites:0, handlers:{},
+      children:[], addEventListener(type,fn){this.handlers[type]=fn;}, querySelectorAll(){return [];},
+      replaceChildren(){this.children=[];}, append(...items){this.children.push(...items);},
+      prepend(child){this.children.unshift(child);}};
+    Object.defineProperty(item,'innerHTML',{get(){return markup;},set(value){markup=value; item.innerHTMLWrites++;}});
+    return item;
+  };
   const get = id => {if(!elements.has(id)) elements.set(id,element()); return elements.get(id);};
   const context = {addEventListener(type,fn){lifecycle[type]=fn;},sessionStorage:{removeItem(key){sessionStorage.delete(key);}},document:{getElementById:get,createElement:element},localStorage:{getItem(key){return storage.get(key) || '';},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},JSON,Date,Set};
   runInNewContext(readFileSync(join(__dirname,'../static/ticker.js'),'utf8'),context);
@@ -22,6 +27,24 @@ function snapshot(symbol='NVDA') {
     captured_at:'2026-09-14T14:30:00Z',assessments:[{id:'swing',engine:'swing',as_of:'2026-09-14T14:29:00Z',freshness:'FRESH',payload:{reasons:['<img src=x onerror=alert(1)>']},
       gates:[{name:'entry_gate',status:'FAIL',value:false,polarity:'positive'}]}]};
 }
+test('Support displays the valid daily session and refreshes a new evaluation of the same bar', () => {
+  const app=setup(); app.get('watch-symbol').value='ASTS'; app.submit('ticker-watch-form');
+  const data=snapshot('ASTS');
+  data.assessments=[{id:'support',engine:'support-confirmation',event_type:'support-confirmation.assessed',
+    as_of:'2026-09-15T04:00:00Z',evaluated_at:'2026-09-16T14:03:52Z',
+    data_session_date:'2026-09-15',freshness:'FRESH',evaluation_freshness:'STALE',
+    freshness_basis:'closed_daily_bar',gates:[],payload:{state:'SINGLE_SUPPORT_NEARBY',reasons:[]}}];
+  app.api.handle(data);
+  assert.match(app.get('ticker-assessments').innerHTML,/sesión: 2026-09-15 · Referencia diaria vigente/);
+  assert.doesNotMatch(app.get('ticker-assessments').innerHTML,/Antiguo según política visual/);
+  app.api.handle({...data,revision:2,assessments:[{...data.assessments[0],
+    evaluated_at:'2026-09-16T15:03:52Z',payload:{state:'SUPPORT_REACTION',reasons:['new evidence']}}]});
+  assert.match(app.get('ticker-assessments').innerHTML,/SUPPORT_REACTION/);
+  assert.match(app.get('ticker-assessments').innerHTML,/new evidence/);
+  assert.doesNotMatch(app.get('ticker-assessments').innerHTML,/SINGLE_SUPPORT_NEARBY/);
+  app.api.disconnected();
+  assert.doesNotMatch(app.get('ticker-assessments').innerHTML+app.get('ticker-history').innerHTML,/Referencia diaria vigente/);
+});
 test('manual report is shown directly without replacing live evidence', () => {
   const app=setup(); app.get('watch-symbol').value='ASTS'; app.submit('ticker-watch-form');
   app.api.handle(snapshot('ASTS'));
@@ -163,19 +186,41 @@ test('SHORT gate labels explain which thesis broke and escape evidence text',()=
   assert.match(view,/gate-status pass/); assert.doesNotMatch(view,/<script>|true indica riesgo/);
 });
 
-test('Order Flow retains separate freshness inside a single section, including disconnects',()=>{
+test('Order Flow stays in the stable main-engine sector with separate freshness',()=>{
   for (const [flow,support] of [['FRESH','STALE'],['STALE','FRESH'],['STALE','STALE']]) {
     const app=setup(); followShort(app,flowSnapshot(flow,support));
     const current=app.get('ticker-assessments').innerHTML,history=app.get('ticker-history').innerHTML;
-    assert.equal(((current+history).match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
-    const view=flow==='FRESH'||support==='FRESH'?current:history;
-    assert.match(view,/BUY_PRESSURE/); assert.match(view,/Confirma soporte/);
-    assert.match(view,/Antiguo según política visual/);
+    assert.equal((current.match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
+    assert.doesNotMatch(history,/<h3>Order Flow/);
+    assert.match(current,/BUY_PRESSURE/); assert.match(current,/Confirma soporte/);
+    assert.match(current,/Antiguo según política visual/);
     app.api.disconnected();
-    assert.doesNotMatch(app.get('ticker-assessments').innerHTML,/<h3>Order Flow/);
-    assert.equal((app.get('ticker-history').innerHTML.match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
-    assert.match(app.get('ticker-history').innerHTML,/Vigencia desconocida/);
+    assert.equal((app.get('ticker-assessments').innerHTML.match(/<h3>Order Flow<\/h3>/g)||[]).length,1);
+    assert.doesNotMatch(app.get('ticker-history').innerHTML,/<h3>Order Flow/);
+    assert.match(app.get('ticker-assessments').innerHTML,/Vigencia desconocida/);
   }
+});
+
+test('heartbeat snapshots do not repaint unchanged engine boards',()=>{
+  const app=setup(),data=flowSnapshot(); followShort(app,data);
+  const board=app.get('ticker-assessments'),history=app.get('ticker-history'),short=app.get('short-content');
+  const writes=[board.innerHTMLWrites,history.innerHTMLWrites,short.innerHTMLWrites];
+  app.api.handle({...data,revision:99,captured_at:'2026-09-14T14:35:00Z'});
+  assert.deepEqual([board.innerHTMLWrites,history.innerHTMLWrites,short.innerHTMLWrites],writes);
+  assert.match(app.get('ticker-status').textContent,/11:35:00/);
+});
+
+test('the six main engines share one stable ordered sector even when evidence is stale or absent',()=>{
+  const app=setup(),data=shortSnapshot();
+  data.assessments.push({id:'geri',engine:'4hgeri',event_type:'4hgeri.assessed',as_of:data.captured_at,
+    freshness:'STALE',payload:{state:'N2'},gates:[]});
+  followShort(app,data);
+  const board=app.get('ticker-assessments').innerHTML;
+  const order=['long-term','swing','4hgeri','swing-trade','intraday','order-flow'].map(engine=>board.indexOf(`data-engine="${engine}"`));
+  assert.equal((board.match(/data-engine=/g)||[]).length,6);
+  assert.deepEqual(order.slice().sort((a,b)=>a-b),order);
+  assert.match(board,/Motores principales/); assert.match(board,/N2/);
+  assert.doesNotMatch(app.get('ticker-history').innerHTML,/4HGERI|N2/);
 });
 
 test('Order Flow supports either output arriving alone and updates without duplicate sections',()=>{
