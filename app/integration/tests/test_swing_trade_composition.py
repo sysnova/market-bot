@@ -446,3 +446,56 @@ async def test_rebound_operational_stop_and_exit_survive_runtime_restart(definit
     assert updated is not None
     assert reason == "swing_trade_rebound_exit"
     assert all(leg.status.value != "OPEN" for leg in updated.legs)
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_does_not_reanalyze_restored_bar_or_rewind_state() -> None:
+    engine = ObservingEngine()
+    publisher = Publisher()
+    runtime = SwingTradeRuntime(engine=engine, publisher=publisher)
+    at = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+    bar = minute(at).model_copy(update={"timeframe": BarTimeframe.MINUTE_15})
+    previous = engine.assessment.model_copy(update={"occurred_at": at + timedelta(minutes=15)})
+    await runtime.restore_assessment(
+        EventEnvelope(
+            event_type=SWING_TRADE_ASSESSMENT_EVENT,
+            occurred_at=previous.occurred_at,
+            source="test",
+            subject="AAPL",
+            payload=previous,
+        )
+    )
+    assert await runtime.bootstrap((*daily_bars(), bar), symbols=("AAPL",)) == 0
+    assert engine.contexts == []
+    assert runtime.diagnostics() == {}
+    await runtime.handle_market(
+        envelope(bar.model_copy(update={"timestamp": at + timedelta(minutes=15)}))
+    )
+    assert engine.contexts[-1].previous_assessment == previous
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_buffers_momentum_window_without_per_bar_remote_access() -> None:
+    class CountingHistory(dict[str, MarketBar]):
+        reads = 0
+        writes = 0
+
+        def __len__(self) -> int:
+            self.reads += 1
+            return super().__len__()
+
+        def __setitem__(self, key: str, value: MarketBar) -> None:
+            self.writes += 1
+            super().__setitem__(key, value)
+
+    history = CountingHistory()
+    runtime = SwingTradeRuntime(engine=ObservingEngine(), publisher=Publisher())
+    runtime._momentum_daily["AAPL"] = history
+    bars = daily_bars()
+    await runtime.bootstrap(bars, symbols=("AAPL",))
+    assert history.reads <= 1
+    assert history.writes == len(bars)
+    history.writes = 0
+    await runtime.bootstrap(bars, symbols=("AAPL",))
+    assert history.writes == 0
+    assert runtime._momentum_daily["AAPL"] is history

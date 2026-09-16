@@ -186,7 +186,7 @@ class RedisTickerCache:
             )
         elif operation == "put":
             args = (*args, sha256(str(args[2]).encode()).hexdigest())
-        return json.loads(
+        result = json.loads(
             cast(
                 str,
                 self._script(
@@ -194,6 +194,8 @@ class RedisTickerCache:
                 ),
             )
         )
+        # Lua CJSON implementations can encode an empty table as an array.
+        return {} if operation == "snapshot" and result == [] else result
 
     def view(self, capacity: int = 2_000) -> str:
         view = uuid4().hex

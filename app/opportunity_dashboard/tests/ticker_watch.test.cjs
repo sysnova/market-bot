@@ -4,17 +4,18 @@ const {join} = require('node:path');
 const {runInNewContext} = require('node:vm');
 const {test} = require('node:test');
 
-function setup(storage = new Map()) {
+function setup(storage = new Map(), sessionStorage = new Map()) {
+  const lifecycle = {};
   const elements = new Map(), sent = [];
   const element = () => ({value:'', disabled:false, textContent:'', innerHTML:'', handlers:{},
     children:[], addEventListener(type,fn){this.handlers[type]=fn;}, querySelectorAll(){return [];},
     replaceChildren(){this.children=[];}, append(...items){this.children.push(...items);},
     prepend(item){this.children.unshift(item);}});
   const get = id => {if(!elements.has(id)) elements.set(id,element()); return elements.get(id);};
-  const context = {document:{getElementById:get,createElement:element},localStorage:{getItem(key){return storage.get(key) || '';},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},JSON,Date,Set};
+  const context = {addEventListener(type,fn){lifecycle[type]=fn;},sessionStorage:{removeItem(key){sessionStorage.delete(key);}},document:{getElementById:get,createElement:element},localStorage:{getItem(key){return storage.get(key) || '';},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},JSON,Date,Set};
   runInNewContext(readFileSync(join(__dirname,'../static/ticker.js'),'utf8'),context);
   context.MarketBotTicker.connected({readyState:1,send(raw){sent.push(JSON.parse(raw));}});
-  return {api:context.MarketBotTicker,get,sent,submit(id){get(id).handlers.submit({preventDefault(){}});}};
+  return {api:context.MarketBotTicker,get,sent,lifecycle,submit(id){get(id).handlers.submit({preventDefault(){}});}};
 }
 function snapshot(symbol='NVDA') {
   return {type:'ticker_snapshot',symbol,revision:1,transport:'NATS_REPLAY_AND_LIVE',llm_available:true,llm_model:'test-gpt',engines:{},missing_engines:[],
@@ -234,4 +235,39 @@ test('4HGERI labels the closed structural interval without calling Friday a rece
   assert.match(view,/Próxima vela esperada/);
   app.api.disconnected();
   assert.doesNotMatch(app.get('ticker-assessments').innerHTML+app.get('ticker-history').innerHTML,/Vigente para este intervalo/);
+});
+
+
+test('loading with a previously remembered ticker never starts monitoring',()=>{
+  const storage=new Map([['marketbot-watched-ticker','AAPL']]);
+  const app=setup(storage);
+  assert.equal(app.sent.length,0);
+  assert.equal(app.get('watch-symbol').value,'');
+  assert.equal(storage.has('marketbot-watched-ticker'),false);
+});
+
+test('browser autofill on connect does not authorize watching and selection is not persisted',()=>{
+  const storage=new Map(),app=setup(storage);
+  app.get('watch-symbol').value='AAPL';
+  app.api.connected({readyState:1,send(raw){app.sent.push(JSON.parse(raw));}});
+  assert.equal(app.sent.length,0);
+  app.get('watch-symbol').value='MSFT'; app.submit('ticker-watch-form');
+  assert.equal(app.sent.at(-1).symbol,'MSFT');
+  assert.equal(storage.has('marketbot-watched-ticker'),false);
+  assert.equal(setup(storage).sent.length,0);
+});
+
+
+test('leaving the page clears browser state and BFCache reconnect stays stopped', () => {
+  const key='marketbot-watched-ticker', storage=new Map([[key,'AAPL']]), session=new Map([[key,'AAPL']]);
+  const app=setup(storage,session);
+  assert.equal(storage.has(key),false); assert.equal(session.has(key),false);
+  followShort(app);
+  storage.set(key,'ASTS'); session.set(key,'ASTS');
+  app.lifecycle.pagehide();
+  assert.equal(storage.has(key),false); assert.equal(session.has(key),false);
+  assert.equal(app.sent.at(-1).type,'stop_ticker');
+  const count=app.sent.length;
+  app.api.connected({readyState:1,send(raw){app.sent.push(JSON.parse(raw));}});
+  assert.equal(app.sent.length,count);
 });

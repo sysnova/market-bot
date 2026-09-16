@@ -3,6 +3,12 @@
 (() => {
   const $ = id => document.getElementById(id);
   const state = { symbol: "", socket: null, snapshot: null, ask: null, analysis: null, stop: null, stopped: false, sequence: 0, renderKey: "", available: false };
+  function clearRememberedTicker() {
+    try { localStorage.removeItem("marketbot-watched-ticker"); } catch { /* optional */ }
+    try { globalThis.sessionStorage?.removeItem("marketbot-watched-ticker"); } catch { /* optional */ }
+  }
+  clearRememberedTicker();
+  $("watch-symbol").value = "";
   const html = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const date = value => value ? new Date(value).toLocaleString("es-AR", {hour12: false}) : "Sin fecha publicada";
   const labels = { PASS: "Cumple", FAIL: "No cumple / riesgo activo", STALE: "Dato antiguo", UNKNOWN: "Sin dato" };
@@ -82,11 +88,12 @@
     $("short-symbol").textContent = symbol;
     $("short-content").innerHTML = '<p class="empty-state">Recuperando evidencia SHORT…</p>';
     $("ticker-status").textContent = `Conectando ${symbol} con los motores…`;
-    try { localStorage.setItem("marketbot-watched-ticker", symbol); } catch { /* optional */ }
+    clearRememberedTicker();
     try { send("watch_ticker"); } catch (error) { $("ticker-status").textContent = error.message; }
     controls();
   }
   function stop() {
+    clearRememberedTicker();
     if (!state.symbol) return;
     const symbol = state.symbol;
     let request = null, error = "";
@@ -186,11 +193,15 @@
     try { await navigator.clipboard.writeText(JSON.stringify(state.snapshot, null, 2)); $("ticker-status").textContent = "Contexto completo copiado."; }
     catch { $("ticker-status").textContent = "El navegador no permitió copiar al portapapeles."; }
   });
+  globalThis.addEventListener?.("pagehide", stop);
   globalThis.MarketBotTicker = {
     connected(socket) {
       state.socket = socket;
-      if (!state.symbol && !state.stopped) { try { $("watch-symbol").value = localStorage.getItem("marketbot-watched-ticker") || ""; } catch { /* optional */ } }
-      if (state.symbol || (!state.stopped && $("watch-symbol").value)) watch();
+      // Only an explicit selection in this page may resume after a transport outage.
+      if (state.symbol && !state.stopped) {
+        $("watch-symbol").value = state.symbol;
+        watch();
+      }
       controls();
     },
     disconnected() {

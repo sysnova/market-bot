@@ -6,7 +6,9 @@ import asyncio
 from collections.abc import Iterable
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
+from itertools import groupby
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -53,7 +55,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient
-from .redis_history import chronological_bars
+from .redis_history import RedisHistoryBars
 from .ticker_context_store import context_store
 
 SWING_TRADE_HISTORY_REQUESTS = (
@@ -117,6 +119,7 @@ class SwingTradeRuntime:
         self._minute = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
         self._four_hour = RegularSessionFourHourAggregator()
         self._last_momentum_input: dict[str, datetime] = {}
+        self._previous_four_hour: dict[str, MarketBar] = {}
         self._momentum_daily = grouped_context_store(
             str, MarketBar, scope="integration:swing_trade_composition:_momentum_daily"
         )
@@ -182,15 +185,38 @@ class SwingTradeRuntime:
         self._symbols = {symbol.strip().upper() for symbol in symbols if symbol.strip()}
         bootstrap_at = self._clock.now()
         latest_fifteen: dict[str, MarketBar] = {}
-        for bar in chronological_bars(bars):
-            if bar.symbol not in self._symbols or not bar.is_final:
+        ordered = (
+            bars.chronological()
+            if isinstance(bars, RedisHistoryBars)
+            else sorted(bars, key=lambda bar: (bar.symbol, bar.timestamp))
+        )
+        for symbol, window in groupby(ordered, key=lambda bar: bar.symbol):
+            if symbol not in self._symbols:
                 continue
-            if bar.timeframe is BarTimeframe.DAY_1:
-                self._bars.add(bar)
-                self._store_momentum_daily(bar)
-            elif bar.timeframe is BarTimeframe.MINUTE_15 and is_regular_session(bar.timestamp):
-                self._store_fifteen(bar)
-                latest_fifteen[bar.symbol] = bar
+            target = self._momentum_daily[symbol]
+            original = dict(target.items())
+            local = original.copy()
+            # Only one ticker's bounded window is materialized; no Redis RPC per bar.
+            self._momentum_daily[symbol] = local
+            try:
+                for bar in window:
+                    if not bar.is_final:
+                        continue
+                    if bar.timeframe is BarTimeframe.DAY_1:
+                        self._bars.add(bar)
+                        self._store_momentum_daily(bar)
+                    elif bar.timeframe is BarTimeframe.MINUTE_15 and is_regular_session(
+                        bar.timestamp
+                    ):
+                        self._store_fifteen(bar)
+                        latest_fifteen[bar.symbol] = bar
+                for key, value in local.items():
+                    if original.get(key) != value:
+                        target[key] = value
+                for key in original.keys() - local.keys():
+                    del target[key]
+            finally:
+                self._momentum_daily[symbol] = target
         published = 0
         for bar in latest_fifteen.values():
             published += int(
@@ -238,9 +264,14 @@ class SwingTradeRuntime:
             self._bars.add(channel)
             # Both complete RTH segments are required to roll the observation's daily close.
             # Keep this separate from the native Fibonacci geometry history.
-            pair = self._bars.history(bar.symbol, BarTimeframe.HOUR_4, limit=2)
-            if len(pair) != 2 or pair[1].timestamp - pair[0].timestamp != timedelta(hours=4):
+            previous_channel = self._previous_four_hour.get(bar.symbol)
+            self._previous_four_hour[bar.symbol] = channel
+            if (
+                previous_channel is None
+                or channel.timestamp - previous_channel.timestamp != timedelta(hours=4)
+            ):
                 continue
+            pair = (previous_channel, channel)
             local = channel.timestamp.astimezone(_NEW_YORK)
             total = sum((part.volume for part in pair), Decimal(0))
             vwap = (
@@ -276,11 +307,14 @@ class SwingTradeRuntime:
             return False
         self._evaluated.add(key)
         self._store_fifteen(bar)
+        previous = self._latest.get(bar.symbol)
+        if previous is not None and previous.occurred_at >= bar.timestamp + timedelta(minutes=15):
+            return False
         daily = self._bars.history(bar.symbol, BarTimeframe.DAY_1, limit=120, final_only=True)
         try:
             assessment = self._engine.analyze(
                 SwingTradeContext(
-                    previous_assessment=self._latest.get(bar.symbol),
+                    previous_assessment=previous,
                     allow_new_entry=actionable_signals_enabled,
                     symbol=bar.symbol,
                     as_of=bar.timestamp + timedelta(minutes=15),
@@ -484,6 +518,7 @@ def _metric(item: SwingTradeAssessment, name: str) -> object | None:
 async def run_swing_trade_process(
     *, ready_path: Path | None = None, once: bool = False, symbols: tuple[str, ...] | None = None
 ) -> dict[str, object] | None:
+    startup_started = perf_counter()
     settings = AppSettings()
     assembly = MarketBotAssembly.from_settings(settings)
     engine = assembly.build_swing_trade()
@@ -531,6 +566,7 @@ async def run_swing_trade_process(
             ),
         }
         engine_version = assembly.spec(EngineSlot.SWING_TRADE).implementation
+        restore_started = perf_counter()
         for subject in swing_trade_replay_subjects(engine_version):
             handler, durable = replay_handlers[subject]
             subscription = await bus.subscribe(
@@ -542,6 +578,8 @@ async def run_swing_trade_process(
             )
             subscriptions.append(subscription)
             await bus.wait_until_caught_up(subscription, timeout_seconds=60)
+        restore_ms = (perf_counter() - restore_started) * 1000
+        history_started = perf_counter()
         bars = await load_market_history(
             settings,
             database,
@@ -554,6 +592,8 @@ async def run_swing_trade_process(
             ),
             as_of=SystemClock().now(),
         )
+        history_ms = (perf_counter() - history_started) * 1000
+        bootstrap_started = perf_counter()
         published = await runtime.bootstrap(bars, symbols=selected)
         summary: dict[str, object] = {
             "service": "swing-trade-v1",
@@ -566,6 +606,12 @@ async def run_swing_trade_process(
             "historical_bars": len(bars),
             "assessments_published": published,
             "rejected_evaluations": runtime.diagnostics(),
+            "warmup": {
+                "restore_ms": round(restore_ms, 3),
+                "history_ensure_ms": round(history_ms, 3),
+                "bootstrap_ms": round((perf_counter() - bootstrap_started) * 1000, 3),
+                "startup_ms": round((perf_counter() - startup_started) * 1000, 3),
+            },
             "evaluation_bar": "15Min_FINAL_RTH",
             "places_orders": False,
         }
