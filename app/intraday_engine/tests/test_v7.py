@@ -1,6 +1,8 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.alert_engine import AlertEngineV39
 from app.contracts import (
     AnalysisHorizon,
@@ -30,6 +32,35 @@ def test_v7_confirms_strong_displacement_short_beyond_local_trigger_window() -> 
     assert _metric(result, "short_mature_confirmation_gate_passed") is True
     assert _metric(result, "short_entry_timing") == "confirmed_displacement"
     assert "short_displacement_confirmed" in result.reasons
+    assert "short_late_entry_wait_retest" not in result.reasons
+
+
+def test_v7_displacement_does_not_require_mature_retest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = IntradayEngineV6().analyze(_ema20_extended_local_breakdown(final_move="-0.50"))
+    metrics = {item.name: item.value for item in base.metrics}
+    metrics.update(
+        short_mature_retest_confirmed=False,
+        short_mature_confirmation_gate_passed=False,
+        mature_confirmation_gate_passed=False,
+    )
+    waiting = base.model_copy(
+        update={
+            "verdict": AnalysisVerdict.WATCH,
+            "reasons": (*base.reasons, "short_late_entry_wait_retest"),
+            "metrics": tuple(NamedValue(name=name, value=value) for name, value in metrics.items()),
+        }
+    )
+    monkeypatch.setattr(IntradayEngineV6, "analyze", lambda *a, **kw: waiting)
+
+    result = IntradayEngineV7().analyze(_ema20_extended_local_breakdown(final_move="-0.50"))
+
+    assert result.verdict is AnalysisVerdict.FAVORABLE
+    assert _metric(result, "short_displacement_gate_passed") is True
+    assert _metric(result, "short_mature_retest_confirmed") is False
+    assert _metric(result, "short_mature_confirmation_gate_passed") is True
+    assert "short_displacement_without_retest_confirmed" in result.reasons
     assert "short_late_entry_wait_retest" not in result.reasons
 
 

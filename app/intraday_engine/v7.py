@@ -52,7 +52,6 @@ class IntradayEngineV7(IntradayEngineV6):
             and setup in _BEARISH_SETUPS
             and extended
             and metrics.get("short_confirmation_gate_passed") is True
-            and metrics.get("short_mature_retest_confirmed") is True
             and metrics.get("risk_ok") is True
             and isinstance(momentum, Decimal)
             and momentum <= -self._short_displacement_minimum_momentum_percent
@@ -64,6 +63,8 @@ class IntradayEngineV7(IntradayEngineV6):
         if displacement_gate:
             reasons = [reason for reason in reasons if reason != "short_late_entry_wait_retest"]
             reasons.extend(("short_displacement_confirmed", "short_extension_override_applied"))
+            if metrics.get("short_mature_retest_confirmed") is not True:
+                reasons.append("short_displacement_without_retest_confirmed")
         score = max(result.score, Decimal("70")) if displacement_gate else result.score
         timing = (
             "confirmed_displacement"
