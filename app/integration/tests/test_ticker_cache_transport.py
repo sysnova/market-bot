@@ -220,3 +220,40 @@ def test_cli_starts_cache_and_clients_release_their_leases(tmp_path: Path) -> No
         except subprocess.TimeoutExpired:
             process.kill()
             process.communicate(timeout=5)
+
+
+def test_cache_service_resets_before_publishing_readiness(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    endpoint, ready = tmp_path / "endpoint.json", tmp_path / "ready.json"
+    endpoint.write_text("stale")
+    ready.write_text("stale")
+    events: list[str] = []
+
+    def reset() -> int:
+        assert not ready.exists()
+        assert not endpoint.exists()
+        events.append("reset")
+        return 42
+
+    def start() -> None:
+        assert events == ["reset"]
+        assert json.loads(ready.read_text())["startup_removed_engine_views"] == 42
+        events.append("start")
+
+    fake = SimpleNamespace(
+        reset_for_startup=reset, start=start, close=lambda: events.append("close")
+    )
+    monkeypatch.setattr(ticker_cache_transport.RedisTickerCache, "connect", lambda url: fake)
+    monkeypatch.setattr(
+        ticker_cache_transport.threading,
+        "Event",
+        lambda: SimpleNamespace(wait=lambda seconds: True),
+    )
+    ticker_cache_transport.run_cache_server(endpoint_path=endpoint, ready_path=ready)
+    assert events == ["reset", "start", "close"]
+    assert not ready.exists()
+    assert not endpoint.exists()

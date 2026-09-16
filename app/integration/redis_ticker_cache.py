@@ -153,6 +153,24 @@ return redis.call('DEL', v, v..':series', coverage)
 """
 
 
+_DROP_ENGINE_VIEW = """#!lua flags=allow-oom
+local v, payloads, refs = KEYS[1], KEYS[2], KEYS[3]
+local function drop(h)
+  local count = tonumber(redis.call('HGET', refs, h) or '0')
+  if count <= 1 then
+    redis.call('HDEL', refs, h); redis.call('HDEL', payloads, h)
+  else redis.call('HINCRBY', refs, h, -1) end
+end
+for _, s in ipairs(redis.call('SMEMBERS', v..':series')) do
+  for _, h in ipairs(redis.call('HVALS', s..':data')) do drop(h) end
+  redis.call('DEL', s, s..':data', s..':final')
+end
+for _, h in ipairs(redis.call('HVALS', v..':values')) do drop(h) end
+redis.call('DEL', v..':series', v..':values')
+return redis.call('DEL', v)
+"""
+
+
 class RedisTickerCache:
     def __init__(self, redis: Redis, *, namespace: str = "marketbot:cache:v2:") -> None:
         self.redis = redis
@@ -243,6 +261,43 @@ class RedisTickerCache:
         self.call("touch")
         threading.Thread(target=self._heartbeat, daemon=True, name="redis-cache-lease").start()
         atexit.register(self.close)
+
+    def reset_for_startup(self) -> int:
+        """Drop engine windows before consumers start; preserve canonical bars and coverage."""
+        if not self.namespace:
+            raise ValueError("startup reset requires a nonempty cache namespace")
+        prefix = self.namespace + "view:"
+        removed = 0
+        while True:
+            deleted = 0
+            keys = cast(Iterator[str], self.redis.scan_iter(match=prefix + "*", count=500))
+            for key in keys:
+                if key.startswith(prefix + "history:") or self.redis.type(key) != "string":
+                    continue
+                deleted += cast(
+                    int,
+                    self.redis.eval(
+                        _DROP_ENGINE_VIEW,
+                        3,
+                        key,
+                        self.namespace + "payloads",
+                        self.namespace + "refs",
+                    ),
+                )
+            removed += deleted
+            if deleted == 0:
+                break
+        # No consumers exist yet. Their old leases must not survive the reset.
+        while True:
+            owners = list(
+                cast(Iterator[str], self.redis.scan_iter(match=self.namespace + "owner:*"))
+            )
+            if not owners:
+                break
+            for offset in range(0, len(owners), 500):
+                self.redis.delete(*owners[offset : offset + 500])
+        self.redis.delete(self.namespace + "owners")
+        return removed
 
     def _heartbeat(self) -> None:
         while not self._stopped.wait(30):

@@ -103,3 +103,39 @@ def test_typed_contexts_resume_by_explicit_scope_without_colliding(
     assert resumed.get("AAPL")[AnalysisHorizon.SWING] == expected
     other = context_cache.grouped_context_store(AnalysisHorizon, MarketBar, scope="consumer-b")
     assert other.get("AAPL") is None
+
+
+def test_startup_reset_preserves_history_and_coverage_but_removes_engine_views(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.integration import redis_ticker_cache
+
+    if hasattr(redis_ticker_cache, "_DROP_ENGINE_VIEW"):
+        monkeypatch.setattr(
+            redis_ticker_cache,
+            "_DROP_ENGINE_VIEW",
+            redis_ticker_cache._DROP_ENGINE_VIEW.split("\n", 1)[1],
+        )
+    cache = client(fakeredis.FakeServer())
+    history = "history:AAPL:1Min:regular"
+    cache.open_persistent(history, 5)
+    cache.call("add", history, [row(1)])
+    coverage = cache.namespace + history + ":coverage"
+    cache.redis.hset(coverage, mapping={"fingerprint": "fresh", "limit": "5"})
+    ephemeral = cache.view(5)
+    cache.call("add", ephemeral, [row(1), row(2, 20)])
+    context = cache.persistent_view("engine:window")
+    cache.call("put", context, "AAPL", '{"analysis":1}')
+    cache.redis.set("unrelated:keep", "value")
+    event = cache.namespace + "events:latest"
+    cache.redis.set(event, "snapshot")
+    assert cache.reset_for_startup() == 2
+    assert cache.call("history", history, "AAPL", "1Min", 5, True) == [json.dumps({"close": 10})]
+    assert cache.redis.hgetall(coverage) == {"fingerprint": "fresh", "limit": "5"}
+    assert cache.call("stats")["unique_payloads"] == 1
+    assert list(cache.redis.hgetall(cache.namespace + "refs").values()) == ["1"]
+    assert not list(cache.redis.scan_iter(match=cache.namespace + "view:" + ephemeral + "*"))
+    assert not list(cache.redis.scan_iter(match=cache.namespace + "view:context:*"))
+    assert cache.redis.get("unrelated:keep") == "value"
+    assert cache.redis.get(event) == "snapshot"
+    assert cache.reset_for_startup() == 0

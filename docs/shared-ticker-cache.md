@@ -7,8 +7,13 @@ y estado de negocio; NATS transporta los eventos.
 
 ## Arranque y actualizaciÃ³n
 
-1. `ticker-cache` comprueba Redis y publica su endpoint privado. Ya no inicia el
-   servidor HTTP ni mantiene una segunda cachÃ© Python.
+1. `ticker-cache` comprueba Redis y limpia únicamente las ventanas, índices y
+   contextos propios de engines antes de publicar su endpoint y readiness.
+   Conserva las barras canónicas `history:*`, sus metadatos de cobertura y los
+   snapshots de eventos. Al liberar referencias elimina sólo los payloads que
+   ya no usa ninguna ventana, sin borrar barras compartidas. La limpieza funciona
+   incluso con Redis en maxmemory. Todos los engines esperan este paso; conectar
+   o reiniciar un engine individual no lo ejecuta. PostgreSQL y NATS no se modifican.
 2. Antes de publicar readiness, `market-history-v1` combina los requisitos de los
    Engines activos y prepara las ventanas del universo en Redis. Lee PostgreSQL
    por ticker, nunca como un lote de toda la watchlist.

@@ -209,7 +209,11 @@ def make_cache_server(token: str) -> ThreadingHTTPServer:
 def run_cache_server(*, endpoint_path: Path, ready_path: Path) -> None:
     url = AppSettings().redis_url.get_secret_value()
     client = RedisTickerCache.connect(url)
-    client.prune_unused_extended_history()
+    # The supervisor starts this service before all consumers. Never reset from
+    # configure_shared_cache(), which is also called by individual engines.
+    ready_path.unlink(missing_ok=True)
+    endpoint_path.unlink(missing_ok=True)
+    removed = client.reset_for_startup()
     endpoint_path.parent.mkdir(parents=True, exist_ok=True)
     ready_path.parent.mkdir(parents=True, exist_ok=True)
     endpoint_path.touch(mode=0o600)
@@ -223,7 +227,12 @@ def run_cache_server(*, endpoint_path: Path, ready_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    ready_path.write_text(json.dumps({"status": "ready", "backend": "redis"}), encoding="utf-8")
+    ready_path.write_text(
+        json.dumps(
+            {"status": "ready", "backend": "redis", "startup_removed_engine_views": removed}
+        ),
+        encoding="utf-8",
+    )
     client.start()
     try:
         while not threading.Event().wait(30):
