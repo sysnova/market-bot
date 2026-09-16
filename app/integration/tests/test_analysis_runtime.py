@@ -224,6 +224,7 @@ async def test_premarket_bars_feed_only_intraday_without_publishing_swing_bars()
         alert_engine=AlertEngine(),
         alert_dispatcher=AlertDispatcher(sinks=()),
         clock=FixedClock(),
+        include_extended_hours=True,
     )
     runtime.enable_live()
     premarket_open = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
@@ -261,6 +262,73 @@ async def test_premarket_bars_feed_only_intraday_without_publishing_swing_bars()
         or item.payload.timeframe is not BarTimeframe.MINUTE_5
         for _, item in publisher.items
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("extended_hours_order_impact", "expected_watcher_results"),
+    [(False, 0), (True, 1)],
+)
+async def test_extended_analysis_order_impact_is_independently_configurable(
+    extended_hours_order_impact: bool,
+    expected_watcher_results: int,
+) -> None:
+    premarket = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
+    transition = EntryWatchTransition(
+        watch_id=UUID("0195f3a5-9000-7000-8000-000000000001"),
+        symbol="AAPL",
+        status=EntryWatchStatus.ARMED,
+        occurred_at=premarket,
+        zone_low=Decimal("100"),
+        zone_high=Decimal("105"),
+        invalidation=Decimal("92"),
+        current_price=Decimal("100"),
+        watch_expires_at=premarket + timedelta(weeks=8),
+        reasons=("fixture",),
+        horizons=(AnalysisHorizon.INTRADAY,),
+        source_analysis_ids=(UUID("0195f3a5-9000-7000-8000-000000000002"),),
+    )
+    watcher = RecordingEntryWatcher(transition)
+    intraday = StaticEngine(AnalysisHorizon.INTRADAY)
+    runtime = AnalysisRuntime(
+        store=MarketBarStore(),
+        publisher=RecordingPublisher(),
+        long_term=StaticEngine(AnalysisHorizon.LONG_TERM),
+        swing=StaticEngine(AnalysisHorizon.SWING),
+        intraday=intraday,
+        alert_engine=AlertEngine(),
+        alert_dispatcher=AlertDispatcher(sinks=()),
+        clock=FixedClock(),
+        entry_watcher=watcher,
+        include_extended_hours=True,
+        extended_hours_order_impact=extended_hours_order_impact,
+    )
+    runtime.enable_live()
+    current = MarketBar(
+        symbol="AAPL",
+        timeframe=BarTimeframe.MINUTE_1,
+        timestamp=premarket,
+        open=Decimal("100"),
+        high=Decimal("101"),
+        low=Decimal("99"),
+        close=Decimal("100"),
+        volume=Decimal("1000"),
+        source="test",
+        feed="sip",
+    )
+
+    await runtime.handle_market_event(
+        EventEnvelope(
+            event_type="market.bar.received",
+            occurred_at=current.timestamp,
+            source="test",
+            subject="AAPL",
+            payload=current,
+        )
+    )
+
+    assert len(intraday.contexts) == 1
+    assert len(watcher.results) == expected_watcher_results
 
 
 @pytest.mark.unit

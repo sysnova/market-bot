@@ -103,6 +103,7 @@ class MarketHistoryLoader:
         as_of: datetime,
         force_refresh: bool = False,
         include_premarket_intraday: bool = False,
+        include_after_hours_intraday: bool = False,
     ) -> tuple[MarketBar, ...]:
         profile = await self.ensure_and_load_profiled(
             engine_id=engine_id,
@@ -111,6 +112,7 @@ class MarketHistoryLoader:
             as_of=as_of,
             force_refresh=force_refresh,
             include_premarket_intraday=include_premarket_intraday,
+            include_after_hours_intraday=include_after_hours_intraday,
         )
         return tuple(profile.bars)
 
@@ -123,6 +125,7 @@ class MarketHistoryLoader:
         as_of: datetime,
         force_refresh: bool = False,
         include_premarket_intraday: bool = False,
+        include_after_hours_intraday: bool = False,
     ) -> MarketHistoryLoadProfile:
         total_started = perf_counter()
         request = MarketHistoryRequest(
@@ -131,6 +134,8 @@ class MarketHistoryLoader:
             requirements=requirements,
             requested_at=as_of,
             force_refresh=force_refresh,
+            include_premarket_intraday=include_premarket_intraday,
+            include_after_hours_intraday=include_after_hours_intraday,
         )
         ensure_started = perf_counter()
         await self._client.ensure(request)
@@ -138,15 +143,16 @@ class MarketHistoryLoader:
         output: list[MarketBar] = []
         requirement_profiles: list[HistoryRequirementProfile] = []
         for requirement in requirements:
-            include_premarket = include_premarket_intraday and requires_regular_session(
-                requirement.timeframe
-            )
+            intraday_session_filter = requires_regular_session(requirement.timeframe)
+            include_premarket = include_premarket_intraday and intraday_session_filter
+            include_after_hours = include_after_hours_intraday and intraday_session_filter
+            include_extended_hours = include_premarket or include_after_hours
             repository_limit = (
                 analytical_storage_limit(
                     requirement.timeframe,
                     requirement.max_bars_per_symbol,
                 )
-                if include_premarket
+                if include_extended_hours
                 else requirement.max_bars_per_symbol
             )
             repository_started = perf_counter()
@@ -155,7 +161,7 @@ class MarketHistoryLoader:
                 requirement.timeframe,
                 limit_per_symbol=repository_limit,
                 regular_session_only=(
-                    requires_regular_session(requirement.timeframe) and not include_premarket
+                    intraday_session_filter and not include_extended_hours
                 ),
             )
             repository_read_ms = _elapsed_ms(repository_started)
@@ -169,6 +175,10 @@ class MarketHistoryLoader:
                     or (
                         include_premarket
                         and market_session(bar.timestamp) is MarketSession.PRE_MARKET
+                    )
+                    or (
+                        include_after_hours
+                        and market_session(bar.timestamp) is MarketSession.AFTER_HOURS
                     )
                 )
                 and (
@@ -210,6 +220,7 @@ async def load_market_history(
     as_of: datetime,
     force_refresh: bool = False,
     include_premarket_intraday: bool = False,
+    include_after_hours_intraday: bool = False,
 ) -> tuple[MarketBar, ...] | RedisHistoryBars:
     return (
         await load_market_history_profiled(
@@ -221,6 +232,7 @@ async def load_market_history(
             as_of=as_of,
             force_refresh=force_refresh,
             include_premarket_intraday=include_premarket_intraday,
+            include_after_hours_intraday=include_after_hours_intraday,
         )
     ).bars
 
@@ -235,6 +247,7 @@ async def load_market_history_profiled(
     as_of: datetime,
     force_refresh: bool = False,
     include_premarket_intraday: bool = False,
+    include_after_hours_intraday: bool = False,
 ) -> MarketHistoryLoadProfile:
     client = await NatsMarketHistoryClient.connect(
         [settings.nats_url.get_secret_value()],
@@ -252,12 +265,18 @@ async def load_market_history_profiled(
                     requested_at=as_of,
                     force_refresh=force_refresh,
                     include_premarket_intraday=include_premarket_intraday,
+                    include_after_hours_intraday=include_after_hours_intraday,
                 )
             )
             elapsed = _elapsed_ms(started)
             return MarketHistoryLoadProfile(
                 bars=RedisHistoryBars(
-                    cache, symbols, requirements, as_of, include_premarket_intraday
+                    cache,
+                    symbols,
+                    requirements,
+                    as_of,
+                    include_premarket_intraday,
+                    include_after_hours_intraday,
                 ),
                 ensure_ms=elapsed,
                 requirements=(),
@@ -273,6 +292,7 @@ async def load_market_history_profiled(
             as_of=as_of,
             force_refresh=force_refresh,
             include_premarket_intraday=include_premarket_intraday,
+            include_after_hours_intraday=include_after_hours_intraday,
         )
     finally:
         await client.close()
@@ -396,6 +416,7 @@ class RedisHistoryService:
                 request.symbols,
                 request.requirements,
                 include_premarket_intraday=request.include_premarket_intraday,
+                include_after_hours_intraday=request.include_after_hours_intraday,
             )
             if not request.force_refresh:
                 self._requests[request.engine_id] = request
@@ -409,6 +430,7 @@ class RedisHistoryService:
                     request.symbols,
                     request.requirements,
                     include_premarket_intraday=request.include_premarket_intraday,
+                    include_after_hours_intraday=request.include_after_hours_intraday,
                 )
             return responses
 
@@ -429,16 +451,18 @@ class RedisHistoryService:
             )
 
             minute = tuple(r for r in requirements if r.timeframe is BarTimeframe.MINUTE_1)
-            if minute:
+            if minute and settings.extended_hours_enabled:
                 await self.warmer.warm(
                     universe.symbols,
                     minute,
                     include_premarket_intraday=True,
+                    include_after_hours_intraday=True,
                 )
-                self._requests["redis-central-premarket"] = MarketHistoryRequest(
-                    engine_id="redis-central-premarket",
+                self._requests["redis-central-extended"] = MarketHistoryRequest(
+                    engine_id="redis-central-extended",
                     symbols=universe.symbols,
                     requirements=minute,
                     requested_at=as_of,
                     include_premarket_intraday=True,
+                    include_after_hours_intraday=True,
                 )

@@ -94,7 +94,10 @@ async def run_live_analysis(
             store=InMemoryEntryWatchStore(),
             policy=EntryWatcherPolicy(ttl=timedelta(days=settings.entry_watch_ttl_days)),
         )
-        entry_opportunity = assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore())
+        entry_opportunity = assembly.build_entry_opportunity(
+            store=InMemoryEntryOpportunityStore(),
+            allow_extended_hours=settings.extended_hours_order_impact,
+        )
     if settings.entry_watcher_enabled and not isolated:
         try:
             entry_watch_database = create_database_engine(
@@ -111,7 +114,8 @@ async def run_live_analysis(
                 )
                 if await entry_opportunity_store.is_ready():
                     entry_opportunity = assembly.build_entry_opportunity(
-                        store=entry_opportunity_store
+                        store=entry_opportunity_store,
+                        allow_extended_hours=settings.extended_hours_order_impact,
                     )
                 else:
                     await logger.awarning(
@@ -180,6 +184,8 @@ async def run_live_analysis(
         clock=clock,
         entry_watcher=entry_watcher,
         entry_opportunity=entry_opportunity,
+        include_extended_hours=settings.extended_hours_enabled,
+        extended_hours_order_impact=settings.extended_hours_order_impact,
     )
     subscription = await local_bus.subscribe(
         "marketbot.v1.market.bar.>", runtime.handle_market_event

@@ -50,15 +50,18 @@ class IntradayWorker:
         *,
         publisher: EventPublisher,
         analyzer: IntradayAnalyzer,
+        include_extended_hours: bool = False,
     ) -> None:
         self._publisher = publisher
         self._analyzer = analyzer
         self._store = MarketBarStore(capacity_per_series=INTRADAY_MINUTE_BARS)
+        self._include_extended_hours = include_extended_hours
+        accepted_sessions = {MarketSession.REGULAR}
+        if include_extended_hours:
+            accepted_sessions.update({MarketSession.PRE_MARKET, MarketSession.AFTER_HOURS})
         self._aggregator = MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_5,),
-            accepted_sessions=frozenset(
-                {MarketSession.PRE_MARKET, MarketSession.REGULAR}
-            ),
+            accepted_sessions=frozenset(accepted_sessions),
         )
         self._universe = UniverseWarmupGate()
 
@@ -90,7 +93,10 @@ class IntradayWorker:
         for bar in bars:
             if bar.timeframe is not BarTimeframe.MINUTE_1:
                 continue
-            if not is_intraday_analysis_session(bar.timestamp):
+            if not is_intraday_analysis_session(
+                bar.timestamp,
+                include_extended_hours=self._include_extended_hours,
+            ):
                 for aggregated in self._aggregator.add(bar):
                     self._store.add(aggregated)
                 continue
@@ -105,7 +111,10 @@ class IntradayWorker:
         bar = _bar(envelope)
         if bar.timeframe is not BarTimeframe.MINUTE_1:
             return
-        if not is_intraday_analysis_session(bar.timestamp):
+        if not is_intraday_analysis_session(
+            bar.timestamp,
+            include_extended_hours=self._include_extended_hours,
+        ):
             for aggregated in self._aggregator.add(bar):
                 self._store.add(aggregated)
                 await self._evaluate(bar.symbol, (envelope.event_id,))

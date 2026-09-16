@@ -19,8 +19,13 @@ class EntryOpportunityEngineV15(EntryOpportunityEngineV14):
         store: EntryOpportunityStore,
         short_symbols: Collection[str] = (),
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        allow_extended_hours: bool = False,
     ) -> None:
-        super().__init__(store=store, now=now)
+        super().__init__(
+            store=store,
+            now=now,
+            allow_extended_hours=allow_extended_hours,
+        )
         self._short_symbols = frozenset(short_symbols)
 
     async def ingest_alert(self, alert: LocalAlert) -> tuple[EntryOpportunityEvent, ...]:

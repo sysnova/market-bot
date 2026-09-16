@@ -70,6 +70,7 @@ class RedisHistoryWarmer:
         requirements: tuple[MarketHistoryRequirement, ...],
         *,
         include_premarket_intraday: bool = False,
+        include_after_hours_intraday: bool = False,
     ) -> None:
         for requirement in requirements:
             tf = requirement.timeframe
@@ -77,7 +78,10 @@ class RedisHistoryWarmer:
             for symbol in symbols:
                 item = coverage[symbol]
                 fingerprint = f"{item.count}:{item.latest}:{item.downloaded_at}"
-                regular_only = requires_regular_session(tf) and not include_premarket_intraday
+                include_extended_hours = (
+                    include_premarket_intraday or include_after_hours_intraday
+                )
+                regular_only = requires_regular_session(tf) and not include_extended_hours
                 variants = (regular_only,)
                 for regular in variants:
                     limit = (
@@ -130,17 +134,20 @@ class RedisHistoryBars:
         requirements: tuple[MarketHistoryRequirement, ...],
         as_of: datetime,
         include_premarket: bool,
+        include_after_hours: bool = False,
     ) -> None:
         self.cache, self.symbols, self.requirements = cache, symbols, requirements
         self.as_of, self.include_premarket = as_of, include_premarket
+        self.include_after_hours = include_after_hours
         self._count: int | None = None
 
     def _window(self, symbol: str, requirement: MarketHistoryRequirement) -> Iterator[MarketBar]:
         tf = requirement.timeframe
-        regular = requires_regular_session(tf) and not self.include_premarket
+        include_extended_hours = self.include_premarket or self.include_after_hours
+        regular = requires_regular_session(tf) and not include_extended_hours
         limit = (
             analytical_storage_limit(tf, requirement.max_bars_per_symbol)
-            if self.include_premarket and requires_regular_session(tf)
+            if include_extended_hours and requires_regular_session(tf)
             else requirement.max_bars_per_symbol
         )
         values = self.cache.call(
@@ -159,6 +166,10 @@ class RedisHistoryBars:
                 or (
                     self.include_premarket
                     and market_session(bar.timestamp) is MarketSession.PRE_MARKET
+                )
+                or (
+                    self.include_after_hours
+                    and market_session(bar.timestamp) is MarketSession.AFTER_HOURS
                 )
             ):
                 continue

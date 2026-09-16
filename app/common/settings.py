@@ -15,6 +15,11 @@ class Environment(StrEnum):
     PRODUCTION = "production"
 
 
+class MarketSessionMode(StrEnum):
+    RTH = "RTH"
+    AFTER = "AFTER"
+
+
 class AppSettings(BaseSettings):
     """Infrastructure settings loaded from ``MARKETBOT_*`` environment variables."""
 
@@ -31,9 +36,11 @@ class AppSettings(BaseSettings):
     log_json: bool = True
     database_url: SecretStr = SecretStr("postgresql://marketbot:marketbot@localhost:5432/marketbot")
     entry_watcher_enabled: bool = True
+    market_session_mode: MarketSessionMode = MarketSessionMode.RTH
+    extended_hours_order_impact: bool = False
     entry_watch_ttl_days: int = Field(default=56, ge=7, le=365)
     alert_checkpoint_interval_seconds: int = Field(default=30, ge=5, le=300)
-    definition_path: Path = Path("configs/marketbot/7.74.0.yaml")
+    definition_path: Path = Path("configs/marketbot/7.75.0.yaml")
     entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0", "5.0.0"] | None = None
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     redis_url: SecretStr = SecretStr("redis://127.0.0.1:6379/0")
@@ -100,7 +107,16 @@ class AppSettings(BaseSettings):
             raise ValueError("Alpaca maximum reconnect delay cannot be below initial delay")
         if self.sec_enabled and not self.sec_configured:
             raise ValueError("SEC user agent must include an identifiable contact email")
+        if (
+            self.extended_hours_order_impact
+            and self.market_session_mode is not MarketSessionMode.AFTER
+        ):
+            raise ValueError("extended-hours order impact requires AFTER market session mode")
         return self
+
+    @property
+    def extended_hours_enabled(self) -> bool:
+        return self.market_session_mode is MarketSessionMode.AFTER
 
     @property
     def alpaca_configured(self) -> bool:

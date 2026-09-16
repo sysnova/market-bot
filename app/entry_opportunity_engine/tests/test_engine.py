@@ -1174,7 +1174,7 @@ async def test_extended_hours_wick_cannot_invalidate_an_opportunity() -> None:
 
     events = await manager.ingest_bar(
         bar(
-            timestamp=datetime(2026, 8, 6, 12, 0, tzinfo=UTC),
+            timestamp=datetime(2026, 8, 6, 21, 0, tzinfo=UTC),
             close="95",
             low="80",
             high="105",
@@ -1183,6 +1183,29 @@ async def test_extended_hours_wick_cannot_invalidate_an_opportunity() -> None:
 
     assert events == ()
     assert await store.load_active("AAPL") is not None
+
+
+@pytest.mark.unit
+async def test_extended_hours_wick_can_invalidate_when_order_impact_is_enabled() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(
+        store=store,
+        id_factory=lambda: OPPORTUNITY_ID,
+        allow_extended_hours=True,
+    )
+    await _open(manager)
+
+    events = await manager.ingest_bar(
+        bar(
+            timestamp=datetime(2026, 8, 6, 21, 0, tzinfo=UTC),
+            close="95",
+            low="80",
+            high="105",
+        )
+    )
+
+    assert len(events) == 1
+    assert await store.load_active("AAPL") is None
 
 
 @pytest.mark.unit

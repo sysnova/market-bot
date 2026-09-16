@@ -205,10 +205,15 @@ class MarketBotAssembly:
         self,
         *,
         store: EntryOpportunityStore,
+        allow_extended_hours: bool = False,
     ) -> EntryOpportunityEngine:
         return cast(
             "EntryOpportunityEngine",
-            self.build(EngineSlot.ENTRY_OPPORTUNITY, store=store),
+            self.build(
+                EngineSlot.ENTRY_OPPORTUNITY,
+                store=store,
+                allow_extended_hours=allow_extended_hours,
+            ),
         )
 
     def build_entry_recovery(self) -> EntryRecoveryEngine:

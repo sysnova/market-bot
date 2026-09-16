@@ -38,10 +38,19 @@ def is_regular_session(value: datetime) -> bool:
     return market_session(value) is MarketSession.REGULAR
 
 
-def is_intraday_analysis_session(value: datetime) -> bool:
-    """Allow premarket and RTH while keeping after-hours out of Intraday."""
+def is_intraday_analysis_session(
+    value: datetime, *, include_extended_hours: bool = False
+) -> bool:
+    """Select RTH only, or all three weekday US-equity sessions."""
 
-    return market_session(value) in {MarketSession.PRE_MARKET, MarketSession.REGULAR}
+    session = market_session(value)
+    if include_extended_hours:
+        return session in {
+            MarketSession.PRE_MARKET,
+            MarketSession.REGULAR,
+            MarketSession.AFTER_HOURS,
+        }
+    return session is MarketSession.REGULAR
 
 
 def is_regular_session_close_minute(value: datetime) -> bool:

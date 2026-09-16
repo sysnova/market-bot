@@ -36,14 +36,16 @@ from .v13 import EntryOpportunityEngineV13
 
 class EntryOpportunityEngineV14(EntryOpportunityEngineV13):
     engine_version = "14.0.0"
+    consumes_confirmed_short_alerts = True
 
     def __init__(
         self,
         *,
         store: EntryOpportunityStore,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        allow_extended_hours: bool = False,
     ) -> None:
-        super().__init__(store=store)
+        super().__init__(store=store, allow_extended_hours=allow_extended_hours)
         self._now = now
 
     async def ingest_alert(self, alert: LocalAlert) -> tuple[EntryOpportunityEvent, ...]:
@@ -57,7 +59,10 @@ class EntryOpportunityEngineV14(EntryOpportunityEngineV13):
         if (
             alert.expires_at is None
             or not alert.created_at <= now < alert.expires_at
-            or not is_regular_session(alert.created_at)
+            or (
+                not self._allow_extended_hours
+                and not is_regular_session(alert.created_at)
+            )
             or await self._store.event_seen(alert.alert_id)
         ):
             return ()
@@ -214,7 +219,10 @@ class EntryOpportunityEngineV14(EntryOpportunityEngineV13):
         if (
             not bar.is_final
             or bar.timeframe is not BarTimeframe.MINUTE_1
-            or not is_regular_session(bar.timestamp)
+            or (
+                not self._allow_extended_hours
+                and not is_regular_session(bar.timestamp)
+            )
             or bar.timestamp < active.armed_at
             or (
                 active.last_market_bar_at is not None and bar.timestamp <= active.last_market_bar_at

@@ -17,6 +17,12 @@
 - `IntradayEngineV7`: agrega la vía SHORT `DISPLACEMENT`. Puede confirmar fuera de la ventana
   local sólo con gate SHORT crudo, lower high/confirmación strong, riesgo válido, momentum de
   cinco minutos de al menos -0,50 % y RVOL de al menos 2,00. La vía estándar no cambia.
+- `IntradayEngineV8`: agrega la vía `EARLY_BREAKDOWN` para quiebres eficientes con lower high,
+  momentum de al menos -0,50 % y RVOL de al menos 1,30, aun con calidad `standard`.
+- `IntradayEngineV9`: endurece exclusivamente la vía SHORT `STANDARD`. Exige dos evidencias
+  independientes además del lower high y la calidad strong: persistencia del quiebre en dos
+  cierres y distancia máxima de 2 ATR respecto de EMA20. Sin ambas queda `WATCH` esperando
+  retest; las vías especializadas `DISPLACEMENT` y `EARLY_BREAKDOWN` conservan sus gates de flujo.
 
 Un trigger V1 con evidencia débil se degrada a `WATCH` en V2. Entry Watcher sólo acepta una
 confirmación intradiaria favorable y con un setup alcista explícitamente reconocido.
@@ -42,9 +48,12 @@ orders, quantities, position state, execution calls or Trading API concepts.
 input, making repeated evaluations reproducible and auditable. Reasons and all
 calculated evidence are exposed through stable metrics.
 
-La composición live utiliza `IntradayEngineV7` por defecto; las versiones anteriores continúan
-disponibles para rollback y replay. Intraday consume premarket y RTH como sesiones separadas;
-Swing y 4HGERI conservan exclusivamente sus barras regulares.
+La composición live utiliza `IntradayEngineV9` por defecto; las versiones anteriores continúan
+disponibles para rollback y replay. Con `MARKETBOT_MARKET_SESSION_MODE=AFTER`, Intraday
+consume premarket, RTH y after-hours como sesiones separadas; con `RTH`, solo consume la rueda
+regular. `MARKETBOT_EXTENDED_HOURS_ORDER_IMPACT=false` mantiene PRE/AFTER observacional, sin
+crear compras simuladas ni modificar oportunidades abiertas. Swing y 4HGERI conservan
+exclusivamente sus barras regulares.
 
 Run focused verification with:
 

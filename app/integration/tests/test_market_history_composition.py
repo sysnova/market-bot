@@ -227,6 +227,43 @@ async def test_loader_can_include_premarket_only_for_intraday_warmup() -> None:
     assert bars == (premarket, regular)
 
 
+async def test_loader_can_include_all_extended_hours_for_intraday_warmup() -> None:
+    client = FakeClient()
+    premarket = bar(
+        BarTimeframe.MINUTE_1,
+        timestamp=datetime(2026, 7, 31, 12, 0, tzinfo=UTC),
+    )
+    regular = bar(
+        BarTimeframe.MINUTE_1,
+        timestamp=datetime(2026, 7, 31, 14, 0, tzinfo=UTC),
+    )
+    after_hours = bar(
+        BarTimeframe.MINUTE_1,
+        timestamp=datetime(2026, 7, 31, 21, 0, tzinfo=UTC),
+    )
+    repository = FakeRepository((premarket, regular, after_hours))
+    loader = MarketHistoryLoader(client=client, repository=repository)  # type: ignore[arg-type]
+    requirements = (
+        MarketHistoryRequirement(
+            timeframe=BarTimeframe.MINUTE_1,
+            lookback=timedelta(days=1),
+            max_bars_per_symbol=500,
+        ),
+    )
+
+    bars = await loader.ensure_and_load(
+        engine_id="intraday-v8",
+        symbols=("TGT",),
+        requirements=requirements,
+        as_of=NOW,
+        include_premarket_intraday=True,
+        include_after_hours_intraday=True,
+    )
+
+    assert repository.calls == [(("TGT",), BarTimeframe.MINUTE_1, 1500, False)]
+    assert bars == (premarket, regular, after_hours)
+
+
 async def test_loader_excludes_current_partial_daily_bar() -> None:
     client = FakeClient()
     repository = FakeRepository(

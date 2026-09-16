@@ -127,7 +127,11 @@ async def test_intraday_worker_keeps_unknown_symbol_quiet_until_warmup_completes
 async def test_intraday_worker_analyzes_premarket_as_its_own_session() -> None:
     publisher = RecordingPublisher()
     analyzer = RecordingAnalyzer()
-    worker = IntradayWorker(publisher=publisher, analyzer=analyzer)
+    worker = IntradayWorker(
+        publisher=publisher,
+        analyzer=analyzer,
+        include_extended_hours=True,
+    )
     premarket_open = datetime(2026, 7, 28, 11, 30, tzinfo=UTC)
     bars = tuple(minute(premarket_open + timedelta(minutes=index)) for index in range(6))
 
@@ -140,10 +144,14 @@ async def test_intraday_worker_analyzes_premarket_as_its_own_session() -> None:
 
 
 @pytest.mark.unit
-async def test_intraday_worker_keeps_after_hours_quiet() -> None:
+async def test_intraday_worker_analyzes_after_hours_as_its_own_session_when_enabled() -> None:
     publisher = RecordingPublisher()
     analyzer = RecordingAnalyzer()
-    worker = IntradayWorker(publisher=publisher, analyzer=analyzer)
+    worker = IntradayWorker(
+        publisher=publisher,
+        analyzer=analyzer,
+        include_extended_hours=True,
+    )
     await worker.bootstrap((minute(NOW),), symbols=("HIMS",))
 
     after_hours = minute(datetime(2026, 7, 28, 21, 0, tzinfo=UTC), "120")
@@ -157,10 +165,29 @@ async def test_intraday_worker_keeps_after_hours_quiet() -> None:
         )
     )
 
-    # The after-hours boundary may flush the pending final RTH bucket, but the
-    # after-hours bar itself must never enter the analytical context.
     assert len(analyzer.contexts) == 2
-    assert all(
-        context.minute_bars[-1].close == Decimal("100")
-        for context in analyzer.contexts
-    )
+    assert analyzer.contexts[-1].minute_bars == (after_hours,)
+    assert analyzer.contexts[-1].five_minute_bars == ()
+
+
+@pytest.mark.unit
+async def test_intraday_worker_keeps_extended_hours_quiet_in_rth_mode() -> None:
+    publisher = RecordingPublisher()
+    analyzer = RecordingAnalyzer()
+    worker = IntradayWorker(publisher=publisher, analyzer=analyzer)
+    worker.activate_universe(("HIMS",))
+    premarket = minute(datetime(2026, 7, 28, 12, 0, tzinfo=UTC), "90")
+    after_hours = minute(datetime(2026, 7, 28, 21, 0, tzinfo=UTC), "120")
+
+    for current in (premarket, after_hours):
+        await worker.handle_market_event(
+            EventEnvelope(
+                event_type=MARKET_BAR_EVENT,
+                occurred_at=current.timestamp,
+                source="test",
+                subject="HIMS",
+                payload=current,
+            )
+        )
+
+    assert analyzer.contexts == []

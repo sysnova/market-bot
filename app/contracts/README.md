@@ -187,11 +187,12 @@ nonempty snapshots retain their validation rules; no persisted buy is converted
 into an observation and no migration of existing records is required.
 # SwingTrade entry geometry
 
-`MarketHistoryRequest.include_premarket_intraday` is optional and defaults to
-`false` for existing v1 requests. It explicitly requests extended intraday
+`MarketHistoryRequest.include_premarket_intraday` and
+`MarketHistoryRequest.include_after_hours_intraday` are optional and default to
+`false` for existing v1 requests. They explicitly request extended intraday
 history when needed; regular-session consumers do not allocate extended windows.
 Clients and the central history service must be deployed together when sending
-this field to a server built before its introduction.
+these fields to a server built before their introduction.
 
 `SwingTradeAssessment.zone_low/zone_high` retain the Fibonacci context. The optional
 `entry_zone_low`, `entry_zone_high`, and `entry_invalidation` are an all-or-none

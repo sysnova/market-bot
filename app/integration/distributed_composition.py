@@ -33,6 +33,7 @@ from app.alpaca_market_data.transports import HttpxTransport, WebsocketsConnecto
 from app.alpaca_market_data.websocket import AlpacaMarketDataStream
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
+from app.common.market_session import is_regular_session
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
@@ -250,7 +251,12 @@ async def run_engine_process(
             symbols=universe.symbols,
             requirements=engine_history_requests(horizon),
             as_of=as_of,
-            include_premarket_intraday=horizon is AnalysisHorizon.INTRADAY,
+            include_premarket_intraday=(
+                horizon is AnalysisHorizon.INTRADAY and settings.extended_hours_enabled
+            ),
+            include_after_hours_intraday=(
+                horizon is AnalysisHorizon.INTRADAY and settings.extended_hours_enabled
+            ),
         )
         bars = history.bars
         # Count during bootstrap, not by reading and decoding Redis twice.
@@ -280,7 +286,12 @@ async def run_engine_process(
             total_ms=history.total_ms,
             requirements=history_requirements,
         )
-        worker = _build_worker(horizon, bus, assembly=assembly)
+        worker = _build_worker(
+            horizon,
+            bus,
+            assembly=assembly,
+            include_extended_hours=settings.extended_hours_enabled,
+        )
         if horizon is AnalysisHorizon.SWING and assembly.spec(EngineSlot.SWING).implementation in {
             "11.0.0",
             "12.0.0",
@@ -380,7 +391,14 @@ async def run_engine_process(
                                 symbols=added,
                                 requirements=engine_history_requests(horizon),
                                 as_of=clock.now(),
-                                include_premarket_intraday=(horizon is AnalysisHorizon.INTRADAY),
+                                include_premarket_intraday=(
+                                    horizon is AnalysisHorizon.INTRADAY
+                                    and settings.extended_hours_enabled
+                                ),
+                                include_after_hours_intraday=(
+                                    horizon is AnalysisHorizon.INTRADAY
+                                    and settings.extended_hours_enabled
+                                ),
                             )
                             await worker.bootstrap(refresh_bars, symbols=added)
                         initial_results = await worker.handle_universe_changed(consumer_change)
@@ -418,6 +436,8 @@ async def run_engine_process(
             "marketbot_definition_version": assembly.definition.version,
             "engine_implementation": assembly.spec(_slot_for_horizon(horizon)).implementation,
             "engine_strategy_version": assembly.spec(_slot_for_horizon(horizon)).strategy.version,
+            "market_session_mode": settings.market_session_mode.value,
+            "extended_hours_order_impact": settings.extended_hours_order_impact,
             "warmup_total_ms": warmup_total_ms,
             "warmup_universe_ms": universe_ms,
             "warmup_nats_connect_ms": nats_connect_ms,
@@ -940,9 +960,13 @@ async def run_alert_process(
         signal = entry_signal_from_alert_watch(transition)
         if signal is not None and isinstance(engine, AlertEngineV37):
             signal = engine.annotate_entry_signal(signal, now=clock.now())
-        if signal is not None and not (
+        if (
+            signal is not None
+            and _order_impact_allowed(signal.created_at, settings)
+            and not (
             isinstance(engine, AlertEngineV36)
             and engine.news_blocks_entry(transition.symbol, now=clock.now())
+            )
         ):
             await publish_entry_signal(bus, signal, source="alert")
 
@@ -1038,6 +1062,8 @@ async def run_alert_process(
             "analysis_subject": "marketbot.v1.analysis.result.>",
             "entry_watch_subject": "marketbot.v1.entry-watch.transition.>",
             "entry_opportunity_subject": "marketbot.v1.entry-opportunity.transition.>",
+            "market_session_mode": settings.market_session_mode.value,
+            "extended_hours_order_impact": settings.extended_hours_order_impact,
             "entry_setup_subject": (
                 "marketbot.v1.entry-setup.>" if isinstance(engine, AlertEngineV32) else "disabled"
             ),
@@ -1118,6 +1144,8 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
                 if isinstance(envelope.payload, AnalysisResult)
                 else AnalysisResult.model_validate(envelope.payload, strict=False)
             )
+            if not _analysis_order_impact_allowed(result, settings):
+                return
             await watcher.ingest(result, now=clock.now())
 
         subscription = await bus.subscribe(
@@ -1136,6 +1164,8 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
             "output_subject": "marketbot.v1.entry-watch.transition.>",
             "persistence": "postgresql",
             "delivery": "transactional-outbox",
+            "market_session_mode": settings.market_session_mode.value,
+            "extended_hours_order_impact": settings.extended_hours_order_impact,
             **universe_health_details("entry-watcher"),
         }
         await _publish_health(bus, watcher_service, details, clock.now())
@@ -1176,7 +1206,10 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 "entry opportunity schema is unavailable; apply "
                 "20260807010000_entry_opportunity_lifecycle.sql"
             )
-        engine = assembly.build_entry_opportunity(store=store)
+        engine = assembly.build_entry_opportunity(
+            store=store,
+            allow_extended_hours=settings.extended_hours_order_impact,
+        )
         leveraged_opportunity_symbols: tuple[str, ...] = ()
         leveraged_underlyings: tuple[str, ...] = ()
         if (
@@ -1205,6 +1238,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 if isinstance(envelope.payload, AnalysisResult)
                 else AnalysisResult.model_validate(envelope.payload, strict=False)
             )
+            if not _analysis_order_impact_allowed(result, settings):
+                return
             await engine.ingest_analysis(result, now=clock.now())
 
         async def handle_transition(envelope: EventEnvelope) -> None:
@@ -1215,6 +1250,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 if isinstance(envelope.payload, EntryWatchTransition)
                 else EntryWatchTransition.model_validate(envelope.payload, strict=False)
             )
+            if not _order_impact_allowed(transition.occurred_at, settings):
+                return
             await engine.ingest_transition(transition)
 
         async def handle_bar(envelope: EventEnvelope) -> None:
@@ -1227,6 +1264,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 else MarketBar.model_validate(envelope.payload, strict=False)
             )
             if not bar.is_final or bar.timeframe is not BarTimeframe.MINUTE_1:
+                return
+            if not _order_impact_allowed(bar.timestamp, settings):
                 return
             async with recovery_lock:
                 if recovering_bars:
@@ -1242,6 +1281,10 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 if isinstance(envelope.payload, LocalAlert)
                 else LocalAlert.model_validate(envelope.payload, strict=False)
             )
+            if not _entry_opportunity_accepts_local_alert(engine, alert):
+                return
+            if not _order_impact_allowed(alert.created_at, settings):
+                return
             await engine.ingest_alert(alert)
 
         async def handle_signal(envelope: EventEnvelope) -> None:
@@ -1254,6 +1297,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 if isinstance(envelope.payload, EntrySignal)
                 else EntrySignal.model_validate(envelope.payload, strict=False)
             )
+            if not _order_impact_allowed(signal.created_at, settings):
+                return
             await engine.ingest_signal(signal)
 
         async def handle_leveraged_assessment(envelope: EventEnvelope) -> None:
@@ -1290,6 +1335,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 requirements=recovery_requirements,
                 as_of=recovery_as_of,
                 force_refresh=True,
+                include_premarket_intraday=settings.extended_hours_order_impact,
+                include_after_hours_intraday=settings.extended_hours_order_impact,
             )
             async with recovery_lock:
                 recovered_bars = await replay_pending_entry_opportunity_bars(
@@ -1319,8 +1366,9 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 )
                 for index, symbol in enumerate(leveraged_underlyings, start=1)
             )
-        else:
-            handlers.append(("marketbot.v1.alert.local.>", handle_alert, "alerts"))
+        if _entry_opportunity_consumes_local_alerts(engine):
+            suffix = "short-alerts" if isinstance(engine, EntryOpportunityEngineV2) else "alerts"
+            handlers.append(("marketbot.v1.alert.local.>", handle_alert, suffix))
         for subject, handler, suffix in handlers:
             subscriptions.append(
                 await bus.subscribe(
@@ -1373,6 +1421,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             "output_subject": "marketbot.v1.entry-opportunity.transition.>",
             "persistence": "postgresql",
             "delivery": "transactional-outbox",
+            "market_session_mode": settings.market_session_mode.value,
+            "extended_hours_order_impact": settings.extended_hours_order_impact,
             **universe_health_details("entry-opportunity"),
         }
         if isinstance(engine, EntryOpportunityEngineV2):
@@ -1527,14 +1577,49 @@ def _build_worker(
     publisher: EventPublisher,
     *,
     assembly: MarketBotAssembly,
+    include_extended_hours: bool = False,
 ) -> HorizonWorker:
     if horizon is AnalysisHorizon.LONG_TERM:
         return LongTermWorker(publisher=publisher, analyzer=assembly.build_long_term())
     if horizon is AnalysisHorizon.SWING:
         return SwingWorker(publisher=publisher, analyzer=assembly.build_swing())
     if horizon is AnalysisHorizon.INTRADAY:
-        return IntradayWorker(publisher=publisher, analyzer=assembly.build_intraday())
+        return IntradayWorker(
+            publisher=publisher,
+            analyzer=assembly.build_intraday(),
+            include_extended_hours=include_extended_hours,
+        )
     raise ValueError("unsupported distributed horizon")
+
+
+def _order_impact_allowed(timestamp: datetime, settings: AppSettings) -> bool:
+    return is_regular_session(timestamp) or settings.extended_hours_order_impact
+
+
+def _entry_opportunity_consumes_local_alerts(engine: object) -> bool:
+    """Retain legacy alerts and the dedicated SHORT path added in v14."""
+
+    return not isinstance(engine, EntryOpportunityEngineV2) or bool(
+        getattr(engine, "consumes_confirmed_short_alerts", False)
+    )
+
+
+def _entry_opportunity_accepts_local_alert(engine: object, alert: LocalAlert) -> bool:
+    """Prevent modern signal consumers from processing duplicate LONG alerts."""
+
+    if not isinstance(engine, EntryOpportunityEngineV2):
+        return True
+    return bool(getattr(engine, "consumes_confirmed_short_alerts", False)) and (
+        alert.kind is AlertKind.BEARISH_CONSENSUS
+        and "short_entry_confirmed" in alert.reasons
+    )
+
+
+def _analysis_order_impact_allowed(result: AnalysisResult, settings: AppSettings) -> bool:
+    return (
+        result.horizon is not AnalysisHorizon.INTRADAY
+        or _order_impact_allowed(result.as_of, settings)
+    )
 
 
 def _slot_for_horizon(horizon: AnalysisHorizon) -> EngineSlot:

@@ -1,22 +1,30 @@
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
 from app.common.settings import AppSettings
 from app.contracts import (
     SERVICE_HEALTH_EVENT,
+    AlertKind,
+    AlertSeverity,
     AnalysisHorizon,
     BarTimeframe,
     EventEnvelope,
+    LocalAlert,
     ServiceHealth,
     ServiceStatus,
 )
+from app.entry_opportunity_engine import EntryOpportunityEngineV22
 from app.integration.distributed_composition import (
     _alert_durable_name,
     _analytical_symbols,
     _build_worker,
+    _entry_opportunity_accepts_local_alert,
+    _entry_opportunity_consumes_local_alerts,
     _entry_opportunity_symbols,
     _entry_watcher_subscription_options,
     _horizon_durable_name,
@@ -175,6 +183,34 @@ def test_entry_watcher_subscription_replays_latest_subject_snapshots() -> None:
     assert options.replay_all is False
     assert options.replay_latest_per_subject is True
     assert options.ack_wait_seconds == 60
+
+
+@pytest.mark.unit
+def test_current_opportunity_engine_consumes_only_confirmed_short_local_alerts() -> None:
+    engine = object.__new__(EntryOpportunityEngineV22)
+    alert = LocalAlert(
+        symbol="ASTS",
+        kind=AlertKind.BEARISH_CONSENSUS,
+        severity=AlertSeverity.ACTION,
+        title="ASTS SHORT CONFIRMED",
+        message="Simulated short",
+        created_at=datetime(2026, 9, 16, 19, 26, tzinfo=UTC),
+        expires_at=datetime(2026, 9, 16, 19, 41, tzinfo=UTC),
+        horizons=(AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY),
+        component_analysis_ids=(
+            UUID("0195f3a5-9000-7000-8000-000000000011"),
+        ),
+        score=Decimal("80"),
+        deduplication_key="short:asts:1",
+        reasons=("short_entry_confirmed",),
+    )
+
+    assert _entry_opportunity_consumes_local_alerts(engine)
+    assert _entry_opportunity_accepts_local_alert(engine, alert)
+    assert not _entry_opportunity_accepts_local_alert(
+        engine,
+        alert.model_copy(update={"reasons": ("bearish_consensus",)}),
+    )
 
 
 @pytest.mark.unit

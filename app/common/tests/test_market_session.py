@@ -5,6 +5,7 @@ import pytest
 
 from app.common.market_session import (
     is_completed_daily_bar,
+    is_intraday_analysis_session,
     is_regular_analytical_bar,
     is_regular_session_close_minute,
     market_session,
@@ -39,6 +40,19 @@ def _bar(timeframe: BarTimeframe, timestamp: datetime) -> MarketBar:
 )
 def test_market_session_uses_new_york_rth(timestamp: datetime, expected: MarketSession) -> None:
     assert market_session(timestamp) is expected
+
+
+def test_intraday_analysis_can_opt_into_both_extended_sessions() -> None:
+    premarket = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
+    regular = datetime(2026, 7, 24, 15, 0, tzinfo=UTC)
+    after_hours = datetime(2026, 7, 24, 21, 0, tzinfo=UTC)
+
+    assert not is_intraday_analysis_session(premarket)
+    assert is_intraday_analysis_session(regular)
+    assert not is_intraday_analysis_session(after_hours)
+    assert is_intraday_analysis_session(premarket, include_extended_hours=True)
+    assert is_intraday_analysis_session(regular, include_extended_hours=True)
+    assert is_intraday_analysis_session(after_hours, include_extended_hours=True)
 
 
 @pytest.mark.unit

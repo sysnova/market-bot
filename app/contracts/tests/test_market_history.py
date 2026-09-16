@@ -39,10 +39,15 @@ def test_market_history_contract_is_small_and_versioned() -> None:
     assert request.symbols == ("TGT", "ADUR")
     assert response.error is None
     assert request.include_premarket_intraday is False
+    assert request.include_after_hours_intraday is False
     premarket = request.model_copy(update={"include_premarket_intraday": True})
     assert MarketHistoryRequest.model_validate_json(
         premarket.model_dump_json()
     ).include_premarket_intraday
+    after_hours = request.model_copy(update={"include_after_hours_intraday": True})
+    assert MarketHistoryRequest.model_validate_json(
+        after_hours.model_dump_json()
+    ).include_after_hours_intraday
 
 
 def test_market_history_request_rejects_duplicate_timeframes() -> None:

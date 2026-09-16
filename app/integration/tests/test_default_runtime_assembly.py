@@ -20,9 +20,11 @@ def test_default_entry_points_select_corrected_swing_trade(monkeypatch: pytest.M
     assert selected is not None
     assert Path(selected[1]) == settings.definition_path
     assembly = MarketBotAssembly.from_path(ROOT / settings.definition_path)
-    assert assembly.definition.version == "7.74.0"
+    assert assembly.definition.version == "7.75.0"
     assert assembly.spec(EngineSlot.SWING_TRADE).implementation == "1.12.0"
     assert assembly.spec(EngineSlot.SWING_TRADE).strategy.version == "1.9.0"
+    assert assembly.spec(EngineSlot.INTRADAY).implementation == "9.0.0"
+    assert assembly.spec(EngineSlot.INTRADAY).strategy.version == "1.5.0"
     registry = default_engine_registry()
     for slot in registry.slots():
         latest = max(

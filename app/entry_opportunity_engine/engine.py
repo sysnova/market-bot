@@ -82,10 +82,12 @@ class EntryOpportunityEngine:
         store: EntryOpportunityStore,
         id_factory: Callable[[], UUID] = new_uuid7,
         child_id_factory: Callable[[], UUID] = new_uuid7,
+        allow_extended_hours: bool = False,
     ) -> None:
         self._store = store
         self._id_factory = id_factory
         self._child_id_factory = child_id_factory
+        self._allow_extended_hours = allow_extended_hours
 
     @staticmethod
     def _terminal_watcher_transition_is_unrelated(
@@ -558,7 +560,10 @@ class EntryOpportunityEngine:
         if (
             not bar.is_final
             or bar.timeframe is not BarTimeframe.MINUTE_1
-            or not is_regular_session(bar.timestamp)
+            or (
+                not self._allow_extended_hours
+                and not is_regular_session(bar.timestamp)
+            )
         ):
             return ()
         active = await self._store.load_active(bar.symbol)
@@ -1585,7 +1590,7 @@ class EntryOpportunityEngineV5(EntryOpportunityEngineV4):
             return ()
         active = await self._store.load_active(signal.symbol)
         if active is None:
-            if not is_regular_session(signal.created_at):
+            if not self._allow_extended_hours and not is_regular_session(signal.created_at):
                 return ()
             if signal.countertrend_maturity is None or not _has_complete_signal_levels(signal):
                 return ()

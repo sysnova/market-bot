@@ -12,6 +12,7 @@ from app.common.clock import Clock
 from app.common.market_session import (
     is_completed_daily_bar,
     is_regular_analytical_bar,
+    is_regular_session,
     market_session,
 )
 from app.contracts import (
@@ -19,6 +20,7 @@ from app.contracts import (
     ENTRY_OPPORTUNITY_EVENT,
     MARKET_BAR_EVENT,
     MARKET_BAR_UPDATED_EVENT,
+    AnalysisHorizon,
     AnalysisResult,
     BarTimeframe,
     EntryOpportunityEvent,
@@ -106,6 +108,8 @@ class AnalysisRuntime:
         aggregator: MinuteBarAggregator | None = None,
         entry_watcher: EntryWatchAnalyzer | None = None,
         entry_opportunity: EntryOpportunityAnalyzer | None = None,
+        include_extended_hours: bool = False,
+        extended_hours_order_impact: bool = False,
     ) -> None:
         self._store = store
         self._publisher = publisher
@@ -118,9 +122,13 @@ class AnalysisRuntime:
         self._aggregator = aggregator or MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_5, BarTimeframe.MINUTE_15)
         )
-        self._premarket_aggregator = MinuteBarAggregator(
+        self._include_extended_hours = include_extended_hours
+        self._extended_hours_order_impact = extended_hours_order_impact
+        self._extended_aggregator = MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_5,),
-            accepted_sessions=frozenset({MarketSession.PRE_MARKET}),
+            accepted_sessions=frozenset(
+                {MarketSession.PRE_MARKET, MarketSession.AFTER_HOURS}
+            ),
         )
         self._daily_aggregator = RegularSessionDailyAggregator()
         self._entry_watcher = entry_watcher
@@ -145,26 +153,36 @@ class AnalysisRuntime:
         if not is_regular_analytical_bar(bar):
             if (
                 bar.timeframe is BarTimeframe.MINUTE_1
-                and market_session(bar.timestamp) is MarketSession.PRE_MARKET
+                and self._include_extended_hours
+                and market_session(bar.timestamp)
+                in {MarketSession.PRE_MARKET, MarketSession.AFTER_HOURS}
             ):
                 self._store.add(bar)
-                for aggregated in self._premarket_aggregator.add(bar):
+                for aggregated in self._extended_aggregator.add(bar):
                     self._store.add(aggregated)
                 if self._live and bar.is_final:
+                    if (
+                        self._entry_opportunity is not None
+                        and self._extended_hours_order_impact
+                    ):
+                        await self._dispatch_opportunity_events(
+                            await self._entry_opportunity.ingest_bar(bar)
+                        )
                     await self._evaluate_intraday(bar.symbol, (envelope.event_id,))
             elif bar.timeframe is BarTimeframe.MINUTE_1:
                 for aggregated in self._aggregator.add(bar):
                     await self._publish_aggregated(aggregated, envelope.event_id)
-                for aggregated in self._premarket_aggregator.add(bar):
-                    self._store.add(aggregated)
+                if self._include_extended_hours:
+                    for aggregated in self._extended_aggregator.add(bar):
+                        self._store.add(aggregated)
             return
         if bar.timeframe is BarTimeframe.DAY_1 and not is_completed_daily_bar(
             bar, as_of=self._clock.now()
         ):
             return
         self._store.add(bar)
-        if bar.timeframe is BarTimeframe.MINUTE_1:
-            for aggregated in self._premarket_aggregator.add(bar):
+        if bar.timeframe is BarTimeframe.MINUTE_1 and self._include_extended_hours:
+            for aggregated in self._extended_aggregator.add(bar):
                 self._store.add(aggregated)
         if not self._live or not bar.is_final:
             return
@@ -205,12 +223,17 @@ class AnalysisRuntime:
             envelope,
         )
         now = self._clock.now()
-        if self._entry_opportunity is not None:
+        order_impact_allowed = (
+            result.horizon is not AnalysisHorizon.INTRADAY
+            or is_regular_session(result.as_of)
+            or self._extended_hours_order_impact
+        )
+        if self._entry_opportunity is not None and order_impact_allowed:
             await self._dispatch_opportunity_events(
                 await self._entry_opportunity.ingest_analysis(result, now=now)
             )
         alert = self._alert_engine.ingest(result, now=now)
-        if self._entry_watcher is not None:
+        if self._entry_watcher is not None and order_impact_allowed:
             transition = await self._entry_watcher.ingest(result, now=now)
             if transition is not None:
                 if self._entry_opportunity is not None:
@@ -221,7 +244,7 @@ class AnalysisRuntime:
                     self._alert_engine.ingest_entry_watch(transition, now=now)
                 )
         if alert is not None:
-            if self._entry_opportunity is not None:
+            if self._entry_opportunity is not None and order_impact_allowed:
                 await self._dispatch_opportunity_events(
                     await self._entry_opportunity.ingest_alert(alert)
                 )

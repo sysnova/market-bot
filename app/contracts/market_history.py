@@ -34,6 +34,7 @@ class MarketHistoryRequest(StrictFrozenModel):
     requested_at: datetime
     force_refresh: bool = False
     include_premarket_intraday: bool = False
+    include_after_hours_intraday: bool = False
 
     @field_validator("symbols", mode="before")
     @classmethod

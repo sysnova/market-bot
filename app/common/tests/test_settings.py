@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from app.common.settings import AppSettings, Environment
+from app.common.settings import AppSettings, Environment, MarketSessionMode
 
 
 def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -21,11 +21,34 @@ def test_settings_read_marketbot_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.entry_watcher_enabled is True
     assert settings.entry_watch_ttl_days == 56
     assert settings.alert_checkpoint_interval_seconds == 30
-    assert settings.definition_path == Path("configs/marketbot/7.74.0.yaml")
+    assert settings.definition_path == Path("configs/marketbot/7.75.0.yaml")
     assert settings.news_intelligence_model == "gpt-5.4-nano-2026-03-17"
     assert settings.news_intelligence_refresh_seconds == 300
     assert settings.openai_configured is False
     assert settings.entry_confirmation_rule_version is None
+    assert settings.market_session_mode is MarketSessionMode.RTH
+    assert settings.extended_hours_order_impact is False
+
+
+def test_extended_session_settings_are_loaded_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MARKETBOT_MARKET_SESSION_MODE", "AFTER")
+    monkeypatch.setenv("MARKETBOT_EXTENDED_HOURS_ORDER_IMPACT", "true")
+
+    settings = AppSettings(_env_file=None)
+
+    assert settings.market_session_mode is MarketSessionMode.AFTER
+    assert settings.extended_hours_order_impact is True
+
+
+def test_extended_order_impact_requires_extended_monitoring() -> None:
+    with pytest.raises(ValidationError, match="requires AFTER"):
+        AppSettings(
+            _env_file=None,
+            market_session_mode=MarketSessionMode.RTH,
+            extended_hours_order_impact=True,
+        )
 
 
 def test_settings_reject_unknown_constructor_keys() -> None:
