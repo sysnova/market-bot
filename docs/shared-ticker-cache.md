@@ -126,3 +126,31 @@ de Long y SwingTrade con Redis. El smoke del CLI contra Redis real se habilita c
 El benchmark anterior de `scripts/benchmark_shared_ticker_cache.py` corresponde
 al prototipo HTTP retirado y no mide este diseño ni el consumo completo de WSL.
 La RAM y el tiempo del bot completo deben medirse tras desplegar este cambio.
+# Current analytical events and startup restoration
+
+The dashboard no longer replays seven days of analyses to choose a current
+result. The event bus restores at most one envelope per matching subject,
+reconciles each exact subject with JetStream, and uses Redis to preserve the
+newest analytical evaluation across process restarts. Redis current-event
+keys use `marketbot:cache:v2:events:<prefix>:<stream>:<subject>` and are independent
+of ephemeral engine leases. Bars remain in the existing canonical history views.
+
+Live delivery is established before restoration. Callbacks wait for restoration,
+then acknowledge only after successful handling. Cache publication follows the
+JetStream acknowledgement, and restoration reconciles the last retained event
+to repair an interrupted cache write. Current-state consumers use `NEW`, not
+`LAST_PER_SUBJECT`; historical consumers explicitly requesting `replay_all` keep
+their original semantics. The dashboard no longer requests `replay_all`.
+
+The shared history iterator counts bars while bootstrap consumes them. The
+startup logging path no longer makes a separate complete Redis read and JSON
+decode just to count bars. This change does not skip stateful engine calculation
+or assume that a persisted context is a complete, compatible engine checkpoint.
+
+Measured on 16 September 2026 against the same operational stream: restoring
+1,081 analysis subjects via `LAST_PER_SUBJECT` took 9.48 s and grew NATS HeapAlloc
+from 16 MB to 6.23 GB. Direct current-state restoration took 1.01 s and grew heap
+from 6.5 MB to 118 MB. A diagnostic AAPL dashboard session restored 14 assessments
+in 104 ms with empty snapshot keys and 71 ms on a second session with persisted
+keys. These are component measurements, not a claim about full-process startup
+peak RAM. No production stream history was deleted for these tests.

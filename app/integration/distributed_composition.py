@@ -108,7 +108,7 @@ from .postgres_universe import (
     UniverseSnapshot,
     fallback_universe,
 )
-from .redis_history import RedisHistoryWarmer, RedisIngressPublisher
+from .redis_history import RedisHistoryBars, RedisHistoryWarmer, RedisIngressPublisher
 from .redis_ticker_cache import RedisTickerCache
 from .swing_worker import SwingWorker
 from .ticker_cache_transport import shared_cache_client
@@ -253,7 +253,8 @@ async def run_engine_process(
             include_premarket_intraday=horizon is AnalysisHorizon.INTRADAY,
         )
         bars = history.bars
-        historical_bar_count = len(bars)
+        # Count during bootstrap, not by reading and decoding Redis twice.
+        historical_bar_count = None if isinstance(bars, RedisHistoryBars) else len(bars)
         history_ensure_ms = history.ensure_ms
         history_repository_read_ms = history.repository_read_ms
         history_selection_ms = history.selection_ms
@@ -311,6 +312,7 @@ async def run_engine_process(
                 await bus.wait_until_caught_up(order_flow_support_subscription, timeout_seconds=60)
         bootstrap_started = perf_counter()
         result_count = await worker.bootstrap(bars, symbols=universe.symbols)
+        historical_bar_count = len(bars)
         bootstrap_ms = _elapsed_ms(bootstrap_started)
         await logger.ainfo(
             "distributed_engine_bootstrap_completed",

@@ -225,3 +225,23 @@ async def test_stream_updates_redis_before_notifying_consumers() -> None:
         ),
     )
     assert target.published
+
+
+@pytest.mark.parametrize("chronological", [False, True])
+async def test_consumed_history_count_does_not_read_and_decode_it_again(
+    monkeypatch: pytest.MonkeyPatch, chronological: bool
+) -> None:
+    cache = RedisTickerCache(fakeredis.FakeRedis(decode_responses=True))
+    repo = Repository()
+    req = MarketHistoryRequirement(
+        timeframe=BarTimeframe.DAY_1, max_bars_per_symbol=10, lookback=timedelta(days=30)
+    )
+    await RedisHistoryWarmer(cache, repo).warm(("AAPL", "MSFT"), (req,))
+    bars = RedisHistoryBars(cache, ("AAPL", "MSFT"), (req,), repo.version, False)
+    values = [bar for bar in (bars.chronological() if chronological else bars)]
+
+    def forbidden(*args: object) -> None:
+        pytest.fail("counting must reuse the completed traversal")
+
+    monkeypatch.setattr(bars, "_window", forbidden)
+    assert len(bars) == len(values) == 2

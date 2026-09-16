@@ -17,7 +17,9 @@ from uuid import uuid4
 
 from app.common.context_cache import set_context_cache
 from app.common.settings import AppSettings
+from app.event_bus.current_state import configure_current_events
 
+from .redis_current_events import RedisCurrentEvents
 from .redis_ticker_cache import RedisTickerCache
 from .shared_ticker_cache import TickerCache
 
@@ -109,6 +111,12 @@ def configure_shared_cache(path: Path) -> None:
     client.start()
     _client = client
     set_context_cache(client)
+    if isinstance(client, RedisTickerCache):
+        configure_current_events(
+            lambda prefix, stream: RedisCurrentEvents(
+                client.redis, namespace=f"{client.namespace}events:{prefix}:{stream}:"
+            )
+        )
 
 
 def client_from_endpoint(endpoint: dict[str, Any]) -> CacheClient | RedisTickerCache:

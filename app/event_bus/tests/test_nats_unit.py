@@ -67,16 +67,17 @@ class FakeJetStream:
         self.subscribed.append((subject, durable, config))
         return self.subscription
 
-    async def stream_info(self, stream: str) -> object:
+    async def stream_info(self, stream: str, subjects_filter: str | None = None) -> object:
         self.stream_queries.append(stream)
         if self.stream_info_error is not None:
             raise self.stream_info_error
         return SimpleNamespace(
+            state=SimpleNamespace(subjects={k: 1 for k in self.last_messages}),
             config=SimpleNamespace(
                 subjects=stream_subjects("marketbot"),
                 max_age=self.max_age_seconds,
                 allow_msg_ttl=self.allow_msg_ttl,
-            )
+            ),
         )
 
     async def add_stream(
@@ -374,7 +375,8 @@ async def test_subscribe_can_hydrate_only_latest_message_per_subject() -> None:
     _, durable, config = js.subscribed[0]
     assert durable is None
     assert config.durable_name is None  # type: ignore[attr-defined]
-    assert config.deliver_policy is DeliverPolicy.LAST_PER_SUBJECT  # type: ignore[attr-defined]
+    assert config.deliver_policy is DeliverPolicy.NEW  # type: ignore[attr-defined]
+    assert config.max_ack_pending == 64  # type: ignore[attr-defined]
     await bus.wait_until_caught_up(subscription)
 
 
@@ -483,3 +485,98 @@ async def _append(items: list[EventEnvelope], item: EventEnvelope) -> None:
 
 async def _discard(_: EventEnvelope) -> None:
     return None
+
+
+async def test_snapshot_restore_subscribes_before_read_and_holds_live_until_restored(
+    event: EventEnvelope,
+) -> None:
+    import asyncio
+
+    received = []
+    reading = asyncio.Event()
+    release = asyncio.Event()
+    live_message = FakeMessage("marketbot.v1.analysis.result.SWING.AAPL", encode_envelope(event))
+
+    class RacingJetStream(FakeJetStream):
+        async def subscribe(
+            self, subject: str, *, durable: str | None, cb: Any, manual_ack: bool, config: object
+        ) -> FakeSubscription:
+            self.callback = cb
+            return await super().subscribe(
+                subject, durable=durable, cb=cb, manual_ack=manual_ack, config=config
+            )
+
+        async def get_last_msg(self, stream: str, subject: str) -> FakeMessage:
+            assert self.subscribed
+            reading.set()
+            await release.wait()
+            return live_message
+
+    js = RacingJetStream()
+    bus = NatsJetStreamEventBus(client=None, jetstream=js)
+
+    async def handler(envelope: EventEnvelope) -> None:
+        received.append(envelope)
+
+    sub = await bus.subscribe(
+        live_message.subject,
+        handler,
+        options=SubscriptionOptions(replay_latest_per_subject=True),
+    )
+    await reading.wait()
+    live = asyncio.create_task(js.callback(live_message))
+    await asyncio.sleep(0)
+    assert received == []
+    assert live_message.acked == 0
+    release.set()
+    await bus.wait_until_caught_up(sub)
+    await live
+    assert received == [event, event]  # overlap is allowed; no missing live event
+    assert live_message.acked == 1
+    await bus.close()
+
+
+async def test_snapshot_restoration_failure_is_not_reported_as_caught_up(
+    event: EventEnvelope,
+) -> None:
+    js = FakeJetStream(
+        last_messages={
+            "marketbot.v1.analysis.result.SWING.AAPL": FakeMessage("test", encode_envelope(event)),
+        }
+    )
+    bus = NatsJetStreamEventBus(client=None, jetstream=js)
+
+    async def failed(envelope: EventEnvelope) -> None:
+        raise RuntimeError("restore failed")
+
+    sub = await bus.subscribe(
+        "v1.analysis.result.>",
+        failed,
+        options=SubscriptionOptions(replay_latest_per_subject=True),
+    )
+    with pytest.raises(RuntimeError, match="restore failed"):
+        await bus.wait_until_caught_up(sub)
+    await bus.close()
+
+
+async def test_failed_publish_does_not_create_unpublished_snapshot(event: EventEnvelope) -> None:
+    class FailedJetStream(FakeJetStream):
+        async def publish(self, *args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("NATS unavailable")
+
+    class Snapshots:
+        def __init__(self) -> None:
+            self.saved: list[EventEnvelope] = []
+
+        async def put(self, subject: str, envelope: EventEnvelope) -> None:
+            self.saved.append(envelope)
+
+        async def get(self, subject: str) -> None:
+            return None
+
+    snapshots = Snapshots()
+    bus = NatsJetStreamEventBus(client=None, jetstream=FailedJetStream(), snapshots=snapshots)
+    with pytest.raises(RuntimeError, match="NATS unavailable"):
+        await bus.publish("v1.analysis.result.SWING.AAPL", event)
+    assert snapshots.saved == []
+    await bus.close()

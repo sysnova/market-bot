@@ -35,6 +35,32 @@ When omitted, the NATS adapter creates a unique durable consumer for the
 subscription lifetime. In-memory history is process-local and disappears on
 restart.
 
+`replay_latest_per_subject=True` uses a live `NEW` consumer followed by direct
+last-message lookups for the matching exact subjects. It does not create a
+JetStream `LAST_PER_SUBJECT` consumer: that operation scanned historical file
+blocks and reproduced a multi-gigabyte server heap spike. The subject listing
+contains metadata only; each matching subject contributes at most one envelope.
+Live callbacks wait until restoration finishes, then retain explicit ack/nak
+semantics. Overlap can produce duplicates, so handler idempotency remains required.
+Restoration failures propagate through `wait_until_caught_up`; an incomplete
+restore is never reported as caught up. State consumers allow 64 unacknowledged
+live messages during restoration. Existing named state subscriptions use a
+`-current-v2` durable because JetStream delivery policies cannot be changed in
+place; the adapter does not delete historical consumers or messages.
+
+The integration root supplies Redis current-event storage when the shared Redis
+cache is configured. A successful JetStream publication updates the current
+snapshot, and delivery also captures events from other publishers. Snapshots
+exclude raw bars/ticks and expire after seven days. For analysis results, Redis
+atomically keeps the newest evaluation/data timestamp even if an older bootstrap
+result is published later. Direct last-message reconciliation repairs a missing
+Redis write after a publisher crash. Without Redis, the adapter restores the
+last retained publication; it does not search older publications for a newer
+analytical timestamp. An empty Redis cache has the same migration limitation
+until current producers populate it; freshness is still evaluated from the
+actual result timestamps. Administrative purges must include corresponding
+Redis current-event keys when removing individual analytical records.
+
 The `MARKETBOT` stream keeps all versioned events, including market bars, for
 at most seven days. The limit is configured once on the stream; publications
 do not carry per-message TTL metadata. Connecting the adapter migrates new and

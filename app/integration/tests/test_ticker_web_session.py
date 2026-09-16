@@ -27,11 +27,8 @@ class Bus:
         self.subscriptions = []
 
     async def subscribe(self, subject: str, handler: Any, *, options: Any) -> Subscription:
-        assert (
-            options.replay_all
-            if subject.startswith("marketbot.v1.analysis.result.")
-            else options.replay_latest_per_subject
-        )
+        assert not options.replay_all
+        assert options.replay_latest_per_subject
         self.handlers.append(handler)
         subscription = Subscription()
         self.subscriptions.append(subscription)
@@ -291,7 +288,10 @@ async def test_new_session_restores_newest_analysis_even_after_older_bootstrap_p
                         }
                     }
                 )
-                for event in [recent, old] if options.replay_all else [old]:
+                assert not options.replay_all
+                assert options.replay_latest_per_subject
+                # The bus restores the materialized current result, then delivers live events.
+                for event in [recent, old]:
                     await handler(event)
             return subscription
 

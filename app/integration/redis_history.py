@@ -171,9 +171,13 @@ class RedisHistoryBars:
             yield bar
 
     def __iter__(self) -> Iterator[MarketBar]:
+        count = 0
         for requirement in self.requirements:
             for symbol in self.symbols:
-                yield from self._window(symbol, requirement)
+                for bar in self._window(symbol, requirement):
+                    count += 1
+                    yield bar
+        self._count = count
 
     def __len__(self) -> int:
         if self._count is None:
@@ -183,11 +187,15 @@ class RedisHistoryBars:
     def chronological(self) -> Iterator[MarketBar]:
         # Aggregators are keyed by ticker. Only within-ticker ordering is relevant;
         # sorting the whole universe would recreate the original memory spike.
+        count = 0
         for symbol in self.symbols:
-            yield from sorted(
+            for bar in sorted(
                 (bar for req in self.requirements for bar in self._window(symbol, req)),
                 key=lambda bar: bar.timestamp,
-            )
+            ):
+                count += 1
+                yield bar
+        self._count = count
 
 
 def chronological_bars(bars: Iterable[MarketBar]) -> Iterable[MarketBar]:
