@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.common.context_cache import context_store
 from app.common.market_session import market_session
 from app.common.settings import AppSettings
 from app.contracts import (
@@ -79,10 +80,10 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
     engine = assembly.build_leveraged_thesis()
     url = settings.nats_url.get_secret_value()
     bus = await NatsJetStreamEventBus.connect(servers=[url], prefix="marketbot", stream="MARKETBOT")
-    analyses: dict[str, AnalysisResult] = {}
-    flows: dict[str, OrderFlowState] = {}
-    supports: dict[str, SupportAssessment] = {}
-    previous: dict[str, LeveragedThesisAssessment] = {}
+    analyses = context_store(AnalysisResult)
+    flows = context_store(OrderFlowState)
+    supports = context_store(SupportAssessment)
+    previous = context_store(LeveragedThesisAssessment)
     subscriptions: list[Subscription] = []
     lock = asyncio.Lock()
 

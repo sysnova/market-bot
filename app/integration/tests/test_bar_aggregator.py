@@ -135,3 +135,35 @@ def test_four_hour_aggregator_uses_0930_et_anchor_and_flushes_short_final_segmen
     assert emitted[0].close == Decimal("115")
     assert emitted[1].timestamp == start + timedelta(hours=4)
     assert emitted[1].close == Decimal("125")
+def test_daily_aggregation_retains_constant_memory_before_session_close() -> None:
+    import gc
+    import weakref
+    from datetime import UTC, datetime, timedelta
+    from decimal import Decimal
+
+    from app.contracts import BarTimeframe, MarketBar
+    from app.integration.bar_aggregator import RegularSessionDailyAggregator
+
+    aggregator = RegularSessionDailyAggregator()
+    start = datetime(2026, 9, 15, 13, 30, tzinfo=UTC)
+    references = []
+    for index in range(389):
+        item = MarketBar(
+            symbol="AAPL", timeframe=BarTimeframe.MINUTE_1,
+            timestamp=start + timedelta(minutes=index), open=Decimal(100),
+            high=Decimal(102), low=Decimal(99), close=Decimal(101),
+            volume=Decimal(10), trade_count=2, vwap=Decimal("100.5"),
+            source="test", feed="sip",
+        )
+        references.append(weakref.ref(item))
+        assert aggregator.add(item) is None
+    gc.collect()
+    assert sum(reference() is not None for reference in references) <= 2
+    final = item.model_copy(update={"timestamp": start + timedelta(minutes=389)})
+    result = aggregator.add(final)
+    assert result is not None
+    assert result.volume == Decimal(3900)
+    assert result.trade_count == 780
+    assert result.vwap == Decimal("100.5")
+    assert result.open == Decimal(100)
+    assert result.close == Decimal(101)

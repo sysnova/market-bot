@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import MutableMapping
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from app.common.context_cache import grouped_context_store
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
@@ -48,6 +50,7 @@ from .distributed_composition import connect_nats, write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .entry_signal_adapter import entry_signal_from_fusion, publish_entry_signal
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
+from .ticker_context_store import context_store
 from .universe_policy import universe_health_details
 
 FUSION_SOURCE_SUBJECTS = (
@@ -105,11 +108,11 @@ class SignalFusionRuntime:
         self._publisher = publisher
         self._symbols = {item.strip().upper() for item in symbols}
         self._holding_quantities = holding_quantities
-        self._supports: dict[str, SupportAssessment] = {}
-        self._waves: dict[str, WaveAssessment] = {}
-        self._patreon: dict[str, PatreonCapsAssessment] = {}
-        self._analyses: dict[str, dict[AnalysisHorizon, AnalysisResult]] = {}
-        self._latest: dict[str, FusionAssessment] = {}
+        self._supports = context_store(SupportAssessment)
+        self._waves = context_store(WaveAssessment)
+        self._patreon = context_store(PatreonCapsAssessment)
+        self._analyses = grouped_context_store(AnalysisHorizon, AnalysisResult)
+        self._latest = context_store(FusionAssessment)
         self._hydrating = True
 
     async def restore_fusion(self, envelope: EventEnvelope) -> None:
@@ -350,7 +353,7 @@ class _Occurred(Protocol):
 
 
 def _keep_latest[OccurredT: _Occurred](
-    store: dict[str, OccurredT], key: str, item: OccurredT
+    store: MutableMapping[str, OccurredT], key: str, item: OccurredT
 ) -> None:
     current = store.get(key)
     if current is None or item.occurred_at >= current.occurred_at:

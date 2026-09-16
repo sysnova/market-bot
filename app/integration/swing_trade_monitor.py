@@ -20,6 +20,7 @@ from app.contracts import (
 from app.event_bus import NatsJetStreamEventBus
 
 from .distributed_composition import write_ready
+from .ticker_context_store import context_store
 
 _CLEAR_SCREEN = "\033[2J\033[H"
 _RESET = "\033[0m"
@@ -43,7 +44,7 @@ class SwingTradeDashboard:
     """Retain the newest complete assessment for each Watchlist symbol."""
 
     def __init__(self) -> None:
-        self._items: dict[str, SwingTradeAssessment] = {}
+        self._items = context_store(SwingTradeAssessment)
 
     def merge(self, assessment: SwingTradeAssessment) -> bool:
         current = self._items.get(assessment.symbol)

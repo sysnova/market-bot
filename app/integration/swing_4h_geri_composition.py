@@ -59,6 +59,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient
+from .ticker_context_store import context_store
 from .universe_policy import universe_health_details
 
 GERI_HISTORY_REQUESTS = (
@@ -129,12 +130,12 @@ class Swing4HGeriRuntime:
         self._symbols: set[str] = set()
         self._prices: dict[str, Decimal] = {}
         self._price_at: dict[str, datetime] = {}
-        self._daily_swing: dict[str, AnalysisResult] = {}
+        self._daily_swing = context_store(AnalysisResult)
         self._existing_maturity: dict[str, EntryMaturityLevel] = {}
         self._opportunity_at: dict[str, datetime] = {}
-        self._latest: dict[str, GeriAssessment] = {}
-        self._support: dict[str, SupportAssessment] = {}
-        self._order_flow_support: dict[str, OrderFlowSupportAssessment] = {}
+        self._latest = context_store(GeriAssessment)
+        self._support = context_store(SupportAssessment)
+        self._order_flow_support = context_store(OrderFlowSupportAssessment)
         self._last_countertrend_signal: dict[
             str, tuple[str, GeriCountertrendMaturity | None, tuple[str, ...]]
         ] = {}

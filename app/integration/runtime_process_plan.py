@@ -83,6 +83,7 @@ def build_runtime_process_plan(
     )
     active = set(active_slots)
     processes: list[RuntimeProcessSpec] = []
+    cache_endpoint = runtime_root / "ticker-cache.endpoint.json"
 
     def ready(name: str) -> Path:
         return status_root / f"{name}.ready.json"
@@ -98,6 +99,11 @@ def build_runtime_process_plan(
     ) -> None:
         if slot is not None and slot not in active:
             return
+        if name != "ticker-cache":
+            arguments = (
+                *arguments[:2], "--shared-cache", str(cache_endpoint), *arguments[2:]
+            )
+            dependencies = ("ticker-cache", *dependencies)
         processes.append(
             RuntimeProcessSpec(
                 name=name,
@@ -109,6 +115,14 @@ def build_runtime_process_plan(
             )
         )
 
+    add(
+        "ticker-cache",
+        (
+            "run", "marketbot", "serve", "ticker-cache",
+            "--endpoint-path", str(cache_endpoint),
+            "--ready-path", str(ready("ticker-cache")),
+        ),
+    )
     add(
         "outbox-relay",
         (

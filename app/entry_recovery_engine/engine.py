@@ -7,6 +7,7 @@ from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID
 
+from app.common.context_cache import grouped_context_store
 from app.contracts import (
     AnalysisHorizon,
     AnalysisResult,
@@ -44,7 +45,7 @@ class EntryRecoveryEngine:
     def __init__(self, policy: EntryRecoveryPolicy | None = None) -> None:
         self._policy = policy or EntryRecoveryPolicy()
         self._opportunities: dict[str, EntryOpportunityEvent] = {}
-        self._analyses: dict[str, dict[AnalysisHorizon, AnalysisResult]] = {}
+        self._analyses = grouped_context_store(AnalysisHorizon, AnalysisResult)
         self._emitted: set[UUID] = set()
 
     def ingest_opportunity(self, event: EntryOpportunityEvent) -> None:

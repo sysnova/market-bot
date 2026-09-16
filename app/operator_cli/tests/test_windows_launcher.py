@@ -368,6 +368,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert plan["mode"] == "distributed"
     assert plan["environment"].endswith(".venv-windows")
     assert [process["name"] for process in plan["processes"]] == [
+        "ticker-cache",
         "outbox-relay",
         "alert",
         "entry-watcher",
@@ -395,6 +396,10 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
     assert "peter-lynch" not in plan["active_engine_slots"]
     assert "news-intelligence" not in plan["active_engine_slots"]
     processes = {process["name"]: process for process in plan["processes"]}
+    for name, process in processes.items():
+        if name != "ticker-cache":
+            assert process["arguments"][4] == "--shared-cache"
+            process["arguments"] = process["arguments"][:4] + process["arguments"][6:]
     assert processes["entry-opportunity"]["arguments"][:6] == [
         "run",
         "python",
@@ -475,7 +480,7 @@ def test_windows_launcher_defaults_to_independent_processes() -> None:
         "alerts",
         "confirmed",
     ]
-    assert plan["startup_batches"][0] == ["outbox-relay"]
+    assert plan["startup_batches"][0] == ["ticker-cache"]
     assert plan["startup_batches"][-1] == ["alpaca-market-stream"]
 
 

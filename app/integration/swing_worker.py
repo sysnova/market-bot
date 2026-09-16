@@ -1,4 +1,4 @@
-"""Independent Swing v2 process core with process-local market history."""
+"""Independent Swing v2 process core with bounded shared-cache history views."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ from app.swing_engine.models import SwingContext
 from .bar_aggregator import MinuteBarAggregator, RegularSessionDailyAggregator
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
+from .ticker_context_store import context_store
 from .universe_warmup import UniverseWarmupGate
 
 SWING_DAILY_BARS = 120
@@ -60,11 +61,12 @@ class SwingWorker:
         self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
         self._daily_aggregator = RegularSessionDailyAggregator()
         self._universe = UniverseWarmupGate()
-        self._support: dict[str, SupportAssessment] = {}
-        self._order_flow_support: dict[str, OrderFlowSupportAssessment] = {}
+        self._support = context_store(SupportAssessment)
+        self._order_flow_support = context_store(OrderFlowSupportAssessment)
 
     def activate_universe(self, symbols: tuple[str, ...]) -> None:
         self._universe.activate(symbols)
+        self._store.retain_symbols(symbols)
 
     async def handle_universe_event(self, envelope: EventEnvelope) -> int:
         if envelope.event_type != UNIVERSE_CHANGED_EVENT:
@@ -78,6 +80,7 @@ class SwingWorker:
 
     async def handle_universe_changed(self, change: UniverseChanged) -> int:
         added = self._universe.apply(change)
+        self._store.retain_symbols(change.symbols)
         return sum([await self._evaluate(symbol) for symbol in added])
 
     async def bootstrap(

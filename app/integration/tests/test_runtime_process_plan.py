@@ -37,20 +37,26 @@ def test_runtime_plan_is_filtered_by_definition_mode_and_owns_commands() -> None
     assert "peter-lynch" not in names
 
     long_term = plan.process("long-term")
-    assert long_term.arguments[:4] == ("run", "marketbot", "engine", "long")
+    assert long_term.arguments[:2] == ("run", "marketbot")
+    assert long_term.arguments[2:4] == (
+        "--shared-cache",
+        str(Path("C:/runtime root/ticker-cache.endpoint.json")),
+    )
+    assert long_term.arguments[4:6] == ("engine", "long")
     assert long_term.arguments[-2:] == ("--symbols", "HIMS,ZETA")
     assert long_term.ready_path == Path("C:/runtime root/status/long-term.ready.json")
 
     geri = plan.process("4hgeri")
     assert geri.arguments[-2:] == ("--symbols", "HIMS,ZETA")
     assert geri.dependencies == (
+        "ticker-cache",
         "market-history-v1",
         "support-confirmation-v0",
     )
 
     confirmed = plan.process("confirmed-buy-monitor")
     assert confirmed.operator_monitor is True
-    assert confirmed.dependencies == ("alert",)
+    assert confirmed.dependencies == ("ticker-cache", "alert")
     assert "--no-bell" in confirmed.arguments
 
 
@@ -61,6 +67,8 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     batches = startup_batches(plan.headless_processes)
     positions = {name: index for index, batch in enumerate(batches) for name in batch}
 
+    assert positions["ticker-cache"] < positions["outbox-relay"]
+    assert all("ticker-cache" in p.dependencies for p in plan.processes if p.name != "ticker-cache")
     assert positions["outbox-relay"] < positions["alert"]
     assert positions["outbox-relay"] < positions["market-history-v1"]
     assert positions["market-history-v1"] < positions["entry-opportunity"]
@@ -77,6 +85,7 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
     for consumer in ("swing", "4hgeri", "swing-trade"):
         assert "order-flow" not in plan.process(consumer).dependencies
     assert plan.process("leveraged-thesis").dependencies == (
+        "ticker-cache",
         "intraday",
         "order-flow",
         "support-confirmation-v0",
@@ -95,8 +104,8 @@ def test_web_dashboard_runs_headless_without_blocking_market_data() -> None:
     batches = startup_batches(plan.headless_processes)
     positions = {name: index for index, batch in enumerate(batches) for name in batch}
     assert positions["entry-opportunity"] < positions[dashboard.name]
-    assert dashboard.dependencies == ("entry-opportunity",)
-    assert dashboard.arguments[:4] == ("run", "marketbot", "monitor", "opportunities-web")
+    assert dashboard.dependencies == ("ticker-cache", "entry-opportunity")
+    assert dashboard.arguments[4:6] == ("monitor", "opportunities-web")
     assert "--open-browser" in dashboard.arguments
     assert dashboard.ready_path == Path(".runtime/status/opportunity-web-dashboard.ready.json")
     assert dashboard.name not in plan.process("alpaca-market-stream").dependencies

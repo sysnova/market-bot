@@ -117,11 +117,42 @@ class MinuteBarAggregator:
         return tuple(emitted)
 
 
+class _DailyWindow:
+    """Sufficient OHLCV statistics; retaining every minute duplicates Intraday history."""
+
+    def __init__(self, bar: MarketBar) -> None:
+        self.first = bar
+        self.last = bar
+        self.high = bar.high
+        self.low = bar.low
+        self.volume = Decimal(0) + bar.volume
+        self.weighted = Decimal(0) + (bar.vwap or bar.close) * bar.volume
+        self.trade_count = bar.trade_count
+
+    def append(self, bar: MarketBar) -> None:
+        self.last = bar
+        self.high = max(self.high, bar.high)
+        self.low = min(self.low, bar.low)
+        self.volume += bar.volume
+        self.weighted += (bar.vwap or bar.close) * bar.volume
+        if bar.trade_count is not None:
+            self.trade_count = (self.trade_count or 0) + bar.trade_count
+
+    def complete(self, timestamp: datetime) -> MarketBar:
+        return MarketBar(
+            symbol=self.first.symbol, timeframe=BarTimeframe.DAY_1, timestamp=timestamp,
+            open=self.first.open, high=self.high, low=self.low, close=self.last.close,
+            volume=self.volume, trade_count=self.trade_count,
+            vwap=self.weighted / self.volume if self.volume > 0 else self.last.close,
+            source="marketbot-aggregator", feed=self.first.feed, is_final=True,
+        )
+
+
 class RegularSessionDailyAggregator:
     """Build a completed daily bar from the full 09:30-16:00 ET minute session."""
 
     def __init__(self) -> None:
-        self._pending: dict[str, list[MarketBar]] = {}
+        self._pending: dict[str, _DailyWindow] = {}
 
     def add(self, bar: MarketBar) -> MarketBar | None:
         if bar.timeframe is not BarTimeframe.MINUTE_1:
@@ -130,17 +161,18 @@ class RegularSessionDailyAggregator:
             return None
         local = bar.timestamp.astimezone(_NEW_YORK)
         pending = self._pending.get(bar.symbol)
-        if pending is None or pending[-1].timestamp.astimezone(_NEW_YORK).date() != local.date():
-            pending = []
+        if pending is None or pending.last.timestamp.astimezone(_NEW_YORK).date() != local.date():
+            pending = _DailyWindow(bar)
             self._pending[bar.symbol] = pending
-        pending.append(bar)
+        else:
+            pending.append(bar)
         if local.time() != time(15, 59):
             return None
         values = self._pending.pop(bar.symbol)
-        if values[0].timestamp.astimezone(_NEW_YORK).time() != time(9, 30):
+        if values.first.timestamp.astimezone(_NEW_YORK).time() != time(9, 30):
             return None
         timestamp = datetime.combine(local.date(), time(), _NEW_YORK).astimezone(UTC)
-        return _aggregate(values, BarTimeframe.DAY_1, timestamp)
+        return values.complete(timestamp)
 
 
 class RegularSessionFourHourAggregator:

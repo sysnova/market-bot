@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 
 from app.contracts import (
@@ -20,7 +21,7 @@ class EntryWatcherV3(EntryWatcherV2):
     engine_version = "3.0.0"
 
     def _confirmed(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult], *, now: datetime
     ) -> bool:
         if not super()._confirmed(analyses, now=now):
             return False
@@ -32,7 +33,7 @@ class EntryWatcherV3(EntryWatcherV2):
         )
 
     def _continuation_confirmed(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult], *, now: datetime
     ) -> bool:
         if super()._confirmed(analyses, now=now):
             return self._v3_gates_pass(analyses)
@@ -77,7 +78,7 @@ class EntryWatcherV3(EntryWatcherV2):
 
     @staticmethod
     def _v3_gates_pass(
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> bool:
         swing = analyses[AnalysisHorizon.SWING]
         intraday = analyses[AnalysisHorizon.INTRADAY]

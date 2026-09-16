@@ -82,16 +82,11 @@ def test_confirmed_leveraged_buy_becomes_a_trackable_instrument_entry_signal() -
 
 
 def test_early_leveraged_watch_does_not_open_an_opportunity() -> None:
-    assert (
-        entry_signal_from_leveraged_thesis(_assessment(LeveragedThesisState.EARLY_FLOW))
-        is None
-    )
+    assert entry_signal_from_leveraged_thesis(_assessment(LeveragedThesisState.EARLY_FLOW)) is None
 
 
 def test_confirmed_purchase_uses_entry_pipeline_without_duplicate_local_alert() -> None:
-    alert, signal = leveraged_thesis_publications(
-        _assessment(LeveragedThesisState.BUY_CONFIRMED)
-    )
+    alert, signal = leveraged_thesis_publications(_assessment(LeveragedThesisState.BUY_CONFIRMED))
 
     assert alert is None
     assert signal is not None
@@ -99,9 +94,7 @@ def test_confirmed_purchase_uses_entry_pipeline_without_duplicate_local_alert() 
 
 
 def test_early_watch_remains_internal_without_purchase_alert_or_entry_signal() -> None:
-    alert, signal = leveraged_thesis_publications(
-        _assessment(LeveragedThesisState.EARLY_FLOW)
-    )
+    alert, signal = leveraged_thesis_publications(_assessment(LeveragedThesisState.EARLY_FLOW))
 
     assert alert is None
     assert signal is None
@@ -110,9 +103,7 @@ def test_early_watch_remains_internal_without_purchase_alert_or_entry_signal() -
 async def test_confirmed_leveraged_signal_opens_and_tracks_a_standard_opportunity() -> None:
     store = InMemoryEntryOpportunityStore()
     engine = EntryOpportunityEngineV2(store=store)
-    signal = entry_signal_from_leveraged_thesis(
-        _assessment(LeveragedThesisState.BUY_CONFIRMED)
-    )
+    signal = entry_signal_from_leveraged_thesis(_assessment(LeveragedThesisState.BUY_CONFIRMED))
     assert signal is not None
 
     events = await engine.ingest_signal(signal)
@@ -131,9 +122,7 @@ async def test_confirmed_leveraged_signal_opens_and_tracks_a_standard_opportunit
 async def test_sweep_reclaim_cancellation_closes_the_leveraged_opportunity() -> None:
     store = InMemoryEntryOpportunityStore()
     engine = EntryOpportunityEngineV2(store=store)
-    signal = entry_signal_from_leveraged_thesis(
-        _assessment(LeveragedThesisState.BUY_CONFIRMED)
-    )
+    signal = entry_signal_from_leveraged_thesis(_assessment(LeveragedThesisState.BUY_CONFIRMED))
     assert signal is not None
     await engine.ingest_signal(signal)
     cancellation = _assessment(LeveragedThesisState.CANCELLED).model_copy(
@@ -160,7 +149,12 @@ def test_runtime_starts_thesis_after_intraday_and_order_flow() -> None:
     plan = build_runtime_process_plan(assembly.definition, runtime_root=Path(".runtime"))
     process = plan.process("leveraged-thesis")
 
-    assert process.dependencies == ("intraday", "order-flow", "support-confirmation-v0")
+    assert process.dependencies == (
+        "ticker-cache",
+        "intraday",
+        "order-flow",
+        "support-confirmation-v0",
+    )
     assert EngineSlot.LEVERAGED_THESIS in plan.active_engine_slots
 
 

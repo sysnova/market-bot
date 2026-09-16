@@ -1,4 +1,4 @@
-"""Independent Long v2 process core with process-local market history."""
+"""Independent Long v2 process core with bounded shared-cache history views."""
 
 from __future__ import annotations
 
@@ -58,6 +58,7 @@ class LongTermWorker:
 
     def activate_universe(self, symbols: tuple[str, ...]) -> None:
         self._universe.activate(symbols)
+        self._store.retain_symbols(symbols)
 
     async def handle_universe_event(self, envelope: EventEnvelope) -> int:
         if envelope.event_type != UNIVERSE_CHANGED_EVENT:
@@ -71,6 +72,7 @@ class LongTermWorker:
 
     async def handle_universe_changed(self, change: UniverseChanged) -> int:
         added = self._universe.apply(change)
+        self._store.retain_symbols(change.symbols)
         return sum([await self._evaluate(symbol) for symbol in added])
 
     async def bootstrap(

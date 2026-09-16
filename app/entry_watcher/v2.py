@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -30,7 +31,7 @@ class EntryWatcherV2(EntryWatcher):
     engine_version = "2.0.0"
 
     def _confirmed(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult], *, now: datetime
     ) -> bool:
         required = {
             AnalysisHorizon.LONG_TERM,
@@ -82,7 +83,7 @@ class EntryWatcherV2(EntryWatcher):
         return None
 
     def _confirmation_reasons(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult]
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult]
     ) -> tuple[str, ...]:
         return (
             "regime_aware_entry_confirmed",

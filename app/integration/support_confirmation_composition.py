@@ -40,6 +40,7 @@ from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .marketbot_definition import EngineMode
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot
+from .ticker_context_store import context_store
 from .universe_policy import universe_health_details
 
 SUPPORT_HISTORY_REQUESTS = (
@@ -120,7 +121,7 @@ class SupportConfirmationRuntime:
         self._clock = clock or SystemClock()
         self._bars = MarketBarStore(capacity_per_series=650)
         self._symbols: set[str] = set()
-        self._latest: dict[str, SupportAssessment] = {}
+        self._latest = context_store(SupportAssessment)
 
     async def restore_assessment(self, envelope: EventEnvelope) -> None:
         if envelope.event_type != SUPPORT_ASSESSMENT_EVENT:
@@ -362,6 +363,7 @@ async def run_support_confirmation_process(
             )
         if ready_path is not None:
             write_ready(ready_path, summary)
+        del bars  # Transfer batch is no longer owned by this process.
         await asyncio.Event().wait()
     finally:
         for subscription in subscriptions:

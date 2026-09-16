@@ -254,18 +254,20 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["definition_version"] == "7.71.0"
-    assert payload["startup_batches"][0] == ["outbox-relay"]
+    assert payload["startup_batches"][0] == ["ticker-cache"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert "news-intelligence-v1" not in processes
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
-    assert processes["confirmed-buy-monitor"]["dependencies"] == ["alert"]
+    assert processes["confirmed-buy-monitor"]["dependencies"] == ["ticker-cache", "alert"]
     assert processes["long-term"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
     assert processes["4hgeri"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]
     assert processes["4hgeri"]["dependencies"] == [
+        "ticker-cache",
         "market-history-v1",
         "support-confirmation-v0",
     ]
     assert processes["swing-trade"]["dependencies"] == [
+        "ticker-cache",
         "market-history-v1",
         "4hgeri",
         "entry-opportunity",

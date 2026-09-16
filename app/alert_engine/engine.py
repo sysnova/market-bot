@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.common.context_cache import grouped_context_store
 from app.contracts import (
     AlertKind,
     AlertSeverity,
@@ -39,7 +40,7 @@ class AlertEngine:
 
     def __init__(self, policy: AlertPolicy | None = None) -> None:
         self._policy = policy or AlertPolicy()
-        self._latest: dict[str, dict[AnalysisHorizon, AnalysisResult]] = {}
+        self._latest = grouped_context_store(AnalysisHorizon, AnalysisResult)
         self._last_emitted: dict[tuple[str, str], tuple[datetime, AlertSeverity]] = {}
         self._emitted_keys: set[str] = set()
 

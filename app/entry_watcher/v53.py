@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -53,7 +53,7 @@ class EntryWatcherV53(EntryWatcherV52):
             trigger_on_first_mature_confirmation
         )
 
-    def _v4_gates_pass(self, analyses: dict[AnalysisHorizon, AnalysisResult]) -> bool:
+    def _v4_gates_pass(self, analyses: Mapping[AnalysisHorizon, AnalysisResult]) -> bool:
         if not self._trigger_on_first_mature_confirmation:
             return super()._v4_gates_pass(analyses)
         swing = analyses[AnalysisHorizon.SWING]
@@ -67,7 +67,7 @@ class EntryWatcherV53(EntryWatcherV52):
 
     def _confirmation_reasons(
         self,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> tuple[str, ...]:
         if not self._trigger_on_first_mature_confirmation:
             return super()._confirmation_reasons(analyses)
@@ -84,7 +84,7 @@ class EntryWatcherV53(EntryWatcherV52):
         extension_percent: Decimal,
         extension_atr: Decimal | str,
         reward_risk: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> tuple[str, ...]:
         reasons = super()._continuation_reasons(
             watch,

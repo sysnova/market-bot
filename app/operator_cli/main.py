@@ -44,6 +44,10 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def root(
+    shared_cache: Annotated[
+        Path | None,
+        typer.Option(help="Private endpoint file for the common ticker RAM cache."),
+    ] = None,
     version: Annotated[
         bool,
         typer.Option(
@@ -59,6 +63,11 @@ def root(
     ] = None,
 ) -> None:
     """Operate a MarketBot deployment."""
+
+    if shared_cache is not None:
+        from app.integration.ticker_cache_transport import configure_shared_cache
+
+        configure_shared_cache(shared_cache)
 
     if analyzer is not None:
         typer.echo(json.dumps(_run_market_analyzer(analyzer), indent=2, sort_keys=True))

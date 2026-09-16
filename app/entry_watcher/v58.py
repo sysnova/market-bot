@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 """Keep the stop, objective and risk/reward attached to the triggering rule."""
 
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 
@@ -20,7 +21,7 @@ class EntryWatcherV58(EntryWatcherV57):
         watch: EntryWatch,
         *,
         price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         now: datetime,
     ) -> tuple[Decimal, Decimal, Decimal] | None:
         if (
@@ -41,13 +42,15 @@ class EntryWatcherV58(EntryWatcherV57):
         watch: EntryWatch,
         *,
         current_price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> Decimal | None:
         levels = _intraday_levels(analyses, current_price)
         # The caller applies its continuation threshold. Do not round up a failure.
         return levels[2] if levels is not None else None
 
-    def _confirmed(self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime) -> bool:
+    def _confirmed(
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult], *, now: datetime
+    ) -> bool:
         price = self._current_price(analyses)
         return bool(
             price is not None
@@ -63,7 +66,7 @@ class EntryWatcherV58(EntryWatcherV57):
         now: datetime,
         price: Decimal,
         reasons: tuple[str, ...],
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         anchor_updates: dict[str, JsonValue] | None = None,
         entry_invalidation: Decimal | None = None,
         entry_target: Decimal | None = None,
@@ -113,7 +116,7 @@ class EntryWatcherV58(EntryWatcherV57):
 
 
 def _intraday_levels(
-    analyses: dict[AnalysisHorizon, AnalysisResult],
+    analyses: Mapping[AnalysisHorizon, AnalysisResult],
     price: Decimal,
 ) -> tuple[Decimal, Decimal, Decimal] | None:
     intraday = analyses.get(AnalysisHorizon.INTRADAY)

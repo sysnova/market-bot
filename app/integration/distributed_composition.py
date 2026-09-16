@@ -1306,6 +1306,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 )
                 buffered_live_bars.clear()
                 recovering_bars = False
+            del historical_bars
         else:
             async with recovery_lock:
                 buffered_live_bars.clear()

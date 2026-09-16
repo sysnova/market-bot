@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from app.common.clock import SystemClock
+from app.common.context_cache import grouped_context_store
 from app.common.market_session import is_regular_analytical_bar
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
@@ -144,7 +145,7 @@ class PatreonCapsRuntime:
         self._aggregator = MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_15, BarTimeframe.HOUR_1)
         )
-        self._analyses: dict[str, dict[AnalysisHorizon, AnalysisResult]] = {}
+        self._analyses = grouped_context_store(AnalysisHorizon, AnalysisResult)
         self._macro = classify_macro_regime({})
         self._symbols: set[str] = set()
         self._require_hourly = require_hourly
@@ -456,6 +457,7 @@ async def run_patreon_caps_process(
             write_ready(ready_path, summary)
         if once:
             return summary
+        del bars  # Transfer batch is no longer owned by this process.
         await asyncio.Event().wait()
     finally:
         for subscription in subscriptions:

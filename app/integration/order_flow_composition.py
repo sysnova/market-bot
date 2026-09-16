@@ -11,6 +11,7 @@ from uuid import UUID
 from nats.aio.client import Client as NatsClient
 from pydantic import BaseModel
 
+from app.common.context_cache import context_store
 from app.common.settings import AppSettings
 from app.contracts import (
     MARKET_QUOTE_EVENT,
@@ -84,7 +85,7 @@ async def run_order_flow_process(  # pragma: no cover - long-running NATS proces
     durable = await NatsJetStreamEventBus.connect(
         servers=[url], prefix="marketbot", stream="MARKETBOT"
     )
-    supports: dict[str, SupportAssessment] = {}
+    supports = context_store(SupportAssessment)
     last_state_at: dict[str, datetime] = {}
     last_support_at: dict[str, datetime] = {}
     last_support_signature: dict[str, tuple[object, ...]] = {}

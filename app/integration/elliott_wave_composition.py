@@ -213,6 +213,7 @@ async def run_elliott_wave_process(
         )
         if ready_path is not None:
             write_ready(ready_path, summary)
+        del bars  # Transfer batch is no longer owned by this process.
         await asyncio.Event().wait()
     finally:
         for subscription in subscriptions:

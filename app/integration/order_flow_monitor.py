@@ -31,6 +31,7 @@ from app.event_bus import NatsJetStreamEventBus
 
 from .distributed_composition import write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
+from .ticker_context_store import context_store
 
 _CLEAR_SCREEN = "\033[2J\033[H"
 _FOUR_PLACES = Decimal("0.0001")
@@ -93,8 +94,8 @@ class OrderFlowDashboard:
         self.symbols = normalized
         self.expected_engine_version = expected_engine_version.strip()
         self.ignored_versions: set[str] = set()
-        self._states: dict[str, OrderFlowState] = {}
-        self._supports: dict[str, OrderFlowSupportAssessment] = {}
+        self._states = context_store(OrderFlowState)
+        self._supports = context_store(OrderFlowSupportAssessment)
 
     def merge(self, state: OrderFlowState) -> bool:
         if state.symbol not in self.symbols:

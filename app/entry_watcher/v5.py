@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
@@ -48,7 +48,7 @@ class EntryWatcherV5(EntryWatcherV4):
         watch: EntryWatch,
         *,
         current_price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         now: datetime,
     ) -> tuple[Decimal, Decimal | str] | None:
         touched = self._zone_touched_at(watch)
@@ -94,7 +94,7 @@ class EntryWatcherV5(EntryWatcherV4):
         extension_percent: Decimal,
         extension_atr: Decimal | str,
         reward_risk: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> tuple[str, ...]:
         if self._zone_touched_at(watch) is not None:
             return super()._continuation_reasons(

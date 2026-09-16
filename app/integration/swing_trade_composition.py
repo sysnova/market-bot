@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel
 
 from app.common.clock import Clock, SystemClock
+from app.common.context_cache import grouped_context_store
 from app.common.market_session import is_regular_session
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
@@ -52,6 +53,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient
+from .ticker_context_store import context_store
 
 SWING_TRADE_HISTORY_REQUESTS = (
     HistoryRequest(
@@ -114,12 +116,12 @@ class SwingTradeRuntime:
         self._minute = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
         self._four_hour = RegularSessionFourHourAggregator()
         self._last_momentum_input: dict[str, datetime] = {}
-        self._momentum_daily: dict[str, dict[date, MarketBar]] = {}
+        self._momentum_daily = grouped_context_store(str, MarketBar)
         self._symbols: set[str] = set()
-        self._geri: dict[str, GeriAssessment] = {}
-        self._support: dict[str, SupportAssessment] = {}
-        self._order_flow_support: dict[str, OrderFlowSupportAssessment] = {}
-        self._latest: dict[str, SwingTradeAssessment] = {}
+        self._geri = context_store(GeriAssessment)
+        self._support = context_store(SupportAssessment)
+        self._order_flow_support = context_store(OrderFlowSupportAssessment)
+        self._latest = context_store(SwingTradeAssessment)
         self._evaluated: set[tuple[str, datetime]] = set()
         self._rejected_evaluations: dict[str, int] = {}
 
@@ -210,7 +212,7 @@ class SwingTradeRuntime:
 
     def _store_momentum_daily(self, bar: MarketBar) -> None:
         history = self._momentum_daily.setdefault(bar.symbol, {})
-        history[bar.timestamp.astimezone(_NEW_YORK).date()] = bar
+        history[bar.timestamp.astimezone(_NEW_YORK).date().isoformat()] = bar
         while len(history) > 120:
             del history[min(history)]
 
@@ -570,6 +572,7 @@ async def run_swing_trade_process(
         )
         if ready_path is not None:
             write_ready(ready_path, summary)
+        del bars  # Transfer batch is no longer owned by this process.
         await asyncio.Event().wait()
     finally:
         for subscription in subscriptions:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Any, cast
 from uuid import UUID
 
+from app.common.context_cache import grouped_context_store
 from app.contracts import (
     AnalysisHorizon,
     AnalysisResult,
@@ -112,7 +113,7 @@ class EntryWatcher:
         self._store = store
         self._policy = policy or EntryWatcherPolicy()
         self._id_factory = id_factory
-        self._latest: dict[str, dict[AnalysisHorizon, AnalysisResult]] = {}
+        self._latest = grouped_context_store(AnalysisHorizon, AnalysisResult)
 
     async def ingest(self, result: AnalysisResult, *, now: datetime) -> EntryWatchTransition | None:
         self._validate_time(result, now)
@@ -346,7 +347,7 @@ class EntryWatcher:
         now: datetime,
         price: Decimal,
         reasons: tuple[str, ...],
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         anchor_updates: dict[str, JsonValue] | None = None,
         entry_invalidation: Decimal | None = None,
         entry_target: Decimal | None = None,
@@ -389,7 +390,7 @@ class EntryWatcher:
         now: datetime,
         price: Decimal,
         reasons: tuple[str, ...],
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         entry_invalidation: Decimal | None = None,
         entry_target: Decimal | None = None,
     ) -> EntryWatchTransition:
@@ -412,7 +413,9 @@ class EntryWatcher:
             source_analysis_ids=tuple(analyses[horizon].analysis_id for horizon in ordered),
         )
 
-    def _confirmed(self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime) -> bool:
+    def _confirmed(
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult], *, now: datetime
+    ) -> bool:
         required = {
             AnalysisHorizon.LONG_TERM,
             AnalysisHorizon.SWING,
@@ -438,7 +441,7 @@ class EntryWatcher:
         )
 
     def _continuation_confirmed(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult], *, now: datetime
     ) -> bool:
         return self._confirmed(analyses, now=now)
 
@@ -447,7 +450,7 @@ class EntryWatcher:
         watch: EntryWatch,
         *,
         current_price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         now: datetime,
     ) -> tuple[Decimal, Decimal | str] | None:
         touched_at = self._zone_touched_at(watch)
@@ -482,7 +485,7 @@ class EntryWatcher:
         watch: EntryWatch,
         *,
         current_price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> Decimal | None:
         target = self._latest_decimal_metric(
             analyses,
@@ -517,7 +520,7 @@ class EntryWatcher:
         extension_percent: Decimal,
         extension_atr: Decimal | str,
         reward_risk: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> tuple[str, ...]:
         return (
             "breakaway_continuation_confirmed",
@@ -550,7 +553,7 @@ class EntryWatcher:
 
     @staticmethod
     def _latest_decimal_metric(
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         *names: str,
         horizons: tuple[AnalysisHorizon, ...],
     ) -> Decimal | None:
@@ -566,7 +569,7 @@ class EntryWatcher:
         return None
 
     def _confirmation_reasons(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult]
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult]
     ) -> tuple[str, ...]:
         return (
             "multi_horizon_entry_confirmed",
@@ -587,7 +590,7 @@ class EntryWatcher:
 
     @staticmethod
     def _dilution_warning(
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> str:
         dilution = analyses.get(AnalysisHorizon.DILUTION)
         if dilution is None or dilution.verdict is AnalysisVerdict.INSUFFICIENT_DATA:
@@ -595,13 +598,13 @@ class EntryWatcher:
         return f"dilution_warning:{dilution.verdict.value.lower()}"
 
     @staticmethod
-    def _current_price(analyses: dict[AnalysisHorizon, AnalysisResult]) -> Decimal | None:
+    def _current_price(analyses: Mapping[AnalysisHorizon, AnalysisResult]) -> Decimal | None:
         observation = EntryWatcher._current_price_observation(analyses)
         return observation[1] if observation is not None else None
 
     @staticmethod
     def _current_price_observation(
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> tuple[datetime, Decimal] | None:
         candidates = [
             (result.as_of, _PRICE_PRIORITY[horizon], price)

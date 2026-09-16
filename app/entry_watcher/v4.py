@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -79,13 +79,15 @@ class EntryWatcherV4(EntryWatcherV2):
         if result.as_of - candidate_at >= self._minimum_reconfirmation_delay:
             self._reconfirmed_ids.add(result.analysis_id)
 
-    def _confirmed(self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime) -> bool:
+    def _confirmed(
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult], *, now: datetime
+    ) -> bool:
         if not EntryWatcherV2._confirmed(self, analyses, now=now):
             return False
         return self._v4_gates_pass(analyses)
 
     def _continuation_confirmed(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult], *, now: datetime
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult], *, now: datetime
     ) -> bool:
         if EntryWatcherV2._confirmed(self, analyses, now=now):
             return self._v4_gates_pass(analyses)
@@ -112,7 +114,7 @@ class EntryWatcherV4(EntryWatcherV2):
             and self._v4_gates_pass(analyses)
         )
 
-    def _v4_gates_pass(self, analyses: dict[AnalysisHorizon, AnalysisResult]) -> bool:
+    def _v4_gates_pass(self, analyses: Mapping[AnalysisHorizon, AnalysisResult]) -> bool:
         swing = analyses[AnalysisHorizon.SWING]
         intraday = analyses[AnalysisHorizon.INTRADAY]
         intraday_metrics = _metrics(intraday)
@@ -142,7 +144,7 @@ class EntryWatcherV4(EntryWatcherV2):
         )
 
     def _confirmation_reasons(
-        self, analyses: dict[AnalysisHorizon, AnalysisResult]
+        self, analyses: Mapping[AnalysisHorizon, AnalysisResult]
     ) -> tuple[str, ...]:
         return (
             "price_efficient_entry_confirmed",

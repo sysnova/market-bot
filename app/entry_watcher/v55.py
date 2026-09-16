@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 
 from app.contracts import AnalysisHorizon, AnalysisResult, AnalysisVerdict, PatternDirection
@@ -16,7 +17,7 @@ class EntryWatcherV55(EntryWatcherV54):
 
     def _confirmed(
         self,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         *,
         now: datetime,
     ) -> bool:

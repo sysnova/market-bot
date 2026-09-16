@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import cast
@@ -191,7 +191,7 @@ class EntryWatcherV54(EntryWatcherV53):
         watch: EntryWatch,
         *,
         price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         now: datetime,
     ) -> tuple[Decimal, Decimal, Decimal] | None:
         if not self._fresh_core_analyses(analyses, now=now) or not _early_confirmation(analyses):
@@ -210,7 +210,7 @@ class EntryWatcherV54(EntryWatcherV53):
         state: dict[str, JsonValue],
         *,
         price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         now: datetime,
     ) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal] | None:
         if not self._fresh_core_analyses(analyses, now=now):
@@ -244,7 +244,7 @@ class EntryWatcherV54(EntryWatcherV53):
 
     def _fresh_core_analyses(
         self,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         *,
         now: datetime,
     ) -> bool:
@@ -266,7 +266,7 @@ class EntryWatcherV54(EntryWatcherV53):
     def _new_impulse_state(
         watch: EntryWatch,
         price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
     ) -> dict[str, JsonValue]:
         structural_high = _metric_decimal(analyses, "liquidity_high", AnalysisHorizon.SWING)
         peak = max(price, structural_high or price)
@@ -300,7 +300,7 @@ class EntryWatcherV54(EntryWatcherV53):
         }
 
 
-def _early_confirmation(analyses: dict[AnalysisHorizon, AnalysisResult]) -> bool:
+def _early_confirmation(analyses: Mapping[AnalysisHorizon, AnalysisResult]) -> bool:
     required = {AnalysisHorizon.LONG_TERM, AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY}
     if not required.issubset(analyses):
         return False
@@ -321,7 +321,7 @@ def _early_confirmation(analyses: dict[AnalysisHorizon, AnalysisResult]) -> bool
     )
 
 
-def _pullback_reclaim(analyses: dict[AnalysisHorizon, AnalysisResult], price: Decimal) -> bool:
+def _pullback_reclaim(analyses: Mapping[AnalysisHorizon, AnalysisResult], price: Decimal) -> bool:
     intraday = analyses.get(AnalysisHorizon.INTRADAY)
     if intraday is None:
         return False
@@ -338,7 +338,7 @@ def _pullback_reclaim(analyses: dict[AnalysisHorizon, AnalysisResult], price: De
     )
 
 
-def _target(analyses: dict[AnalysisHorizon, AnalysisResult], price: Decimal) -> Decimal | None:
+def _target(analyses: Mapping[AnalysisHorizon, AnalysisResult], price: Decimal) -> Decimal | None:
     for horizon in (AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY):
         for name in ("target_2r", "objective_level"):
             value = _metric_decimal(analyses, name, horizon)
@@ -348,7 +348,7 @@ def _target(analyses: dict[AnalysisHorizon, AnalysisResult], price: Decimal) -> 
 
 
 def _nearest_invalidation(
-    analyses: dict[AnalysisHorizon, AnalysisResult],
+    analyses: Mapping[AnalysisHorizon, AnalysisResult],
     price: Decimal,
     *,
     fallback: Decimal,
@@ -365,7 +365,7 @@ def _nearest_invalidation(
 
 
 def _metric_decimal(
-    analyses: dict[AnalysisHorizon, AnalysisResult], name: str, horizon: AnalysisHorizon
+    analyses: Mapping[AnalysisHorizon, AnalysisResult], name: str, horizon: AnalysisHorizon
 ) -> Decimal | None:
     result = analyses.get(horizon)
     return None if result is None else _decimal(_metrics(result).get(name))

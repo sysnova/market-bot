@@ -32,6 +32,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient, UniverseSnapshot, fallback_universe
+from .ticker_context_store import context_store
 from .universe_policy import universe_health_details
 
 VOLUME_STRUCTURE_HISTORY_REQUESTS = (
@@ -62,7 +63,7 @@ class VolumeStructureRuntime:
         self._publisher = publisher
         self._bars = MarketBarStore(capacity_per_series=450)
         self._symbols: set[str] = set()
-        self._latest: dict[str, AnalysisResult] = {}
+        self._latest = context_store(AnalysisResult)
 
     async def restore_result(self, envelope: EventEnvelope) -> None:
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
@@ -230,6 +231,7 @@ async def run_volume_structure_process(
         )
         if ready_path is not None:
             write_ready(ready_path, summary)
+        del bars  # Transfer batch is no longer owned by this process.
         await asyncio.Event().wait()
     finally:
         for subscription in subscriptions:

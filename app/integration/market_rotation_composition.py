@@ -136,6 +136,7 @@ async def run_market_rotation_process(
             }
             if once:
                 return summary
+            del bars, history
             await asyncio.sleep(interval_minutes * 60)
     finally:
         await bus.close()

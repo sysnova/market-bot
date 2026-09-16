@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 """Observed impulse chronology and explicit Swing approval for early entries."""
 
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from typing import cast
@@ -26,7 +27,7 @@ class EntryWatcherV57(EntryWatcherV56):
 
     @staticmethod
     def _new_impulse_state(
-        watch: EntryWatch, price: Decimal, analyses: dict[AnalysisHorizon, AnalysisResult]
+        watch: EntryWatch, price: Decimal, analyses: Mapping[AnalysisHorizon, AnalysisResult]
     ) -> dict[str, JsonValue]:
         observation = EntryWatcherV56._current_price_observation(analyses)
         if observation is None or observation[0] < watch.armed_at:
@@ -74,7 +75,7 @@ class EntryWatcherV57(EntryWatcherV56):
         watch: EntryWatch,
         *,
         price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         now: datetime,
     ) -> tuple[Decimal, Decimal, Decimal] | None:
         # An extended impulse must pass the causal pullback lane; the old second-leg
@@ -88,7 +89,7 @@ class EntryWatcherV57(EntryWatcherV56):
         state: dict[str, JsonValue],
         *,
         price: Decimal,
-        analyses: dict[AnalysisHorizon, AnalysisResult],
+        analyses: Mapping[AnalysisHorizon, AnalysisResult],
         now: datetime,
     ) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal] | None:
         if state.get("schema_version") != "2.0.0" or not _swing_approved(analyses):
@@ -143,7 +144,7 @@ def _at(value: object) -> datetime | None:
     return parsed if parsed.tzinfo is not None else None
 
 
-def _swing_approved(analyses: dict[AnalysisHorizon, AnalysisResult]) -> bool:
+def _swing_approved(analyses: Mapping[AnalysisHorizon, AnalysisResult]) -> bool:
     long = analyses.get(AnalysisHorizon.LONG_TERM)
     swing = analyses.get(AnalysisHorizon.SWING)
     if (
