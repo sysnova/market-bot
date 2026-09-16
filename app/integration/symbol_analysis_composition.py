@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import re
+import subprocess
+import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from app.common.clock import SystemClock
 
@@ -55,9 +59,7 @@ class SymbolAnalysisOrchestrator:
         self._fusion = fusion
         self._clock = clock or SystemClock()
 
-    async def analyze(
-        self, symbol: str, *, timeout_seconds: float
-    ) -> dict[str, object]:
+    async def analyze(self, symbol: str, *, timeout_seconds: float) -> dict[str, object]:
         """Return one stable report even when individual engines fail or time out."""
 
         normalized = symbol.strip().upper()
@@ -151,139 +153,64 @@ async def run_market_analyzer(
     symbol: str,
     timeout_seconds: float,
     runtime_root: Path,
-    mirror_to_nats: bool,
+    mirror_to_nats: bool = False,
 ) -> dict[str, object]:
-    """Build and run the production analyzer without Peter Lynch or SEC."""
+    """Run engines in a private process and receive JSON directly.
 
-    async def core(received_symbol: str) -> dict[str, object]:
-        from app.integration.live_composition import run_live_analysis
+    mirror_to_nats is retained for CLI/API compatibility; manual runs never use NATS.
+    """
+    normalized = symbol.strip().upper()
+    if not _SYMBOL.fullmatch(normalized):
+        raise ValueError("a valid market symbol is required")
+    if timeout_seconds <= 0:
+        raise ValueError("analysis timeout must be positive")
+    # Windows CLI uses SelectorEventLoop for PostgreSQL; it cannot spawn async children.
+    # Keep the process handle here so cancellation always terminates the worker.
+    process = subprocess.Popen(  # noqa: ASYNC220, S603 -- validated symbol, fixed executable, no shell
+        [
+            sys.executable,
+            "-B",
+            "-m",
+            "app.integration.manual_analysis",
+            normalized,
+            str(timeout_seconds),
+            str(runtime_root),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+    )
+    try:
+        async with asyncio.timeout(timeout_seconds * 3 + 30):
+            stdout, _stderr = await asyncio.to_thread(process.communicate)
+        if process.returncode != 0:
+            # Do not expose provider credentials or unbounded diagnostic output.
+            raise RuntimeError(f"manual analysis process exited with code {process.returncode}")
+        report = json.loads(stdout)
+        if not isinstance(report, dict) or report.get("symbol") != normalized:
+            raise RuntimeError("manual analysis returned an invalid report")
+        return cast("dict[str, object]", report)
+    finally:
+        if process.returncode is None:
+            await asyncio.to_thread(_terminate_process, process)
+            await asyncio.to_thread(process.wait)
 
-        result = await run_live_analysis(
-            once=True,
-            runtime_root=runtime_root,
-            bell=False,
-            mirror_to_nats=mirror_to_nats,
-            symbols=(received_symbol,),
-            include_analyses=True,
-        )
-        if result is None:
-            raise RuntimeError("core one-shot analysis returned no summary")
-        return {
-            **result,
-            "orchestrated_engines": [
-                "long-term",
-                "swing",
-                "intraday",
-                "entry-watcher",
-                "alert",
+
+def _terminate_process(process: subprocess.Popen[bytes]) -> None:
+    if sys.platform == "win32":
+        # The Windows venv launcher creates a Python child; terminate the whole request.
+        subprocess.run(  # noqa: S603 -- only the PID of our own child process
+            [
+                str(Path(os.environ["SYSTEMROOT"]) / "System32" / "taskkill.exe"),
+                "/PID",
+                str(process.pid),
+                "/T",
+                "/F",
             ],
-        }
-
-    async def rotation(received_symbol: str) -> dict[str, object]:
-        _require_nats(mirror_to_nats)
-        from app.integration.market_rotation_composition import (
-            run_market_rotation_process,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            check=False,
         )
-
-        result = await run_market_rotation_process(once=True, ready_path=None)
-        if result is None:
-            raise RuntimeError("market rotation returned no summary")
-        return {**result, "requested_symbol": received_symbol, "scope": "global-market"}
-
-    async def long_portfolio(received_symbol: str) -> dict[str, object]:
-        _require_nats(mirror_to_nats)
-        from app.integration.long_portfolio_composition import (
-            run_long_portfolio_process,
-        )
-
-        result = await run_long_portfolio_process(
-            runtime_root=runtime_root,
-            ready_path=None,
-            once=True,
-            symbol=received_symbol,
-        )
-        return _applicable(result, "long-portfolio returned no summary")
-
-    async def patreon(received_symbol: str) -> dict[str, object]:
-        _require_nats(mirror_to_nats)
-        from app.integration.patreon_caps_composition import (
-            run_patreon_caps_process,
-        )
-
-        result = await run_patreon_caps_process(
-            ready_path=None,
-            once=True,
-            symbols=(received_symbol,),
-        )
-        return _applicable(result, "Patreon Caps returned no summary")
-
-    async def elliott(received_symbol: str) -> dict[str, object]:
-        _require_nats(mirror_to_nats)
-        from app.integration.elliott_wave_composition import (
-            run_elliott_wave_process,
-        )
-
-        result = await run_elliott_wave_process(
-            ready_path=None,
-            once=True,
-            symbol=received_symbol,
-        )
-        return _applicable(result, "Elliott Wave returned no summary")
-
-    async def support(received_symbol: str) -> dict[str, object]:
-        _require_nats(mirror_to_nats)
-        from app.integration.support_confirmation_composition import (
-            run_support_confirmation_process,
-        )
-
-        result = await run_support_confirmation_process(
-            ready_path=None,
-            once=True,
-            symbol=received_symbol,
-        )
-        return _applicable(result, "Support Confirmation returned no summary")
-
-    async def portfolio_flow(_received_symbol: str) -> dict[str, object]:
-        raise AnalysisSkipped("requires_live_quote_trade_window")
-
-    async def fusion(received_symbol: str) -> dict[str, object]:
-        _require_nats(mirror_to_nats)
-        from app.integration.signal_fusion_composition import (
-            run_signal_fusion_process,
-        )
-
-        result = await run_signal_fusion_process(
-            ready_path=None,
-            once=True,
-            symbol=received_symbol,
-        )
-        return _applicable(result, "Signal Fusion returned no summary")
-
-    return await SymbolAnalysisOrchestrator(
-        core=AnalysisStep("core", core),
-        parallel=(
-            AnalysisStep("market-rotation", rotation),
-            AnalysisStep("long-portfolio", long_portfolio),
-            AnalysisStep("patreon-caps", patreon),
-            AnalysisStep("elliott-wave", elliott),
-            AnalysisStep("support-confirmation", support),
-            AnalysisStep("portfolio-flow", portfolio_flow),
-        ),
-        fusion=AnalysisStep("signal-fusion", fusion),
-    ).analyze(symbol, timeout_seconds=timeout_seconds)
-
-
-def _require_nats(enabled: bool) -> None:
-    if not enabled:
-        raise AnalysisSkipped("distributed_engine_requires_nats")
-
-
-def _applicable(
-    result: dict[str, object] | None,
-    missing_message: str,
-) -> dict[str, object]:
-    if result is None:
-        raise RuntimeError(missing_message)
-    if result.get("eligible") is False:
-        raise AnalysisSkipped(str(result.get("reason", "symbol_not_eligible")))
-    return result
+    else:
+        process.kill()

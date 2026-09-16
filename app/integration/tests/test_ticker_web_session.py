@@ -9,6 +9,31 @@ from app.integration.ticker_web_session import TickerWebSession, ticker_subjects
 NOW = datetime(2026, 9, 14, 14, 30, tzinfo=UTC)
 
 
+async def test_manual_report_is_returned_even_when_live_nats_is_unavailable() -> None:
+    sent: list[dict[str, Any]] = []
+    finished = asyncio.Event()
+
+    async def send(payload: dict[str, Any]) -> None:
+        sent.append(payload)
+        if payload.get("type") == "ticker_analysis_done":
+            finished.set()
+
+    async def analyze(symbol: str) -> dict[str, object]:
+        return {"symbol": symbol, "transport": "DIRECT_ISOLATED", "engines": []}
+
+    session = TickerWebSession(bus=None, send=send, reviewer=None, engines={}, analyze=analyze)
+    try:
+        await session.watch("ASTS")
+        await session.handle({"type": "analyze_ticker", "symbol": "ASTS", "request_id": "manual"})
+        await asyncio.wait_for(finished.wait(), 1)
+        report = next(item for item in sent if item.get("type") == "ticker_analysis_done")
+        assert report["report"]["transport"] == "DIRECT_ISOLATED"
+        assert session.book is not None
+        assert session.book.revision == 0
+    finally:
+        await session.close()
+
+
 class Clock:
     def now(self) -> datetime:
         return NOW

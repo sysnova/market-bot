@@ -79,7 +79,7 @@ def _run_market_analyzer(
     *,
     timeout_seconds: float = 30.0,
     runtime_root: Path = Path(".runtime"),
-    mirror_to_nats: bool = True,
+    mirror_to_nats: bool = False,
 ) -> dict[str, object]:
     from app.integration.symbol_analysis_composition import run_market_analyzer
 
@@ -140,8 +140,8 @@ def analyzer_symbol(
     ] = Path(".runtime"),
     nats: Annotated[
         bool,
-        typer.Option("--nats/--no-nats", help="Publish current results for downstream engines."),
-    ] = True,
+        typer.Option("--nats/--no-nats", help="Compatibility option; manual analysis is isolated."),
+    ] = False,
 ) -> None:
     """Analyze one symbol through every engine except Peter Lynch and SEC."""
 

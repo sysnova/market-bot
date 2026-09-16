@@ -1,7 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -144,75 +144,58 @@ async def test_analyze_rejects_unsafe_symbol() -> None:
 
 
 @pytest.mark.unit
-async def test_production_analyzer_propagates_ticker_and_excludes_slow_engines() -> None:
-    received: list[tuple[str, object]] = []
-
-    async def live(**kwargs: object) -> dict[str, object]:
-        received.append(("core", kwargs["symbols"]))
-        return {"symbols": list(kwargs["symbols"]), "analyses": []}  # type: ignore[arg-type]
-
-    async def rotation(**_kwargs: object) -> dict[str, object]:
-        return {"service": "rotation"}
-
-    async def long_portfolio(**kwargs: object) -> dict[str, object]:
-        received.append(("long-portfolio", kwargs["symbol"]))
-        return {"service": "long-portfolio", "eligible": True}
-
-    async def patreon(**kwargs: object) -> dict[str, object]:
-        received.append(("patreon-caps", kwargs["symbols"]))
-        return {"service": "patreon-caps", "eligible": True}
-
-    async def held_engine(name: str, **kwargs: object) -> dict[str, object]:
-        received.append((name, kwargs["symbol"]))
-        return {"service": name, "eligible": True}
-
-    with (
-        patch("app.integration.live_composition.run_live_analysis", new=live),
-        patch(
-            "app.integration.market_rotation_composition.run_market_rotation_process",
-            new=rotation,
-        ),
-        patch(
-            "app.integration.long_portfolio_composition.run_long_portfolio_process",
-            new=long_portfolio,
-        ),
-        patch(
-            "app.integration.patreon_caps_composition.run_patreon_caps_process",
-            new=patreon,
-        ),
-        patch(
-            "app.integration.elliott_wave_composition.run_elliott_wave_process",
-            new=lambda **kwargs: held_engine("elliott-wave", **kwargs),
-        ),
-        patch(
-            "app.integration.support_confirmation_composition.run_support_confirmation_process",
-            new=lambda **kwargs: held_engine("support-confirmation", **kwargs),
-        ),
-        patch(
-            "app.integration.signal_fusion_composition.run_signal_fusion_process",
-            new=lambda **kwargs: held_engine("signal-fusion", **kwargs),
-        ),
-    ):
+async def test_manual_analyzer_uses_child_stdout_even_when_legacy_nats_flag_is_true() -> None:
+    process = Mock()
+    process.returncode = 0
+    process.communicate.return_value = (b'{"symbol":"ABCD","transport":"DIRECT_ISOLATED"}', b"")
+    with patch("subprocess.Popen", return_value=process) as spawn:
         report = await run_market_analyzer(
             symbol="abcd",
             timeout_seconds=1,
             runtime_root=Path(".runtime"),
             mirror_to_nats=True,
         )
+    assert report["transport"] == "DIRECT_ISOLATED"
+    args = spawn.call_args.args[0]
+    assert "app.integration.manual_analysis" in args
+    assert "ABCD" in args
+    assert "--shared-cache" not in args
+    assert "--nats" not in args
 
-    assert received == [
-        ("core", ("ABCD",)),
-        ("long-portfolio", "ABCD"),
-        ("patreon-caps", ("ABCD",)),
-        ("elliott-wave", "ABCD"),
-        ("support-confirmation", "ABCD"),
-        ("signal-fusion", "ABCD"),
-    ]
-    assert report["excluded_engines"] == {
-        "peter-lynch": "excluded_by_design_slow_provider",
-        "dilution-sec": "excluded_by_design_slow_provider",
-    }
-    assert all(
-        item["engine"] not in {"peter-lynch", "dilution-sec"}
-        for item in report["engines"]
-    )
+
+@pytest.mark.unit
+async def test_cancel_manual_analysis_terminates_child() -> None:
+    import threading
+
+    started, released = threading.Event(), threading.Event()
+    process = Mock()
+    process.returncode = None
+
+    def communicate() -> tuple[bytes, bytes]:
+        started.set()
+        released.wait(5)
+        return b"", b""
+
+    process.communicate.side_effect = communicate
+    process.kill.side_effect = released.set
+    with (
+        patch("subprocess.Popen", return_value=process),
+        patch(
+            "app.integration.symbol_analysis_composition._terminate_process",
+            side_effect=lambda child: child.kill(),
+        ) as terminate,
+    ):
+        task = asyncio.create_task(
+            run_market_analyzer(
+                symbol="ASTS",
+                timeout_seconds=1,
+                runtime_root=Path(".runtime"),
+            )
+        )
+        await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    process.kill.assert_called_once()
+    process.wait.assert_called_once()
+    terminate.assert_called_once_with(process)

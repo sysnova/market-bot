@@ -104,8 +104,8 @@ class TickerWebSession:
                     self._ask(dossier, question, request_id),
                 )
             else:
-                if self.analyze is None or self.bus is None:
-                    raise ValueError("El análisis requiere conexión con el bus de MarketBot.")
+                if self.analyze is None:
+                    raise ValueError("El análisis manual no está disponible.")
                 self._jobs[kind] = asyncio.create_task(self._analyze(symbol, request_id))
         except ValueError as error:
             await self.send(

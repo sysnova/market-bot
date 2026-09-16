@@ -78,11 +78,26 @@ class BlockingMarketData(FakeMarketData):
         await self.subscription_updated.wait()
         return 1
 
-    async def update_stream_subscriptions(
-        self, symbols: tuple[str, ...], **kwargs: Any
-    ) -> None:
+    async def update_stream_subscriptions(self, symbols: tuple[str, ...], **kwargs: Any) -> None:
         self.calls.append(("update_stream", (symbols, kwargs)))
         self.subscription_updated.set()
+
+
+@pytest.mark.unit
+async def test_manual_run_cannot_publish_a_global_universe_change() -> None:
+    runtime = FakeRuntime()
+    publisher = RecordingUniversePublisher(runtime)
+    service = LiveAnalysisService(
+        symbols=("IBM",),
+        market_data=FakeMarketData(),
+        local_bus=FakeBus(),
+        runtime=runtime,
+        universe_publisher=publisher,
+        universe_source="manual-symbols",
+    )
+    await service.initialize(NOW)
+    assert runtime.evaluated == ("IBM",)
+    assert publisher.changes == []
 
 
 class FakeUniverseProvider:
@@ -105,9 +120,7 @@ async def test_initialize_backfills_each_required_timeframe_before_enabling_live
     summary = await service.initialize(NOW)
 
     timeframes = tuple(
-        payload[1]["timeframe"]
-        for kind, payload in market_data.calls
-        if kind == "bars"
+        payload[1]["timeframe"] for kind, payload in market_data.calls if kind == "bars"
     )
     assert timeframes == ("1Week", "1Day", "15Min", "1Min")
     weekly_payload = next(

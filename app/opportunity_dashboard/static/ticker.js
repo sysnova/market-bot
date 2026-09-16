@@ -185,7 +185,7 @@
   });
   $("ticker-reanalyze").addEventListener("click", () => {
     if (state.analysis) return;
-    try { state.analysis = send("analyze_ticker"); $("ticker-status").textContent = "Solicitando análisis a los motores. Los assessments irán llegando en vivo…"; }
+    try { state.analysis = send("analyze_ticker"); $("ticker-status").textContent = "Ejecutando análisis manual independiente. El informe aparecerá al finalizar…"; }
     catch (error) { $("ticker-status").textContent = error.message; }
     controls();
   });
@@ -243,6 +243,18 @@
       if (message.type === "ticker_analysis_done" && message.request_id === state.analysis) {
         state.analysis = null;
         $("ticker-status").textContent = `Análisis finalizado: ${message.report.completed} completados, ${message.report.degraded} con limitaciones, ${message.report.skipped} no aplicables.`;
+        const article = document.createElement("article"); article.className = "ticker-answer";
+        const title = document.createElement("h3"); title.textContent = `${message.symbol} · Análisis manual`;
+        const stamp = document.createElement("p"); stamp.className = "ticker-help";
+        stamp.textContent = `${date(message.report.generated_at)} · Evaluación independiente del seguimiento en vivo`;
+        article.append(title, stamp);
+        for (const engine of message.report.engines || []) {
+          const details = document.createElement("details"), summary = document.createElement("summary"), body = document.createElement("pre");
+          summary.textContent = `${name(engine.engine)} · ${engine.status}`;
+          body.textContent = JSON.stringify(engine.result ?? {reason: engine.reason, error: engine.error_type}, null, 2);
+          details.append(summary, body); article.append(details);
+        }
+        $("ticker-answers").prepend(article);
       }
       if (message.type === "error") {
         if (message.request_id === state.ask) { state.ask = null; $("ticker-question-status").textContent = message.message; }

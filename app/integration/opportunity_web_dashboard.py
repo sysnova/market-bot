@@ -251,7 +251,7 @@ async def run_opportunity_web_dashboard(
                     symbol=symbol,
                     timeout_seconds=90,
                     runtime_root=Path(".runtime"),
-                    mirror_to_nats=True,
+                    mirror_to_nats=False,
                 )
 
             ticker = TickerWebSession(

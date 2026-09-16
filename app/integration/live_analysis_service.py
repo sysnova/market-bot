@@ -194,7 +194,7 @@ class LiveAnalysisService:
         *,
         source: str | None = None,
     ) -> None:
-        if self._universe_publisher is None:
+        if self._universe_publisher is None or self._universe_source == "manual-symbols":
             return
         await self._universe_publisher.publish_universe_changed(
             UniverseChanged(

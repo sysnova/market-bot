@@ -20,7 +20,9 @@ from app.common.logging import configure_logging, get_logger
 from app.common.settings import AppSettings, Environment
 from app.contracts import ANALYSIS_RESULT_EVENT, AnalysisResult, EventEnvelope, Subscription
 from app.entry_opportunity_engine import EntryOpportunityEngine
+from app.entry_opportunity_engine.memory import InMemoryEntryOpportunityStore
 from app.entry_watcher import EntryWatcher, EntryWatcherPolicy
+from app.entry_watcher.memory import InMemoryEntryWatchStore
 from app.event_bus import InMemoryEventBus, NatsJetStreamEventBus
 from app.persistence import create_database_engine, create_session_factory
 
@@ -49,6 +51,7 @@ async def run_live_analysis(
     mirror_to_nats: bool,
     symbols: tuple[str, ...] | None = None,
     include_analyses: bool = False,
+    isolated: bool = False,
 ) -> dict[str, Any] | None:
     """Run read-only market analysis; no execution adapter is composed here."""
 
@@ -64,8 +67,11 @@ async def run_live_analysis(
         synchronous_delivery=True,
     )
     captured_analyses: list[AnalysisResult] = []
+    captured_events: list[EventEnvelope] = []
 
     async def capture_analysis(envelope: EventEnvelope) -> None:
+        if isolated and not envelope.event_type.startswith("market."):
+            captured_events.append(envelope)
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
             return
         result = (
@@ -78,12 +84,18 @@ async def run_live_analysis(
     capture_subscription: Subscription | None = None
     if include_analyses:
         capture_subscription = await local_bus.subscribe(
-            "marketbot.v1.analysis.result.>", capture_analysis
+            "marketbot.v1.>" if isolated else "marketbot.v1.analysis.result.>", capture_analysis
         )
     entry_watch_database: AsyncEngine | None = None
     entry_watcher: EntryWatcher | None = None
     entry_opportunity: EntryOpportunityEngine | None = None
-    if settings.entry_watcher_enabled:
+    if isolated and settings.entry_watcher_enabled:
+        entry_watcher = assembly.build_entry_watcher(
+            store=InMemoryEntryWatchStore(),
+            policy=EntryWatcherPolicy(ttl=timedelta(days=settings.entry_watch_ttl_days)),
+        )
+        entry_opportunity = assembly.build_entry_opportunity(store=InMemoryEntryOpportunityStore())
+    if settings.entry_watcher_enabled and not isolated:
         try:
             entry_watch_database = create_database_engine(
                 settings.database_url.get_secret_value(),
@@ -120,7 +132,7 @@ async def run_live_analysis(
                 await entry_watch_database.dispose()
                 entry_watch_database = None
     nats_bus: NatsJetStreamEventBus | None = None
-    if mirror_to_nats:
+    if mirror_to_nats and not isolated:
         try:
             nats_bus = await NatsJetStreamEventBus.connect(
                 servers=[settings.nats_url.get_secret_value()],
@@ -149,7 +161,9 @@ async def run_live_analysis(
     alert_path = runtime_root / "alerts" / "marketbot-alerts.ndjson"
     alert_ledger = NdjsonAlertSink(alert_path)
     alert_dispatcher = AlertDispatcher(
-        sinks=(
+        sinks=()
+        if isolated
+        else (
             ConsoleAlertSink(stream=sys.stdout, bell=bell),
             alert_ledger,
         ),
@@ -194,7 +208,9 @@ async def run_live_analysis(
         market_data=market_data,
         local_bus=local_bus,
         runtime=runtime,
-        universe_publisher=UniverseEventPublisher(publisher),
+        universe_publisher=(
+            UniverseEventPublisher(publisher) if not once and symbols is None else None
+        ),
         universe_source=universe.source,
     )
     try:
@@ -234,6 +250,9 @@ async def run_live_analysis(
             }
             if include_analyses:
                 result["analyses"] = [item.model_dump(mode="json") for item in captured_analyses]
+                if isolated:
+                    result["events"] = [item.model_dump(mode="json") for item in captured_events]
+                    result["alert_path"] = None
             return result
         async with asyncio.TaskGroup() as tasks:
             tasks.create_task(

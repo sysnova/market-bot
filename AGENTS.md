@@ -56,9 +56,11 @@
   reuse a ticker from an earlier report, or hardcode a symbol. The analyzer normalizes
   and validates the received value.
 - For an explicit per-engine timeout or to disable NATS during diagnostics, use the
-  equivalent form `uv run marketbot analyzer TICKER --timeout-seconds SECONDS
-  [--no-nats]`. Normal reports should keep NATS enabled so downstream engines can
-  consume the current Core results.
+  equivalent form `uv run marketbot analyzer TICKER --timeout-seconds SECONDS`.
+  Manual reports run in an isolated child process and return engine results directly.
+  Never publish manual results or universe changes to the operational bus, hydrate
+  manual decisions from NATS, or attach the operational shared decision cache.
+  The legacy `--nats/--no-nats` option is accepted but cannot enable NATS for this mode.
 - Do not invoke Peter Lynch or the SEC/dilution scan before or after the analyzer.
   They are deliberately excluded from this report mode because their external-provider
   paths are slow. Mention this exclusion in the report when it matters.

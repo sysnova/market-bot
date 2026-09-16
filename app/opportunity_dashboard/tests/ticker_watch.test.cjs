@@ -22,6 +22,20 @@ function snapshot(symbol='NVDA') {
     captured_at:'2026-09-14T14:30:00Z',assessments:[{id:'swing',engine:'swing',as_of:'2026-09-14T14:29:00Z',freshness:'FRESH',payload:{reasons:['<img src=x onerror=alert(1)>']},
       gates:[{name:'entry_gate',status:'FAIL',value:false,polarity:'positive'}]}]};
 }
+test('manual report is shown directly without replacing live evidence', () => {
+  const app=setup(); app.get('watch-symbol').value='ASTS'; app.submit('ticker-watch-form');
+  app.api.handle(snapshot('ASTS'));
+  const live=app.get('ticker-assessments').innerHTML;
+  app.get('ticker-reanalyze').handlers.click(); const request=app.sent.at(-1);
+  app.api.handle({type:'ticker_analysis_done',symbol:'ASTS',request_id:request.request_id,
+    report:{generated_at:'2026-09-16T14:00:00Z',completed:1,degraded:0,skipped:0,
+      engines:[{engine:'core',status:'COMPLETED',result:{symbol:'ASTS',verdict:'<script>literal</script>'}}]}});
+  const report=app.get('ticker-answers').children[0];
+  assert.match(report.children[0].textContent,/ASTS · Análisis manual/);
+  assert.match(report.children[2].children[1].textContent,/<script>literal<\/script>/);
+  assert.equal(app.get('ticker-assessments').innerHTML,live);
+  assert.equal(app.sent.filter(item=>item.type==='analyze_ticker').length,1);
+});
 test('ticker selection, live gates, and questions share the exact selected ticker', () => {
   const app=setup(); app.get('watch-symbol').value='nvda'; app.submit('ticker-watch-form');
   assert.equal(app.sent[0].symbol,'NVDA'); app.api.handle(snapshot());
