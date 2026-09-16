@@ -73,6 +73,24 @@ async def test_load_once_then_restart_reads_redis_and_invalidates_changed_covera
     assert len(repo.reads) == 4
 
 
+async def test_regular_history_does_not_preload_unused_extended_session_windows() -> None:
+    from app.integration.redis_history import history_view
+
+    cache = RedisTickerCache(fakeredis.FakeRedis(decode_responses=True))
+    repo = Repository()
+    req = MarketHistoryRequirement(
+        timeframe=BarTimeframe.MINUTE_15,
+        max_bars_per_symbol=1200,
+        lookback=timedelta(days=100),
+    )
+    await RedisHistoryWarmer(cache, repo).warm(("AAPL",), (req,))
+    assert repo.reads == [("AAPL",)]
+    assert cache.redis.exists(cache.namespace + "view:" + history_view("AAPL", req.timeframe, True))
+    assert not cache.redis.exists(
+        cache.namespace + "view:" + history_view("AAPL", req.timeframe, False)
+    )
+
+
 @pytest.mark.parametrize(
     "case",
     [

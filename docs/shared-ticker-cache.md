@@ -13,7 +13,10 @@ y estado de negocio; NATS transporta los eventos.
    Engines activos y prepara las ventanas del universo en Redis. Lee PostgreSQL
    por ticker, nunca como un lote de toda la watchlist.
 3. Cada ventana guarda cobertura (cantidad, última barra, fecha de descarga y
-   capacidad). Si la cobertura no cambió, los siguientes arranques reutilizan
+   capacidad). Las ventanas extendidas se cargan sólo cuando el pedido incluye
+   premarket; la precarga general de 15m/1h usa únicamente RTH. El supervisor
+   retira las antiguas ventanas extendidas sobrantes al iniciar, incluso si Redis
+   ya alcanzó su límite de memoria. Si la cobertura no cambió, los siguientes arranques reutilizan
    Redis sin volver a materializar ese histórico desde PostgreSQL. Se mantiene
    la comprobación de frescura del servicio histórico y la recuperación de huecos.
 4. Los Engines esperan al servicio histórico y reciben un iterable Redis: durante

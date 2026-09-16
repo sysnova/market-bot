@@ -68,6 +68,8 @@ class RedisHistoryWarmer:
         self,
         symbols: tuple[str, ...],
         requirements: tuple[MarketHistoryRequirement, ...],
+        *,
+        include_premarket_intraday: bool = False,
     ) -> None:
         for requirement in requirements:
             tf = requirement.timeframe
@@ -75,7 +77,8 @@ class RedisHistoryWarmer:
             for symbol in symbols:
                 item = coverage[symbol]
                 fingerprint = f"{item.count}:{item.latest}:{item.downloaded_at}"
-                variants = (False, True) if requires_regular_session(tf) else (False,)
+                regular_only = requires_regular_session(tf) and not include_premarket_intraday
+                variants = (regular_only,)
                 for regular in variants:
                     limit = (
                         requirement.max_bars_per_symbol

@@ -251,6 +251,7 @@ async def load_market_history_profiled(
                     requirements=requirements,
                     requested_at=as_of,
                     force_refresh=force_refresh,
+                    include_premarket_intraday=include_premarket_intraday,
                 )
             )
             elapsed = _elapsed_ms(started)
@@ -391,7 +392,11 @@ class RedisHistoryService:
     async def ensure(self, request: MarketHistoryRequest) -> MarketHistoryResponse:
         async with self._lock:
             response = await self.service.ensure(request)
-            await self.warmer.warm(request.symbols, request.requirements)
+            await self.warmer.warm(
+                request.symbols,
+                request.requirements,
+                include_premarket_intraday=request.include_premarket_intraday,
+            )
             if not request.force_refresh:
                 self._requests[request.engine_id] = request
             return response
@@ -400,7 +405,11 @@ class RedisHistoryService:
         async with self._lock:
             responses = await self.service.refresh_registered(as_of=as_of)
             for request in self._requests.values():
-                await self.warmer.warm(request.symbols, request.requirements)
+                await self.warmer.warm(
+                    request.symbols,
+                    request.requirements,
+                    include_premarket_intraday=request.include_premarket_intraday,
+                )
             return responses
 
     async def prewarm(self, settings: AppSettings, as_of: datetime) -> None:
@@ -418,3 +427,18 @@ class RedisHistoryService:
                     requested_at=as_of,
                 )
             )
+
+            minute = tuple(r for r in requirements if r.timeframe is BarTimeframe.MINUTE_1)
+            if minute:
+                await self.warmer.warm(
+                    universe.symbols,
+                    minute,
+                    include_premarket_intraday=True,
+                )
+                self._requests["redis-central-premarket"] = MarketHistoryRequest(
+                    engine_id="redis-central-premarket",
+                    symbols=universe.symbols,
+                    requirements=minute,
+                    requested_at=as_of,
+                    include_premarket_intraday=True,
+                )

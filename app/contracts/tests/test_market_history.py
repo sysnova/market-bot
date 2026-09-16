@@ -38,6 +38,11 @@ def test_market_history_contract_is_small_and_versioned() -> None:
     assert MARKET_HISTORY_ENSURE_SUBJECT == "marketbot.rpc.v1.market.history.ensure"
     assert request.symbols == ("TGT", "ADUR")
     assert response.error is None
+    assert request.include_premarket_intraday is False
+    premarket = request.model_copy(update={"include_premarket_intraday": True})
+    assert MarketHistoryRequest.model_validate_json(
+        premarket.model_dump_json()
+    ).include_premarket_intraday
 
 
 def test_market_history_request_rejects_duplicate_timeframes() -> None:

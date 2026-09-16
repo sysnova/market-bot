@@ -9,6 +9,7 @@ from __future__ import annotations
 import atexit
 import json
 import threading
+from collections.abc import Iterator
 from hashlib import sha256
 from time import time
 from typing import Any, cast
@@ -136,6 +137,22 @@ return cjson.encode(true)
 """
 
 
+# Deletion must remain possible after noeviction rejects ordinary write scripts.
+_DROP_HISTORY = """#!lua flags=allow-oom
+local v, payloads, refs, coverage = KEYS[1], KEYS[2], KEYS[3], KEYS[4]
+for _, s in ipairs(redis.call('SMEMBERS', v..':series')) do
+  for _, h in ipairs(redis.call('HVALS', s..':data')) do
+    local remaining = tonumber(redis.call('HGET', refs, h) or '0') - 1
+    if remaining <= 0 then
+      redis.call('HDEL', refs, h); redis.call('HDEL', payloads, h)
+    else redis.call('HINCRBY', refs, h, -1) end
+  end
+  redis.call('DEL', s, s..':data', s..':final')
+end
+return redis.call('DEL', v, v..':series', coverage)
+"""
+
+
 class RedisTickerCache:
     def __init__(self, redis: Redis, *, namespace: str = "marketbot:cache:v2:") -> None:
         self.redis = redis
@@ -185,6 +202,31 @@ class RedisTickerCache:
 
     def open_persistent(self, view: str, capacity: int) -> None:
         self.call("persistent", view, capacity)
+
+    def discard_history(self, view: str) -> None:
+        if not view.startswith("history:"):
+            raise ValueError("only canonical histories can be discarded")
+        self.redis.eval(
+            _DROP_HISTORY,
+            4,
+            self.namespace + "view:" + view,
+            self.namespace + "payloads",
+            self.namespace + "refs",
+            self.namespace + view + ":coverage",
+        )
+
+    def prune_unused_extended_history(self) -> int:
+        """Retire oversized v2 bootstrap windows before registering new clients."""
+        prefix = self.namespace + "view:"
+        removed = 0
+        for timeframe in ("15Min", "1Hour"):
+            keys = cast(
+                Iterator[str], self.redis.scan_iter(match=prefix + f"history:*:{timeframe}:all")
+            )
+            for key in keys:
+                self.discard_history(key[len(prefix) :])
+                removed += 1
+        return removed
 
     def persistent_view(self, scope: str, capacity: int = 2_000) -> str:
         view = "context:" + scope

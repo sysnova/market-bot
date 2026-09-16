@@ -33,6 +33,7 @@ class MarketHistoryRequest(StrictFrozenModel):
     requirements: tuple[MarketHistoryRequirement, ...] = Field(min_length=1)
     requested_at: datetime
     force_refresh: bool = False
+    include_premarket_intraday: bool = False
 
     @field_validator("symbols", mode="before")
     @classmethod

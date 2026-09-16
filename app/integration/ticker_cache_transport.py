@@ -201,6 +201,7 @@ def make_cache_server(token: str) -> ThreadingHTTPServer:
 def run_cache_server(*, endpoint_path: Path, ready_path: Path) -> None:
     url = AppSettings().redis_url.get_secret_value()
     client = RedisTickerCache.connect(url)
+    client.prune_unused_extended_history()
     endpoint_path.parent.mkdir(parents=True, exist_ok=True)
     ready_path.parent.mkdir(parents=True, exist_ok=True)
     endpoint_path.touch(mode=0o600)

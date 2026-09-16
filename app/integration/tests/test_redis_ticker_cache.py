@@ -51,6 +51,26 @@ def test_canonical_history_survives_clients_and_bounds_retention() -> None:
     ]
 
 
+def test_discard_history_preserves_payloads_referenced_by_other_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.integration import redis_ticker_cache
+
+    # FakeRedis's Lua interpreter does not parse Redis script flags.
+    monkeypatch.setattr(
+        redis_ticker_cache, "_DROP_HISTORY", redis_ticker_cache._DROP_HISTORY.split("\n", 1)[1]
+    )
+    cache = client(fakeredis.FakeServer())
+    for view in ("history:AAPL:regular", "history:AAPL:all"):
+        cache.open_persistent(view, 2)
+        cache.call("add", view, [row(1)])
+    cache.discard_history("history:AAPL:all")
+    assert cache.call("history", "history:AAPL:regular", "AAPL", "1Min", 1, True) == [
+        json.dumps({"close": 10})
+    ]
+    assert cache.call("stats")["unique_payloads"] == 1
+
+
 def test_contexts_and_failed_connection_do_not_fall_back_to_python_cache() -> None:
     server = fakeredis.FakeServer()
     first, second = client(server), client(server)
