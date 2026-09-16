@@ -6,7 +6,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from app.common.market_session import is_regular_session
+from app.common.market_session import is_intraday_analysis_session, is_regular_session
 from app.contracts import (
     BarTimeframe,
     EntryOpportunity,
@@ -22,6 +22,8 @@ _MAX_RECOVERY_BARS_PER_SYMBOL = 10_000
 
 class EntryOpportunityBarEngine(Protocol):
     async def ingest_bar(self, bar: MarketBar) -> object: ...
+
+    async def ingest_reference_bar(self, bar: MarketBar) -> object: ...
 
 
 def entry_opportunity_history_requirements(
@@ -54,8 +56,11 @@ async def replay_pending_entry_opportunity_bars(
     engine: EntryOpportunityBarEngine,
     opportunities: Sequence[EntryOpportunity],
     bars: Iterable[MarketBar],
+    *,
+    include_extended_hours: bool = False,
+    extended_hours_order_impact: bool = False,
 ) -> int:
-    """Replay final regular-session bars strictly after each persisted cursor."""
+    """Replay lifecycle bars and optional extended-session reference marks."""
 
     active = {opportunity.symbol: opportunity for opportunity in opportunities}
     cursors = {opportunity.symbol: opportunity.last_market_bar_at for opportunity in opportunities}
@@ -66,8 +71,13 @@ async def replay_pending_entry_opportunity_bars(
             opportunity is None
             or bar.timeframe is not BarTimeframe.MINUTE_1
             or not bar.is_final
-            or not is_regular_session(bar.timestamp)
         ):
+            continue
+        regular = is_regular_session(bar.timestamp)
+        extended = include_extended_hours and is_intraday_analysis_session(
+            bar.timestamp, include_extended_hours=True
+        )
+        if not regular and not extended:
             continue
         cursor = cursors[bar.symbol]
         if cursor is not None:
@@ -75,7 +85,10 @@ async def replay_pending_entry_opportunity_bars(
                 continue
         elif bar.timestamp < opportunity.armed_at:
             continue
-        await engine.ingest_bar(bar)
+        if regular or extended_hours_order_impact:
+            await engine.ingest_bar(bar)
+        else:
+            await engine.ingest_reference_bar(bar)
         cursors[bar.symbol] = bar.timestamp
         replayed += 1
     return replayed

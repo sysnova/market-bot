@@ -126,6 +126,12 @@ fill at the bar open. Session-close bars close at their close; reconciliation
 uses the last observed price if that bar was unavailable, with an explicit
 reason. This is an OHLC simulation without fees, borrow costs or fill guarantees.
 
+With `MARKETBOT_MARKET_SESSION_MODE=AFTER` and
+`MARKETBOT_EXTENDED_HOURS_ORDER_IMPACT=false`, final premarket and after-hours
+1-minute closes update only the current mark used by open dashboard P/L. They do
+not update MFE/MAE, trigger stops or targets, move protection, close a leg, or
+create a new paper entry. Recovery applies the same distinction after restart.
+
 Activation: apply local PostgreSQL migration 20260910180000_short_opportunity_levels.sql
 and select definition 7.55.0 for the updated consumer and monitors. The base is operational definition 7.52.0; prior definitions and the existing
 Windows default selection are unchanged. Do not blindly replay old alerts into the live ledger.

@@ -161,13 +161,13 @@ class AnalysisRuntime:
                 for aggregated in self._extended_aggregator.add(bar):
                     self._store.add(aggregated)
                 if self._live and bar.is_final:
-                    if (
-                        self._entry_opportunity is not None
-                        and self._extended_hours_order_impact
-                    ):
-                        await self._dispatch_opportunity_events(
+                    if self._entry_opportunity is not None:
+                        events = (
                             await self._entry_opportunity.ingest_bar(bar)
+                            if self._extended_hours_order_impact
+                            else await self._entry_opportunity.ingest_reference_bar(bar)
                         )
+                        await self._dispatch_opportunity_events(events)
                     await self._evaluate_intraday(bar.symbol, (envelope.event_id,))
             elif bar.timeframe is BarTimeframe.MINUTE_1:
                 for aggregated in self._aggregator.add(bar):

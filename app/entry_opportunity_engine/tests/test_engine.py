@@ -1186,6 +1186,51 @@ async def test_extended_hours_wick_cannot_invalidate_an_opportunity() -> None:
 
 
 @pytest.mark.unit
+async def test_extended_hours_reference_mark_updates_pnl_without_lifecycle_impact() -> None:
+    store = InMemoryEntryOpportunityStore()
+    manager = EntryOpportunityEngine(store=store, id_factory=lambda: OPPORTUNITY_ID)
+    await _open(manager)
+    before = await store.load_active("AAPL")
+    assert before is not None
+    event_count = len(store.events)
+    marked_at = datetime(2026, 8, 6, 21, 0, tzinfo=UTC)
+
+    events = await manager.ingest_reference_bar(
+        bar(timestamp=marked_at, close="95", low="80", high="120")
+    )
+
+    marked = await store.load_active("AAPL")
+    assert marked is not None
+    assert events == ()
+    assert len(store.events) == event_count
+    assert marked.status is before.status
+    assert marked.current_price == Decimal("95")
+    assert marked.last_market_bar_at == marked_at
+    assert marked.revision == before.revision + 1
+    assert [item.current_price for item in marked.checkpoints] == [Decimal("95")] * len(
+        marked.checkpoints
+    )
+    assert [item.highest_price for item in marked.checkpoints] == [
+        item.highest_price for item in before.checkpoints
+    ]
+    assert [item.lowest_price for item in marked.checkpoints] == [
+        item.lowest_price for item in before.checkpoints
+    ]
+    assert [item.status for item in marked.checkpoints] == [
+        item.status for item in before.checkpoints
+    ]
+    assert all(item.protection_stop is None for item in marked.checkpoints)
+    assert [item.current_price for item in marked.legs] == [Decimal("95")] * len(marked.legs)
+    assert [item.highest_price for item in marked.legs] == [
+        item.highest_price for item in before.legs
+    ]
+    assert [item.lowest_price for item in marked.legs] == [
+        item.lowest_price for item in before.legs
+    ]
+    assert [item.status for item in marked.legs] == [item.status for item in before.legs]
+
+
+@pytest.mark.unit
 async def test_extended_hours_wick_can_invalidate_when_order_impact_is_enabled() -> None:
     store = InMemoryEntryOpportunityStore()
     manager = EntryOpportunityEngine(

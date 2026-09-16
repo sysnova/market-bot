@@ -110,3 +110,33 @@ async def test_replay_submits_only_bars_after_the_persisted_cursor_in_time_order
         NOW - timedelta(minutes=2),
         NOW - timedelta(minutes=1),
     ]
+
+
+@pytest.mark.unit
+async def test_replay_uses_extended_bars_only_as_reference_marks_when_impact_is_disabled() -> None:
+    regular = datetime(2026, 8, 14, 19, 59, tzinfo=UTC)
+    after_hours = datetime(2026, 8, 14, 20, 1, tzinfo=UTC)
+    submitted: list[tuple[str, MarketBar]] = []
+
+    class RecordingEngine:
+        async def ingest_bar(self, bar: MarketBar) -> tuple[()]:
+            submitted.append(("lifecycle", bar))
+            return ()
+
+        async def ingest_reference_bar(self, bar: MarketBar) -> tuple[()]:
+            submitted.append(("reference", bar))
+            return ()
+
+    count = await replay_pending_entry_opportunity_bars(
+        RecordingEngine(),
+        (_opportunity(last_market_bar_at=NOW - timedelta(hours=1)),),
+        (_bar(after_hours), _bar(regular)),
+        include_extended_hours=True,
+        extended_hours_order_impact=False,
+    )
+
+    assert count == 2
+    assert [(kind, bar.timestamp) for kind, bar in submitted] == [
+        ("lifecycle", regular),
+        ("reference", after_hours),
+    ]

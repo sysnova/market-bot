@@ -52,8 +52,9 @@ La composición live utiliza `IntradayEngineV9` por defecto; las versiones anter
 disponibles para rollback y replay. Con `MARKETBOT_MARKET_SESSION_MODE=AFTER`, Intraday
 consume premarket, RTH y after-hours como sesiones separadas; con `RTH`, solo consume la rueda
 regular. `MARKETBOT_EXTENDED_HOURS_ORDER_IMPACT=false` mantiene PRE/AFTER observacional, sin
-crear compras simuladas ni modificar oportunidades abiertas. Swing y 4HGERI conservan
-exclusivamente sus barras regulares.
+crear compras simuladas, cerrar posiciones ni mover protecciones. Las oportunidades abiertas
+sí actualizan su precio de referencia y P/L mark-to-market. Swing y 4HGERI conservan exclusivamente
+sus barras regulares.
 
 Run focused verification with:
 

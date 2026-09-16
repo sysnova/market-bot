@@ -648,6 +648,41 @@ class EntryOpportunityEngine:
         await self._store.save(updated, event)
         return (event,) if event is not None else ()
 
+    async def ingest_reference_bar(self, bar: MarketBar) -> tuple[EntryOpportunityEvent, ...]:
+        """Refresh open mark-to-market prices without applying lifecycle rules."""
+
+        if not bar.is_final or bar.timeframe is not BarTimeframe.MINUTE_1:
+            return ()
+        active = await self._store.load_active(bar.symbol)
+        if active is None or bar.timestamp < active.armed_at:
+            return ()
+        if active.last_market_bar_at is not None and bar.timestamp <= active.last_market_bar_at:
+            return ()
+        checkpoints = tuple(
+            item.model_copy(update={"current_price": bar.close})
+            if item.status is EntryCheckpointStatus.OPEN
+            else item
+            for item in active.checkpoints
+        )
+        legs = tuple(
+            item.model_copy(update={"current_price": bar.close})
+            if item.status in {EntryLegStatus.WATCHING, EntryLegStatus.OPEN}
+            else item
+            for item in active.legs
+        )
+        updated = active.model_copy(
+            update={
+                "current_price": bar.close,
+                "updated_at": max(active.updated_at, bar.timestamp),
+                "last_market_bar_at": bar.timestamp,
+                "revision": active.revision + 1,
+                "legs": legs,
+                "checkpoints": checkpoints,
+            }
+        )
+        await self._store.save(updated, None)
+        return ()
+
     @staticmethod
     def _mark_checkpoint(
         checkpoint: EntryMaturityCheckpoint, bar: MarketBar

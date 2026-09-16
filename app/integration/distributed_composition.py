@@ -33,7 +33,7 @@ from app.alpaca_market_data.transports import HttpxTransport, WebsocketsConnecto
 from app.alpaca_market_data.websocket import AlpacaMarketDataStream
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
-from app.common.market_session import is_regular_session
+from app.common.market_session import is_intraday_analysis_session, is_regular_session
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
@@ -1265,13 +1265,16 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
             if not bar.is_final or bar.timeframe is not BarTimeframe.MINUTE_1:
                 return
-            if not _order_impact_allowed(bar.timestamp, settings):
+            if not _reference_mark_allowed(bar.timestamp, settings):
                 return
             async with recovery_lock:
                 if recovering_bars:
                     buffered_live_bars.append(bar)
                     return
-                await engine.ingest_bar(bar)
+                if _order_impact_allowed(bar.timestamp, settings):
+                    await engine.ingest_bar(bar)
+                else:
+                    await engine.ingest_reference_bar(bar)
 
         async def handle_alert(envelope: EventEnvelope) -> None:
             if envelope.event_type != LOCAL_ALERT_EVENT:
@@ -1335,14 +1338,16 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 requirements=recovery_requirements,
                 as_of=recovery_as_of,
                 force_refresh=True,
-                include_premarket_intraday=settings.extended_hours_order_impact,
-                include_after_hours_intraday=settings.extended_hours_order_impact,
+                include_premarket_intraday=settings.extended_hours_enabled,
+                include_after_hours_intraday=settings.extended_hours_enabled,
             )
             async with recovery_lock:
                 recovered_bars = await replay_pending_entry_opportunity_bars(
                     engine,
                     active_opportunities,
                     (*historical_bars, *buffered_live_bars),
+                    include_extended_hours=settings.extended_hours_enabled,
+                    extended_hours_order_impact=settings.extended_hours_order_impact,
                 )
                 buffered_live_bars.clear()
                 recovering_bars = False
@@ -1594,6 +1599,13 @@ def _build_worker(
 
 def _order_impact_allowed(timestamp: datetime, settings: AppSettings) -> bool:
     return is_regular_session(timestamp) or settings.extended_hours_order_impact
+
+
+def _reference_mark_allowed(timestamp: datetime, settings: AppSettings) -> bool:
+    return is_regular_session(timestamp) or (
+        settings.extended_hours_enabled
+        and is_intraday_analysis_session(timestamp, include_extended_hours=True)
+    )
 
 
 def _entry_opportunity_consumes_local_alerts(engine: object) -> bool:

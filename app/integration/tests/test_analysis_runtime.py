@@ -86,6 +86,23 @@ class RecordingEntryWatcher:
         return self.transition
 
 
+class RecordingEntryOpportunity:
+    def __init__(self) -> None:
+        self.lifecycle_bars: list[MarketBar] = []
+        self.reference_bars: list[MarketBar] = []
+
+    async def ingest_bar(self, bar: MarketBar) -> tuple[()]:
+        self.lifecycle_bars.append(bar)
+        return ()
+
+    async def ingest_reference_bar(self, bar: MarketBar) -> tuple[()]:
+        self.reference_bars.append(bar)
+        return ()
+
+    async def ingest_analysis(self, result: AnalysisResult, *, now: datetime) -> tuple[()]:
+        return ()
+
+
 def bar(timeframe: BarTimeframe, index: int, count: int) -> MarketBar:
     step = {
         BarTimeframe.MINUTE_1: timedelta(minutes=1),
@@ -262,6 +279,59 @@ async def test_premarket_bars_feed_only_intraday_without_publishing_swing_bars()
         or item.payload.timeframe is not BarTimeframe.MINUTE_5
         for _, item in publisher.items
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("extended_hours_order_impact", "expected_lifecycle", "expected_reference"),
+    [(False, 0, 1), (True, 1, 0)],
+)
+async def test_extended_bar_marks_open_pnl_without_lifecycle_impact(
+    extended_hours_order_impact: bool,
+    expected_lifecycle: int,
+    expected_reference: int,
+) -> None:
+    opportunity = RecordingEntryOpportunity()
+    runtime = AnalysisRuntime(
+        store=MarketBarStore(),
+        publisher=RecordingPublisher(),
+        long_term=StaticEngine(AnalysisHorizon.LONG_TERM),
+        swing=StaticEngine(AnalysisHorizon.SWING),
+        intraday=StaticEngine(AnalysisHorizon.INTRADAY),
+        alert_engine=AlertEngine(),
+        alert_dispatcher=AlertDispatcher(sinks=()),
+        clock=FixedClock(),
+        entry_opportunity=opportunity,
+        include_extended_hours=True,
+        extended_hours_order_impact=extended_hours_order_impact,
+    )
+    runtime.enable_live()
+    premarket = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
+    current = MarketBar(
+        symbol="AAPL",
+        timeframe=BarTimeframe.MINUTE_1,
+        timestamp=premarket,
+        open=Decimal("100"),
+        high=Decimal("110"),
+        low=Decimal("90"),
+        close=Decimal("101"),
+        volume=Decimal("1000"),
+        source="test",
+        feed="sip",
+    )
+
+    await runtime.handle_market_event(
+        EventEnvelope(
+            event_type="market.bar.received",
+            occurred_at=current.timestamp,
+            source="test",
+            subject="AAPL",
+            payload=current,
+        )
+    )
+
+    assert len(opportunity.lifecycle_bars) == expected_lifecycle
+    assert len(opportunity.reference_bars) == expected_reference
 
 
 @pytest.mark.unit
