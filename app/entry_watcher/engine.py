@@ -113,7 +113,9 @@ class EntryWatcher:
         self._store = store
         self._policy = policy or EntryWatcherPolicy()
         self._id_factory = id_factory
-        self._latest = grouped_context_store(AnalysisHorizon, AnalysisResult)
+        self._latest = grouped_context_store(
+            AnalysisHorizon, AnalysisResult, scope="entry_watcher:engine:_latest"
+        )
 
     async def ingest(self, result: AnalysisResult, *, now: datetime) -> EntryWatchTransition | None:
         self._validate_time(result, now)

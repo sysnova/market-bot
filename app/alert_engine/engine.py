@@ -40,7 +40,9 @@ class AlertEngine:
 
     def __init__(self, policy: AlertPolicy | None = None) -> None:
         self._policy = policy or AlertPolicy()
-        self._latest = grouped_context_store(AnalysisHorizon, AnalysisResult)
+        self._latest = grouped_context_store(
+            AnalysisHorizon, AnalysisResult, scope="alert_engine:engine:_latest"
+        )
         self._last_emitted: dict[tuple[str, str], tuple[datetime, AlertSeverity]] = {}
         self._emitted_keys: set[str] = set()
 
@@ -69,9 +71,7 @@ class AlertEngine:
             return self._dilution_warning_alert(result, now=now)
         return None
 
-    def ingest_entry_watch(
-        self, transition: EntryWatchTransition, *, now: datetime
-    ) -> LocalAlert:
+    def ingest_entry_watch(self, transition: EntryWatchTransition, *, now: datetime) -> LocalAlert:
         """Render one durable entry-watch transition as a human-only alert."""
         _require_utc(now)
         if transition.occurred_at > now:
@@ -123,9 +123,7 @@ class AlertEngine:
             )
             tactical_message += f"; tactical stop {transition.entry_invalidation}"
         if transition.entry_target is not None:
-            tactical_levels += (
-                NamedValue(name="entry_target", value=transition.entry_target),
-            )
+            tactical_levels += (NamedValue(name="entry_target", value=transition.entry_target),)
             tactical_message += f"; tactical target {transition.entry_target}"
         return LocalAlert(
             symbol=transition.symbol,
@@ -152,8 +150,7 @@ class AlertEngine:
             score=score,
             reasons=transition.reasons,
             deduplication_key=(
-                f"entry-watch:v1:{transition.watch_id}:"
-                f"{transition.transition_id}:{status.lower()}"
+                f"entry-watch:v1:{transition.watch_id}:{transition.transition_id}:{status.lower()}"
             ),
             expires_at=now + self._policy.alert_ttl,
         )
@@ -266,9 +263,7 @@ class AlertEngine:
         reasons.extend(self._component_reasons(fresh))
         return self._build_alert(symbol, fresh, direction, severity, score, tuple(reasons), now)
 
-    def _fresh_values(
-        self, symbol: str, now: datetime
-    ) -> dict[AnalysisHorizon, AnalysisResult]:
+    def _fresh_values(self, symbol: str, now: datetime) -> dict[AnalysisHorizon, AnalysisResult]:
         values = self._latest.get(symbol, {})
         return {
             horizon: result
@@ -459,9 +454,7 @@ def _progress_bar(percent: Decimal) -> str:
 
 
 def _score(value: Decimal) -> Decimal:
-    return min(HUNDRED, max(ZERO, value)).quantize(
-        Decimal("0.01"), rounding=ROUND_HALF_UP
-    )
+    return min(HUNDRED, max(ZERO, value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _unique(values: tuple[str, ...]) -> tuple[str, ...]:

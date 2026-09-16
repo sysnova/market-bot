@@ -37,10 +37,10 @@ def register_serve_commands(app: typer.Typer) -> None:
         """Show cache payload sizes, deduplication and live consumer references."""
         import json
 
-        from app.integration.ticker_cache_transport import CacheClient
+        from app.integration.ticker_cache_transport import client_from_endpoint
 
         endpoint = json.loads(endpoint_path.read_text(encoding="utf-8"))
-        client = CacheClient(endpoint["port"], endpoint["token"])
+        client = client_from_endpoint(endpoint)
         try:
             typer.echo(json.dumps(client.call("stats"), indent=2))
         finally:

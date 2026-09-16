@@ -94,6 +94,7 @@ from .entry_signal_adapter import entry_signal_from_alert_watch, publish_entry_s
 from .entry_watch_store import PostgresEntryWatchStore
 from .intraday_worker import IntradayWorker
 from .long_term_worker import LongTermWorker
+from .market_bar_repository import PostgresMarketBarRepository
 from .market_history_composition import load_market_history, load_market_history_profiled
 from .market_stream_recovery import (
     BufferedMarketDataPublisher,
@@ -107,7 +108,10 @@ from .postgres_universe import (
     UniverseSnapshot,
     fallback_universe,
 )
+from .redis_history import RedisHistoryWarmer, RedisIngressPublisher
+from .redis_ticker_cache import RedisTickerCache
 from .swing_worker import SwingWorker
+from .ticker_cache_transport import shared_cache_client
 from .universe_events import UniverseEventPublisher
 from .universe_policy import universe_health_details
 
@@ -276,11 +280,11 @@ async def run_engine_process(
             requirements=history_requirements,
         )
         worker = _build_worker(horizon, bus, assembly=assembly)
-        if (
-            horizon is AnalysisHorizon.SWING
-            and assembly.spec(EngineSlot.SWING).implementation
-            in {"11.0.0", "12.0.0", "13.0.0"}
-        ):
+        if horizon is AnalysisHorizon.SWING and assembly.spec(EngineSlot.SWING).implementation in {
+            "11.0.0",
+            "12.0.0",
+            "13.0.0",
+        }:
             swing_worker = cast(SwingWorker, worker)
             support_subscription = await bus.subscribe(
                 "marketbot.v1.support-confirmation.assessment.>",
@@ -304,9 +308,7 @@ async def run_engine_process(
                     ),
                 )
                 subscriptions.append(order_flow_support_subscription)
-                await bus.wait_until_caught_up(
-                    order_flow_support_subscription, timeout_seconds=60
-                )
+                await bus.wait_until_caught_up(order_flow_support_subscription, timeout_seconds=60)
         bootstrap_started = perf_counter()
         result_count = await worker.bootstrap(bars, symbols=universe.symbols)
         bootstrap_ms = _elapsed_ms(bootstrap_started)
@@ -367,7 +369,7 @@ async def run_engine_process(
                             }
                         )
                         assert database is not None
-                        refresh_bars: tuple[MarketBar, ...] = ()
+                        refresh_bars: Iterable[MarketBar] = ()
                         if added:
                             refresh_bars = await load_market_history(
                                 settings,
@@ -376,9 +378,7 @@ async def run_engine_process(
                                 symbols=added,
                                 requirements=engine_history_requests(horizon),
                                 as_of=clock.now(),
-                                include_premarket_intraday=(
-                                    horizon is AnalysisHorizon.INTRADAY
-                                ),
+                                include_premarket_intraday=(horizon is AnalysisHorizon.INTRADAY),
                             )
                             await worker.bootstrap(refresh_bars, symbols=added)
                         initial_results = await worker.handle_universe_changed(consumer_change)
@@ -476,17 +476,21 @@ async def run_market_stream_process(
     ):
         leveraged_engine = assembly.build_leveraged_thesis()
         leveraged_symbols = leveraged_engine.required_symbols
-        leveraged_underlyings = tuple(
-            pair.underlying_symbol for pair in leveraged_engine.pairs
-        )
+        leveraged_underlyings = tuple(pair.underlying_symbol for pair in leveraged_engine.pairs)
     try:
         bus = await _connect_nats(settings)
         database = create_database_engine(
             settings.database_url.get_secret_value(),
             require_ssl=settings.environment is Environment.PRODUCTION,
         )
+        cache = shared_cache_client()
+        ingress: EventPublisher = bus
+        if isinstance(cache, RedisTickerCache):
+            ingress = RedisIngressPublisher(
+                bus, RedisHistoryWarmer(cache, PostgresMarketBarRepository(database))
+            )
         market_publisher = BufferedMarketDataPublisher(
-            bus,
+            ingress,
             max_buffered_bars=settings.alpaca_stream_recovery_buffer_bars,
         )
         engine = _build_stream_engine(settings, market_publisher)
@@ -528,9 +532,7 @@ async def run_market_stream_process(
                 rotation_refresh.clear()
                 universe = await _resolve_universe(settings, symbols)
                 holdings = await _resolve_holdings(settings)
-                core_symbols = _analytical_symbols(
-                    universe.symbols, leveraged_underlyings
-                )
+                core_symbols = _analytical_symbols(universe.symbols, leveraged_underlyings)
                 if core_symbols != previous_core_symbols:
                     await universe_publisher.publish_universe_changed(
                         UniverseChanged(
@@ -551,9 +553,7 @@ async def run_market_stream_process(
                         )
                     )
                     previous_core_symbols = core_symbols
-                stream_symbols = _stream_symbols(
-                    core_symbols, macro_symbols, leveraged_symbols
-                )
+                stream_symbols = _stream_symbols(core_symbols, macro_symbols, leveraged_symbols)
                 microstructure_symbols = _microstructure_symbols(
                     core_symbols,
                     holdings.symbols,
@@ -670,10 +670,7 @@ async def run_market_stream_process(
                         await universe_publisher.publish_universe_changed(
                             UniverseChanged(
                                 occurred_at=clock.now(),
-                                source=(
-                                    f"{refreshed_universe.source}"
-                                    "+leveraged-thesis-fixed"
-                                ),
+                                source=(f"{refreshed_universe.source}+leveraged-thesis-fixed"),
                                 previous_symbols=core_symbols,
                                 symbols=refreshed_core_symbols,
                                 added_symbols=tuple(
@@ -717,9 +714,7 @@ async def run_market_stream_process(
                 raise
             except Exception as error:
                 session_uptime = (
-                    0.0
-                    if stable_session_started is None
-                    else monotonic() - stable_session_started
+                    0.0 if stable_session_started is None else monotonic() - stable_session_started
                 )
                 delay = reconnect.failure_delay(session_uptime_seconds=session_uptime)
                 with contextlib.suppress(Exception):
@@ -790,9 +785,7 @@ async def _wait_for_stream_connection(
 ) -> None:
     ready_task = asyncio.create_task(connected_event.wait())
     try:
-        done, _ = await asyncio.wait(
-            (stream_task, ready_task), return_when=asyncio.FIRST_COMPLETED
-        )
+        done, _ = await asyncio.wait((stream_task, ready_task), return_when=asyncio.FIRST_COMPLETED)
         if stream_task in done:
             await stream_task
             raise RuntimeError("Alpaca market-data stream ended before becoming ready")
@@ -1190,9 +1183,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
         ):
             leveraged_engine = assembly.build_leveraged_thesis()
             leveraged_opportunity_symbols = leveraged_engine.required_symbols
-            leveraged_underlyings = tuple(
-                pair.underlying_symbol for pair in leveraged_engine.pairs
-            )
+            leveraged_underlyings = tuple(pair.underlying_symbol for pair in leveraged_engine.pairs)
         bus = await _connect_nats(settings)
         active_opportunities = await store.list_active()
         recovery_as_of = clock.now()
@@ -1337,8 +1328,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                         durable_name=f"marketbot-{service}-{suffix}-v1",
                         replay_all=False,
                         replay_latest_per_subject=(
-                            suffix == "entry-signal"
-                            or suffix.startswith("leveraged-cancellation-")
+                            suffix == "entry-signal" or suffix.startswith("leveraged-cancellation-")
                         ),
                         ack_wait_seconds=60,
                     ),
@@ -1387,8 +1377,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             details.pop("maturity_subject")
             details["entry_signal_subject"] = "marketbot.v1.entry-signal.>"
             details["leveraged_cancellation_subjects"] = tuple(
-                leveraged_thesis_assessment_subject(symbol)
-                for symbol in leveraged_underlyings
+                leveraged_thesis_assessment_subject(symbol) for symbol in leveraged_underlyings
             )
         await _publish_health(bus, service, details, clock.now())
         if ready_path is not None:
@@ -1625,3 +1614,6 @@ def _write_ready(path: Path, summary: Mapping[str, object]) -> None:
 def write_ready(path: Path, summary: Mapping[str, object]) -> None:
     """Atomically write a process readiness summary."""
     _write_ready(path, summary)
+
+
+resolve_runtime_universe = _resolve_universe

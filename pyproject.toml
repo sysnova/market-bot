@@ -23,6 +23,7 @@ dependencies = [
   "typer>=0.20,<1",
   "httpx>=0.28,<1",
   "websockets>=16,<17",
+  "redis>=6.4,<7",
 ]
 
 [tool.uv.sources]
@@ -37,6 +38,7 @@ synthetic_core = "app.rulepacks.synthetic_core:get_providers"
 
 [dependency-groups]
 dev = [
+  "fakeredis[lua]>=2.31,<3",
   "pyright>=1.1.407,<2",
   "pytest>=9,<10",
   "pytest-asyncio>=1.2,<2",

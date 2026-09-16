@@ -36,6 +36,7 @@ class AppSettings(BaseSettings):
     definition_path: Path = Path("configs/marketbot/7.71.0.yaml")
     entry_confirmation_rule_version: Literal["2.0.0", "3.0.0", "4.0.0", "5.0.0"] | None = None
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
+    redis_url: SecretStr = SecretStr("redis://127.0.0.1:6379/0")
     order_flow_ws_host: str = Field(default="127.0.0.1", min_length=1)
     order_flow_ws_port: int = Field(default=8766, ge=1, le=65535)
     order_flow_ws_token: SecretStr | None = None

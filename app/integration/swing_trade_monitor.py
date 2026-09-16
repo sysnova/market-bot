@@ -44,7 +44,9 @@ class SwingTradeDashboard:
     """Retain the newest complete assessment for each Watchlist symbol."""
 
     def __init__(self) -> None:
-        self._items = context_store(SwingTradeAssessment)
+        self._items = context_store(
+            SwingTradeAssessment, scope="integration:swing_trade_monitor:_items"
+        )
 
     def merge(self, assessment: SwingTradeAssessment) -> bool:
         current = self._items.get(assessment.symbol)

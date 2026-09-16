@@ -59,6 +59,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient
+from .redis_history import chronological_bars
 from .ticker_context_store import context_store
 from .universe_policy import universe_health_details
 
@@ -130,12 +131,21 @@ class Swing4HGeriRuntime:
         self._symbols: set[str] = set()
         self._prices: dict[str, Decimal] = {}
         self._price_at: dict[str, datetime] = {}
-        self._daily_swing = context_store(AnalysisResult)
+        self._daily_swing = context_store(
+            AnalysisResult, scope="integration:swing_4h_geri_composition:_daily_swing"
+        )
         self._existing_maturity: dict[str, EntryMaturityLevel] = {}
         self._opportunity_at: dict[str, datetime] = {}
-        self._latest = context_store(GeriAssessment)
-        self._support = context_store(SupportAssessment)
-        self._order_flow_support = context_store(OrderFlowSupportAssessment)
+        self._latest = context_store(
+            GeriAssessment, scope="integration:swing_4h_geri_composition:_latest"
+        )
+        self._support = context_store(
+            SupportAssessment, scope="integration:swing_4h_geri_composition:_support"
+        )
+        self._order_flow_support = context_store(
+            OrderFlowSupportAssessment,
+            scope="integration:swing_4h_geri_composition:_order_flow_support",
+        )
         self._last_countertrend_signal: dict[
             str, tuple[str, GeriCountertrendMaturity | None, tuple[str, ...]]
         ] = {}
@@ -194,7 +204,7 @@ class Swing4HGeriRuntime:
 
     async def bootstrap(self, bars: Iterable[MarketBar], *, symbols: tuple[str, ...]) -> int:
         self._symbols = {item.strip().upper() for item in symbols if item.strip()}
-        for bar in sorted(bars, key=lambda item: (item.timestamp, item.symbol)):
+        for bar in chronological_bars(bars):
             if bar.symbol not in self._symbols or not bar.is_final:
                 continue
             if self._recovery_lanes and bar.timeframe is BarTimeframe.DAY_1:
@@ -362,7 +372,6 @@ class Swing4HGeriRuntime:
         previous = self._latest.get(normalized)
         if previous is not None and _same_observation(previous, assessment):
             return await self._publish_countertrend_signal(assessment, market_at=market_at)
-        self._latest[normalized] = assessment
         await self._publish_assessment(assessment)
         await self._publish_countertrend_signal(
             assessment,
@@ -370,6 +379,7 @@ class Swing4HGeriRuntime:
         )
         if previous is None or _material_transition(previous, assessment):
             await self._publish_transition(assessment, previous)
+        self._latest[normalized] = assessment
         return True
 
     async def _accept_fifteen(self, bar: MarketBar, *, evaluate: bool = True) -> None:

@@ -6,7 +6,6 @@ import atexit
 import contextlib
 import hmac
 import json
-import secrets
 import socket
 import threading
 from http.client import HTTPConnection, HTTPException
@@ -17,10 +16,12 @@ from typing import Any
 from uuid import uuid4
 
 from app.common.context_cache import set_context_cache
+from app.common.settings import AppSettings
 
+from .redis_ticker_cache import RedisTickerCache
 from .shared_ticker_cache import TickerCache
 
-_client: CacheClient | None = None
+_client: CacheClient | RedisTickerCache | None = None
 
 
 class CacheClient:
@@ -52,7 +53,7 @@ class CacheClient:
             if response.status != 200:
                 raise RuntimeError(f"shared ticker cache rejected {operation}: {response.status}")
             return json.loads(body)
-        except (OSError, HTTPException, RuntimeError):
+        except OSError, HTTPException, RuntimeError:
             connection.close()
             self._local.connection = None
             with self._connections_lock:
@@ -89,6 +90,10 @@ class CacheClient:
         self.call("open", view, capacity)
         return view
 
+    def persistent_view(self, scope: str, capacity: int = 2_000) -> str:
+        # Compatibility for the legacy isolated HTTP test harness only.
+        return self.view(capacity)
+
     def close_view(self, view: str) -> None:
         if not self._stopped.is_set():
             with contextlib.suppress(OSError, HTTPException, RuntimeError):
@@ -100,13 +105,19 @@ def configure_shared_cache(path: Path) -> None:
     if _client is not None:
         raise RuntimeError("shared ticker cache already configured")
     endpoint = json.loads(path.read_text(encoding="utf-8"))
-    client = CacheClient(endpoint["port"], endpoint["token"])
+    client = client_from_endpoint(endpoint)
     client.start()
     _client = client
     set_context_cache(client)
 
 
-def shared_cache_client() -> CacheClient | None:
+def client_from_endpoint(endpoint: dict[str, Any]) -> CacheClient | RedisTickerCache:
+    if endpoint.get("backend") == "redis":
+        return RedisTickerCache.connect(endpoint["url"])
+    return CacheClient(endpoint["port"], endpoint["token"])
+
+
+def shared_cache_client() -> CacheClient | RedisTickerCache | None:
     return _client
 
 
@@ -188,20 +199,27 @@ def make_cache_server(token: str) -> ThreadingHTTPServer:
 
 
 def run_cache_server(*, endpoint_path: Path, ready_path: Path) -> None:
-    token = secrets.token_urlsafe(32)
-    server = make_cache_server(token)
+    url = AppSettings().redis_url.get_secret_value()
+    client = RedisTickerCache.connect(url)
     endpoint_path.parent.mkdir(parents=True, exist_ok=True)
     ready_path.parent.mkdir(parents=True, exist_ok=True)
-    # A runtime directory belongs to one local user; no network-visible credentials.
     endpoint_path.touch(mode=0o600)
     endpoint_path.chmod(0o600)
     endpoint_path.write_text(
-        json.dumps({"port": server.server_port, "token": token}), encoding="utf-8"
+        json.dumps(
+            {
+                "backend": "redis",
+                "url": url,
+            }
+        ),
+        encoding="utf-8",
     )
-    ready_path.write_text(json.dumps({"status": "ready"}), encoding="utf-8")
+    ready_path.write_text(json.dumps({"status": "ready", "backend": "redis"}), encoding="utf-8")
+    client.start()
     try:
-        server.serve_forever(poll_interval=0.5)
+        while not threading.Event().wait(30):
+            client.redis.ping()
     finally:
-        server.server_close()
+        client.close()
         ready_path.unlink(missing_ok=True)
         endpoint_path.unlink(missing_ok=True)

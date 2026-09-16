@@ -45,7 +45,9 @@ class EntryRecoveryEngine:
     def __init__(self, policy: EntryRecoveryPolicy | None = None) -> None:
         self._policy = policy or EntryRecoveryPolicy()
         self._opportunities: dict[str, EntryOpportunityEvent] = {}
-        self._analyses = grouped_context_store(AnalysisHorizon, AnalysisResult)
+        self._analyses = grouped_context_store(
+            AnalysisHorizon, AnalysisResult, scope="entry_recovery_engine:engine:_analyses"
+        )
         self._emitted: set[UUID] = set()
 
     def ingest_opportunity(self, event: EntryOpportunityEvent) -> None:

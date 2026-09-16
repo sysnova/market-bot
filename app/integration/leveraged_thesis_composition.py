@@ -80,10 +80,16 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
     engine = assembly.build_leveraged_thesis()
     url = settings.nats_url.get_secret_value()
     bus = await NatsJetStreamEventBus.connect(servers=[url], prefix="marketbot", stream="MARKETBOT")
-    analyses = context_store(AnalysisResult)
-    flows = context_store(OrderFlowState)
-    supports = context_store(SupportAssessment)
-    previous = context_store(LeveragedThesisAssessment)
+    analyses = context_store(
+        AnalysisResult, scope="integration:leveraged_thesis_composition:analyses"
+    )
+    flows = context_store(OrderFlowState, scope="integration:leveraged_thesis_composition:flows")
+    supports = context_store(
+        SupportAssessment, scope="integration:leveraged_thesis_composition:supports"
+    )
+    previous = context_store(
+        LeveragedThesisAssessment, scope="integration:leveraged_thesis_composition:previous"
+    )
     subscriptions: list[Subscription] = []
     lock = asyncio.Lock()
 
@@ -120,8 +126,8 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
                 previous_assessment=previous.get(pair.underlying_symbol),
             )
         )
-        previous[pair.underlying_symbol] = evaluation.assessment
         if evaluation.transition is None:
+            previous[pair.underlying_symbol] = evaluation.assessment
             return
         assessment = evaluation.assessment
         transition = evaluation.transition
@@ -165,6 +171,8 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
                     causation_id=transition.transition_id,
                 ),
             )
+
+        previous[pair.underlying_symbol] = evaluation.assessment
 
     async def evaluate_related(symbol: str, *, causation_id: UUID) -> None:
         for pair in engine.pairs:
@@ -365,11 +373,7 @@ def build_leveraged_alert(assessment: LeveragedThesisAssessment) -> LocalAlert |
         kind=(
             AlertKind.LEVERAGED_THESIS_CANCELLED
             if cancelled
-            else (
-                AlertKind.LEVERAGED_THESIS_BUY
-                if confirmed
-                else AlertKind.LEVERAGED_THESIS_EARLY
-            )
+            else (AlertKind.LEVERAGED_THESIS_BUY if confirmed else AlertKind.LEVERAGED_THESIS_EARLY)
         ),
     )
 

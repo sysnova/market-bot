@@ -94,8 +94,10 @@ class OrderFlowDashboard:
         self.symbols = normalized
         self.expected_engine_version = expected_engine_version.strip()
         self.ignored_versions: set[str] = set()
-        self._states = context_store(OrderFlowState)
-        self._supports = context_store(OrderFlowSupportAssessment)
+        self._states = context_store(OrderFlowState, scope="integration:order_flow_monitor:_states")
+        self._supports = context_store(
+            OrderFlowSupportAssessment, scope="integration:order_flow_monitor:_supports"
+        )
 
     def merge(self, state: OrderFlowState) -> bool:
         if state.symbol not in self.symbols:
@@ -128,9 +130,7 @@ class OrderFlowDashboard:
         return self._supports.get(symbol)
 
 
-def format_order_flow_dashboard(
-    dashboard: OrderFlowDashboard, *, refreshed_at: datetime
-) -> str:
+def format_order_flow_dashboard(dashboard: OrderFlowDashboard, *, refreshed_at: datetime) -> str:
     """Render compact L1 pressure, quote and canonical rolling-window telemetry."""
 
     items = dashboard.items()
@@ -148,8 +148,7 @@ def format_order_flow_dashboard(
     ]
     if dashboard.ignored_versions:
         lines.append(
-            "IGNORADOS | assessment incompatible "
-            + ",".join(sorted(dashboard.ignored_versions))
+            "IGNORADOS | assessment incompatible " + ",".join(sorted(dashboard.ignored_versions))
         )
     if not has_assessment:
         lines.append(
@@ -206,10 +205,8 @@ def _format_actionable_state(
     stable_seconds = max(0, int((refreshed_at - stable_since).total_seconds()))
     pulse = state.pulse_state or state.state
     lines = [
-        f"\n{symbol} | REGIMEN {regime} {_signed_score(regime_score)} "
-        f"| ACCION {action}",
-        f"  ESTABLE {_STATE_LABELS[state.state]} {stable_seconds}s "
-        f"| PULSO {_STATE_LABELS[pulse]}",
+        f"\n{symbol} | REGIMEN {regime} {_signed_score(regime_score)} | ACCION {action}",
+        f"  ESTABLE {_STATE_LABELS[state.state]} {stable_seconds}s | PULSO {_STATE_LABELS[pulse]}",
     ]
     if state.candidate_state is not None:
         lines.append(
@@ -232,16 +229,13 @@ def _format_actionable_state(
             f"| {disposition} | {freshness_label}"
         )
         lines.append(
-            f"  TRIGGER > {_number(support.zone_high)} "
-            f"| RIESGO < {_number(support.zone_low)}"
+            f"  TRIGGER > {_number(support.zone_high)} | RIESGO < {_number(support.zone_low)}"
         )
     windows = {window.window_seconds: window for window in state.windows}
     lines.append(
         "  "
         + " | ".join(
-            _format_window(windows[seconds])
-            for seconds in _DISPLAY_WINDOWS
-            if seconds in windows
+            _format_window(windows[seconds]) for seconds in _DISPLAY_WINDOWS if seconds in windows
         )
     )
     lines.append(f"  RAZONES {','.join(state.reasons[-4:])}")
@@ -261,9 +255,7 @@ def _action(
     ):
         return "ESPERAR_DATOS"
     support_age = (
-        state.occurred_at - support.order_flow_occurred_at
-        if support is not None
-        else timedelta.max
+        state.occurred_at - support.order_flow_occurred_at if support is not None else timedelta.max
     )
     usable_support = (
         support is not None

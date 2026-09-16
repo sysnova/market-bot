@@ -240,6 +240,17 @@ class _Engine:
         )
 
 
+async def test_failed_publication_is_not_committed_as_cached_previous_result() -> None:
+    class UnavailablePublisher:
+        async def publish(self, subject: str, envelope: EventEnvelope) -> None:
+            raise RuntimeError("NATS unavailable")
+
+    runtime = SupportConfirmationRuntime(engine=_Engine(), publisher=UnavailablePublisher())
+    with pytest.raises(RuntimeError, match="NATS unavailable"):
+        await runtime.bootstrap(tuple(_bar(index) for index in range(15)), symbols=("TGT",))
+    assert runtime._latest.get("TGT") is None
+
+
 def _bar(
     index: int,
     *,

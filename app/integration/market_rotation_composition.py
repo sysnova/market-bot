@@ -23,7 +23,6 @@ from app.persistence import create_database_engine
 
 from .distributed_composition import HistoryRequest, write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
-from .market_bar_repository import PostgresMarketBarRepository
 from .market_history_composition import load_market_history
 from .market_rotation_store import PostgresMarketRotationStore
 from .universe_policy import universe_health_details
@@ -51,7 +50,6 @@ async def run_market_rotation_process(
         servers=[settings.nats_url.get_secret_value()], prefix="marketbot", stream="MARKETBOT"
     )
     store = PostgresMarketRotationStore(database)
-    bars_repository = PostgresMarketBarRepository(database)
     calculator = assembly.build_market_rotation()
     try:
         profiles = await store.load_profiles()
@@ -84,10 +82,13 @@ async def run_market_rotation_process(
             )
         while True:
             now = clock.now()
-            bars = await bars_repository.load_latest(
-                symbols,
-                BarTimeframe.DAY_1,
-                limit_per_symbol=ROTATION_HISTORY_REQUESTS[0].max_bars_per_symbol,
+            bars = await load_market_history(
+                settings,
+                database,
+                engine_id="market-rotation-v1",
+                symbols=symbols,
+                requirements=ROTATION_HISTORY_REQUESTS,
+                as_of=now,
             )
             history = {
                 symbol: tuple(

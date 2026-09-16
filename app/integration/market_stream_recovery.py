@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 
 from app.alpaca_market_data.ports import EventPublisher
@@ -137,7 +137,7 @@ class BufferedMarketDataPublisher:
 
 
 def pending_recovery_bars(
-    bars: Sequence[MarketBar],
+    bars: Iterable[MarketBar],
     *,
     cursors: Mapping[str, datetime],
     recovery_started_at: datetime,
@@ -154,9 +154,7 @@ def pending_recovery_bars(
     for bar in bars:
         cursor = cursors.get(bar.symbol)
         after_lower_bound = (
-            bar.timestamp > cursor
-            if cursor is not None
-            else bar.timestamp >= recovery_started_at
+            bar.timestamp > cursor if cursor is not None else bar.timestamp >= recovery_started_at
         )
         if (
             bar.timeframe is BarTimeframe.MINUTE_1

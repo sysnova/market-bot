@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -13,6 +13,8 @@ from app.contracts import (
     MarketBar,
     MarketHistoryRequirement,
 )
+
+from .redis_history import chronological_bars
 
 _MINIMUM_LOOKBACK = timedelta(days=1)
 _MAX_RECOVERY_BARS_PER_SYMBOL = 10_000
@@ -34,8 +36,7 @@ def entry_opportunity_history_requirements(
     if as_of.tzinfo is None or as_of.utcoffset() is None:
         raise ValueError("entry opportunity recovery boundary must be timezone-aware")
     recovery_start = min(
-        opportunity.last_market_bar_at or opportunity.armed_at
-        for opportunity in opportunities
+        opportunity.last_market_bar_at or opportunity.armed_at for opportunity in opportunities
     )
     if recovery_start > as_of:
         raise ValueError("entry opportunity bar cursor cannot be in the future")
@@ -52,17 +53,14 @@ def entry_opportunity_history_requirements(
 async def replay_pending_entry_opportunity_bars(
     engine: EntryOpportunityBarEngine,
     opportunities: Sequence[EntryOpportunity],
-    bars: Sequence[MarketBar],
+    bars: Iterable[MarketBar],
 ) -> int:
     """Replay final regular-session bars strictly after each persisted cursor."""
 
     active = {opportunity.symbol: opportunity for opportunity in opportunities}
-    cursors = {
-        opportunity.symbol: opportunity.last_market_bar_at
-        for opportunity in opportunities
-    }
+    cursors = {opportunity.symbol: opportunity.last_market_bar_at for opportunity in opportunities}
     replayed = 0
-    for bar in sorted(bars, key=lambda item: (item.timestamp, item.symbol)):
+    for bar in chronological_bars(bars):
         opportunity = active.get(bar.symbol)
         if (
             opportunity is None

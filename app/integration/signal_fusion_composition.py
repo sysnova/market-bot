@@ -108,11 +108,21 @@ class SignalFusionRuntime:
         self._publisher = publisher
         self._symbols = {item.strip().upper() for item in symbols}
         self._holding_quantities = holding_quantities
-        self._supports = context_store(SupportAssessment)
-        self._waves = context_store(WaveAssessment)
-        self._patreon = context_store(PatreonCapsAssessment)
-        self._analyses = grouped_context_store(AnalysisHorizon, AnalysisResult)
-        self._latest = context_store(FusionAssessment)
+        self._supports = context_store(
+            SupportAssessment, scope="integration:signal_fusion_composition:_supports"
+        )
+        self._waves = context_store(
+            WaveAssessment, scope="integration:signal_fusion_composition:_waves"
+        )
+        self._patreon = context_store(
+            PatreonCapsAssessment, scope="integration:signal_fusion_composition:_patreon"
+        )
+        self._analyses = grouped_context_store(
+            AnalysisHorizon, AnalysisResult, scope="integration:signal_fusion_composition:_analyses"
+        )
+        self._latest = context_store(
+            FusionAssessment, scope="integration:signal_fusion_composition:_latest"
+        )
         self._hydrating = True
 
     async def restore_fusion(self, envelope: EventEnvelope) -> None:
@@ -179,7 +189,6 @@ class SignalFusionRuntime:
         )
         if previous is not None and _same_observation(previous, assessment):
             return False
-        self._latest[symbol] = assessment
         await self._publish_assessment(assessment)
         changed = previous is None or previous.state is not assessment.state
         if changed:
@@ -206,6 +215,7 @@ class SignalFusionRuntime:
                     payload=assessment,
                 ),
             )
+        self._latest[symbol] = assessment
         return True
 
     async def _publish_assessment(self, assessment: FusionAssessment) -> None:
@@ -340,9 +350,7 @@ async def run_signal_fusion_process(
     return None
 
 
-def _payload[ModelT: BaseModel](
-    envelope: EventEnvelope, model: type[ModelT]
-) -> ModelT:
+def _payload[ModelT: BaseModel](envelope: EventEnvelope, model: type[ModelT]) -> ModelT:
     if isinstance(envelope.payload, model):
         return envelope.payload
     return model.model_validate(envelope.payload, strict=False)
@@ -382,10 +390,7 @@ async def _hydrate_latest(
             support_assessment_subject(symbol),
             elliott_wave_assessment_subject(symbol),
             patreon_caps_assessment_subject(symbol),
-            *(
-                analysis_result_subject(horizon, symbol)
-                for horizon in FUSION_ANALYSIS_HORIZONS
-            ),
+            *(analysis_result_subject(horizon, symbol) for horizon in FUSION_ANALYSIS_HORIZONS),
         )
         envelopes = await asyncio.gather(*(bus.get_last(subject) for subject in subjects))
         for envelope in envelopes:

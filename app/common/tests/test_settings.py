@@ -38,6 +38,7 @@ def test_secret_values_are_redacted_from_repr_and_json() -> None:
         _env_file=None,
         database_url=SecretStr("postgresql://user:password@db/marketbot"),
         nats_url=SecretStr("nats://nats-private-credential@nats:4222"),
+        redis_url=SecretStr("redis://:redis-private-credential@localhost:6379/0"),
         order_flow_ws_token=SecretStr("ws-private-credential"),
     )
 
@@ -50,7 +51,9 @@ def test_secret_values_are_redacted_from_repr_and_json() -> None:
     assert "password" not in serialized
     assert "nats-private-credential" not in serialized
     assert "ws-private-credential" not in serialized
-    assert serialized.count("**********") == 3
+    assert "redis-private-credential" not in rendered
+    assert "redis-private-credential" not in serialized
+    assert serialized.count("**********") == 4
 
 
 def test_alpaca_settings_load_as_paired_redacted_secrets(

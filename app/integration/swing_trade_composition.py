@@ -53,6 +53,7 @@ from .engine_assembly import EngineSlot, MarketBotAssembly
 from .market_bar_store import MarketBarStore
 from .market_history_composition import load_market_history
 from .postgres_universe import PostgresUniverseClient
+from .redis_history import chronological_bars
 from .ticker_context_store import context_store
 
 SWING_TRADE_HISTORY_REQUESTS = (
@@ -116,12 +117,23 @@ class SwingTradeRuntime:
         self._minute = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
         self._four_hour = RegularSessionFourHourAggregator()
         self._last_momentum_input: dict[str, datetime] = {}
-        self._momentum_daily = grouped_context_store(str, MarketBar)
+        self._momentum_daily = grouped_context_store(
+            str, MarketBar, scope="integration:swing_trade_composition:_momentum_daily"
+        )
         self._symbols: set[str] = set()
-        self._geri = context_store(GeriAssessment)
-        self._support = context_store(SupportAssessment)
-        self._order_flow_support = context_store(OrderFlowSupportAssessment)
-        self._latest = context_store(SwingTradeAssessment)
+        self._geri = context_store(
+            GeriAssessment, scope="integration:swing_trade_composition:_geri"
+        )
+        self._support = context_store(
+            SupportAssessment, scope="integration:swing_trade_composition:_support"
+        )
+        self._order_flow_support = context_store(
+            OrderFlowSupportAssessment,
+            scope="integration:swing_trade_composition:_order_flow_support",
+        )
+        self._latest = context_store(
+            SwingTradeAssessment, scope="integration:swing_trade_composition:_latest"
+        )
         self._evaluated: set[tuple[str, datetime]] = set()
         self._rejected_evaluations: dict[str, int] = {}
 
@@ -170,7 +182,7 @@ class SwingTradeRuntime:
         self._symbols = {symbol.strip().upper() for symbol in symbols if symbol.strip()}
         bootstrap_at = self._clock.now()
         latest_fifteen: dict[str, MarketBar] = {}
-        for bar in sorted(bars, key=lambda value: (value.timestamp, value.symbol)):
+        for bar in chronological_bars(bars):
             if bar.symbol not in self._symbols or not bar.is_final:
                 continue
             if bar.timeframe is BarTimeframe.DAY_1:
@@ -303,16 +315,16 @@ class SwingTradeRuntime:
         previous = self._latest.get(bar.symbol)
         if previous is not None and not _material_change(previous, assessment):
             if _metric(assessment, "recovery_quality_mode") == "OBSERVATION":
-                self._latest[bar.symbol] = assessment
                 await self._publish_assessment(assessment)
+                self._latest[bar.symbol] = assessment
                 return True
             return False
-        self._latest[bar.symbol] = assessment
         await self._publish(
             assessment,
             previous,
             actionable_signals_enabled=actionable_signals_enabled,
         )
+        self._latest[bar.symbol] = assessment
         return True
 
     async def _publish_assessment(self, item: SwingTradeAssessment) -> None:

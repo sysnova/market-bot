@@ -121,7 +121,9 @@ class SupportConfirmationRuntime:
         self._clock = clock or SystemClock()
         self._bars = MarketBarStore(capacity_per_series=650)
         self._symbols: set[str] = set()
-        self._latest = context_store(SupportAssessment)
+        self._latest = context_store(
+            SupportAssessment, scope="integration:support_confirmation_composition:_latest"
+        )
 
     async def restore_assessment(self, envelope: EventEnvelope) -> None:
         if envelope.event_type != SUPPORT_ASSESSMENT_EVENT:
@@ -187,10 +189,10 @@ class SupportConfirmationRuntime:
         assessment = _stamp_assessment(raw_assessment, self._clock.now())
         if previous is not None and _same_observation(previous, assessment):
             return False
-        self._latest[symbol] = assessment
         await self._publish_assessment(assessment)
         if previous is None or previous.state is not assessment.state:
             await self._publish_transition(assessment, previous)
+        self._latest[symbol] = assessment
         return True
 
     async def _publish_assessment(self, assessment: SupportAssessment) -> None:

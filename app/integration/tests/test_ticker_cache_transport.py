@@ -1,5 +1,6 @@
 import gc
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -76,7 +77,8 @@ def test_separate_process_uses_same_ram_owner(cache_client: CacheClient) -> None
     view = cache_client.view()
     cache_client.call("put", view, "AAPL", "shared-analysis")
     script = """
-import json, sys
+import json
+import os, sys
 from app.integration.ticker_cache_transport import CacheClient
 client = CacheClient(int(sys.argv[1]), 'isolated-test-token')
 view = client.view()
@@ -86,7 +88,10 @@ client.close()
 """
     result = subprocess.run(  # noqa: S603 - isolated local Python child, no user command.
         [sys.executable, "-c", script, str(cache_client.port)],
-        capture_output=True, text=True, check=True, timeout=20,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=20,
     )
     stats = json.loads(result.stdout)
     assert stats["unique_payloads"] == 1
@@ -150,15 +155,29 @@ def test_alert_restore_and_recovery_use_shared_contexts(cache_client: CacheClien
     test_recovery_signal_is_idempotent_per_opportunity()
 
 
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not os.environ.get("MARKETBOT_TEST_REDIS_URL"), reason="requires isolated Redis"
+)
 def test_cli_starts_cache_and_clients_release_their_leases(tmp_path: Path) -> None:
     endpoint = tmp_path / "endpoint.json"
     ready = tmp_path / "ready.json"
     process = subprocess.Popen(  # noqa: S603 - launch only our isolated service.
         [
-            sys.executable, "-m", "app.operator_cli", "serve", "ticker-cache",
-            "--endpoint-path", str(endpoint), "--ready-path", str(ready),
+            sys.executable,
+            "-m",
+            "app.operator_cli",
+            "serve",
+            "ticker-cache",
+            "--endpoint-path",
+            str(endpoint),
+            "--ready-path",
+            str(ready),
         ],
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "MARKETBOT_REDIS_URL": os.environ["MARKETBOT_TEST_REDIS_URL"]},
     )
     inspector = None
     try:
@@ -167,18 +186,31 @@ def test_cli_starts_cache_and_clients_release_their_leases(tmp_path: Path) -> No
             sleep(0.05)
         assert ready.exists(), "cache service failed to publish readiness"
         config = json.loads(endpoint.read_text())
-        assert config["token"] not in ready.read_text()
+        assert config["backend"] == "redis"
+        from app.integration.redis_ticker_cache import RedisTickerCache
+
+        inspector = RedisTickerCache.connect(config["url"])
+        baseline = inspector.call("stats")
         result = subprocess.run(  # noqa: S603 - the same CLI arguments the plan supplies.
             [
-                sys.executable, "-m", "app.operator_cli", "--shared-cache", str(endpoint),
-                "serve", "ticker-cache-stats", "--endpoint-path", str(endpoint),
+                sys.executable,
+                "-m",
+                "app.operator_cli",
+                "--shared-cache",
+                str(endpoint),
+                "serve",
+                "ticker-cache-stats",
+                "--endpoint-path",
+                str(endpoint),
             ],
-            capture_output=True, text=True, check=True, timeout=15,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
         )
-        assert json.loads(result.stdout)["unique_payloads"] == 0
-        assert config["token"] not in result.stdout
-        inspector = CacheClient(config["port"], config["token"])
-        assert inspector.call("stats")["owners"] == 1
+        assert json.loads(result.stdout)["unique_payloads"] == baseline["unique_payloads"]
+        assert config["url"] not in result.stdout
+        assert inspector.call("stats")["owners"] == baseline["owners"]
     finally:
         if inspector is not None:
             inspector.close()

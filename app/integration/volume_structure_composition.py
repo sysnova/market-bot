@@ -63,7 +63,9 @@ class VolumeStructureRuntime:
         self._publisher = publisher
         self._bars = MarketBarStore(capacity_per_series=450)
         self._symbols: set[str] = set()
-        self._latest = context_store(AnalysisResult)
+        self._latest = context_store(
+            AnalysisResult, scope="integration:volume_structure_composition:_latest"
+        )
 
     async def restore_result(self, envelope: EventEnvelope) -> None:
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
@@ -108,9 +110,7 @@ class VolumeStructureRuntime:
         await self._evaluate(bar.symbol)
 
     async def _evaluate(self, symbol: str) -> bool:
-        weekly = self._bars.history(
-            symbol, BarTimeframe.WEEK_1, limit=420, final_only=True
-        )
+        weekly = self._bars.history(symbol, BarTimeframe.WEEK_1, limit=420, final_only=True)
         if len(weekly) < 12:
             return False
         result = self._engine.evaluate(
@@ -123,7 +123,6 @@ class VolumeStructureRuntime:
         previous = self._latest.get(symbol)
         if previous is not None and _same_observation(previous, result):
             return False
-        self._latest[symbol] = result
         await self._publisher.publish(
             analysis_result_subject(result.horizon, result.symbol),
             EventEnvelope(
@@ -134,6 +133,7 @@ class VolumeStructureRuntime:
                 payload=result,
             ),
         )
+        self._latest[symbol] = result
         return True
 
 
@@ -166,9 +166,7 @@ async def run_volume_structure_process(
     try:
         requested = tuple(
             dict.fromkeys(
-                item.strip().upper()
-                for item in (symbols or "").split(",")
-                if item.strip()
+                item.strip().upper() for item in (symbols or "").split(",") if item.strip()
             )
         )
         universe: UniverseSnapshot = (
@@ -204,9 +202,7 @@ async def run_volume_structure_process(
             **universe_health_details("volume-structure"),
             "service": "volume-structure-v1",
             "engine_version": assembly.spec(EngineSlot.VOLUME_STRUCTURE).implementation,
-            "engine_strategy_version": assembly.spec(
-                EngineSlot.VOLUME_STRUCTURE
-            ).strategy.version,
+            "engine_strategy_version": assembly.spec(EngineSlot.VOLUME_STRUCTURE).strategy.version,
             "marketbot_definition_version": assembly.definition.version,
             "mode": "ACTIVE",
             "universe": "watchlist-plus-positive-holdings",

@@ -30,6 +30,7 @@ from app.swing_engine.models import SwingContext
 from .bar_aggregator import MinuteBarAggregator, RegularSessionDailyAggregator
 from .event_fanout import EventPublisher
 from .market_bar_store import MarketBarStore
+from .redis_history import chronological_bars
 from .ticker_context_store import context_store
 from .universe_warmup import UniverseWarmupGate
 
@@ -61,8 +62,10 @@ class SwingWorker:
         self._aggregator = MinuteBarAggregator(targets=(BarTimeframe.MINUTE_15,))
         self._daily_aggregator = RegularSessionDailyAggregator()
         self._universe = UniverseWarmupGate()
-        self._support = context_store(SupportAssessment)
-        self._order_flow_support = context_store(OrderFlowSupportAssessment)
+        self._support = context_store(SupportAssessment, scope="integration:swing_worker:_support")
+        self._order_flow_support = context_store(
+            OrderFlowSupportAssessment, scope="integration:swing_worker:_order_flow_support"
+        )
 
     def activate_universe(self, symbols: tuple[str, ...]) -> None:
         self._universe.activate(symbols)
@@ -92,7 +95,7 @@ class SwingWorker:
         completed_history = MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_15,), emit_on_complete=True
         )
-        for bar in sorted(bars, key=lambda item: (item.timestamp, item.symbol)):
+        for bar in chronological_bars(bars):
             if bar.timeframe is BarTimeframe.MINUTE_1:
                 # Minute history can be newer than the cached 15m series at restart.
                 # Only reconstruct complete intervals; retain the forming interval

@@ -145,7 +145,9 @@ class PatreonCapsRuntime:
         self._aggregator = MinuteBarAggregator(
             targets=(BarTimeframe.MINUTE_15, BarTimeframe.HOUR_1)
         )
-        self._analyses = grouped_context_store(AnalysisHorizon, AnalysisResult)
+        self._analyses = grouped_context_store(
+            AnalysisHorizon, AnalysisResult, scope="integration:patreon_caps_composition:_analyses"
+        )
         self._macro = classify_macro_regime({})
         self._symbols: set[str] = set()
         self._require_hourly = require_hourly

@@ -37,6 +37,9 @@ from app.persistence import create_database_engine
 
 from .market_bar_repository import PostgresMarketBarRepository
 from .market_history_rpc import NatsMarketHistoryClient, NatsMarketHistoryServer
+from .redis_history import RedisHistoryBars, RedisHistoryWarmer
+from .redis_ticker_cache import RedisTickerCache
+from .ticker_cache_transport import shared_cache_client
 
 _INTRADAY_DURATION = {
     BarTimeframe.MINUTE_1: timedelta(minutes=1),
@@ -72,7 +75,7 @@ class HistoryRequirementProfile:
 
 @dataclass(frozen=True)
 class MarketHistoryLoadProfile:
-    bars: tuple[MarketBar, ...]
+    bars: tuple[MarketBar, ...] | RedisHistoryBars
     ensure_ms: float
     requirements: tuple[HistoryRequirementProfile, ...]
     total_ms: float
@@ -109,7 +112,7 @@ class MarketHistoryLoader:
             force_refresh=force_refresh,
             include_premarket_intraday=include_premarket_intraday,
         )
-        return profile.bars
+        return tuple(profile.bars)
 
     async def ensure_and_load_profiled(
         self,
@@ -207,7 +210,7 @@ async def load_market_history(
     as_of: datetime,
     force_refresh: bool = False,
     include_premarket_intraday: bool = False,
-) -> tuple[MarketBar, ...]:
+) -> tuple[MarketBar, ...] | RedisHistoryBars:
     return (
         await load_market_history_profiled(
             settings,
@@ -238,6 +241,27 @@ async def load_market_history_profiled(
         timeout_seconds=settings.market_history_request_timeout_seconds,
     )
     try:
+        cache = shared_cache_client()
+        if isinstance(cache, RedisTickerCache):
+            started = perf_counter()
+            await client.ensure(
+                MarketHistoryRequest(
+                    engine_id=engine_id,
+                    symbols=symbols,
+                    requirements=requirements,
+                    requested_at=as_of,
+                    force_refresh=force_refresh,
+                )
+            )
+            elapsed = _elapsed_ms(started)
+            return MarketHistoryLoadProfile(
+                bars=RedisHistoryBars(
+                    cache, symbols, requirements, as_of, include_premarket_intraday
+                ),
+                ensure_ms=elapsed,
+                requirements=(),
+                total_ms=elapsed,
+            )
         return await MarketHistoryLoader(
             client=client,
             repository=PostgresMarketBarRepository(database),
@@ -280,10 +304,18 @@ async def run_market_history_process(*, ready_path: Path | None = None) -> None:
         batch_size=settings.alpaca_rest_batch_size,
         freshness=timedelta(seconds=settings.market_history_refresh_seconds),
     )
+    cache = shared_cache_client()
+    central = (
+        RedisHistoryService(service, RedisHistoryWarmer(cache, repository))
+        if isinstance(cache, RedisTickerCache)
+        else None
+    )
     server: NatsMarketHistoryServer | None = None
     try:
+        if central is not None:
+            await central.prewarm(settings, clock.now())
         server = await NatsMarketHistoryServer.connect(
-            [settings.nats_url.get_secret_value()], service, now=clock.now
+            [settings.nats_url.get_secret_value()], central or service, now=clock.now
         )
         await server.start()
         if ready_path is not None:
@@ -300,7 +332,11 @@ async def run_market_history_process(*, ready_path: Path | None = None) -> None:
         while True:
             await asyncio.sleep(settings.market_history_refresh_seconds)
             try:
-                responses = await service.refresh_registered(as_of=clock.now())
+                responses = (
+                    await central.refresh_registered(as_of=clock.now())
+                    if central is not None
+                    else await service.refresh_registered(as_of=clock.now())
+                )
                 removed = 0
                 for timeframe, keep in service.retention_limits().items():
                     removed += await repository.prune(timeframe, keep_per_symbol=keep)
@@ -342,3 +378,43 @@ def _build_rest(settings: AppSettings) -> AlpacaRestClient:
 def _write_ready(path: Path, details: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(details, sort_keys=True), encoding="utf-8")
+
+
+class RedisHistoryService:
+    """Ensure Redis coverage before acknowledging any engine's history request."""
+
+    def __init__(self, service: MarketHistoryService, warmer: RedisHistoryWarmer) -> None:
+        self.service, self.warmer = service, warmer
+        self._lock = asyncio.Lock()
+        self._requests: dict[str, MarketHistoryRequest] = {}
+
+    async def ensure(self, request: MarketHistoryRequest) -> MarketHistoryResponse:
+        async with self._lock:
+            response = await self.service.ensure(request)
+            await self.warmer.warm(request.symbols, request.requirements)
+            if not request.force_refresh:
+                self._requests[request.engine_id] = request
+            return response
+
+    async def refresh_registered(self, *, as_of: datetime) -> tuple[MarketHistoryResponse, ...]:
+        async with self._lock:
+            responses = await self.service.refresh_registered(as_of=as_of)
+            for request in self._requests.values():
+                await self.warmer.warm(request.symbols, request.requirements)
+            return responses
+
+    async def prewarm(self, settings: AppSettings, as_of: datetime) -> None:
+        from .distributed_composition import resolve_runtime_universe
+        from .redis_history_manifest import history_manifest
+
+        universe = await resolve_runtime_universe(settings, None)
+        requirements = history_manifest(settings)
+        if universe.symbols and requirements:
+            await self.ensure(
+                MarketHistoryRequest(
+                    engine_id="redis-central-warmup",
+                    symbols=universe.symbols,
+                    requirements=requirements,
+                    requested_at=as_of,
+                )
+            )

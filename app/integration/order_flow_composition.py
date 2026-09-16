@@ -85,7 +85,7 @@ async def run_order_flow_process(  # pragma: no cover - long-running NATS proces
     durable = await NatsJetStreamEventBus.connect(
         servers=[url], prefix="marketbot", stream="MARKETBOT"
     )
-    supports = context_store(SupportAssessment)
+    supports = context_store(SupportAssessment, scope="integration:order_flow_composition:supports")
     last_state_at: dict[str, datetime] = {}
     last_support_at: dict[str, datetime] = {}
     last_support_signature: dict[str, tuple[object, ...]] = {}
@@ -136,9 +136,7 @@ async def run_order_flow_process(  # pragma: no cover - long-running NATS proces
                 ),
             )
 
-    async def publish_support_assessment(
-        state: OrderFlowState, *, causation_id: UUID
-    ) -> None:
+    async def publish_support_assessment(state: OrderFlowState, *, causation_id: UUID) -> None:
         support = supports.get(state.symbol)
         if support is None:
             return
