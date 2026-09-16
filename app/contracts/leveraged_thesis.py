@@ -74,6 +74,7 @@ class LeveragedThesisAssessment(StrictFrozenModel):
         default=None, ge=Decimal("0"), le=Decimal("100")
     )
     structure_score: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("100"))
+    source_entry_signal_id: UUID | None = None
     source_analysis_id: UUID | None = None
     source_underlying_flow_state_id: UUID | None = None
     source_instrument_flow_state_id: UUID | None = None
@@ -90,6 +91,7 @@ class LeveragedThesisAssessment(StrictFrozenModel):
         if self.expires_at <= self.occurred_at:
             raise ValueError("expires_at must follow occurred_at")
         for name, value in (
+            ("source_entry_signal_id", self.source_entry_signal_id),
             ("source_analysis_id", self.source_analysis_id),
             ("source_underlying_flow_state_id", self.source_underlying_flow_state_id),
             ("source_instrument_flow_state_id", self.source_instrument_flow_state_id),
@@ -142,8 +144,8 @@ class LeveragedThesisAssessment(StrictFrozenModel):
                 raise ValueError("BUY_CONFIRMED requires executable instrument quote evidence")
             if self.instrument_flow_state is None or self.instrument_flow_confidence is None:
                 raise ValueError("BUY_CONFIRMED requires instrument order-flow evidence")
-            if self.structure_score is None:
-                raise ValueError("BUY_CONFIRMED requires intraday structure evidence")
+            if self.structure_score is None and self.source_entry_signal_id is None:
+                raise ValueError("BUY_CONFIRMED requires structure evidence")
         return self
 
 

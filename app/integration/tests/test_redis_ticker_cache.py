@@ -139,3 +139,15 @@ def test_startup_reset_preserves_history_and_coverage_but_removes_engine_views(
     assert cache.redis.get("unrelated:keep") == "value"
     assert cache.redis.get(event) == "snapshot"
     assert cache.reset_for_startup() == 0
+
+
+def test_typed_flow_context_roundtrips_without_computed_fields() -> None:
+    from app.common.context_cache import CachedContexts
+    from app.contracts import OrderFlowState, OrderFlowStateKind
+    from app.leveraged_thesis_engine.tests.test_engine import _flow
+
+    cache = client(fakeredis.FakeServer())
+    contexts = CachedContexts(OrderFlowState, cache, str, "flow-roundtrip")
+    flow = _flow("ASTN", OrderFlowStateKind.BUY_PRESSURE)
+    contexts["ASTN"] = flow
+    assert contexts["ASTN"] == flow

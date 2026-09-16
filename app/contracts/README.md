@@ -200,3 +200,9 @@ Legacy assessments without the group remain readable. SwingTrade policy `1.7.0`
 uses this entry geometry in transitions and EntrySignals and rejects a signal
 whose invalidation is at or above its entry zone. Existing v1 signal policies
 retain their historical validation so stored evidence remains readable.
+
+
+LeveragedThesisAssessment admite `source_entry_signal_id` opcional (UUIDv7):
+identifica una confirmacion nativa de entrada diaria/Swing. BUY_CONFIRMED puede
+usar esta evidencia en lugar de `structure_score`; no se fabrica un score para
+productores que no lo publican. Los mensajes anteriores siguen siendo validos.

@@ -7,10 +7,11 @@ y estado de negocio; NATS transporta los eventos.
 
 ## Arranque y actualizaci贸n
 
-1. `ticker-cache` comprueba Redis y limpia 鷑icamente las ventanas, 韓dices y
+1. `ticker-cache` comprueba Redis y limpia 煤nicamente las ventanas, 铆ndices y
    contextos propios de engines antes de publicar su endpoint y readiness.
-   Conserva las barras can髇icas `history:*`, sus metadatos de cobertura y los
-   snapshots de eventos. Al liberar referencias elimina s髄o los payloads que
+   Conserva las barras can贸nicas `history:*`, sus metadatos de cobertura y los
+   snapshots de eventos. Las intenciones SHORT pendientes o ya consumidas de
+   `pending-short:v1:` tambi茅n sobreviven a la limpieza para evitar p茅rdidas y duplicados. Al liberar referencias elimina s贸lo los payloads que
    ya no usa ninguna ventana, sin borrar barras compartidas. La limpieza funciona
    incluso con Redis en maxmemory. Todos los engines esperan este paso; conectar
    o reiniciar un engine individual no lo ejecuta. PostgreSQL y NATS no se modifican.
@@ -91,7 +92,7 @@ ni resolver el heap de NATS.
 Crear/iniciar Redis desde el checkout que se va a operar:
 
 ```powershell
-docker run -d --name marketbot-redis --restart unless-stopped --publish 127.0.0.1:6379:6379 --memory 1536m --mount type=volume,source=market-bot_marketbot-redis,target=/data --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 3s --health-retries 3 redis:8.2-alpine redis-server --appendonly yes --appendfsync everysec --maxmemory 1gb --maxmemory-policy noeviction
+docker run -d --name marketbot-redis --restart unless-stopped --publish 127.0.0.1:6379:6379 --memory 2560m --memory-swap 5g --mount type=volume,source=market-bot_marketbot-redis,target=/data --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 3s --health-retries 3 redis:8.2-alpine redis-server --appendonly yes --appendfsync everysec --maxmemory 2gb --maxmemory-policy noeviction
 ```
 
 Configuraci贸n: `MARKETBOT_REDIS_URL=redis://127.0.0.1:6379/0` en el entorno o

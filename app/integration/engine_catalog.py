@@ -78,6 +78,8 @@ from app.intraday_engine import (
 from app.intraday_engine.strategy import configure_engine as configure_intraday
 from app.intraday_engine.strategy import validate_strategy as validate_intraday
 from app.leveraged_thesis_engine import LeveragedThesisEngine
+from app.leveraged_thesis_engine.v11 import LeveragedThesisEngineV11
+from app.leveraged_thesis_engine.v12 import LeveragedThesisEngineV12
 from app.long_portfolio_engine import LongPortfolioEngine
 from app.long_portfolio_engine.strategy import configure_engine as configure_long_portfolio
 from app.long_portfolio_engine.strategy import resolve_strategy as resolve_long_portfolio
@@ -264,7 +266,11 @@ def default_engine_registry() -> EngineRegistry:
                 validate_strategy=validate_order_flow,
             ),
             EngineSlot.LEVERAGED_THESIS: simple(
-                implementations={"1.0.0": LeveragedThesisEngine},
+                implementations={
+                    "1.0.0": LeveragedThesisEngine,
+                    "1.1.0": LeveragedThesisEngineV11,
+                    "1.2.0": LeveragedThesisEngineV12,
+                },
                 required_since="7.33.0",
             ),
             EngineSlot.ENTRY_WATCHER: EngineRegistration(

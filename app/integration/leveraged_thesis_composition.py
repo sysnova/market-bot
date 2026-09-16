@@ -24,6 +24,7 @@ from app.contracts import (
     AnalysisHorizon,
     AnalysisResult,
     EntrySignal,
+    EntrySignalFamily,
     EventEnvelope,
     LeveragedThesisAssessment,
     LeveragedThesisState,
@@ -35,6 +36,7 @@ from app.contracts import (
     SubscriptionOptions,
     SupportAssessment,
     analysis_result_subject,
+    entry_signal_subject,
     leveraged_thesis_assessment_subject,
     leveraged_thesis_transition_subject,
     local_alert_subject,
@@ -47,13 +49,19 @@ from app.leveraged_thesis_engine import (
     LeveragedThesisContext,
     LeveragedThesisEngine,
 )
+from app.leveraged_thesis_engine.v11 import LeveragedThesisEngineV11
+from app.leveraged_thesis_engine.v12 import LeveragedThesisEngineV12
 
+from .deferred_long_runtime import DeferredLongRuntime, RedisLongStateStore
+from .deferred_short_runtime import DeferredShortRuntime, RedisShortStateStore
 from .distributed_composition import write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
 from .entry_signal_adapter import (
     entry_signal_from_leveraged_thesis,
     publish_entry_signal,
 )
+from .redis_ticker_cache import RedisTickerCache
+from .ticker_cache_transport import shared_cache_client
 from .universe_policy import universe_health_details
 
 
@@ -67,6 +75,23 @@ def leveraged_thesis_source_subjects(
         *(analysis_result_subject(AnalysisHorizon.INTRADAY, symbol) for symbol in underlyings),
         *(order_flow_state_subject(symbol) for symbol in engine.required_symbols),
         *(support_assessment_subject(symbol) for symbol in underlyings),
+        *(
+            (local_alert_subject(AlertSeverity.ACTION, symbol) for symbol in underlyings)
+            if isinstance(engine, LeveragedThesisEngineV11)
+            else ()
+        ),
+        *(
+            (
+                entry_signal_subject(family, "ASTS")
+                for family in (
+                    EntrySignalFamily.CORE_ENTRY,
+                    EntrySignalFamily.CORE_RECOVERY,
+                    EntrySignalFamily.SWING_TRADE,
+                )
+            )
+            if isinstance(engine, LeveragedThesisEngineV12)
+            else ()
+        ),
     )
 
 
@@ -90,6 +115,23 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
     previous = context_store(
         LeveragedThesisAssessment, scope="integration:leveraged_thesis_composition:previous"
     )
+    deferred = None
+    deferred_long = None
+    owned_cache = None
+    if isinstance(engine, LeveragedThesisEngineV11):
+        cache = shared_cache_client()
+        if not isinstance(cache, RedisTickerCache):
+            owned_cache = RedisTickerCache.connect(settings.redis_url.get_secret_value())
+            cache = owned_cache
+        deferred = DeferredShortRuntime(
+            engine, bus, RedisShortStateStore(cache.redis, cache.namespace)
+        )
+        await deferred.restore()
+        if isinstance(engine, LeveragedThesisEngineV12):
+            deferred_long = DeferredLongRuntime(
+                engine, bus, RedisLongStateStore(cache.redis, cache.namespace)
+            )
+            await deferred_long.restore()
     subscriptions: list[Subscription] = []
     lock = asyncio.Lock()
 
@@ -100,6 +142,9 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
             previous[assessment.underlying_symbol] = assessment
 
     async def evaluate_pair(pair: LeveragedPair, *, causation_id: UUID) -> None:
+        # ASTS v1.2 entries come exclusively from the retained SHORT and native Swing paths.
+        if deferred_long is not None and pair.underlying_symbol == "ASTS":
+            return
         underlying_flow = flows.get(pair.underlying_symbol)
         if underlying_flow is None:
             return
@@ -126,6 +171,9 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
                 previous_assessment=previous.get(pair.underlying_symbol),
             )
         )
+        # In v1.1 inverse entries are driven only by retained SHORT confirmation alerts.
+        if deferred is not None and evaluation.assessment.direction is PatternDirection.BEARISH:
+            return
         if evaluation.transition is None:
             previous[pair.underlying_symbol] = evaluation.assessment
             return
@@ -199,6 +247,10 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
             await evaluate_related(analysis.symbol, causation_id=envelope.event_id)
 
     async def handle_flow(envelope: EventEnvelope) -> None:
+        if deferred_long is not None:
+            await deferred_long.handle(envelope)
+        if deferred is not None:
+            await deferred.handle(envelope)
         if envelope.event_type != ORDER_FLOW_STATE_EVENT:
             return
         flow = _model(envelope, OrderFlowState)
@@ -230,6 +282,10 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
     for index, subject in enumerate(source_subjects, start=1):
         if ".analysis.result." in subject:
             handler = handle_analysis
+        elif ".entry-signal." in subject and deferred_long is not None:
+            handler = deferred_long.handle
+        elif ".alert.local." in subject and deferred is not None:
+            handler = deferred.handle
         elif ".support-confirmation.assessment." in subject:
             handler = handle_support
         else:
@@ -261,11 +317,18 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
                     "engine_strategy_version": spec.strategy.version,
                 },
             )
-        await asyncio.Event().wait()
+        while True:
+            await asyncio.sleep(1)
+            if deferred is not None:
+                await deferred.tick()
+            if deferred_long is not None:
+                await deferred_long.tick()
     finally:
         for subscription in subscriptions:
             await subscription.unsubscribe()
         await bus.close()
+        if owned_cache is not None:
+            owned_cache.close()
 
 
 def build_leveraged_alert(assessment: LeveragedThesisAssessment) -> LocalAlert | None:

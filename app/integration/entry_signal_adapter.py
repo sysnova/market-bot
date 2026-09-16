@@ -231,6 +231,7 @@ def entry_signal_from_leveraged_thesis(
             for value in (
                 assessment.assessment_id,
                 assessment.source_analysis_id,
+                assessment.source_entry_signal_id,
                 assessment.source_underlying_flow_state_id,
                 assessment.source_instrument_flow_state_id,
                 assessment.source_support_assessment_id,

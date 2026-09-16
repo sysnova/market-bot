@@ -68,3 +68,34 @@ def test_actionable_state_rejects_neutral_direction_or_missing_quote() -> None:
         LeveragedThesisAssessment(**(base | {"direction": PatternDirection.NEUTRAL}))
     with pytest.raises(ValueError, match="quote"):
         LeveragedThesisAssessment(**(base | {"instrument_ask": None}))
+
+
+def test_confirmed_thesis_can_reference_native_swing_entry_without_invented_score() -> None:
+    from app.contracts import new_uuid7
+
+    source_id = new_uuid7()
+    assessment = LeveragedThesisAssessment(
+        underlying_symbol="ASTS",
+        instrument_symbol="ASTX",
+        occurred_at=NOW,
+        expires_at=NOW + timedelta(minutes=3),
+        engine_version="1.2.0",
+        state=LeveragedThesisState.BUY_CONFIRMED,
+        direction=PatternDirection.BULLISH,
+        exposure=LeveragedExposure.LONG_2X,
+        underlying_price=Decimal("62"),
+        instrument_bid=Decimal("5"),
+        instrument_ask=Decimal("5.01"),
+        spread_bps=Decimal("20"),
+        instrument_flow_state=OrderFlowStateKind.NEUTRAL,
+        instrument_flow_confidence=Decimal("0"),
+        source_entry_signal_id=source_id,
+        reasons=("confirmed_swing_long_retained",),
+        context_hash="sha256:" + "a" * 64,
+    )
+    assert assessment.structure_score is None
+    assert assessment.source_entry_signal_id == source_id
+    with pytest.raises(ValueError, match="structure evidence"):
+        LeveragedThesisAssessment.model_validate(
+            assessment.model_dump() | {"source_entry_signal_id": None}
+        )

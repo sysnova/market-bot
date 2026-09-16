@@ -46,7 +46,9 @@ class CachedContexts[Key: str, Model: BaseModel](MutableMapping[Key, Model]):
         return self._model.model_validate_json(value)
 
     def __setitem__(self, key: Key, value: Model) -> None:
-        self._client.call("put", self._view, key, value.model_dump_json())
+        self._client.call(
+            "put", self._view, key, value.model_dump_json(exclude_computed_fields=True)
+        )
 
     def __delitem__(self, key: Key) -> None:
         if key not in self:
