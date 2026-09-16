@@ -71,6 +71,23 @@ Cambiar de ticker cancela las tareas y las suscripciones anteriores y reinicia e
 conversación. Las solicitudes llevan correlación y una respuesta tardía nunca se dibuja sobre
 otro ticker. Una reconexión restablece la suscripción, pero no reenvía preguntas a GPT.
 
+Si el replay tarda, la sesión conserva sus suscripciones y muestra `SYNCING` hasta completar
+la carga. El heartbeat comprueba los consumidores del ticker y reintenta suscripciones
+fallidas; una consulta exitosa de Rotación no acredita la conexión del ticker. SHORT muestra
+la interrupción o sincronización dentro de su sección y el progreso publicado del historial
+de un minuto (por ejemplo, 3 de 30 velas). Si el Dashboard arrancó sin bus, lo identifica como
+un servicio que requiere restablecimiento, sin prometer reintentos de esa conexión global.
+
+Diagnóstico ASTS del 15/9/2026: el runtime 7.71.0 publicaba Intraday 8.0.0 de la rueda actual,
+pero una pestaña podía quedar sin suscripciones tras agotar el timeout inicial, conservando
+historial parcial del 10/9. La prueba contra NATS real con el código corregido de Windows
+pasó de `SYNCING` a `NATS_REPLAY_AND_LIVE` y recuperó ASTS del 15/9 a las 13:36 UTC,
+con `insufficient_1m_history:7/30`. Esto valida recepción, no una entrada SHORT confirmada.
+La corrección está en `app/integration/ticker_web_session.py` y `static/ticker.js`.
+Su instalación en WSL requiere autorización según el AGENTS.md del workspace y reiniciar
+únicamente el Dashboard. No se modificó el checkout ni se reinició el runtime WSL durante
+esta validación.
+
 **Detener análisis**, disponible en Mi ticker y en SHORT, cancela las tareas de análisis y
 consulta de esa sesión, elimina sus suscripciones y limpia su contexto. La web borra el ticker
 recordado para que una reconexión o recarga no vuelva a seguirlo automáticamente. También se

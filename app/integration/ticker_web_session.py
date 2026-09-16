@@ -129,7 +129,14 @@ class TickerWebSession:
         self._history = []
         self._transport = "CONNECTING" if self.bus else "UNAVAILABLE"
         await self.send(self.snapshot())
-        if self.bus is not None:
+        await self._refresh_transport()
+        await self.send(self.snapshot())
+        self._pump_task = asyncio.create_task(self._pump())
+
+    async def _refresh_transport(self) -> None:
+        if self.bus is None or self.book is None:
+            return
+        if not self._subscriptions:
             book = self.book
 
             async def receive(envelope: EventEnvelope) -> None:
@@ -155,7 +162,7 @@ class TickerWebSession:
 
             try:
                 async with asyncio.timeout(20):
-                    for subject in ticker_subjects(symbol):
+                    for subject in ticker_subjects(book.symbol):
                         self._subscriptions.append(
                             await self.bus.subscribe(
                                 subject,
@@ -171,21 +178,32 @@ class TickerWebSession:
                                 ),
                             )
                         )
-                    await asyncio.gather(
-                        *(
-                            self.bus.wait_until_caught_up(subscription, timeout_seconds=15)
-                            for subscription in self._subscriptions
-                        )
-                    )
-                self._transport = "NATS_REPLAY_AND_LIVE"
             except Exception:
-                for subscription in self._subscriptions:
-                    with suppress(Exception):
-                        await subscription.unsubscribe()
-                self._subscriptions.clear()
+                await self._unsubscribe()
                 self._transport = "UNAVAILABLE"
-        await self.send(self.snapshot())
-        self._pump_task = asyncio.create_task(self._pump())
+                return
+        try:
+            async with asyncio.timeout(2):
+                await asyncio.gather(
+                    *(
+                        self.bus.wait_until_caught_up(subscription, timeout_seconds=1)
+                        for subscription in self._subscriptions
+                    )
+                )
+            self._transport = "NATS_REPLAY_AND_LIVE"
+        except TimeoutError:
+            # Keep replay progressing. Unsubscribing here restarts history from zero
+            # and used to leave the browser permanently without live delivery.
+            self._transport = "SYNCING"
+        except Exception:
+            await self._unsubscribe()
+            self._transport = "UNAVAILABLE"
+
+    async def _unsubscribe(self) -> None:
+        for subscription in self._subscriptions:
+            with suppress(Exception):
+                await subscription.unsubscribe()
+        self._subscriptions.clear()
 
     def snapshot(self) -> dict[str, Any]:
         assert self.book is not None
@@ -200,6 +218,7 @@ class TickerWebSession:
         snapshot: dict[str, Any] = {
             **self.book.snapshot(now=self.clock.now()),
             "transport": self._transport,
+            "reconnect_enabled": self.bus is not None,
             "llm_available": self.reviewer is not None,
             "llm_model": self.reviewer.model if self.reviewer else None,
         }
@@ -224,15 +243,8 @@ class TickerWebSession:
             self._dirty.clear()
             await asyncio.sleep(0.25)
             try:
-                if self.bus is not None and self._subscriptions and self.clock.now() >= next_probe:
-                    try:
-                        await asyncio.wait_for(
-                            self.bus.get_last("marketbot.v1.rotation.result"),
-                            timeout=2,
-                        )
-                        self._transport = "NATS_REPLAY_AND_LIVE"
-                    except Exception:
-                        self._transport = "UNAVAILABLE"
+                if self.bus is not None and self.clock.now() >= next_probe:
+                    await self._refresh_transport()
                     next_probe = self.clock.now() + timedelta(seconds=5)
                 await self.send(self.snapshot())
             except Exception:

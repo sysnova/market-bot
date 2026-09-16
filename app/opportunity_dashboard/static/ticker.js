@@ -8,6 +8,12 @@
   const labels = { PASS: "Cumple", FAIL: "No cumple / riesgo activo", STALE: "Dato antiguo", UNKNOWN: "Sin dato" };
   const engineNames = { "4hgeri": "4HGERI", "swing-trade": "SwingTrade", "swing": "Swing", "intraday": "Intraday", "long-term": "Long", "entry-watcher": "Entry Watcher", "entry-recovery": "Recovery", "signal-fusion": "Signal Fusion", "order-flow": "Order Flow", "options-gamma": "Gamma", "volume-structure": "Volume Structure", "market-rotation": "Rotación de mercado", "entry-setup": "Setup de entrada", "alert": "Alertas", "entry-opportunity": "Opportunities", "leveraged-thesis": "Leveraged Thesis" };
   const name = engine => engineNames[engine] || engine;
+  const transportNotice = snapshot => ({
+    CONNECTING: "Conectando con los eventos del ticker…",
+    SYNCING: "Sincronizando historial. El seguimiento continúa cargando; todavía no se confirma la vigencia de la evidencia.",
+    UNAVAILABLE: `Sin conexión a eventos del ticker. ${snapshot.reconnect_enabled === false ? "El Dashboard no dispone de conexión al bus; requiere restablecer el servicio." : "Reintentando automáticamente; la evidencia visible no acredita seguimiento en vivo."}`,
+    DISCONNECTED: "Conexión con el Dashboard interrumpida. Esperando reconexión para reanudar el seguimiento.",
+  })[snapshot.transport] || "";
   // Display published SHORT evidence. Never reconstruct Alert Engine's decision.
   function renderShort(snapshot) {
     $("short-symbol").textContent = snapshot.symbol;
@@ -18,6 +24,7 @@
     const metrics = card => Object.fromEntries((card?.payload?.metrics || []).map(metric => [metric.name, metric.value]));
     const im = metrics(intraday);
     const waiting = (intraday?.payload?.reasons || []).some(reason => String(reason).startsWith("insufficient_1m_history"));
+    const historyProgress = (intraday?.payload?.reasons || []).map(reason => /^insufficient_1m_history:(\d+)\/(\d+)$/.exec(String(reason))).find(Boolean);
     const fresh = card => snapshot.transport === "NATS_REPLAY_AND_LIVE" ? card?.freshness : "UNKNOWN";
     const stamp = card => card ? `Dato: ${html(date(card.as_of))} · ${fresh(card) === "FRESH" ? "Reciente" : fresh(card) === "STALE" ? "Dato antiguo" : "Vigencia desconocida"}` : "Sin assessment publicado";
     function gate(card, field, title, pending = false) {
@@ -32,11 +39,11 @@
     const alert = latest(cards.filter(card => card.engine === "alert" && card.event_type === "alert.local.produced" && card.payload?.kind === "BEARISH_CONSENSUS" && card.payload?.reasons?.includes("short_entry_confirmed")));
     const am = metrics(alert);
     const alertTitle = !alert ? "Sin confirmación SHORT publicada" : fresh(alert) === "STALE" ? "Confirmación histórica" : fresh(alert) !== "FRESH" ? "Confirmación de vigencia desconocida" : "Última confirmación SHORT publicada";
-    $("short-content").innerHTML = `<article class="assessment-card short-card"><p class="eyebrow">01 · SWING</p><h3>Estructura bajista</h3><p class="ticker-help">${stamp(swing)}</p>${stateLine(swing)}
+    $("short-content").innerHTML = `${transportNotice(snapshot) ? `<p class="short-notice" role="status">${html(transportNotice(snapshot))}</p>` : ""}<article class="assessment-card short-card"><p class="eyebrow">01 · SWING</p><h3>Estructura bajista</h3><p class="ticker-help">${stamp(swing)}</p>${stateLine(swing)}
       <ul class="gate-list">${gate(swing, "short_structure_gate_passed", "Estructura SHORT")}</ul>
       <p class="ticker-help">Este gate resume la estructura evaluada por Swing. Por sí solo no confirma la entrada.</p></article>
       <article class="assessment-card short-card"><p class="eyebrow">02 · INTRADAY</p><h3>Madurez bajista</h3><p class="ticker-help">${stamp(intraday)}</p>${stateLine(intraday)}
-      ${waiting ? '<p class="short-notice">Esperando historial de 1 minuto. Los gates aún no representan una evaluación completa.</p>' : ""}
+      ${waiting ? `<p class="short-notice">Esperando historial de 1 minuto${historyProgress ? `: ${html(historyProgress[1])} de ${html(historyProgress[2])} velas en la última evaluación` : ""}. Los gates aún no representan una evaluación completa.</p>` : ""}
       <ul class="gate-list">${gate(intraday, "short_mature_confirmation_gate_passed", "Confirmación madura", waiting)}</ul>
       <p class="short-notice">${html(extension)}<small>Bloqueo por extensión: ${hardGate === false ? "desactivado" : hardGate === true ? "activado" : "sin dato"}.</small></p>
       <details><summary>Detalle de la confirmación</summary><p class="ticker-help">Son condiciones y rutas alternativas del motor; no es necesario que todas sean verdaderas.</p><ul class="gate-list">
@@ -105,12 +112,12 @@
   function render(snapshot) {
     state.snapshot = snapshot;
     state.available = snapshot.llm_available;
-    $("ticker-stream").textContent = snapshot.transport === "NATS_REPLAY_AND_LIVE" ? `${snapshot.symbol} · NATS conectado` : `${snapshot.symbol} · ${snapshot.transport === "CONNECTING" ? "Conectando" : "Sin conexión a eventos"}`;
+    $("ticker-stream").textContent = snapshot.transport === "NATS_REPLAY_AND_LIVE" ? `${snapshot.symbol} · NATS conectado` : `${snapshot.symbol} · ${transportNotice(snapshot)}`;
     $("ticker-gpt-model").textContent = snapshot.llm_available ? `Modelo: ${snapshot.llm_model}` : "GPT no disponible: falta configurar la clave de OpenAI en MarketBot.";
     const cards = snapshot.assessments || [];
     const isRecent = card => !/^(alert\.local\.|entry-signal\.)/.test(card.event_type || "") && !(card.engine === "entry-opportunity" && card.payload?.closed_at) && (card.freshness === "FRESH" || card.evaluation_freshness === "FRESH");
     const recent = cards.filter(isRecent), history = cards.filter(card => !isRecent(card));
-    if (!state.analysis) $("ticker-status").textContent = `${cards.length} assessments · Contexto actualizado ${date(snapshot.captured_at)}. ${cards.length ? "" : "Sin evidencia publicada: podés solicitar análisis."}`;
+    if (!state.analysis) $("ticker-status").textContent = transportNotice(snapshot) || `${cards.length} assessments · Contexto actualizado ${date(snapshot.captured_at)}. ${cards.length ? "" : "Sin evidencia publicada: podés solicitar análisis."}`;
     const gates = recent.flatMap(card => card.gates || []);
     $("ticker-counts").textContent = `${recent.length} evaluaciones recientes · ${history.length} registros anteriores o alertas · Gates de evaluaciones recientes: ${gates.filter(g => g.status === "PASS").length} cumplen · ${gates.filter(g => g.status === "FAIL").length} no cumplen / riesgo · ${gates.filter(g => g.status === "STALE").length} con datos base antiguos · ${gates.filter(g => g.status === "UNKNOWN").length} sin dato`;
     const key = JSON.stringify([snapshot.symbol, snapshot.revision, snapshot.transport, cards.map(card => [card.freshness, card.evaluation_freshness])]);

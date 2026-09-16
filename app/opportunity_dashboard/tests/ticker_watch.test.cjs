@@ -60,6 +60,27 @@ function followShort(app,data=shortSnapshot()) {
   app.get('watch-symbol').value=data.symbol; app.submit('ticker-watch-form'); app.api.handle(data);
 }
 
+test('SHORT explicitly shows interrupted delivery and replay recovery',()=>{
+  const app=setup(), data=shortSnapshot();
+  followShort(app,{...data,transport:'UNAVAILABLE'});
+  assert.match(app.get('short-content').innerHTML,/Sin conexión a eventos.*Reintentando/);
+  assert.doesNotMatch(app.get('ticker-status').textContent,/Contexto actualizado/);
+  app.api.handle({...data,transport:'UNAVAILABLE',reconnect_enabled:false,revision:2});
+  assert.match(app.get('short-content').innerHTML,/requiere restablecer el servicio/);
+  assert.doesNotMatch(app.get('short-content').innerHTML,/Reintentando/);
+  app.api.handle({...data,transport:'SYNCING'});
+  assert.match(app.get('short-content').innerHTML,/Sincronizando historial/);
+  app.api.handle(data);
+  assert.doesNotMatch(app.get('short-content').innerHTML,/Sin conexión a eventos|Sincronizando historial/);
+});
+
+test('SHORT reports the published minute-history progress',()=>{
+  const app=setup(), data=shortSnapshot();
+  data.assessments[1].payload.reasons=['insufficient_1m_history:3/30'];
+  followShort(app,data);
+  assert.match(app.get('short-content').innerHTML,/3 de 30 velas/);
+});
+
 test('stop from SHORT cancels the session, ignores late events and stays stopped on reconnect and reload',()=>{
   const storage=new Map(),app=setup(storage); followShort(app);
   app.get('ticker-reanalyze').handlers.click();

@@ -260,6 +260,7 @@ async def test_missing_bus_and_wrong_symbol_do_not_invoke_gpt() -> None:
     try:
         await session.watch("NVDA")
         assert sent[-1]["transport"] == "UNAVAILABLE"
+        assert sent[-1]["reconnect_enabled"] is False
         await session.handle({"type": "ask_ticker", "symbol": "AAPL", "question": "Hola"})
         await session.handle({"type": "ask_ticker", "symbol": "NVDA", "question": "Hola"})
         assert sent[-1]["type"] == "error"
@@ -303,5 +304,65 @@ async def test_new_session_restores_newest_analysis_even_after_older_bootstrap_p
         card = session.snapshot()["assessments"][0]
         assert card["as_of"] == NOW.isoformat()
         assert card["freshness"] == "FRESH"
+    finally:
+        await session.close()
+
+
+async def test_slow_replay_keeps_subscription_and_eventually_becomes_live() -> None:
+    class SlowBus(Bus):
+        delayed = True
+
+        async def wait_until_caught_up(self, subscription: Any, *, timeout_seconds: float) -> None:
+            if self.delayed:
+                raise TimeoutError("replay still in progress")
+
+    async def send(payload: dict[str, Any]) -> None:
+        pass
+
+    bus = SlowBus()
+    session = TickerWebSession(bus=bus, send=send, reviewer=None, engines={}, clock=Clock())
+    try:
+        await session.watch("NVDA")
+        assert session.snapshot()["transport"] == "SYNCING"
+        assert not any(item.closed for item in bus.subscriptions)
+        await bus.handlers[0](envelope())
+        assert session.snapshot()["assessments"][0]["freshness"] == "UNKNOWN"
+        bus.delayed = False
+        await session._refresh_transport()
+        assert session.snapshot()["transport"] == "NATS_REPLAY_AND_LIVE"
+        assert session.snapshot()["assessments"][0]["freshness"] == "FRESH"
+        assert len(bus.subscriptions) == len(ticker_subjects("NVDA"))
+    finally:
+        await session.close()
+    assert all(item.closed for item in bus.subscriptions)
+
+
+async def test_subscription_failure_retries_and_restores_live_delivery() -> None:
+    class FailingBus(Bus):
+        fail = True
+
+        async def subscribe(self, subject: str, handler: Any, *, options: Any) -> Subscription:
+            if self.fail and self.subscriptions:
+                raise ConnectionError("unavailable")
+            return await super().subscribe(subject, handler, options=options)
+
+    recovered = asyncio.Event()
+
+    async def send(payload: dict[str, Any]) -> None:
+        if payload["transport"] == "NATS_REPLAY_AND_LIVE":
+            recovered.set()
+
+    bus = FailingBus()
+    session = TickerWebSession(bus=bus, send=send, reviewer=None, engines={}, clock=Clock())
+    try:
+        await session.watch("NVDA")
+        assert session.snapshot()["transport"] == "UNAVAILABLE"
+        assert all(item.closed for item in bus.subscriptions)
+        bus.fail = False
+        session._dirty.set()
+        await asyncio.wait_for(recovered.wait(), timeout=2)
+        await bus.handlers[-1](envelope())
+        assert session.snapshot()["transport"] == "NATS_REPLAY_AND_LIVE"
+        assert session.snapshot()["assessments"][0]["freshness"] == "FRESH"
     finally:
         await session.close()
