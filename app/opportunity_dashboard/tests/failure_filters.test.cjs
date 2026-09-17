@@ -103,6 +103,28 @@ test("Failure Lab follows all main filters and live snapshots, preserving only v
   assert.deepEqual(values(), []);
 });
 
+test("Date filters narrow rows by entry and close dates", () => {
+  const app = dashboard();
+  app.state.rows = [
+    {symbol:"AAPL", row_id:"aapl", entry_kind:"BUY", thesis:"CORE_ENTRY", state:"L1",
+      checkpoint_status:"OPEN", lifecycle_status:"OPEN", pnl_percent:1,
+      opened_at:"2026-09-16T14:30:00Z", closed_at:null},
+    {symbol:"NVDA", row_id:"nvda", entry_kind:"BUY", thesis:"CORE_ENTRY", state:"L1",
+      checkpoint_status:"CLOSED", lifecycle_status:"CLOSED", pnl_percent:2,
+      opened_at:"2026-09-17T14:30:00Z", closed_at:"2026-09-18T18:00:00Z"},
+  ];
+  app.element("filter-entry-from").value = "2026-09-17";
+  app.applyFilters();
+  assert.deepEqual(app.state.filtered.map(row => row.symbol), ["NVDA"]);
+  app.element("filter-entry-from").value = "";
+  app.element("filter-close-from").value = "2026-09-18";
+  app.applyFilters();
+  assert.deepEqual(app.state.filtered.map(row => row.symbol), ["NVDA"]);
+  app.element("filter-close-to").value = "2026-09-17";
+  app.applyFilters();
+  assert.deepEqual(app.state.filtered, []);
+});
+
 test("A closed JPM buy is not shown or filtered as an open ticker lifecycle", () => {
   const app = dashboard();
   const row = {symbol:"JPM", row_id:"jpm", opportunity_id:"opp", entry_kind:"BUY",

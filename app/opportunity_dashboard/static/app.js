@@ -2,7 +2,10 @@
 
 const state = { rows: [], filtered: [], snapshot: null, review: null, socket: null };
 const $ = (id) => document.getElementById(id);
-const filters = ["symbol", "kind", "thesis", "state", "status", "result"];
+const filters = [
+  "symbol", "kind", "thesis", "state", "status", "result",
+  "entry-from", "entry-to", "close-from", "close-to"
+];
 
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -62,6 +65,8 @@ function applyFilters() {
     if (f.result === "positive" && pnl <= 0) return false;
     if (f.result === "closed" && row.checkpoint_status !== "CLOSED") return false;
     if (f.result === "open" && row.checkpoint_status === "CLOSED") return false;
+    if (!dateInRange(row.opened_at, f["entry-from"], f["entry-to"])) return false;
+    if (!dateInRange(row.closed_at, f["close-from"], f["close-to"])) return false;
     return true;
   });
   fillFailureSelect();
@@ -119,7 +124,7 @@ function renderTable() {
     const recoveryLabel = recovery?.status === "EXIT_PENDING" ? "Salida preparada" : recovery?.status === "WARNING" ? "Recuperación en revisión" : "";
     const mark = closed ? (row.exit_price ?? row.current_price) : row.current_price;
     const risk = closed || row.risk_to_invalidation_percent == null ? "—" : `${Number(row.risk_to_invalidation_percent).toFixed(2)}%<span class="subline">${row.protection_stop ? "a protección" : "a invalidación"}</span>`;
-    return `<tr data-row="${row.row_id}"><td><span class="ticker-cell">${escapeHtml(row.symbol)}</span><span class="subline">${escapeHtml(row.pnl_basis === "LIVE_MARK" ? "LIVE" : "AUDITADO")}</span></td><td><span class="pill ${row.entry_kind === "REFERENCE" ? "ref" : ""}">${row.entry_kind === "SHORT" ? "SHORT" : row.entry_kind === "BUY" ? "COMPRA" : "REFERENCIA"}</span></td><td><b>${escapeHtml(row.thesis_label)}</b><span class="subline state-code">${escapeHtml(row.state)}</span></td><td>${statusLabel}<span class="subline">${escapeHtml(row.outcome === "PROTECTION_EXIT" ? "SALIDA POR PROTECCIÓN" : row.outcome === "RECOVERY_FAILED" ? "RECUPERACIÓN FALLIDA" : row.outcome || "")}</span><span class="subline">${tracking}</span>${recoveryLabel ? `<span class="subline">${recoveryLabel}</span>` : ""}</td><td>${money(row.entry_price)}<span class="subline">Inv. ${money(row.invalidation)}</span>${row.protection_stop ? `<span class="subline">Protección ${money(row.protection_stop)}</span>` : ""}</td><td>${money(mark)}${closed ? `<span class="subline">Salida registrada</span>` : ""}${row.target ? `<span class="subline">Obj. ${money(row.target)}</span>` : ""}</td><td class="${signedClass(pnl)}"><b>${signed(pnl)}</b></td><td><span class="positive">${signed(Number(row.mfe_percent))}</span><span class="subline negative">${signed(Number(row.mae_percent))}</span></td><td>${risk}</td><td>${formatDate(row.updated_at)}<span class="subline">${timeAgo(row.updated_at)}</span></td><td><button type="button" class="ghost-button copy-row-button" data-copy-row data-symbol="${escapeHtml(row.symbol)}" aria-label="Copiar fila de ${escapeHtml(row.symbol)} ${escapeHtml(row.thesis_label)} ${escapeHtml(row.state)}">Copiar fila</button></td></tr>`;
+    return `<tr data-row="${row.row_id}"><td><span class="ticker-cell">${escapeHtml(row.symbol)}</span><span class="subline">${escapeHtml(row.pnl_basis === "LIVE_MARK" ? "LIVE" : row.pnl_basis === "NO_ENTRY" ? "SIN ENTRADA" : "AUDITADO")}</span><span class="subline">Apertura ${formatDate(row.opened_at)}</span></td><td><span class="pill ${row.entry_kind === "REFERENCE" ? "ref" : ""}">${row.entry_kind === "SHORT" ? "SHORT" : row.entry_kind === "BUY" ? "COMPRA" : "REFERENCIA"}</span></td><td><b>${escapeHtml(row.thesis_label)}</b><span class="subline state-code">${escapeHtml(row.state)}</span></td><td>${statusLabel}<span class="subline">${escapeHtml(row.outcome === "PROTECTION_EXIT" ? "SALIDA POR PROTECCIÓN" : row.outcome === "RECOVERY_FAILED" ? "RECUPERACIÓN FALLIDA" : row.outcome || "")}</span><span class="subline">${tracking}</span>${recoveryLabel ? `<span class="subline">${recoveryLabel}</span>` : ""}</td><td>${money(row.entry_price)}<span class="subline">Inv. ${money(row.invalidation)}</span>${row.protection_stop ? `<span class="subline">Protección ${money(row.protection_stop)}</span>` : ""}</td><td>${money(mark)}${closed ? `<span class="subline">Salida registrada</span>` : ""}${row.target ? `<span class="subline">Obj. ${money(row.target)}</span>` : ""}</td><td class="${signedClass(pnl)}"><b>${signed(pnl)}</b></td><td><span class="positive">${signed(Number(row.mfe_percent))}</span><span class="subline negative">${signed(Number(row.mae_percent))}</span></td><td>${risk}</td><td>${formatDate(row.updated_at)}<span class="subline">${timeAgo(row.updated_at)}</span></td><td><button type="button" class="ghost-button copy-row-button" data-copy-row data-symbol="${escapeHtml(row.symbol)}" aria-label="Copiar fila de ${escapeHtml(row.symbol)} ${escapeHtml(row.thesis_label)} ${escapeHtml(row.state)}">Copiar fila</button></td></tr>`;
   }).join("") || `<tr><td colspan="11" class="empty-state">No hay oportunidades que coincidan.</td></tr>`;
 }
 
@@ -210,6 +215,21 @@ function signedClass(value) { return !Number.isFinite(value) || value === 0 ? "n
 function setSigned(element,value) { element.textContent = signed(value); element.className = signedClass(value); }
 function money(value) { return value == null ? "—" : Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }); }
 function formatDate(value, seconds=false) { if (!value) return "—"; return new Intl.DateTimeFormat("es-AR", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit", second:seconds ? "2-digit" : undefined }).format(new Date(value)); }
+function localDateKey(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear(), month = String(date.getMonth() + 1).padStart(2, "0"), day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function dateInRange(value, from, to) {
+  if (!from && !to) return true;
+  const key = localDateKey(value);
+  if (!key) return false;
+  if (from && key < from) return false;
+  if (to && key > to) return false;
+  return true;
+}
 function timeAgo(value) { const seconds = Math.round((Date.now()-new Date(value).getTime())/1000); if (seconds < 60) return `hace ${Math.max(0,seconds)}s`; if (seconds < 3600) return `hace ${Math.round(seconds/60)}m`; if (seconds < 86400) return `hace ${Math.round(seconds/3600)}h`; return `hace ${Math.round(seconds/86400)}d`; }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]); }
 
