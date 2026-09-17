@@ -90,6 +90,10 @@ class EntryOpportunityAnalyzer(Protocol):
 
     async def ingest_bar(self, bar: MarketBar) -> tuple[EntryOpportunityEvent, ...]: ...
 
+    async def ingest_reference_bar(
+        self, bar: MarketBar
+    ) -> tuple[EntryOpportunityEvent, ...]: ...
+
 
 class AnalysisRuntime:
     """Keep backfill quiet, then evaluate each horizon on its natural cadence."""
