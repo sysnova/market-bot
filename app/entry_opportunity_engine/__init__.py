@@ -25,6 +25,7 @@ from .v19 import EntryOpportunityEngineV19
 from .v20 import EntryOpportunityEngineV20
 from .v21 import EntryOpportunityEngineV21
 from .v22 import EntryOpportunityEngineV22
+from .v23 import EntryOpportunityEngineV23
 
 # Compatibility name for callers created before the engine became an assembly slot.
 EntryOpportunityManager = EntryOpportunityEngine
@@ -52,6 +53,7 @@ __all__ = [
     "EntryOpportunityEngineV20",
     "EntryOpportunityEngineV21",
     "EntryOpportunityEngineV22",
+    "EntryOpportunityEngineV23",
     "EntryOpportunityManager",
     "EntryOpportunityStore",
     "InMemoryEntryOpportunityStore",

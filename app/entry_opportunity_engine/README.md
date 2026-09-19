@@ -177,3 +177,16 @@ survives serialization/restart and emits `profit_protection_updated` and
 ST1/ST2 remain references. Closed history is unchanged, old MFE cannot arm a
 stop retroactively, and v21 remains available for rollback. No contract change,
 migration, or broker execution is introduced. Runtime activation is separate.
+
+
+### v23: durable confirmed-SHORT delivery
+
+Definition `7.76.0` selects Entry Opportunity `23.0.0`. A confirmed SHORT that NATS redelivers
+after its 15-minute alert TTL can still be persisted with the original alert timestamp when the
+delivery remains within six hours and the same New York market date. This recovers transient
+database or handler failures without admitting overnight historical entries. Event identity still
+deduplicates retries, and the regular session and geometry guards remain unchanged.
+
+The JetStream adapter logs handler exceptions before NAK, and the standalone opportunity process
+logs whether each confirmed SHORT alert opened or was rejected. This makes persistence failures
+observable while preserving the existing paper-only lifecycle and rollback through v22.

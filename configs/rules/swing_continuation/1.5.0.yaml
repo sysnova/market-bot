@@ -1,0 +1,17 @@
+rule_id: marketbot.swing_continuation
+version: 1.5.0
+status: active
+behavior:
+  fresh_reconfirmation_delay_minutes: 3
+  strong_confirmation_required: true
+  five_minute_higher_low_required: true
+  same_market_session_required: true
+  recovery_required_horizons: [SWING, INTRADAY]
+  recovery_maturity: L2
+  minimum_swing_reward_risk_to_resistance: 1.5
+  intraday_mature_gate_required: true
+  direct_swing_recovery_l2: true
+  short_confirmation_enabled: true
+  short_support_guard_enabled: true
+  short_minimum_support_distance_atr: 0.50
+  short_support_break_clearance_atr: 0.25

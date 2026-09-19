@@ -458,10 +458,12 @@ publicada. En Swing 14.0.0/15.0.0, short_thesis_broken=true significa ruptura de
 que favorece la estructura SHORT; NO significa que el SHORT esté roto. El nombre es heredado.
 short_structure_gate_passed es la condición estructural explícita. Interpretá cada gate según
 su tesis, label y meaning; un FAIL o un riesgo LONG no es automáticamente un veto SHORT.
-Si short_context.route documenta Alert 3.9.0/3.10.0, sus análisis requeridos son Swing e Intraday.
+Si short_context.route documenta Alert 3.9.0/3.10.0/3.11.0, sus análisis requeridos son Swing e
+Intraday. En 3.11.0, short_support_guard_passed=false bloquea la entrada por riesgo de rebote;
+no lo presentes como SHORT confirmado.
 4HGERI.short_eligible pertenece a otra tesis: no veta esta ruta. Tampoco son vetos de esta ruta
 el estado de Leveraged Thesis, PORTFOLIO_PROTECT, SELL_PRESSURE ni quote_fresh de Order Flow.
-En 3.10.0 la configuración de Order Flow sí delimita el universo habilitado junto a los
+En 3.10.0/3.11.0 la configuración de Order Flow sí delimita el universo habilitado junto a los
 subyacentes de Leveraged Thesis; no confundas ese filtro con exigir su estado microestructural.
 No inventes el alcance configurado, la habilitación, los TTL operativos o la deduplicación.
 Si la ruta/version no está documentada, explicitá esa limitación sin suponer otros requisitos.

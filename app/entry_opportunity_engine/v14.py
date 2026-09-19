@@ -55,7 +55,7 @@ class EntryOpportunityEngineV14(EntryOpportunityEngineV13):
             if await self._short_active(alert.symbol):
                 return ()
             return await super().ingest_alert(alert)
-        now = self._now()
+        now = self._short_alert_evaluation_time(alert)
         if (
             alert.expires_at is None
             or not alert.created_at <= now < alert.expires_at
@@ -188,6 +188,11 @@ class EntryOpportunityEngineV14(EntryOpportunityEngineV13):
         )
         await self._store.save(opportunity, event)
         return (event,)
+
+    def _short_alert_evaluation_time(self, alert: LocalAlert) -> datetime:
+        """Version hook for delivery recovery; v14 retains wall-clock expiry."""
+
+        return self._now()
 
     async def _short_active(self, symbol: str) -> bool:
         active = await self._store.load_active(symbol)

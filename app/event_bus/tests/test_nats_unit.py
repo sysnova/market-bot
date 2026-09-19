@@ -438,7 +438,9 @@ async def test_valid_message_acks_only_after_handler_success(event: EventEnvelop
 
 
 @pytest.mark.unit
-async def test_handler_failure_naks_for_redelivery(event: EventEnvelope) -> None:
+async def test_handler_failure_logs_and_naks_for_redelivery(
+    event: EventEnvelope, caplog: pytest.LogCaptureFixture
+) -> None:
     js = FakeJetStream()
     bus = NatsJetStreamEventBus(client=None, jetstream=js, prefix="marketbot")  # type: ignore[arg-type]
     message = FakeMessage("marketbot.prices.updated", encode_envelope(event))
@@ -450,6 +452,8 @@ async def test_handler_failure_naks_for_redelivery(event: EventEnvelope) -> None
 
     assert message.acked == 0
     assert message.naked == 1
+    assert "JetStream handler failed" in caplog.text
+    assert str(event.event_id) in caplog.text
 
 
 @pytest.mark.unit

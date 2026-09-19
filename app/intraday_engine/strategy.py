@@ -21,29 +21,34 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
         "7.0.0",
         "8.0.0",
         "9.0.0",
+        "10.0.0",
     }:
         return
     behavior = source.behavior()
     for key in _V3_FIELDS:
         behavior.decimal(key)
-    if implementation in {"4.0.0", "5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0"}:
+    if implementation in {"4.0.0", "5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0", "10.0.0"}:
         behavior.decimal("maximum_trigger_extension_atr")
         behavior.decimal("maximum_ema20_extension_atr")
         behavior.boolean("strong_confirmation_required")
         behavior.boolean("five_minute_higher_low_required")
-    if implementation in {"5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0"}:
+    if implementation in {"5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0", "10.0.0"}:
         behavior.boolean("short_confirmation_enabled")
         behavior.boolean("five_minute_lower_high_required")
-    if implementation in {"6.0.0", "7.0.0", "8.0.0", "9.0.0"}:
+    if implementation in {"6.0.0", "7.0.0", "8.0.0", "9.0.0", "10.0.0"}:
         behavior.boolean("short_ema20_extension_hard_gate")
-    if implementation in {"7.0.0", "8.0.0", "9.0.0"}:
+    if implementation in {"7.0.0", "8.0.0", "9.0.0", "10.0.0"}:
         behavior.boolean("short_displacement_enabled")
         behavior.decimal("short_displacement_minimum_momentum_percent")
         behavior.decimal("short_displacement_minimum_rvol")
-    if implementation in {"8.0.0", "9.0.0"}:
+    if implementation in {"8.0.0", "9.0.0", "10.0.0"}:
         behavior.boolean("short_early_breakdown_enabled")
         behavior.decimal("short_early_minimum_momentum_percent")
         behavior.decimal("short_early_minimum_rvol")
+    if implementation == "10.0.0":
+        behavior.boolean("short_impulse_breakdown_enabled")
+        behavior.decimal("short_impulse_minimum_momentum_percent")
+        behavior.decimal("short_impulse_minimum_rvol")
 
 
 def configure_engine(
@@ -60,6 +65,7 @@ def configure_engine(
         "7.0.0",
         "8.0.0",
         "9.0.0",
+        "10.0.0",
     }:
         return args, kwargs
     behavior = source.behavior()
@@ -70,23 +76,23 @@ def configure_engine(
         reward_risk_ratio=behavior.decimal("reward_risk_ratio"),
         strategy_version=source.version,
     )
-    if implementation in {"4.0.0", "5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0"}:
+    if implementation in {"4.0.0", "5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0", "10.0.0"}:
         kwargs.update(
             maximum_trigger_extension_atr=behavior.decimal("maximum_trigger_extension_atr"),
             maximum_ema20_extension_atr=behavior.decimal("maximum_ema20_extension_atr"),
             strong_confirmation_required=behavior.boolean("strong_confirmation_required"),
             five_minute_higher_low_required=behavior.boolean("five_minute_higher_low_required"),
         )
-    if implementation in {"5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0"}:
+    if implementation in {"5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0", "10.0.0"}:
         kwargs.update(
             short_confirmation_enabled=behavior.boolean("short_confirmation_enabled"),
             five_minute_lower_high_required=behavior.boolean("five_minute_lower_high_required"),
         )
-    if implementation in {"6.0.0", "7.0.0", "8.0.0", "9.0.0"}:
+    if implementation in {"6.0.0", "7.0.0", "8.0.0", "9.0.0", "10.0.0"}:
         kwargs.update(
             short_ema20_extension_hard_gate=behavior.boolean("short_ema20_extension_hard_gate"),
         )
-    if implementation in {"7.0.0", "8.0.0", "9.0.0"}:
+    if implementation in {"7.0.0", "8.0.0", "9.0.0", "10.0.0"}:
         kwargs.update(
             short_displacement_enabled=behavior.boolean("short_displacement_enabled"),
             short_displacement_minimum_momentum_percent=behavior.decimal(
@@ -94,12 +100,24 @@ def configure_engine(
             ),
             short_displacement_minimum_rvol=behavior.decimal("short_displacement_minimum_rvol"),
         )
-    if implementation in {"8.0.0", "9.0.0"}:
+    if implementation in {"8.0.0", "9.0.0", "10.0.0"}:
         kwargs.update(
             short_early_breakdown_enabled=behavior.boolean("short_early_breakdown_enabled"),
             short_early_minimum_momentum_percent=behavior.decimal(
                 "short_early_minimum_momentum_percent"
             ),
             short_early_minimum_rvol=behavior.decimal("short_early_minimum_rvol"),
+        )
+    if implementation == "10.0.0":
+        kwargs.update(
+            short_impulse_breakdown_enabled=behavior.boolean(
+                "short_impulse_breakdown_enabled"
+            ),
+            short_impulse_minimum_momentum_percent=behavior.decimal(
+                "short_impulse_minimum_momentum_percent"
+            ),
+            short_impulse_minimum_rvol=behavior.decimal(
+                "short_impulse_minimum_rvol"
+            ),
         )
     return args, kwargs

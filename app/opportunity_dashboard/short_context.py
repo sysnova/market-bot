@@ -12,7 +12,11 @@ def build_short_context(
 ) -> dict[str, Any]:
     """Keep source references and freshness; an absent alert is not a session-wide verdict."""
     route = None
-    if alert_version in {"3.9.0", "3.10.0"}:
+    if alert_version in {"3.9.0", "3.10.0", "3.11.0"}:
+        support_requirement = (
+            "Alert 3.11 exige distancia segura sobre el soporte estructural o una ruptura "
+            "decisiva por debajo; un bloqueo por riesgo de rebote no es confirmación."
+        )
         route = {
             "decision_owner": "alert",
             "implementation": alert_version,
@@ -25,11 +29,12 @@ def build_short_context(
                 "short_setup_id de Swing y short_confirmation_rule_version de Intraday.",
                 "Alert debe estar habilitado y emitir short_entry_confirmed. "
                 "Los gates visibles no reconstruyen su decisión ni su deduplicación.",
+                *([support_requirement] if alert_version == "3.11.0" else []),
             ],
             "symbol_scope": (
                 "La configuración de Order Flow y los subyacentes de Leveraged Thesis "
                 "delimitan el universo SHORT. Este resumen no verifica esa selección."
-                if alert_version == "3.10.0"
+                if alert_version in {"3.10.0", "3.11.0"}
                 else "Esta versión no aplica el filtro de símbolos de 3.10.0."
             ),
             "not_confirmation_gates": [

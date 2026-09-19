@@ -63,6 +63,17 @@ def test_asts_snapshot_does_not_invert_short_structure_or_invent_geri_veto() -> 
     assert context["full_session_history"] is False
 
 
+def test_v311_route_documents_support_guard_without_inventing_confirmation() -> None:
+    book = asts_book()
+    book.engine_versions["alert"] = "3.11.0"
+
+    context = book.snapshot(now=NOW)["short_context"]
+
+    assert context["route"]["implementation"] == "3.11.0"
+    assert any("soporte estructural" in item for item in context["route"]["requirements"])
+    assert context["confirmation"] is None
+
+
 @pytest.mark.parametrize("freshness", ["STALE", "UNKNOWN"])
 def test_short_semantics_preserve_unusable_evidence(freshness: str) -> None:
     from app.opportunity_dashboard.ticker_watch import project_gates

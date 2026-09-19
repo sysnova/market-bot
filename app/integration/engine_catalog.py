@@ -19,6 +19,7 @@ from app.alert_engine import (
 from app.alert_engine.strategy import configure_engine as configure_alert
 from app.alert_engine.strategy import validate_strategy as validate_alert
 from app.alert_engine.v310 import AlertEngineV310
+from app.alert_engine.v311 import AlertEngineV311
 from app.dilution_sec_engine import DilutionSecEngine
 from app.elliott_wave_engine import ElliottWaveEngine
 from app.entry_opportunity_engine import (
@@ -45,6 +46,7 @@ from app.entry_opportunity_engine.v19 import EntryOpportunityEngineV19
 from app.entry_opportunity_engine.v20 import EntryOpportunityEngineV20
 from app.entry_opportunity_engine.v21 import EntryOpportunityEngineV21
 from app.entry_opportunity_engine.v22 import EntryOpportunityEngineV22
+from app.entry_opportunity_engine.v23 import EntryOpportunityEngineV23
 from app.entry_recovery_engine import EntryRecoveryEngine, EntryRecoveryEngineV11
 from app.entry_recovery_engine.strategy import configure_engine as configure_recovery
 from app.entry_recovery_engine.strategy import validate_strategy as validate_recovery
@@ -75,6 +77,7 @@ from app.intraday_engine import (
     IntradayEngineV7,
     IntradayEngineV8,
     IntradayEngineV9,
+    IntradayEngineV10,
 )
 from app.intraday_engine.strategy import configure_engine as configure_intraday
 from app.intraday_engine.strategy import validate_strategy as validate_intraday
@@ -254,6 +257,7 @@ def default_engine_registry() -> EngineRegistry:
                     "7.0.0": IntradayEngineV7,
                     "8.0.0": IntradayEngineV8,
                     "9.0.0": IntradayEngineV9,
+                    "10.0.0": IntradayEngineV10,
                 },
                 required_since="0.0.0",
                 configure=configure_intraday,
@@ -321,6 +325,7 @@ def default_engine_registry() -> EngineRegistry:
                     "20.0.0": EntryOpportunityEngineV20,
                     "21.0.0": EntryOpportunityEngineV21,
                     "22.0.0": EntryOpportunityEngineV22,
+                    "23.0.0": EntryOpportunityEngineV23,
                 }
             ),
             EngineSlot.ENTRY_RECOVERY: EngineRegistration(
@@ -347,6 +352,7 @@ def default_engine_registry() -> EngineRegistry:
                     "3.8.0": AlertEngineV38,
                     "3.9.0": AlertEngineV39,
                     "3.10.0": AlertEngineV310,
+                    "3.11.0": AlertEngineV311,
                 },
                 required_since="0.0.0",
                 configure=configure_alert,

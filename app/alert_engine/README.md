@@ -68,6 +68,12 @@ uses Swing's correction-specific `recovery_setup_id`; a later correction anchor 
 produce a new independent L2. The alert is analytical and is translated to `EntrySignal` by the
 existing integration adapter; it never submits a broker order.
 
+`AlertEngineV311` conserva el alcance de símbolos de v3.10 y agrega el gate final de soporte
+para SHORT. La entrada se permite con al menos 0,50 ATR de espacio sobre el soporte estructural
+o después de romperlo por 0,25 ATR. Dentro de esa franja publica `SHORT BLOCKED - SUPPORT`, sin
+`short_entry_confirmed`, para hacer visible el riesgo de rebote sin crear una oportunidad paper.
+Si Swing no publica soporte y ATR, el gate falla de forma conservadora.
+
 Run the focused suite with:
 
 ```powershell

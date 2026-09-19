@@ -1197,6 +1197,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
     try:
         spec = assembly.spec(EngineSlot.ENTRY_OPPORTUNITY)
         service = "entry-opportunity"
+        logger = get_logger(service)
         store = PostgresEntryOpportunityStore(
             create_session_factory(database),
             source=service,
@@ -1288,7 +1289,27 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 return
             if not _order_impact_allowed(alert.created_at, settings):
                 return
-            await engine.ingest_alert(alert)
+            delivered_at = clock.now()
+            events = await engine.ingest_alert(alert)
+            log = logger.ainfo if events else logger.awarning
+            await log(
+                "confirmed_short_opportunity_ingested"
+                if events
+                else "confirmed_short_opportunity_rejected",
+                symbol=alert.symbol,
+                alert_id=str(alert.alert_id),
+                alert_created_at=alert.created_at.isoformat(),
+                alert_expires_at=(
+                    alert.expires_at.isoformat() if alert.expires_at is not None else None
+                ),
+                delivery_delay_seconds=max(
+                    0, (delivered_at - alert.created_at).total_seconds()
+                ),
+                expired_at_delivery=(
+                    alert.expires_at is not None and delivered_at >= alert.expires_at
+                ),
+                event_count=len(events),
+            )
 
         async def handle_signal(envelope: EventEnvelope) -> None:
             if envelope.event_type != ENTRY_SIGNAL_EVENT:
@@ -1431,7 +1452,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             **universe_health_details("entry-opportunity"),
         }
         if isinstance(engine, EntryOpportunityEngineV2):
-            details.pop("maturity_subject")
+            if not _entry_opportunity_consumes_local_alerts(engine):
+                details.pop("maturity_subject")
             details["entry_signal_subject"] = "marketbot.v1.entry-signal.>"
             details["leveraged_cancellation_subjects"] = tuple(
                 leveraged_thesis_assessment_subject(symbol) for symbol in leveraged_underlyings

@@ -377,6 +377,11 @@ class NatsJetStreamEventBus:
             await self._remember(message.subject, envelope)
             await handler(envelope)
         except Exception:
+            logging.getLogger(__name__).exception(
+                "JetStream handler failed for subject %s event %s; NAKing for redelivery",
+                message.subject,
+                envelope.event_id,
+            )
             await message.nak(delay=resolved.redelivery_delay_seconds)
             return
         await message.ack()
