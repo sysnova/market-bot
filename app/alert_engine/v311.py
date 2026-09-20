@@ -27,7 +27,7 @@ class AlertEngineV311(AlertEngineV310):
         short_support_break_clearance_atr: Decimal = Decimal("0.25"),
         **kwargs: object,
     ) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # pyright: ignore[reportArgumentType]
         if (
             short_minimum_support_distance_atr <= 0
             or short_support_break_clearance_atr <= 0
