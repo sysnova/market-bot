@@ -54,14 +54,15 @@ incluyen ticker, modelo y hora de ese contexto. Se guardan con el snapshot en
 `.runtime/ticker-reviews/ticker-YYYY-MM-DD.ndjson`.
 
 El snapshot incluye `short_context`, con referencias a la estructura Swing, el timing Intraday
-y la última confirmación SHORT recibida. Documenta la ruta de Alert 3.9/3.10 sólo cuando la
-versión configurada es conocida; para otras versiones no presume requisitos. No calcula una
-señal ni reconstruye las decisiones de Alert. Conserva fechas y vigencia por fuente, incluida
+y la última confirmación SHORT recibida. Documenta las rutas históricas de Alert 3.9/3.10/3.11
+y la ruta activa de Leveraged Thesis 1.3 sólo cuando la versión configurada es conocida; para
+otras versiones no presume requisitos. No calcula una señal ni reconstruye las decisiones.
+Conserva fechas y vigencia por fuente, incluida
 la degradación a `UNKNOWN` al perder la conexión, y declara que no contiene el recorrido
-completo del día. La configuración delimita el universo SHORT en 3.10; los estados de
-4HGERI, apalancados, Portfolio Flow y Order Flow no se presentan como vetos de esa ruta.
+completo del día. Los pares de Leveraged Thesis delimitan el universo SHORT en 1.3; 4HGERI,
+Portfolio Flow y Order Flow no se presentan como vetos de esa confirmación.
 
-En Swing 14/15, `short_thesis_broken` es un nombre heredado para la ruptura de la tesis LONG
+En Swing 14/15/16, `short_thesis_broken` es un nombre heredado para la ruptura de la tesis LONG
 que habilita la estructura SHORT. La web conserva el nombre original y su valor, pero muestra
 su significado y polaridad en la tesis SHORT. No cambia la polaridad de otros campos `broken`,
 otros motores o versiones desconocidas. Estas aclaraciones también forman parte de las

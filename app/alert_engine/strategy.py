@@ -23,7 +23,7 @@ _CONFIGURED_IMPLEMENTATIONS = {
 
 def validate_strategy(implementation: str, source: StrategySource) -> None:
     configured_implementation = implementation
-    if implementation in {"3.10.0", "3.11.0"}:
+    if implementation in {"3.10.0", "3.11.0", "3.12.0"}:
         implementation = "3.9.0"
     if implementation not in _CONFIGURED_IMPLEMENTATIONS:
         return
@@ -49,7 +49,7 @@ def validate_strategy(implementation: str, source: StrategySource) -> None:
         behavior.boolean("direct_swing_recovery_l2")
     if implementation == "3.9.0":
         behavior.boolean("short_confirmation_enabled")
-    if configured_implementation == "3.11.0":
+    if configured_implementation in {"3.11.0", "3.12.0"}:
         behavior.boolean("short_support_guard_enabled")
         if behavior.decimal("short_minimum_support_distance_atr") <= 0:
             raise ValueError("short_minimum_support_distance_atr must be positive")
@@ -64,7 +64,7 @@ def configure_engine(
     kwargs: dict[str, object],
 ) -> tuple[tuple[object, ...], dict[str, object]]:
     configured_implementation = implementation
-    if implementation in {"3.10.0", "3.11.0"}:
+    if implementation in {"3.10.0", "3.11.0", "3.12.0"}:
         implementation = "3.9.0"
     restored_state = kwargs.pop("restored_state", None)
     if implementation not in _CONFIGURED_IMPLEMENTATIONS:
@@ -115,7 +115,7 @@ def configure_engine(
         kwargs["short_confirmation_enabled"] = behavior.boolean(
             "short_confirmation_enabled"
         )
-    if configured_implementation == "3.11.0":
+    if configured_implementation in {"3.11.0", "3.12.0"}:
         kwargs.update(
             short_support_guard_enabled=behavior.boolean("short_support_guard_enabled"),
             short_minimum_support_distance_atr=behavior.decimal(

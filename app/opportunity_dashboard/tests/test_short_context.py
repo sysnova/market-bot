@@ -74,6 +74,35 @@ def test_v311_route_documents_support_guard_without_inventing_confirmation() -> 
     assert context["confirmation"] is None
 
 
+def test_v13_route_names_leveraged_thesis_as_the_only_short_owner() -> None:
+    book = asts_book()
+    book.engine_versions.update(
+        {"alert": "3.12.0", "leveraged-thesis": "1.3.0"}
+    )
+    book.merge(
+        "alert.local.produced",
+        {
+            "symbol": "ASTS",
+            "kind": "BEARISH_CONSENSUS",
+            "created_at": NOW.isoformat(),
+            "reasons": [
+                "short_entry_confirmed",
+                "short_decision_owned_by_leveraged_thesis",
+            ],
+            "metrics": [{"name": "short_entry_price", "value": "57.935"}],
+        },
+        received_at=NOW,
+        source_engine="leveraged-thesis",
+    )
+
+    context = book.snapshot(now=NOW)["short_context"]
+
+    assert context["route"]["decision_owner"] == "leveraged-thesis"
+    assert context["route"]["implementation"] == "1.3.0"
+    assert "leveraged-thesis.state" not in context["route"]["not_confirmation_gates"]
+    assert context["confirmation"]["engine"] == "leveraged-thesis"
+
+
 @pytest.mark.parametrize("freshness", ["STALE", "UNKNOWN"])
 def test_short_semantics_preserve_unusable_evidence(freshness: str) -> None:
     from app.opportunity_dashboard.ticker_watch import project_gates
@@ -110,6 +139,22 @@ def test_short_semantics_do_not_change_unrelated_or_unknown_engine_versions() ->
         assert all(g["status"] == "FAIL" for g in gates)
     book = TickerEvidenceBook("ASTS", engine_versions={"alert": "99.0.0"})
     assert book.snapshot(now=NOW)["short_context"]["route"] is None
+
+
+def test_active_swing_v16_keeps_broken_long_as_positive_short_structure() -> None:
+    from app.opportunity_dashboard.ticker_watch import project_gates
+
+    gates = project_gates(
+        {
+            "engine_id": "swing",
+            "engine_version": "16.0.0",
+            "metrics": [{"name": "short_thesis_broken", "value": True}],
+        },
+        freshness="FRESH",
+    )
+
+    assert gates[0]["status"] == "PASS"
+    assert gates[0]["thesis_scope"] == "SHORT"
 
 
 def test_only_a_published_short_alert_proves_confirmation_and_keeps_its_age() -> None:

@@ -86,6 +86,7 @@ def test_runtime_plan_centralizes_dependency_batches() -> None:
         assert "order-flow" not in plan.process(consumer).dependencies
     assert plan.process("leveraged-thesis").dependencies == (
         "ticker-cache",
+        "swing",
         "intraday",
         "order-flow",
         "support-confirmation-v0",

@@ -181,7 +181,7 @@ migration, or broker execution is introduced. Runtime activation is separate.
 
 ### v23: durable confirmed-SHORT delivery
 
-Definition `7.76.0` selects Entry Opportunity `23.0.0`. A confirmed SHORT that NATS redelivers
+Definition `7.76.0` and later select Entry Opportunity `23.0.0`. A confirmed SHORT that NATS redelivers
 after its 15-minute alert TTL can still be persisted with the original alert timestamp when the
 delivery remains within six hours and the same New York market date. This recovers transient
 database or handler failures without admitting overnight historical entries. Event identity still

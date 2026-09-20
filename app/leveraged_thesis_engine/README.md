@@ -119,3 +119,20 @@ riesgo propio del ETF ya utilizado por Leveraged Thesis (stop 3%, objetivo 2R,
 seguimiento Intraday con cierre de rueda). El origen diario/Swing no convierte
 esta operacion en una posicion multirrueda. ASTN/NBIZ conservan la regla SHORT
 1.1; NBIS alcista conserva su camino previo LONG_1X.
+
+## Version 1.3: propietario unico de la decision SHORT
+
+MarketBot `7.77.0` mueve la confirmacion SHORT de ASTS/NBIS a Leveraged Thesis
+`1.3.0`. Swing e Intraday siguen produciendo evidencia independiente; este engine
+es el unico que combina ambos gates, valida los niveles y aplica la proteccion de
+soporte. Exige timing Intraday de hasta dos minutos y falla cerrado si no dispone
+de soporte estructural y ATR. Cerca del soporte publica un WATCH bloqueado; con
+espacio de al menos 0,50 ATR, o una ruptura de 0,25 ATR, publica
+`short_entry_confirmed`.
+
+La alerta sale primero al bus durable para que Opportunities registre el paper
+SHORT del subyacente; el mismo evento arma despues el seguimiento de ASTN/NBIZ.
+Order Flow del instrumento decide despues si existe una compra valida del ETF
+inverso; no participa en la confirmacion SHORT del subyacente. La identidad de la
+decision es estable por setup para que replays y reinicios no dupliquen entradas.
+Alert `3.12.0` conserva las demas alertas, pero ya no puede confirmar SHORT.

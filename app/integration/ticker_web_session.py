@@ -224,6 +224,7 @@ class TickerWebSession:
             snapshot["short_context"] = build_short_context(
                 snapshot["assessments"],
                 alert_version=self.engine_versions.get("alert"),
+                leveraged_thesis_version=self.engine_versions.get("leveraged-thesis"),
             )
         return snapshot
 

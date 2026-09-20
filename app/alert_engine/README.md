@@ -74,6 +74,11 @@ o después de romperlo por 0,25 ATR. Dentro de esa franja publica `SHORT BLOCKED
 `short_entry_confirmed`, para hacer visible el riesgo de rebote sin crear una oportunidad paper.
 Si Swing no publica soporte y ATR, el gate falla de forma conservadora.
 
+`AlertEngineV312` retira la confirmación SHORT de Alert. Conserva el resto de la agregación y
+presentación de alertas, pero `_confirm_short` no puede publicar `short_entry_confirmed`, incluso
+si recibe una configuración anterior. Desde MarketBot `7.77.0`, Leveraged Thesis `1.3.0` es el
+único propietario de esa decisión para los subyacentes de sus pares.
+
 Run the focused suite with:
 
 ```powershell

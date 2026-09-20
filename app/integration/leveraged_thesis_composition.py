@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.common.clock import SystemClock
 from app.common.context_cache import context_store
 from app.common.market_session import market_session
 from app.common.settings import AppSettings
@@ -51,6 +52,7 @@ from app.leveraged_thesis_engine import (
 )
 from app.leveraged_thesis_engine.v11 import LeveragedThesisEngineV11
 from app.leveraged_thesis_engine.v12 import LeveragedThesisEngineV12
+from app.leveraged_thesis_engine.v13 import LeveragedThesisEngineV13
 
 from .deferred_long_runtime import DeferredLongRuntime, RedisLongStateStore
 from .deferred_short_runtime import DeferredShortRuntime, RedisShortStateStore
@@ -72,12 +74,18 @@ def leveraged_thesis_source_subjects(
 
     underlyings = tuple(pair.underlying_symbol for pair in engine.pairs)
     return (
+        *(
+            (analysis_result_subject(AnalysisHorizon.SWING, symbol) for symbol in underlyings)
+            if isinstance(engine, LeveragedThesisEngineV13)
+            else ()
+        ),
         *(analysis_result_subject(AnalysisHorizon.INTRADAY, symbol) for symbol in underlyings),
         *(order_flow_state_subject(symbol) for symbol in engine.required_symbols),
         *(support_assessment_subject(symbol) for symbol in underlyings),
         *(
             (local_alert_subject(AlertSeverity.ACTION, symbol) for symbol in underlyings)
             if isinstance(engine, LeveragedThesisEngineV11)
+            and not isinstance(engine, LeveragedThesisEngineV13)
             else ()
         ),
         *(
@@ -108,6 +116,9 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
     analyses = context_store(
         AnalysisResult, scope="integration:leveraged_thesis_composition:analyses"
     )
+    swing_analyses = context_store(
+        AnalysisResult, scope="integration:leveraged_thesis_composition:swing_analyses"
+    )
     flows = context_store(OrderFlowState, scope="integration:leveraged_thesis_composition:flows")
     supports = context_store(
         SupportAssessment, scope="integration:leveraged_thesis_composition:supports"
@@ -134,6 +145,8 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
             await deferred_long.restore()
     subscriptions: list[Subscription] = []
     lock = asyncio.Lock()
+    clock = SystemClock()
+    published_blocked_short_alerts: set[UUID] = set()
 
     for pair in engine.pairs:
         envelope = await bus.get_last(leveraged_thesis_assessment_subject(pair.underlying_symbol))
@@ -231,20 +244,68 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
             }:
                 await evaluate_pair(pair, causation_id=causation_id)
 
+    async def evaluate_short(symbol: str, *, causation_id: UUID) -> None:
+        if not isinstance(engine, LeveragedThesisEngineV13) or deferred is None:
+            return
+        swing = swing_analyses.get(symbol)
+        intraday = analyses.get(symbol)
+        if swing is None or intraday is None:
+            return
+        alert = engine.evaluate_short(
+            swing=swing,
+            intraday=intraday,
+            support=supports.get(symbol),
+            now=clock.now(),
+        )
+        if alert is None:
+            return
+        envelope = EventEnvelope(
+            event_id=alert.alert_id,
+            event_type=LOCAL_ALERT_EVENT,
+            occurred_at=alert.created_at,
+            source="leveraged-thesis",
+            subject=alert.symbol,
+            payload=alert,
+            causation_id=causation_id,
+        )
+        if "short_entry_confirmed" in alert.reasons:
+            current = deferred.states.get(symbol)
+            if (
+                current is not None
+                and current.intent is not None
+                and current.intent.alert.alert_id == alert.alert_id
+            ):
+                return
+            # The durable alert reaches Opportunities before dependent Redis work.
+            await bus.publish(local_alert_subject(alert.severity, alert.symbol), envelope)
+            await deferred.handle(envelope)
+            return
+        if alert.alert_id in published_blocked_short_alerts:
+            return
+        await bus.publish(local_alert_subject(alert.severity, alert.symbol), envelope)
+        published_blocked_short_alerts.add(alert.alert_id)
+
     async def handle_analysis(envelope: EventEnvelope) -> None:
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
             return
         analysis = _model(envelope, AnalysisResult)
-        if (
-            analysis.horizon is not AnalysisHorizon.INTRADAY
-            or engine.pair_for_underlying(analysis.symbol) is None
-        ):
+        if engine.pair_for_underlying(analysis.symbol) is None:
+            return
+        accepted_horizons = (
+            {AnalysisHorizon.SWING, AnalysisHorizon.INTRADAY}
+            if isinstance(engine, LeveragedThesisEngineV13)
+            else {AnalysisHorizon.INTRADAY}
+        )
+        if analysis.horizon not in accepted_horizons:
             return
         async with lock:
-            current = analyses.get(analysis.symbol)
+            cache = swing_analyses if analysis.horizon is AnalysisHorizon.SWING else analyses
+            current = cache.get(analysis.symbol)
             if current is None or analysis.as_of >= current.as_of:
-                analyses[analysis.symbol] = analysis
-            await evaluate_related(analysis.symbol, causation_id=envelope.event_id)
+                cache[analysis.symbol] = analysis
+            await evaluate_short(analysis.symbol, causation_id=envelope.event_id)
+            if analysis.horizon is AnalysisHorizon.INTRADAY:
+                await evaluate_related(analysis.symbol, causation_id=envelope.event_id)
 
     async def handle_flow(envelope: EventEnvelope) -> None:
         if deferred_long is not None:
@@ -276,9 +337,13 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
             )
             if current_time is None or support_time >= current_time:
                 supports[support.symbol] = support
+            await evaluate_short(support.symbol, causation_id=envelope.event_id)
             await evaluate_related(support.symbol, causation_id=envelope.event_id)
 
     source_subjects = leveraged_thesis_source_subjects(engine)
+    durable_generation = (
+        "v13" if isinstance(engine, LeveragedThesisEngineV13) else "v1"
+    )
     for index, subject in enumerate(source_subjects, start=1):
         if ".analysis.result." in subject:
             handler = handle_analysis
@@ -295,7 +360,9 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
                 subject,
                 handler,
                 options=SubscriptionOptions(
-                    durable_name=f"marketbot-leveraged-thesis-source-v1-{index}",
+                    durable_name=(
+                        f"marketbot-leveraged-thesis-source-{durable_generation}-{index}"
+                    ),
                     replay_latest_per_subject=True,
                     ack_wait_seconds=30,
                 ),

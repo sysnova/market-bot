@@ -322,7 +322,15 @@ def build_runtime_process_plan(
                 ("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ()
             )
         elif slot is EngineSlot.LEVERAGED_THESIS:
-            dependencies = ("intraday", "order-flow") + (
+            dependencies = (
+                (
+                    ("swing",)
+                    if slot in definition.engines
+                    and definition.engines[slot].implementation == "1.3.0"
+                    else ()
+                )
+                + ("intraday", "order-flow")
+            ) + (
                 ("support-confirmation-v0",) if EngineSlot.SUPPORT_CONFIRMATION in active else ()
             )
         elif slot is EngineSlot.SUPPORT_CONFIRMATION:

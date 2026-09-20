@@ -20,6 +20,7 @@ from app.alert_engine.strategy import configure_engine as configure_alert
 from app.alert_engine.strategy import validate_strategy as validate_alert
 from app.alert_engine.v310 import AlertEngineV310
 from app.alert_engine.v311 import AlertEngineV311
+from app.alert_engine.v312 import AlertEngineV312
 from app.dilution_sec_engine import DilutionSecEngine
 from app.elliott_wave_engine import ElliottWaveEngine
 from app.entry_opportunity_engine import (
@@ -84,6 +85,7 @@ from app.intraday_engine.strategy import validate_strategy as validate_intraday
 from app.leveraged_thesis_engine import LeveragedThesisEngine
 from app.leveraged_thesis_engine.v11 import LeveragedThesisEngineV11
 from app.leveraged_thesis_engine.v12 import LeveragedThesisEngineV12
+from app.leveraged_thesis_engine.v13 import LeveragedThesisEngineV13
 from app.long_portfolio_engine import LongPortfolioEngine
 from app.long_portfolio_engine.strategy import configure_engine as configure_long_portfolio
 from app.long_portfolio_engine.strategy import resolve_strategy as resolve_long_portfolio
@@ -278,6 +280,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.0.0": LeveragedThesisEngine,
                     "1.1.0": LeveragedThesisEngineV11,
                     "1.2.0": LeveragedThesisEngineV12,
+                    "1.3.0": LeveragedThesisEngineV13,
                 },
                 required_since="7.33.0",
             ),
@@ -353,6 +356,7 @@ def default_engine_registry() -> EngineRegistry:
                     "3.9.0": AlertEngineV39,
                     "3.10.0": AlertEngineV310,
                     "3.11.0": AlertEngineV311,
+                    "3.12.0": AlertEngineV312,
                 },
                 required_since="0.0.0",
                 configure=configure_alert,

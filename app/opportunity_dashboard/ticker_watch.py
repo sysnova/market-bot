@@ -114,7 +114,7 @@ def project_gates(payload: dict[str, Any], *, freshness: str) -> list[dict[str, 
         short_long_break = (
             name == "short_thesis_broken"
             and payload.get("engine_id") == "swing"
-            and payload.get("engine_version") in {"14.0.0", "15.0.0"}
+            and payload.get("engine_version") in {"14.0.0", "15.0.0", "16.0.0"}
         )
         negative = bool(_NEGATIVE.search(name)) and not short_long_break
         positive = bool(_POSITIVE.search(name)) or short_long_break
@@ -328,6 +328,7 @@ class TickerEvidenceBook:
             "short_context": build_short_context(
                 assessments,
                 alert_version=self.engine_versions.get("alert"),
+                leveraged_thesis_version=self.engine_versions.get("leveraged-thesis"),
             ),
             "missing_engines": sorted(set(self.engines) - present),
             "freshness_policy": (
