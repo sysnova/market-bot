@@ -501,7 +501,11 @@ class EntryOpportunityRecord(Base):
         CheckConstraint("progress_percent between 0 and 100", name="progress"),
         CheckConstraint(
             "zone_low <= zone_high and ((coalesce(payload->>'trade_side', 'LONG') = 'LONG' "
-            "and invalidation < zone_low) or (coalesce(payload->>'trade_side', 'LONG') = 'SHORT' "
+            "and (((payload->>'primary_signal_family') = 'SWING_TRADE' "
+            "and invalidation < original_price) or "
+            "(coalesce(payload->>'primary_signal_family', '') <> 'SWING_TRADE' "
+            "and invalidation < zone_low))) or "
+            "(coalesce(payload->>'trade_side', 'LONG') = 'SHORT' "
             "and invalidation > zone_high))",
             name="levels",
         ),

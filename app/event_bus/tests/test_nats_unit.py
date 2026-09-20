@@ -563,6 +563,55 @@ async def test_snapshot_restoration_failure_is_not_reported_as_caught_up(
     await bus.close()
 
 
+async def test_snapshot_restoration_failure_does_not_poison_live_delivery(
+    event: EventEnvelope,
+) -> None:
+    live_message = FakeMessage("marketbot.v1.analysis.result.SWING.AAPL", encode_envelope(event))
+
+    class CapturingJetStream(FakeJetStream):
+        async def subscribe(
+            self, subject: str, *, durable: str | None, cb: Any, manual_ack: bool, config: object
+        ) -> FakeSubscription:
+            self.callback = cb
+            return await super().subscribe(
+                subject, durable=durable, cb=cb, manual_ack=manual_ack, config=config
+            )
+
+    js = CapturingJetStream(
+        last_messages={
+            "marketbot.v1.analysis.result.SWING.AAPL": FakeMessage(
+                "marketbot.v1.analysis.result.SWING.AAPL",
+                encode_envelope(event),
+            ),
+        }
+    )
+    bus = NatsJetStreamEventBus(client=None, jetstream=js)
+    received: list[EventEnvelope] = []
+    restoring = True
+
+    async def fail_restore_only(envelope: EventEnvelope) -> None:
+        nonlocal restoring
+        if restoring:
+            restoring = False
+            raise RuntimeError("invalid restored snapshot")
+        received.append(envelope)
+
+    sub = await bus.subscribe(
+        "v1.analysis.result.>",
+        fail_restore_only,
+        options=SubscriptionOptions(replay_latest_per_subject=True),
+    )
+    with pytest.raises(RuntimeError, match="invalid restored snapshot"):
+        await bus.wait_until_caught_up(sub)
+
+    await js.callback(live_message)
+
+    assert received == [event]
+    assert live_message.acked == 1
+    assert live_message.naked == 0
+    await bus.close()
+
+
 async def test_failed_publish_does_not_create_unpublished_snapshot(event: EventEnvelope) -> None:
     class FailedJetStream(FakeJetStream):
         async def publish(self, *args: Any, **kwargs: Any) -> None:

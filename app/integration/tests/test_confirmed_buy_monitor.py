@@ -4,10 +4,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from io import StringIO
 from typing import Any
+from uuid import UUID
 
 import pytest
 
 from app.contracts import (
+    ENTRY_OPPORTUNITY_EVENT,
     ENTRY_SIGNAL_EVENT,
     LOCAL_ALERT_EVENT,
     AlertKind,
@@ -24,11 +26,13 @@ from app.contracts import (
 from app.integration import confirmed_buy_monitor
 from app.integration.confirmed_buy_monitor import (
     _analytical_stage_changed,
+    _PersistedConfirmationGate,
     run_confirmed_buy_monitor,
 )
 from app.leveraged_thesis_engine import LeveragedPair
 
 NOW = datetime(2026, 8, 9, 15, tzinfo=UTC)
+SIGNAL_ID = UUID("01989f4e-6a00-7000-8000-000000000001")
 
 
 class _Subscription:
@@ -70,6 +74,17 @@ class _StopEvent:
 
 
 def _events_for(subject: str) -> tuple[EventEnvelope, ...]:
+    if subject == "marketbot.v1.entry-opportunity.transition.>":
+        return (
+            EventEnvelope(
+                event_type=ENTRY_OPPORTUNITY_EVENT,
+                occurred_at=NOW,
+                source="entry-opportunity",
+                subject="TGT",
+                payload=_signal_event().payload,
+                causation_id=SIGNAL_ID,
+            ),
+        )
     if subject == "marketbot.v1.entry-signal.>":
         return (_signal_event(),)
     if subject == "marketbot.v1.alert.local.>":
@@ -86,6 +101,7 @@ def _events_for(subject: str) -> tuple[EventEnvelope, ...]:
 
 def _signal_event() -> EventEnvelope:
     signal = EntrySignal(
+        signal_id=SIGNAL_ID,
         family=EntrySignalFamily.SIGNAL_FUSION,
         symbol="TGT",
         created_at=NOW,
@@ -155,6 +171,7 @@ async def test_monitor_projects_final_signals_and_only_manual_flow_alerts(
     bus = _MonitorBus.instance
     assert bus is not None
     assert bus.subjects == [
+        "marketbot.v1.entry-opportunity.transition.>",
         "marketbot.v1.entry-signal.>",
         "marketbot.v1.alert.local.>",
     ]
@@ -195,6 +212,21 @@ def test_monitor_realerts_geri_after_maturity_resets() -> None:
     assert _analytical_stage_changed(reconfirmed, state) is True
 
 
+def test_confirmation_gate_waits_for_persistence_in_either_delivery_order() -> None:
+    first = _signal_event().payload
+    assert isinstance(first, EntrySignal)
+    second = first.model_copy(update={"signal_id": new_uuid7()})
+    gate = _PersistedConfirmationGate()
+
+    assert gate.observe(first.signal_id, first) is None
+    assert gate.confirm(first.signal_id) == first
+    assert gate.confirm(first.signal_id) is None
+
+    assert gate.confirm(second.signal_id) is None
+    assert gate.observe(second.signal_id, second) == second
+    assert gate.observe(second.signal_id, second) is None
+
+
 @pytest.mark.parametrize("bell", [True, False])
 async def test_confirmed_directions_show_associated_instrument_once(
     monkeypatch: pytest.MonkeyPatch,
@@ -230,6 +262,18 @@ async def test_confirmed_directions_show_associated_instrument_once(
     long = long.model_copy(update={"symbol": "ASTS"})
 
     def events(subject: str) -> tuple[EventEnvelope, ...]:
+        if subject == "marketbot.v1.entry-opportunity.transition.>":
+            return tuple(
+                EventEnvelope(
+                    event_type=ENTRY_OPPORTUNITY_EVENT,
+                    occurred_at=NOW,
+                    source="entry-opportunity",
+                    subject="ASTS",
+                    payload=long,
+                    causation_id=event_id,
+                )
+                for event_id in (long.signal_id, short.alert_id)
+            )
         if subject == "marketbot.v1.entry-signal.>":
             event = EventEnvelope(
                 event_type=ENTRY_SIGNAL_EVENT,

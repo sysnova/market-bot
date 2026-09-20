@@ -43,8 +43,10 @@ contains metadata only; each matching subject contributes at most one envelope.
 Live callbacks wait until restoration finishes, then retain explicit ack/nak
 semantics. Overlap can produce duplicates, so handler idempotency remains required.
 Restoration failures propagate through `wait_until_caught_up`; an incomplete
-restore is never reported as caught up. State consumers allow 64 unacknowledged
-live messages during restoration. Existing named state subscriptions use a
+restore is never reported as caught up. Once restoration finishes or fails, live
+delivery continues independently so one invalid snapshot cannot poison the durable
+consumer. State consumers allow 64 unacknowledged live messages during restoration.
+Existing named state subscriptions use a
 `-current-v2` durable because JetStream delivery policies cannot be changed in
 place; the adapter does not delete historical consumers or messages.
 

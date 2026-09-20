@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 
 from app.alert_engine.tests.test_v39 import _swing
-from app.contracts import LOCAL_ALERT_EVENT, AnalysisVerdict, EventEnvelope, NamedValue
+from app.contracts import (
+    ENTRY_OPPORTUNITY_EVENT,
+    LOCAL_ALERT_EVENT,
+    AnalysisVerdict,
+    EventEnvelope,
+    NamedValue,
+)
 from app.integration import confirmed_buy_monitor
 from app.integration.engine_assembly import EngineSlot, MarketBotAssembly
 from app.integration.tests import test_confirmed_buy_monitor as monitor_fixture
@@ -74,11 +80,25 @@ async def test_early_short_replay_reaches_existing_audible_monitor(
         event_type=LOCAL_ALERT_EVENT, occurred_at=now, source="offline-replay",
         subject=symbol, payload=alert,
     )
+    persisted = EventEnvelope(
+        event_type=ENTRY_OPPORTUNITY_EVENT,
+        occurred_at=now,
+        source="entry-opportunity",
+        subject=symbol,
+        payload=alert,
+        causation_id=alert.alert_id,
+    )
     monkeypatch.setattr(confirmed_buy_monitor, "NatsJetStreamEventBus", monitor_fixture._MonitorBus)
     monkeypatch.setattr(confirmed_buy_monitor.asyncio, "Event", monitor_fixture._StopEvent)
     monkeypatch.setattr(
         monitor_fixture, "_events_for",
-        lambda subject: (event, event) if subject == "marketbot.v1.alert.local.>" else (),
+        lambda subject: (
+            (persisted,)
+            if subject == "marketbot.v1.entry-opportunity.transition.>"
+            else (event, event)
+            if subject == "marketbot.v1.alert.local.>"
+            else ()
+        ),
     )
     sounds: list[bool] = []
     monkeypatch.setattr(

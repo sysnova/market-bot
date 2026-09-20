@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.contracts import LOCAL_ALERT_EVENT, EventEnvelope, MarketBar
+from app.contracts import ENTRY_OPPORTUNITY_EVENT, LOCAL_ALERT_EVENT, EventEnvelope, MarketBar
 from app.integration import confirmed_buy_monitor
 from app.integration.engine_assembly import EngineSlot, MarketBotAssembly
 from app.integration.tests import test_confirmed_buy_monitor as monitor_fixture
@@ -93,6 +93,14 @@ async def test_invalidated_long_reaches_short_alert_only_with_mature_intraday(
             subject=symbol,
             payload=alert,
         )
+        persisted = EventEnvelope(
+            event_type=ENTRY_OPPORTUNITY_EVENT,
+            occurred_at=now,
+            source="entry-opportunity",
+            subject=symbol,
+            payload=alert,
+            causation_id=alert.alert_id,
+        )
         monkeypatch.setattr(
             confirmed_buy_monitor, "NatsJetStreamEventBus", monitor_fixture._MonitorBus
         )
@@ -100,7 +108,13 @@ async def test_invalidated_long_reaches_short_alert_only_with_mature_intraday(
         monkeypatch.setattr(
             monitor_fixture,
             "_events_for",
-            lambda subject: (event,) if subject == "marketbot.v1.alert.local.>" else (),
+            lambda subject: (
+                (persisted,)
+                if subject == "marketbot.v1.entry-opportunity.transition.>"
+                else (event,)
+                if subject == "marketbot.v1.alert.local.>"
+                else ()
+            ),
         )
         sounds: list[bool] = []
         monkeypatch.setattr(

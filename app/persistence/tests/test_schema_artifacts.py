@@ -213,6 +213,15 @@ def test_entry_opportunity_retention_is_narrow_and_function_gated() -> None:
 
 
 @pytest.mark.unit
+def test_swing_trade_opportunity_levels_match_the_domain_contract() -> None:
+    sql = all_migration_sql()
+    compact_sql = re.sub(r"\s+", " ", sql)
+
+    assert "payload->>'primary_signal_family' = 'swing_trade'" in compact_sql
+    assert "invalidation < original_price" in compact_sql
+
+
+@pytest.mark.unit
 def test_long_portfolio_state_is_compact_and_updateable() -> None:
     sql = all_migration_sql()
 

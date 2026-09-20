@@ -277,9 +277,6 @@ class NatsJetStreamEventBus:
 
         async def callback(message: _NatsMessage) -> None:
             await restoring.wait()
-            if restore_error is not None:
-                await message.nak(delay=resolved.redelivery_delay_seconds)
-                return
             await self._deliver(message, handler, resolved)
 
         native = await self._jetstream.subscribe(
