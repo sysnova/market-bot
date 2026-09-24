@@ -126,6 +126,10 @@ Los subjects PatreonCaps se construyen con `patreon_caps_assessment_subject()` y
   de ejecucion. `OrderFlowSupportAssessment` vincula evidencia fresca con una zona propiedad de
   Support, sin crear ni mover geometria Swing. Ninguno de estos contratos representa una orden
   real ni depende de una tesis LONG.
+  Las ventanas de `OrderFlowState` conservan sus valores `Decimal` al restaurar JSON de cache
+  o persistencia, incluso si contiene el campo calculado legacy `total_volume`. La entrada
+  Python sigue exigiendo `Decimal`; se mantienen las restricciones financieras y el rechazo
+  de campos desconocidos.
 
 ## Invariantes comprobadas
 

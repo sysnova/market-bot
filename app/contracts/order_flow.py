@@ -5,10 +5,17 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
-from typing import Final, Literal
+from typing import Final, Literal, cast
 from uuid import UUID
 
-from pydantic import Field, computed_field, model_validator
+from pydantic import (
+    Field,
+    TypeAdapter,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from ._base import (
     Identifier,
@@ -184,6 +191,9 @@ class MarketTradeCancel(StrictFrozenModel):
         return self
 
 
+_JSON_DECIMAL = TypeAdapter(Decimal)
+
+
 class OrderFlowWindow(StrictFrozenModel):
     """One causal rolling window embedded in an Order Flow state."""
 
@@ -208,9 +218,31 @@ class OrderFlowWindow(StrictFrozenModel):
     @classmethod
     def strip_legacy_total_volume(cls, data: object) -> object:
         if isinstance(data, dict) and "total_volume" in data:
-            data = dict(data)
-            data.pop("total_volume", None)
-        return data
+            cleaned = dict(cast(dict[object, object], data))
+            cleaned.pop("total_volume", None)
+            return cleaned
+        return cast(object, data)
+
+    @field_validator(
+        "buy_volume",
+        "sell_volume",
+        "neutral_volume",
+        "unknown_volume",
+        "delta",
+        "volume_velocity",
+        "large_buy_volume",
+        "large_sell_volume",
+        "price_change_bps",
+        mode="before",
+    )
+    @classmethod
+    def restore_json_decimal(cls, value: object, info: ValidationInfo) -> object:
+        # The legacy before-model validator materializes a Python dict, so strict
+        # Decimal fields no longer receive Pydantic's normal JSON conversion.
+        # Restore that conversion only for JSON; Python inputs remain strict.
+        if info.mode == "json":
+            return _JSON_DECIMAL.validate_python(value)
+        return value
 
     @model_validator(mode="after")
     def validate_window(self) -> OrderFlowWindow:

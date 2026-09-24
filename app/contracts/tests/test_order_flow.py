@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -196,6 +197,57 @@ def test_order_flow_state_accepts_legacy_computed_window_total_volume() -> None:
     assert state.windows[0].total_volume == Decimal("100")
 
 
+@pytest.mark.parametrize("exclude_computed_fields", [True, False])
+def test_order_flow_state_restores_json_with_exact_window_decimals(
+    exclude_computed_fields: bool,
+) -> None:
+    state = OrderFlowState.model_validate(_order_flow_state_payload())
+    window = state.windows[0].model_copy(
+        update={"volume_velocity": Decimal("6.666666666666666666666666667")}
+    )
+    state = state.model_copy(update={"windows": (window, *state.windows[1:])})
+
+    restored = OrderFlowState.model_validate_json(
+        state.model_dump_json(exclude_computed_fields=exclude_computed_fields)
+    )
+
+    assert restored == state
+    assert restored.windows[0].volume_velocity == Decimal("6.666666666666666666666666667")
+
+
+@pytest.mark.parametrize("value", [1, 1.25])
+def test_order_flow_window_accepts_json_numbers(value: int | float) -> None:
+    state = OrderFlowState.model_validate(_order_flow_state_payload())
+    payload = json.loads(state.windows[0].model_dump_json())
+    payload["volume_velocity"] = value
+
+    window = OrderFlowWindow.model_validate_json(json.dumps(payload))
+
+    assert window.volume_velocity == Decimal(str(value))
+
+
+@pytest.mark.parametrize("value", ["invalid", "NaN", "Infinity", "-1", True, None])
+def test_order_flow_window_rejects_invalid_json_decimals(value: object) -> None:
+    state = OrderFlowState.model_validate(_order_flow_state_payload())
+    payload = json.loads(state.windows[0].model_dump_json())
+    payload["buy_volume"] = value
+
+    with pytest.raises(ValidationError):
+        OrderFlowWindow.model_validate_json(json.dumps(payload))
+
+
+def test_order_flow_window_keeps_python_decimals_strict_and_forbids_unknown_fields() -> None:
+    state = OrderFlowState.model_validate(_order_flow_state_payload())
+    payload = state.windows[0].model_dump(exclude_computed_fields=True)
+    with pytest.raises(ValidationError, match="instance of Decimal"):
+        OrderFlowWindow.model_validate({**payload, "buy_volume": "100"})
+
+    json_payload = json.loads(state.windows[0].model_dump_json())
+    json_payload["unexpected"] = "value"
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        OrderFlowWindow.model_validate_json(json.dumps(json_payload))
+
+
 def test_window_rejects_inconsistent_delta() -> None:
     with pytest.raises(ValidationError, match="delta"):
         OrderFlowWindow(
@@ -252,6 +304,7 @@ def _order_flow_state_payload() -> dict[str, object]:
         for seconds in (1, 5, 15, 60, 300)
     )
     return {
+        "state_id": UUID("00000000-0000-7000-8000-000000000001"),
         "symbol": "AAPL",
         "occurred_at": NOW,
         "engine_version": "1.0.0",
