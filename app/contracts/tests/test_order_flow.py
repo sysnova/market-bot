@@ -181,6 +181,21 @@ def test_order_flow_quote_evidence_is_optional_but_atomic() -> None:
         )
 
 
+def test_order_flow_state_accepts_legacy_computed_window_total_volume() -> None:
+    payload = _order_flow_state_payload()
+    payload["windows"] = tuple(
+        {
+            **window.model_dump(),
+            "total_volume": window.total_volume,
+        }
+        for window in payload["windows"]  # type: ignore[index]
+    )
+
+    state = OrderFlowState.model_validate(payload)
+
+    assert state.windows[0].total_volume == Decimal("100")
+
+
 def test_window_rejects_inconsistent_delta() -> None:
     with pytest.raises(ValidationError, match="delta"):
         OrderFlowWindow(

@@ -204,6 +204,14 @@ class OrderFlowWindow(StrictFrozenModel):
     def total_volume(self) -> Decimal:
         return self.buy_volume + self.sell_volume + self.neutral_volume + self.unknown_volume
 
+    @model_validator(mode="before")
+    @classmethod
+    def strip_legacy_total_volume(cls, data: object) -> object:
+        if isinstance(data, dict) and "total_volume" in data:
+            data = dict(data)
+            data.pop("total_volume", None)
+        return data
+
     @model_validator(mode="after")
     def validate_window(self) -> OrderFlowWindow:
         if self.delta != self.buy_volume - self.sell_volume:
