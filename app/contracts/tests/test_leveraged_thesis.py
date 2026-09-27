@@ -39,6 +39,12 @@ def test_confirmed_thesis_requires_complete_executable_evidence() -> None:
 
     assert assessment.instrument_symbol == "ASTN"
     assert assessment.exposure is LeveragedExposure.INVERSE_2X
+    legacy = assessment.model_dump()
+    legacy.pop("instrument_confirmation_basis")
+    assert (
+        LeveragedThesisAssessment.model_validate(legacy).instrument_confirmation_basis
+        == "EXECUTABLE_QUOTE"
+    )
 
 
 def test_actionable_state_rejects_neutral_direction_or_missing_quote() -> None:
@@ -98,4 +104,35 @@ def test_confirmed_thesis_can_reference_native_swing_entry_without_invented_scor
     with pytest.raises(ValueError, match="structure evidence"):
         LeveragedThesisAssessment.model_validate(
             assessment.model_dump() | {"source_entry_signal_id": None}
+        )
+
+
+def test_regime_only_confirmation_requires_actual_buyer_flow() -> None:
+    assessment = LeveragedThesisAssessment(
+        underlying_symbol="ASTS",
+        instrument_symbol="ASTN",
+        occurred_at=NOW,
+        expires_at=NOW + timedelta(minutes=3),
+        engine_version="1.6.0",
+        state=LeveragedThesisState.BUY_CONFIRMED,
+        direction=PatternDirection.BEARISH,
+        exposure=LeveragedExposure.INVERSE_2X,
+        underlying_price=Decimal("62"),
+        structure_score=Decimal("70"),
+        instrument_flow_state=OrderFlowStateKind.BUY_PRESSURE,
+        instrument_flow_confidence=Decimal(".1"),
+        instrument_confirmation_basis="BUYER_REGIME",
+        reasons=("instrument_buy_flow_confirmed",),
+        context_hash="sha256:" + "a" * 64,
+    )
+    assert assessment.instrument_ask is None
+    for changes in (
+        {"instrument_flow_state": OrderFlowStateKind.NEUTRAL},
+        {"direction": PatternDirection.BULLISH},
+    ):
+        with pytest.raises(ValueError, match="inverse SHORT buyer flow"):
+            LeveragedThesisAssessment.model_validate(assessment.model_dump() | changes)
+    with pytest.raises(ValueError, match="executable instrument quote"):
+        LeveragedThesisAssessment.model_validate(
+            assessment.model_dump() | {"instrument_confirmation_basis": "EXECUTABLE_QUOTE"}
         )

@@ -86,6 +86,9 @@ from app.leveraged_thesis_engine import LeveragedThesisEngine
 from app.leveraged_thesis_engine.v11 import LeveragedThesisEngineV11
 from app.leveraged_thesis_engine.v12 import LeveragedThesisEngineV12
 from app.leveraged_thesis_engine.v13 import LeveragedThesisEngineV13
+from app.leveraged_thesis_engine.v14 import LeveragedThesisEngineV14
+from app.leveraged_thesis_engine.v15 import LeveragedThesisEngineV15
+from app.leveraged_thesis_engine.v16 import LeveragedThesisEngineV16
 from app.long_portfolio_engine import LongPortfolioEngine
 from app.long_portfolio_engine.strategy import configure_engine as configure_long_portfolio
 from app.long_portfolio_engine.strategy import resolve_strategy as resolve_long_portfolio
@@ -97,6 +100,7 @@ from app.options_gamma_engine import OptionsGammaEngine
 from app.order_flow_engine import OrderFlowEngine, OrderFlowEngineV11, OrderFlowEngineV12
 from app.order_flow_engine.strategy import configure_engine as configure_order_flow
 from app.order_flow_engine.strategy import validate_strategy as validate_order_flow
+from app.order_flow_engine.v13 import OrderFlowEngineV13
 from app.patreon_caps_engine import PatreonCapsEngine
 from app.patreon_caps_engine.strategy import configure_engine as configure_patreon_caps
 from app.patreon_caps_engine.strategy import resolve_strategy as resolve_patreon_caps
@@ -270,6 +274,7 @@ def default_engine_registry() -> EngineRegistry:
                     "1.0.0": OrderFlowEngine,
                     "1.1.0": OrderFlowEngineV11,
                     "1.2.0": OrderFlowEngineV12,
+                    "1.3.0": OrderFlowEngineV13,
                 },
                 required_since="7.32.0",
                 configure=configure_order_flow,
@@ -281,6 +286,9 @@ def default_engine_registry() -> EngineRegistry:
                     "1.1.0": LeveragedThesisEngineV11,
                     "1.2.0": LeveragedThesisEngineV12,
                     "1.3.0": LeveragedThesisEngineV13,
+                    "1.4.0": LeveragedThesisEngineV14,
+                    "1.5.0": LeveragedThesisEngineV15,
+                    "1.6.0": LeveragedThesisEngineV16,
                 },
                 required_since="7.33.0",
             ),

@@ -1,5 +1,16 @@
 # Contratos v1
 
+`ExecutionQuoteSnapshot` y `ShortObservation` son contratos aditivos en subjects nuevos:
+`marketbot.v1.execution-quote.SYMBOL` y
+`marketbot.v1.leveraged-thesis.short-observation.ROUTE.SYMBOL`. El primero conserva
+timestamps de mercado, recepción y publicación; no modifica `OrderFlowState` ni
+reclasifica trades usando quotes futuros. El segundo fija `mode=OBSERVE` y
+`orders_enabled=false`: READY sólo significa que pasaron sus gates de observación,
+nunca una compra. No reemplazan LocalAlert, EntrySignal ni los estados pendientes
+anteriores. No se cambian payloads v1 existentes; consumidores anteriores pueden
+ignorar estos nuevos event types. Revisión de integración: sin migración de tablas
+ni dependencias de runtime en contratos; rollback conserva los subjects existentes.
+
 `EntryHorizonLeg.signal_family` identifica opcionalmente al dueño de la posición desde
 Entry Opportunity v10. Su valor por defecto `None` permite leer snapshots anteriores;
 v10 resuelve esa procedencia desde el setup o la familia primaria cuando es inequívoca.
@@ -211,3 +222,12 @@ LeveragedThesisAssessment admite `source_entry_signal_id` opcional (UUIDv7):
 identifica una confirmacion nativa de entrada diaria/Swing. BUY_CONFIRMED puede
 usar esta evidencia en lugar de `structure_score`; no se fabrica un score para
 productores que no lo publican. Los mensajes anteriores siguen siendo validos.
+
+### Daily SHORT buyer-regime confirmation
+
+`LeveragedThesisAssessment.instrument_confirmation_basis` is additive and defaults
+to `EXECUTABLE_QUOTE`, preserving old payload validation. `BUYER_REGIME` permits
+inverse SHORT confirmation without quotes, requires buyer flow and structure,
+and must not be mapped to an ETF paper EntrySignal. It expresses analytical
+confirmation only. Readers must support the new field before selecting 7.80.0;
+older strict consumers may reject new serialized payloads.

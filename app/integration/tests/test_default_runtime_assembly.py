@@ -1,4 +1,4 @@
-"""The CLI and Linux launcher select the complete latest engine assembly."""
+"""CLI and Linux select the promoted assembly, keeping research versions opt-in."""
 
 import re
 from pathlib import Path
@@ -26,12 +26,17 @@ def test_default_entry_points_select_corrected_swing_trade(monkeypatch: pytest.M
     assert assembly.spec(EngineSlot.INTRADAY).implementation == "10.0.0"
     assert assembly.spec(EngineSlot.INTRADAY).strategy.version == "1.6.0"
     registry = default_engine_registry()
+    # 7.78 is an opt-in observation rollout, not an automatic default promotion.
+    promoted = {
+        EngineSlot.ORDER_FLOW: "1.2.0",
+        EngineSlot.LEVERAGED_THESIS: "1.3.0",
+    }
     for slot in registry.slots():
         latest = max(
             registry.registration(slot).implementations,
             key=lambda version: tuple(int(part) for part in version.split(".")),
         )
-        assert assembly.spec(slot).implementation == latest, slot.value
+        assert assembly.spec(slot).implementation == promoted.get(slot, latest), slot.value
 
 
 def test_definition_override_preserves_explicit_rollback(monkeypatch: pytest.MonkeyPatch) -> None:

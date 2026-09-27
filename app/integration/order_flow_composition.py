@@ -11,9 +11,11 @@ from uuid import UUID
 from nats.aio.client import Client as NatsClient
 from pydantic import BaseModel
 
+from app.common.clock import SystemClock
 from app.common.context_cache import context_store
 from app.common.settings import AppSettings
 from app.contracts import (
+    EXECUTION_QUOTE_EVENT,
     MARKET_QUOTE_EVENT,
     MARKET_TRADE_CANCEL_EVENT,
     MARKET_TRADE_CORRECTION_EVENT,
@@ -30,6 +32,7 @@ from app.contracts import (
     OrderFlowState,
     SubscriptionOptions,
     SupportAssessment,
+    execution_quote_subject,
     market_quote_subject,
     market_trade_cancel_subject,
     market_trade_correction_subject,
@@ -42,6 +45,7 @@ from app.contracts import (
 from app.event_bus import NatsJetStreamEventBus
 from app.event_bus.codec import decode_envelope
 from app.order_flow_engine import OrderFlowUpdate, assess_support_order_flow
+from app.order_flow_engine.v13 import OrderFlowEngineV13
 
 from .distributed_composition import write_ready
 from .engine_assembly import EngineSlot, MarketBotAssembly
@@ -79,6 +83,7 @@ async def run_order_flow_process(  # pragma: no cover - long-running NATS proces
     settings = AppSettings()
     assembly = MarketBotAssembly.from_settings(settings)
     engine = assembly.build_order_flow()
+    clock = SystemClock()
     url = settings.nats_url.get_secret_value()
     core = NatsClient()
     await core.connect(url)
@@ -180,7 +185,22 @@ async def run_order_flow_process(  # pragma: no cover - long-running NATS proces
         envelope = decode_envelope(message.data)
         update = None
         if envelope.event_type == MARKET_QUOTE_EVENT:
-            engine.ingest_quote(_payload(envelope, MarketQuote))
+            quote = _payload(envelope, MarketQuote)
+            engine.ingest_quote(quote)
+            if isinstance(engine, OrderFlowEngineV13):
+                snapshot = engine.execution_quote(quote, now=clock.now())
+                if snapshot is not None:
+                    await durable.publish(
+                        execution_quote_subject(quote.symbol),
+                        EventEnvelope(
+                            event_type=EXECUTION_QUOTE_EVENT,
+                            occurred_at=snapshot.published_at,
+                            source="order-flow",
+                            subject=quote.symbol,
+                            payload=snapshot,
+                            causation_id=envelope.event_id,
+                        ),
+                    )
         elif envelope.event_type == MARKET_TRADE_EVENT:
             update = engine.ingest_trade(_payload(envelope, MarketTrade))
         elif envelope.event_type == MARKET_TRADE_CORRECTION_EVENT:

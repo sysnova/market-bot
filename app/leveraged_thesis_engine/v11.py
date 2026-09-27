@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from app.common.canonical import sha256_digest
@@ -56,6 +57,7 @@ class DeferredShortState(StrictFrozenModel):
 
 class LeveragedThesisEngineV11(LeveragedThesisEngine):
     engine_version = "1.1.0"
+    short_confirmation_basis: Literal["EXECUTABLE_QUOTE", "BUYER_REGIME"] = "EXECUTABLE_QUOTE"
 
     def advance_short(
         self,
@@ -165,6 +167,7 @@ class LeveragedThesisEngineV11(LeveragedThesisEngine):
             underlying_flow_confidence=underlying.confidence if underlying else None,
             instrument_flow_state=instrument.state if instrument else None,
             instrument_flow_confidence=instrument.confidence if instrument else None,
+            instrument_confirmation_basis=self.short_confirmation_basis,
             structure_score=next(
                 (
                     item.score

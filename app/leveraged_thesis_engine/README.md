@@ -1,5 +1,52 @@
 # Leveraged Thesis engine
 
+## Versión 1.4: diagnóstico diario y SHORT táctico observado
+
+La definición opt-in `configs/marketbot/7.78.0.yaml` conserva las decisiones diarias
+1.3 y agrega `SHORT_TACTICAL` exclusivamente en modo `OBSERVE`. No emite compras
+tácticas, alertas SHORT operativas ni EntrySignal. El default sigue en 7.77.0.
+
+El observador exige timing Intraday maduro con vela de un minuto cerrada; retiene
+ese timing, stop y objetivo por un máximo de 15 minutos, hasta invalidación,
+objetivo o cierre de rueda. Agrupa señales consecutivas bajo la misma identidad.
+Swing aporta soportes sin vetar automáticamente la dirección táctica. Los soportes
+recortan el objetivo; ese recorte inicial no se aleja si el precio luego lo cruza.
+Un reclaim/estructura de soporte confirmado dentro de la zona bloquea la observación.
+
+Evalúa R/R restante con bid actual del subyacente, ask de ASTN/NBIZ y spread.
+Exige niveles publicados por el análisis Intraday propio del ETF; no convierte
+niveles de ASTS/NBIS mediante una relación 2x. El umbral inicial de R/R 1.0 es una
+hipótesis de observación, no una regla de compra validada. Cotizaciones ausentes
+se distinguen de un R/R medido insuficiente.
+
+Order Flow 1.3 publica cotizaciones independientes de los trades bajo
+`marketbot.v1.execution-quote.SYMBOL`, con timestamps de mercado, recepción y
+publicación. Se mantiene la vigencia máxima de dos segundos y spread de 35 bps.
+Una quote nueva no rejuvenece Order Flow: la confirmación del ETF exige flujo
+comprador fresco o subida real de midpoint en tres minutos. Los candidatos y
+la ventana de quotes sobreviven al reinicio en `short-observation:v1:`, separados
+de vistas descartables y de las compras pendientes anteriores.
+
+Los gates y timestamps se publican en
+`marketbot.v1.leveraged-thesis.short-observation.ROUTE.SYMBOL` cuando cambia un
+gate, estado, setup o minuto analítico. `READY` es una observación, no una compra.
+La vista JSON del replay incluye esos mismos diagnósticos. No se ha añadido un
+panel nuevo al dashboard ni activado la definición en el proceso operativo.
+
+Replay aislado reproducible, sin NATS, PostgreSQL, Redis ni broker:
+
+```powershell
+uv run python -m app.integration.short_observation_replay --symbol ASTS --start 2026-08-31 --end 2026-09-25 --definition configs/marketbot/7.78.0.yaml --output .runtime/short-observation-validation
+```
+
+El replay OHLCV no inventa quotes: reporta su ausencia y separa el seguimiento
+hipotético del subyacente de una entrada ejecutable del ETF. La ventana propuesta
+para habilitación posterior debe incluir cotizaciones históricas o captura paper,
+costos, validación fuera de muestra y estabilidad del transporte/relojes.
+
+Diseño: [short-observation-design.md](docs/short-observation-design.md).
+Validación: [short-observation-validation.md](docs/short-observation-validation.md).
+
 Motor intraday de avisos y oportunidades paper, sin ejecución de broker. Observa el subyacente y selecciona el
 instrumento que se compra para expresar la dirección:
 

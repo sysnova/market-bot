@@ -38,6 +38,7 @@ from app.contracts import (
     SupportAssessment,
     analysis_result_subject,
     entry_signal_subject,
+    execution_quote_subject,
     leveraged_thesis_assessment_subject,
     leveraged_thesis_transition_subject,
     local_alert_subject,
@@ -53,6 +54,7 @@ from app.leveraged_thesis_engine import (
 from app.leveraged_thesis_engine.v11 import LeveragedThesisEngineV11
 from app.leveraged_thesis_engine.v12 import LeveragedThesisEngineV12
 from app.leveraged_thesis_engine.v13 import LeveragedThesisEngineV13
+from app.leveraged_thesis_engine.v14 import LeveragedThesisEngineV14
 
 from .deferred_long_runtime import DeferredLongRuntime, RedisLongStateStore
 from .deferred_short_runtime import DeferredShortRuntime, RedisShortStateStore
@@ -63,6 +65,7 @@ from .entry_signal_adapter import (
     publish_entry_signal,
 )
 from .redis_ticker_cache import RedisTickerCache
+from .short_observation_runtime import RedisTacticalStateStore, ShortObservationRuntime
 from .ticker_cache_transport import shared_cache_client
 from .universe_policy import universe_health_details
 
@@ -74,6 +77,19 @@ def leveraged_thesis_source_subjects(
 
     underlyings = tuple(pair.underlying_symbol for pair in engine.pairs)
     return (
+        *(
+            (execution_quote_subject(symbol) for symbol in engine.required_symbols)
+            if isinstance(engine, LeveragedThesisEngineV14)
+            else ()
+        ),
+        *(
+            (
+                analysis_result_subject(AnalysisHorizon.INTRADAY, pair.bearish_instrument)
+                for pair in engine.pairs
+            )
+            if isinstance(engine, LeveragedThesisEngineV14)
+            else ()
+        ),
         *(
             (analysis_result_subject(AnalysisHorizon.SWING, symbol) for symbol in underlyings)
             if isinstance(engine, LeveragedThesisEngineV13)
@@ -129,6 +145,7 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
     deferred = None
     deferred_long = None
     owned_cache = None
+    observation_store = None
     if isinstance(engine, LeveragedThesisEngineV11):
         cache = shared_cache_client()
         if not isinstance(cache, RedisTickerCache):
@@ -138,6 +155,8 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
             engine, bus, RedisShortStateStore(cache.redis, cache.namespace)
         )
         await deferred.restore()
+        if isinstance(engine, LeveragedThesisEngineV14):
+            observation_store = RedisTacticalStateStore(cache.redis, cache.namespace)
         if isinstance(engine, LeveragedThesisEngineV12):
             deferred_long = DeferredLongRuntime(
                 engine, bus, RedisLongStateStore(cache.redis, cache.namespace)
@@ -146,6 +165,18 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
     subscriptions: list[Subscription] = []
     lock = asyncio.Lock()
     clock = SystemClock()
+    observer = (
+        ShortObservationRuntime(
+            engine,
+            bus,
+            clock=clock,
+            store=observation_store,
+        )
+        if isinstance(engine, LeveragedThesisEngineV14)
+        else None
+    )
+    if observer is not None:
+        await observer.restore()
     published_blocked_short_alerts: set[UUID] = set()
 
     for pair in engine.pairs:
@@ -286,6 +317,8 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
         published_blocked_short_alerts.add(alert.alert_id)
 
     async def handle_analysis(envelope: EventEnvelope) -> None:
+        if observer is not None:
+            await observer.handle(envelope)
         if envelope.event_type != ANALYSIS_RESULT_EVENT:
             return
         analysis = _model(envelope, AnalysisResult)
@@ -308,6 +341,8 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
                 await evaluate_related(analysis.symbol, causation_id=envelope.event_id)
 
     async def handle_flow(envelope: EventEnvelope) -> None:
+        if observer is not None:
+            await observer.handle(envelope)
         if deferred_long is not None:
             await deferred_long.handle(envelope)
         if deferred is not None:
@@ -324,6 +359,8 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
             await evaluate_related(flow.symbol, causation_id=envelope.event_id)
 
     async def handle_support(envelope: EventEnvelope) -> None:
+        if observer is not None:
+            await observer.handle(envelope)
         if envelope.event_type != SUPPORT_ASSESSMENT_EVENT:
             return
         support = _model(envelope, SupportAssessment)
@@ -342,10 +379,16 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
 
     source_subjects = leveraged_thesis_source_subjects(engine)
     durable_generation = (
-        "v13" if isinstance(engine, LeveragedThesisEngineV13) else "v1"
+        "v14"
+        if isinstance(engine, LeveragedThesisEngineV14)
+        else "v13"
+        if isinstance(engine, LeveragedThesisEngineV13)
+        else "v1"
     )
     for index, subject in enumerate(source_subjects, start=1):
-        if ".analysis.result." in subject:
+        if ".execution-quote." in subject and observer is not None:
+            handler = observer.handle
+        elif ".analysis.result." in subject:
             handler = handle_analysis
         elif ".entry-signal." in subject and deferred_long is not None:
             handler = deferred_long.handle
@@ -382,10 +425,13 @@ async def run_leveraged_thesis_process(  # pragma: no cover - long-running proce
                     "marketbot_definition_version": assembly.definition.version,
                     "engine_implementation": spec.implementation,
                     "engine_strategy_version": spec.strategy.version,
+                    "short_tactical_mode": "OBSERVE" if observer is not None else "UNAVAILABLE",
                 },
             )
         while True:
             await asyncio.sleep(1)
+            if observer is not None:
+                await observer.tick()
             if deferred is not None:
                 await deferred.tick()
             if deferred_long is not None:

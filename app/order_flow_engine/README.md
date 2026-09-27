@@ -1,5 +1,18 @@
 # Order Flow engine
 
+## 1.3: canal independiente de cotizaciones
+
+La definición opt-in 7.78.0 selecciona Order Flow 1.3 con la política de flujo 1.2.
+Mantiene intacta la clasificación causal de trades y agrega `ExecutionQuoteSnapshot`
+para los símbolos acotados. Una quote puede publicarse sin un trade nuevo, como
+máximo una vez por segundo y símbolo. Se rechazan eventos futuros o anteriores
+a la última quote publicada. El snapshot conserva timestamps de mercado,
+recepción por el proveedor y publicación; el consumidor registra su recepción.
+
+Este canal no afirma que la quote sea ejecutable: Leveraged Thesis vuelve a medir
+su edad efectiva, spread y tamaños al consumirla. No se altera `quote_fresh` de
+los estados históricos de flujo, ni se extienden sus límites de vigencia.
+
 `OrderFlowEngine` es una capa de inteligencia intraday determinista. Consume contratos tipados
 `MarketQuote`, `MarketTrade`, `MarketTradeCorrection` y `MarketTradeCancel`; no conoce cuentas,
 posiciones, órdenes ni APIs de ejecución.

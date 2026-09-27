@@ -203,6 +203,7 @@ def entry_signal_from_leveraged_thesis(
 
     if (
         assessment.state is not LeveragedThesisState.BUY_CONFIRMED
+        or assessment.instrument_confirmation_basis == "BUYER_REGIME"
         or assessment.instrument_symbol is None
         or assessment.instrument_bid is None
         or assessment.instrument_ask is None

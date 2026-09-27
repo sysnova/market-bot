@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -64,6 +64,7 @@ class LeveragedThesisAssessment(StrictFrozenModel):
     underlying_flow_confidence: UnitInterval | None = None
     instrument_flow_state: OrderFlowStateKind | None = None
     instrument_flow_confidence: UnitInterval | None = None
+    instrument_confirmation_basis: Literal["EXECUTABLE_QUOTE", "BUYER_REGIME"] = "EXECUTABLE_QUOTE"
     support_state: SupportState | None = None
     support_zone_position: SupportZonePosition | None = None
     support_zone_low: PositiveDecimal | None = None
@@ -140,8 +141,17 @@ class LeveragedThesisAssessment(StrictFrozenModel):
         ):
             raise ValueError("support levels are out of order")
         if self.state is LeveragedThesisState.BUY_CONFIRMED:
-            if any(value is None for value in quote_values):
+            if self.instrument_confirmation_basis == "EXECUTABLE_QUOTE" and any(
+                value is None for value in quote_values
+            ):
                 raise ValueError("BUY_CONFIRMED requires executable instrument quote evidence")
+            if self.instrument_confirmation_basis == "BUYER_REGIME" and (
+                self.direction is not PatternDirection.BEARISH
+                or self.exposure is not LeveragedExposure.INVERSE_2X
+                or self.instrument_flow_state
+                not in {OrderFlowStateKind.BUY_PRESSURE, OrderFlowStateKind.BUY_ABSORPTION}
+            ):
+                raise ValueError("BUYER_REGIME requires inverse SHORT buyer flow")
             if self.instrument_flow_state is None or self.instrument_flow_confidence is None:
                 raise ValueError("BUY_CONFIRMED requires instrument order-flow evidence")
             if self.structure_score is None and self.source_entry_signal_id is None:
