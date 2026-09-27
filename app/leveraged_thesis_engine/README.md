@@ -1,5 +1,9 @@
 # Leveraged Thesis engine
 
+Current default: MarketBot **7.80.0** in AppSettings and the Linux/WSL launcher.
+The next startup selects Leveraged Thesis 1.6.0; tactical SHORT remains OBSERVE.
+Earlier rollout notes below describe the pre-promotion state.
+
 ## Versión 1.4: diagnóstico diario y SHORT táctico observado
 
 La definición opt-in `configs/marketbot/7.78.0.yaml` conserva las decisiones diarias

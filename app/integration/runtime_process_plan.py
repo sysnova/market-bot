@@ -326,7 +326,8 @@ def build_runtime_process_plan(
                 (
                     ("swing",)
                     if slot in definition.engines
-                    and definition.engines[slot].implementation == "1.3.0"
+                    and definition.engines[slot].implementation
+                    in {"1.3.0", "1.4.0", "1.5.0", "1.6.0"}
                     else ()
                 )
                 + ("intraday", "order-flow")

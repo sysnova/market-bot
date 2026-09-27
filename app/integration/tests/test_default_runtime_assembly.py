@@ -20,16 +20,16 @@ def test_default_entry_points_select_corrected_swing_trade(monkeypatch: pytest.M
     assert selected is not None
     assert Path(selected[1]) == settings.definition_path
     assembly = MarketBotAssembly.from_path(ROOT / settings.definition_path)
-    assert assembly.definition.version == "7.77.0"
+    assert assembly.definition.version == "7.80.0"
     assert assembly.spec(EngineSlot.SWING_TRADE).implementation == "1.12.0"
     assert assembly.spec(EngineSlot.SWING_TRADE).strategy.version == "1.9.0"
     assert assembly.spec(EngineSlot.INTRADAY).implementation == "10.0.0"
     assert assembly.spec(EngineSlot.INTRADAY).strategy.version == "1.6.0"
     registry = default_engine_registry()
-    # 7.78 is an opt-in observation rollout, not an automatic default promotion.
+    # Explicitly promoted daily buyer-regime policy and tactical observer.
     promoted = {
-        EngineSlot.ORDER_FLOW: "1.2.0",
-        EngineSlot.LEVERAGED_THESIS: "1.3.0",
+        EngineSlot.ORDER_FLOW: "1.3.0",
+        EngineSlot.LEVERAGED_THESIS: "1.6.0",
     }
     for slot in registry.slots():
         latest = max(
