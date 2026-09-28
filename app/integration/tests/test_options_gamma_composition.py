@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -18,6 +18,19 @@ class StockProvider:
         return {
             symbol: {
                 "latestTrade": {"p": 100, "t": "2026-08-12T15:00:00Z"},
+            }
+        }
+
+
+class FutureStockProvider:
+    async def fetch_snapshots(self, symbols: tuple[str, ...]) -> dict[str, object]:
+        symbol = symbols[0]
+        return {
+            symbol: {
+                "latestTrade": {
+                    "p": 100,
+                    "t": (NOW + timedelta(seconds=5)).isoformat().replace("+00:00", "Z"),
+                },
             }
         }
 
@@ -108,7 +121,7 @@ async def test_runtime_publishes_each_healthy_symbol_and_isolates_failures() -> 
 
     assert summary.symbols_requested == 2
     assert summary.assessments_published == 1
-    assert summary.failures == {"BAD": "RuntimeError"}
+    assert summary.failures == {"BAD": "RuntimeError: snapshot unavailable"}
     assert [subject for subject, _ in publisher.items] == [
         "marketbot.v1.options-gamma.assessment.AAPL",
         "marketbot.v1.analysis.result.OPTIONS_GAMMA.AAPL",
@@ -140,3 +153,27 @@ async def test_runtime_publishes_degraded_assessment_when_oi_catalog_fails() -> 
     assessment = publisher.items[0][1].payload  # type: ignore[union-attr]
     assert assessment.status == "UNAVAILABLE"
     assert "open_interest_source_unavailable" in assessment.warnings
+
+
+@pytest.mark.unit
+async def test_runtime_uses_spot_timestamp_when_snapshot_arrives_after_refresh_time() -> None:
+    publisher = Publisher()
+    runtime = OptionsGammaRuntime(
+        engine=OptionsGammaEngine(),
+        stock_provider=FutureStockProvider(),  # type: ignore[arg-type]
+        option_provider=OptionProvider(),  # type: ignore[arg-type]
+        open_interest_provider=OpenInterestProvider(),  # type: ignore[arg-type]
+        publisher=publisher,  # type: ignore[arg-type]
+        days_forward=45,
+        strike_range_percent=Decimal("50"),
+        concurrency=2,
+    )
+    runtime.set_symbols(("AAPL",))
+
+    summary = await runtime.refresh(now=NOW)
+
+    assert summary.assessments_published == 1
+    assert summary.failures == {}
+    assessment = publisher.items[0][1].payload  # type: ignore[union-attr]
+    assert assessment.generated_at == NOW + timedelta(seconds=5)
+    assert assessment.spot_as_of == NOW + timedelta(seconds=5)

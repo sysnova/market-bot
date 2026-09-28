@@ -156,7 +156,7 @@ class OptionsGammaRuntime:
         published = 0
         for symbol, result in zip(symbols, results, strict=True):
             if isinstance(result, BaseException):
-                failures[symbol] = type(result).__name__
+                failures[symbol] = _failure_text(result)
             else:
                 published += 1
         return GammaRefreshSummary(
@@ -202,7 +202,7 @@ class OptionsGammaRuntime:
                 symbol=symbol,
                 spot_price=spot,
                 spot_as_of=spot_as_of,
-                generated_at=now,
+                generated_at=max(now, spot_as_of),
                 expiration_from=expiration_from,
                 expiration_to=expiration_to,
                 contracts=contracts,
@@ -383,6 +383,11 @@ def _merge_open_interest(
         )
         for item in snapshots
     )
+
+
+def _failure_text(error: BaseException) -> str:
+    message = str(error).strip()
+    return f"{type(error).__name__}: {message}" if message else type(error).__name__
 
 
 def _spot_snapshot(
