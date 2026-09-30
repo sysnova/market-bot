@@ -105,6 +105,20 @@ async def test_readiness_requires_snapshot_and_event_tables() -> None:
 
 
 @pytest.mark.unit
+async def test_bound_store_does_not_commit_outside_command_transaction() -> None:
+    factory = MagicMock()
+    store = PostgresEntryOpportunityStore(factory)
+    unit = AsyncMock()
+    unit.entry_opportunities.save.return_value = True
+    with store.bind(unit):
+        await store.save(opportunity(), None)
+        await store.event_seen(EVENT_ID)
+    factory.assert_not_called()
+    unit.entry_opportunities.save.assert_awaited_once()
+    unit.commit.assert_not_awaited()
+
+
+@pytest.mark.unit
 async def test_save_persists_event_and_outbox_envelope_in_one_unit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

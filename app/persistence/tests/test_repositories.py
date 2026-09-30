@@ -313,7 +313,7 @@ async def test_entry_opportunity_command_enqueue_deduplicates_source_event() -> 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_entry_opportunity_command_claim_uses_ordered_skip_locked_queue() -> None:
+async def test_entry_opportunity_command_claim_does_not_skip_delayed_head() -> None:
     session = AsyncMock()
     session.scalar.return_value = None
     repository = EntryOpportunityCommandRepository(session)
@@ -323,11 +323,21 @@ async def test_entry_opportunity_command_claim_uses_ordered_skip_locked_queue() 
     assert claimed is None
     statement = session.scalar.await_args.args[0]
     sql = str(statement.compile(dialect=repository.dialect))
-    assert "FOR UPDATE SKIP LOCKED" in sql
-    assert "entry_opportunity_commands.status =" in sql
-    assert "entry_opportunity_commands.available_at <=" in sql
-    assert "ORDER BY" in sql
-    assert "entry_opportunity_commands.occurred_at" in sql
+    assert "FOR UPDATE" in sql and "SKIP LOCKED" not in sql
+    assert "entry_opportunity_commands.status !=" in sql
+    assert "available_at <=" not in sql
+    assert "ORDER BY market_bot.entry_opportunity_commands.created_at" in sql
+
+
+@pytest.mark.unit
+async def test_delayed_head_blocks_later_commands() -> None:
+    session = AsyncMock()
+    session.scalar.return_value = MagicMock(
+        status="PENDING", available_at=NOW + timedelta(seconds=30)
+    )
+    repository = EntryOpportunityCommandRepository(session)
+    assert await repository.claim_pending(now=NOW) is None
+    session.scalars.assert_not_awaited()
 
 
 @pytest.mark.unit

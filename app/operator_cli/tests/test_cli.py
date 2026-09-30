@@ -203,7 +203,7 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["version"] == "7.80.0"
+    assert payload["version"] == "7.81.0"
     assert payload["engines"]["swing"]["implementation"] == "16.0.0"
     assert payload["engines"]["swing"]["strategy"]["version"] == "3.5.0"
     assert payload["engines"]["4hgeri"]["implementation"] == "1.13.0"
@@ -220,7 +220,7 @@ def test_assembly_command_exposes_implementation_strategy_and_mode() -> None:
     assert payload["engines"]["order-flow"]["strategy"]["version"] == "1.2.0"
     assert payload["engines"]["leveraged-thesis"]["mode"] == "active"
     assert payload["engines"]["portfolio-flow"]["strategy"]["version"] == "2.0.0"
-    assert payload["engines"]["options-gamma"]["mode"] == "active"
+    assert payload["engines"]["options-gamma"]["mode"] == "on-demand"
     assert payload["engines"]["patreon-caps"]["mode"] == "on-demand"
     assert payload["engines"]["elliott-wave"]["mode"] == "on-demand"
     assert payload["engines"]["support-confirmation"]["mode"] == "active"
@@ -235,6 +235,7 @@ def test_runtime_slots_command_reads_active_modes_from_the_definition() -> None:
     assert result.exit_code == 0
     slots = result.stdout.splitlines()
     assert "entry-recovery" in slots
+    assert "options-gamma" not in slots
     assert "signal-fusion" not in slots
     assert "dilution-sec" not in slots
     assert "peter-lynch" not in slots
@@ -256,10 +257,11 @@ def test_runtime_plan_command_exposes_commands_and_dependency_batches() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["definition_version"] == "7.80.0"
+    assert payload["definition_version"] == "7.81.0"
     assert payload["startup_batches"][0] == ["ticker-cache"]
     processes = {item["name"]: item for item in payload["processes"]}
     assert "news-intelligence-v1" not in processes
+    assert "options-gamma-v1" not in processes
     assert processes["confirmed-buy-monitor"]["operator_monitor"] is True
     assert processes["confirmed-buy-monitor"]["dependencies"] == ["ticker-cache", "alert"]
     assert processes["long-term"]["arguments"][-2:] == ["--symbols", "HIMS,ZETA"]

@@ -526,6 +526,7 @@ class EntryOpportunityRepository(Repository):
             )
             .order_by(EntryOpportunityRecord.updated_at.desc())
             .limit(1)
+            .execution_options(populate_existing=True)
         )
         return await self._session.scalar(statement)
 
@@ -535,6 +536,7 @@ class EntryOpportunityRepository(Repository):
             .where(EntryOpportunityRecord.symbol == symbol.strip().upper())
             .order_by(EntryOpportunityRecord.updated_at.desc())
             .limit(1)
+            .execution_options(populate_existing=True)
         )
         return await self._session.scalar(statement)
 
@@ -650,6 +652,19 @@ class EntryOpportunityRepository(Repository):
 class EntryOpportunityCommandRepository(Repository):
     """Durable command queue for serialized Entry Opportunity writes."""
 
+    async def acquire_writer(self) -> None:
+        # Transaction-scoped: a disconnect releases ownership and rolls back effects.
+        await self._session.execute(select(func.pg_advisory_xact_lock(724031, 1)))
+
+    async def backlog_size(self, *, limit: int = 10000) -> int:
+        rows = (
+            select(EntryOpportunityCommandRecord.id)
+            .where(EntryOpportunityCommandRecord.status != "PROCESSED")
+            .limit(limit)
+            .subquery()
+        )
+        return int(await self._session.scalar(select(func.count()).select_from(rows)) or 0)
+
     async def enqueue(
         self,
         *,
@@ -688,27 +703,26 @@ class EntryOpportunityCommandRepository(Repository):
         now: datetime,
     ) -> EntryOpportunityCommandRecord | None:
         select_statement = (
-            select(EntryOpportunityCommandRecord.id)
-            .where(
-                EntryOpportunityCommandRecord.status == "PENDING",
-                EntryOpportunityCommandRecord.available_at <= now,
-            )
+            select(EntryOpportunityCommandRecord)
+            .where(EntryOpportunityCommandRecord.status != "PROCESSED")
             .order_by(
-                EntryOpportunityCommandRecord.occurred_at,
                 EntryOpportunityCommandRecord.created_at,
                 EntryOpportunityCommandRecord.id,
             )
             .limit(1)
-            .with_for_update(skip_locked=True)
+            .with_for_update()
         )
-        command_id = await self._session.scalar(select_statement)
-        if command_id is None:
+        command = await self._session.scalar(select_statement)
+        if command is None:
+            return None
+        if command.status == "FAILED":
+            raise RuntimeError(f"entry opportunity queue blocked by failed command {command.id}")
+        if command.available_at > now:
             return None
         statement = (
             update(EntryOpportunityCommandRecord)
             .where(
-                EntryOpportunityCommandRecord.id == command_id,
-                EntryOpportunityCommandRecord.status == "PENDING",
+                EntryOpportunityCommandRecord.id == command.id,
             )
             .values(
                 status="PROCESSING",
@@ -753,11 +767,20 @@ class EntryOpportunityCommandRepository(Repository):
         *,
         error: str,
         available_at: datetime,
+        terminal: bool = False,
     ) -> None:
         statement = (
             update(EntryOpportunityCommandRecord)
-            .where(EntryOpportunityCommandRecord.id == command_id)
-            .values(status="PENDING", available_at=available_at, last_error=error[:2000])
+            .where(
+                EntryOpportunityCommandRecord.id == command_id,
+                EntryOpportunityCommandRecord.status != "PROCESSED",
+            )
+            .values(
+                status="FAILED" if terminal else "PENDING",
+                attempts=EntryOpportunityCommandRecord.attempts + 1,
+                available_at=available_at,
+                last_error=error[:2000],
+            )
         )
         await self._session.execute(statement)
 

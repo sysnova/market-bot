@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -72,9 +73,7 @@ class OptionProvider:
 
 
 class OpenInterestProvider:
-    async def fetch_open_interest(
-        self, symbol: str, **_: object
-    ) -> tuple[OptionOpenInterest, ...]:
+    async def fetch_open_interest(self, symbol: str, **_: object) -> tuple[OptionOpenInterest, ...]:
         return (
             OptionOpenInterest(
                 symbol=f"{symbol}260814C00100000",
@@ -100,6 +99,54 @@ class Publisher:
 
     async def publish(self, subject: str, envelope: object) -> None:
         self.items.append((subject, envelope))
+
+
+@pytest.mark.unit
+async def test_gamma_reuses_oi_for_one_hour_but_refreshes_chain() -> None:
+    oi = OpenInterestProvider()
+    oi.fetch_open_interest = AsyncMock(wraps=oi.fetch_open_interest)
+    chain = OptionProvider()
+    chain.fetch_chain = AsyncMock(wraps=chain.fetch_chain)
+    runtime = OptionsGammaRuntime(
+        engine=OptionsGammaEngine(),
+        stock_provider=StockProvider(),
+        option_provider=chain,
+        open_interest_provider=oi,
+        publisher=Publisher(),
+        days_forward=45,
+        strike_range_percent=Decimal("50"),
+        concurrency=2,
+    )
+    runtime.set_symbols(("AAPL",))
+    await runtime.refresh(now=NOW)
+    await runtime.refresh(now=NOW + timedelta(minutes=10))
+    assert oi.fetch_open_interest.await_count == 1
+    assert chain.fetch_chain.await_count == 2
+    await runtime.refresh(now=NOW + timedelta(hours=1))
+    assert oi.fetch_open_interest.await_count == 2
+
+
+@pytest.mark.unit
+async def test_scheduled_gamma_does_not_poll_after_hours_but_manual_refresh_does() -> None:
+    chain = OptionProvider()
+    chain.fetch_chain = AsyncMock(wraps=chain.fetch_chain)
+    runtime = OptionsGammaRuntime(
+        engine=OptionsGammaEngine(),
+        stock_provider=StockProvider(),
+        option_provider=chain,
+        open_interest_provider=OpenInterestProvider(),
+        publisher=Publisher(),
+        days_forward=45,
+        strike_range_percent=Decimal("50"),
+        concurrency=2,
+    )
+    runtime.set_symbols(("AAPL",))
+    closed = NOW.replace(hour=23)
+    await runtime.refresh(now=closed, scheduled=True)
+    await runtime.refresh(now=closed + timedelta(minutes=10), scheduled=True)
+    chain.fetch_chain.assert_not_awaited()
+    await runtime.refresh(now=closed)
+    chain.fetch_chain.assert_awaited_once()
 
 
 @pytest.mark.unit

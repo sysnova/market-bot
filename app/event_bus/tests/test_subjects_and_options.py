@@ -45,3 +45,9 @@ def test_tail_wildcard_requires_at_least_one_remaining_token() -> None:
 def test_invalid_subscription_options_are_rejected(values: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         SubscriptionOptions(**values)  # type: ignore[arg-type]
+
+
+def test_subscription_allows_bounded_inflight_and_rejects_zero() -> None:
+    assert SubscriptionOptions(max_ack_pending=1).max_ack_pending == 1
+    with pytest.raises(ValueError):
+        SubscriptionOptions(max_ack_pending=0)

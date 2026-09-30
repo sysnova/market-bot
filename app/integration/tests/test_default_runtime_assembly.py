@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.common.settings import AppSettings
-from app.integration.engine_assembly import EngineSlot, MarketBotAssembly
+from app.integration.engine_assembly import EngineMode, EngineSlot, MarketBotAssembly
 from app.integration.engine_catalog import default_engine_registry
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,11 +20,12 @@ def test_default_entry_points_select_corrected_swing_trade(monkeypatch: pytest.M
     assert selected is not None
     assert Path(selected[1]) == settings.definition_path
     assembly = MarketBotAssembly.from_path(ROOT / settings.definition_path)
-    assert assembly.definition.version == "7.80.0"
+    assert assembly.definition.version == "7.81.0"
     assert assembly.spec(EngineSlot.SWING_TRADE).implementation == "1.12.0"
     assert assembly.spec(EngineSlot.SWING_TRADE).strategy.version == "1.9.0"
     assert assembly.spec(EngineSlot.INTRADAY).implementation == "10.0.0"
     assert assembly.spec(EngineSlot.INTRADAY).strategy.version == "1.6.0"
+    assert assembly.spec(EngineSlot.OPTIONS_GAMMA).mode is EngineMode.ON_DEMAND
     registry = default_engine_registry()
     # Explicitly promoted daily buyer-regime policy and tactical observer.
     promoted = {

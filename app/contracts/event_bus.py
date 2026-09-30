@@ -21,20 +21,21 @@ class SubscriptionOptions:
     max_deliver: int = 5
     ack_wait_seconds: float = 30.0
     redelivery_delay_seconds: float = 0.1
+    max_ack_pending: int | None = None
 
     def __post_init__(self) -> None:
         if self.durable_name is not None and not self.durable_name.strip():
             raise ValueError("durable_name cannot be blank")
         if self.replay_all and self.replay_latest_per_subject:
-            raise ValueError(
-                "replay_all and replay_latest_per_subject are mutually exclusive"
-            )
+            raise ValueError("replay_all and replay_latest_per_subject are mutually exclusive")
         if self.max_deliver < 1:
             raise ValueError("max_deliver must be at least one")
         if self.ack_wait_seconds <= 0:
             raise ValueError("ack_wait_seconds must be positive")
         if self.redelivery_delay_seconds < 0:
             raise ValueError("redelivery_delay_seconds cannot be negative")
+        if self.max_ack_pending is not None and self.max_ack_pending < 1:
+            raise ValueError("max_ack_pending must be positive")
 
 
 @runtime_checkable

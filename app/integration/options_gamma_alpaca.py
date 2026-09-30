@@ -96,10 +96,9 @@ class AlpacaOptionsDataClient:
         if self._feed is not None:
             params["feed"] = self._feed
         collected: list[OptionContractSnapshot] = []
+        seen_tokens: set[str] = set()
         for _ in range(self._max_pages):
-            payload = await self._get(
-                f"/v1beta1/options/snapshots/{normalized}", params
-            )
+            payload = await self._get(f"/v1beta1/options/snapshots/{normalized}", params)
             raw_snapshots = payload.get("snapshots")
             if not isinstance(raw_snapshots, Mapping):
                 raise AlpacaOptionsDataError("Alpaca option chain has no snapshots object")
@@ -119,6 +118,9 @@ class AlpacaOptionsDataClient:
                 return tuple(collected)
             if not isinstance(token, str) or not token:
                 raise AlpacaOptionsDataError("Alpaca option pagination token is malformed")
+            if token in seen_tokens:
+                raise AlpacaOptionsDataError("Alpaca option pagination token repeated")
+            seen_tokens.add(token)
             params["page_token"] = token
         raise AlpacaOptionsDataError("Alpaca option pagination exceeded max_pages")
 
@@ -194,6 +196,7 @@ class AlpacaOptionContractsClient:
             "underlying_symbols": normalized,
         }
         collected: list[OptionOpenInterest] = []
+        seen_tokens: set[str] = set()
         for _ in range(self._max_pages):
             payload = await self._get("/v2/options/contracts", params)
             raw_contracts = payload.get("option_contracts")
@@ -203,9 +206,7 @@ class AlpacaOptionContractsClient:
                 )
             for raw_contract in cast("list[object]", raw_contracts):
                 if not isinstance(raw_contract, Mapping):
-                    raise AlpacaOptionContractsError(
-                        "Alpaca option contract metadata is malformed"
-                    )
+                    raise AlpacaOptionContractsError("Alpaca option contract metadata is malformed")
                 item = _open_interest(
                     cast("Mapping[str, object]", raw_contract),
                     underlying_symbol=normalized,
@@ -219,10 +220,13 @@ class AlpacaOptionContractsClient:
                 raise AlpacaOptionContractsError(
                     "Alpaca option contracts pagination token is malformed"
                 )
+            if token in seen_tokens:
+                raise AlpacaOptionContractsError(
+                    "Alpaca option contracts pagination token repeated"
+                )
+            seen_tokens.add(token)
             params["page_token"] = token
-        raise AlpacaOptionContractsError(
-            "Alpaca option contracts pagination exceeded max_pages"
-        )
+        raise AlpacaOptionContractsError("Alpaca option contracts pagination exceeded max_pages")
 
     async def close(self) -> None:
         await self._transport.close()
@@ -240,9 +244,7 @@ class AlpacaOptionContractsClient:
             )
         payload = response.json()
         if not isinstance(payload, Mapping):
-            raise AlpacaOptionContractsError(
-                "Alpaca option contracts response must be an object"
-            )
+            raise AlpacaOptionContractsError("Alpaca option contracts response must be an object")
         return cast("Mapping[str, object]", payload)
 
 
@@ -276,18 +278,12 @@ def _snapshot(
         strike_price=strike,
         option_type=option_type,
         open_interest=_decimal(raw.get("openInterest") or raw.get("open_interest")),
-        open_interest_date=_date(
-            raw.get("openInterestDate") or raw.get("open_interest_date")
-        ),
+        open_interest_date=_date(raw.get("openInterestDate") or raw.get("open_interest_date")),
         gamma=_decimal(greeks.get("gamma")),
-        implied_volatility=_decimal(
-            raw.get("impliedVolatility") or raw.get("implied_volatility")
-        ),
+        implied_volatility=_decimal(raw.get("impliedVolatility") or raw.get("implied_volatility")),
         bid_price=_decimal(latest_quote.get("bp") or latest_quote.get("bid_price")),
         ask_price=_decimal(latest_quote.get("ap") or latest_quote.get("ask_price")),
-        latest_trade_price=_decimal(
-            latest_trade.get("p") or latest_trade.get("price")
-        ),
+        latest_trade_price=_decimal(latest_trade.get("p") or latest_trade.get("price")),
         snapshot_at=snapshot_at,
     )
 
@@ -325,7 +321,7 @@ def _decimal(value: object) -> Decimal | None:
         return None
     try:
         parsed = Decimal(str(value))
-    except (InvalidOperation, ValueError):
+    except InvalidOperation, ValueError:
         return None
     return parsed if parsed.is_finite() else None
 

@@ -5,7 +5,9 @@ import pytest
 
 from app.integration.options_gamma_alpaca import (
     AlpacaOptionContractsClient,
+    AlpacaOptionContractsError,
     AlpacaOptionsDataClient,
+    AlpacaOptionsDataError,
 )
 
 
@@ -42,6 +44,40 @@ class Transport:
 
     async def close(self) -> None:
         self.closed = True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("catalog", [False, True])
+async def test_repeated_pagination_token_stops_without_fetching_100_pages(catalog: bool) -> None:
+    transport = Transport({"snapshots": {}, "option_contracts": [], "next_page_token": "same-page"})
+    if catalog:
+        client = AlpacaOptionContractsClient(
+            api_key_id="key",
+            api_secret_key="secret",
+            base_url="https://api.alpaca.markets",
+            transport=transport,
+        )
+        with pytest.raises(AlpacaOptionContractsError, match="repeated"):
+            await client.fetch_open_interest(
+                "AAPL", expiration_from=date(2026, 8, 12), expiration_to=date(2026, 9, 25)
+            )
+    else:
+        client = AlpacaOptionsDataClient(
+            api_key_id="key",
+            api_secret_key="secret",
+            feed=None,
+            base_url="https://data.alpaca.markets",
+            transport=transport,
+        )
+        with pytest.raises(AlpacaOptionsDataError, match="repeated"):
+            await client.fetch_chain(
+                "AAPL",
+                expiration_from=date(2026, 8, 12),
+                expiration_to=date(2026, 9, 25),
+                strike_from="80",
+                strike_to="120",
+            )
+    assert len(transport.calls) == 2
 
 
 @pytest.mark.unit

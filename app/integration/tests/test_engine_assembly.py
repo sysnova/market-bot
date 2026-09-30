@@ -1153,3 +1153,16 @@ def test_swing_trade_profit_protection_definition_changes_only_opportunity() -> 
     for slot in assembly.definition.engines:
         if slot is not EngineSlot.ENTRY_OPPORTUNITY:
             assert assembly.spec(slot) == previous.spec(slot)
+
+
+def test_manual_options_gamma_definition_changes_only_gamma_mode() -> None:
+    previous = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.80.0.yaml")
+    assembly = MarketBotAssembly.from_path(ROOT / "configs/marketbot/7.81.0.yaml")
+
+    assert previous.spec(EngineSlot.OPTIONS_GAMMA).mode is EngineMode.ACTIVE
+    assert assembly.definition.version == "7.81.0"
+    assert assembly.spec(EngineSlot.OPTIONS_GAMMA).mode is EngineMode.ON_DEMAND
+    assert isinstance(assembly.build_options_gamma(), OptionsGammaEngine)
+    for slot in assembly.definition.engines:
+        if slot is not EngineSlot.OPTIONS_GAMMA:
+            assert assembly.spec(slot) == previous.spec(slot)

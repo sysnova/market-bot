@@ -615,6 +615,12 @@ class EntryOpportunityCommandRecord(Base):
             postgresql_where=text("status = 'PENDING'"),
         ),
         Index("entry_opportunity_commands_symbol_status_idx", "symbol", "status"),
+        Index(
+            "entry_opportunity_commands_fifo_idx",
+            "created_at",
+            "id",
+            postgresql_where=text("status != 'PROCESSED'"),
+        ),
         {"schema": SCHEMA},
     )
 

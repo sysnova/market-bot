@@ -14,6 +14,7 @@ from time import monotonic, perf_counter
 from typing import Protocol, cast
 
 import httpx
+from pydantic import TypeAdapter
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -89,6 +90,10 @@ from .engine_assembly import EngineMode, EngineSlot, MarketBotAssembly
 from .entry_opportunity_bar_recovery import (
     entry_opportunity_history_requirements,
     replay_pending_entry_opportunity_bars,
+)
+from .entry_opportunity_commands import (
+    EntryOpportunityCommandIngress,
+    EntryOpportunityCommandProcessor,
 )
 from .entry_opportunity_store import PostgresEntryOpportunityStore
 from .entry_signal_adapter import entry_signal_from_alert_watch, publish_entry_signal
@@ -1183,6 +1188,8 @@ async def run_entry_watcher_process(*, ready_path: Path | None = None) -> None:
 async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> None:
     """Track and audit paper opportunities as an independent NATS service."""
 
+    if ready_path is not None:
+        await asyncio.to_thread(ready_path.unlink, missing_ok=True)
     settings = AppSettings()
     assembly = MarketBotAssembly.from_settings(settings)
     configure_logging(level=settings.log_level, json_output=settings.log_json)
@@ -1207,7 +1214,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
         if not await store.is_ready():
             raise RuntimeError(
                 "entry opportunity schema is unavailable; apply "
-                "20260807010000_entry_opportunity_lifecycle.sql"
+                "20260807010000_entry_opportunity_lifecycle.sql and "
+                "20260929123000_entry_opportunity_command_queue.sql"
             )
         engine = assembly.build_entry_opportunity(
             store=store,
@@ -1229,28 +1237,19 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             active_opportunities,
             as_of=recovery_as_of,
         )
-        recovery_lock = asyncio.Lock()
-        mutation_lock = asyncio.Lock()
-        recovering_bars = True
-        buffered_live_bars: list[MarketBar] = []
-
-        async def enqueue_command(
-            envelope: EventEnvelope,
-            *,
-            command_type: str,
-            symbol: str,
-        ) -> None:
-            async with PersistenceUnitOfWork(session_factory) as unit:
-                await unit.entry_opportunity_commands.enqueue(
-                    source_event_id=envelope.event_id,
-                    source_subject=envelope.subject or "",
-                    command_type=command_type,
-                    symbol=symbol,
-                    occurred_at=envelope.occurred_at,
-                    payload=envelope.model_dump(mode="json"),
-                )
+        # Pending inputs already contain recovery evidence; do not overtake them
+        # with newer historical bars before the ordered writer catches up.
+        async with PersistenceUnitOfWork(session_factory) as unit:
+            if await unit.entry_opportunity_commands.backlog_size(limit=1):
+                recovery_requirements = ()
+        ingress = EntryOpportunityCommandIngress(session_factory)
+        enqueue_command = ingress.enqueue
 
         async def apply_command(command_type: str, envelope: EventEnvelope) -> None:
+            if command_type == "reconcile":
+                symbols = TypeAdapter(tuple[str, ...]).validate_python(envelope.payload)
+                await engine.reconcile(now=envelope.occurred_at, active_symbols=symbols)
+                return
             if command_type == "analysis":
                 result = (
                     envelope.payload
@@ -1329,54 +1328,6 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 return
             raise ValueError(f"unsupported entry opportunity command type: {command_type}")
 
-        async def process_commands() -> None:
-            async with PersistenceUnitOfWork(session_factory) as unit:
-                requeued = await unit.entry_opportunity_commands.requeue_processing(
-                    available_at=clock.now(),
-                )
-            if requeued:
-                await logger.awarning(
-                    "entry_opportunity_commands_requeued",
-                    count=requeued,
-                )
-            while True:
-                async with PersistenceUnitOfWork(session_factory) as unit:
-                    command = await unit.entry_opportunity_commands.claim_pending(
-                        now=clock.now(),
-                    )
-                if command is None:
-                    await asyncio.sleep(0.25)
-                    continue
-                try:
-                    envelope = EventEnvelope.model_validate(command.payload, strict=False)
-                    async with mutation_lock:
-                        await apply_command(command.command_type, envelope)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as error:
-                    retry_delay = min(60, 2 ** min(command.attempts, 6))
-                    async with PersistenceUnitOfWork(session_factory) as unit:
-                        await unit.entry_opportunity_commands.mark_failed(
-                            command.id,
-                            error=f"{type(error).__name__}: {error}",
-                            available_at=clock.now() + timedelta(seconds=retry_delay),
-                        )
-                    await logger.aexception(
-                        "entry_opportunity_command_failed",
-                        command_id=str(command.id),
-                        command_type=command.command_type,
-                        symbol=command.symbol,
-                        source_event_id=str(command.source_event_id),
-                        attempts=command.attempts,
-                        retry_delay_seconds=retry_delay,
-                    )
-                    continue
-                async with PersistenceUnitOfWork(session_factory) as unit:
-                    await unit.entry_opportunity_commands.mark_processed(
-                        command.id,
-                        processed_at=clock.now(),
-                    )
-
         async def handle_analysis(envelope: EventEnvelope) -> None:
             if envelope.event_type != ANALYSIS_RESULT_EVENT:
                 return
@@ -1406,7 +1357,6 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
 
         async def handle_bar(envelope: EventEnvelope) -> None:
-            nonlocal recovering_bars
             if envelope.event_type not in {"market.bar.received", "market.bar.updated"}:
                 return
             bar = (
@@ -1418,11 +1368,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 return
             if not _reference_mark_allowed(bar.timestamp, settings):
                 return
-            async with recovery_lock:
-                if recovering_bars:
-                    buffered_live_bars.append(bar)
-                    return
-                await enqueue_command(envelope, command_type="bar", symbol=bar.symbol)
+            await enqueue_command(envelope, command_type="bar", symbol=bar.symbol)
 
         async def handle_alert(envelope: EventEnvelope) -> None:
             if envelope.event_type != LOCAL_ALERT_EVENT:
@@ -1477,6 +1423,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                     durable_name=f"marketbot-{service}-bars-v1",
                     replay_all=False,
                     ack_wait_seconds=60,
+                    max_ack_pending=1,
                 ),
             )
         )
@@ -1493,21 +1440,17 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 include_premarket_intraday=settings.extended_hours_enabled,
                 include_after_hours_intraday=settings.extended_hours_enabled,
             )
-            async with recovery_lock:
-                recovered_bars = await replay_pending_entry_opportunity_bars(
-                    engine,
-                    active_opportunities,
-                    (*historical_bars, *buffered_live_bars),
-                    include_extended_hours=settings.extended_hours_enabled,
-                    extended_hours_order_impact=settings.extended_hours_order_impact,
-                )
-                buffered_live_bars.clear()
-                recovering_bars = False
+            async with PersistenceUnitOfWork(session_factory) as unit:
+                await unit.entry_opportunity_commands.acquire_writer()
+                with store.bind(unit):
+                    recovered_bars = await replay_pending_entry_opportunity_bars(
+                        engine,
+                        active_opportunities,
+                        historical_bars,
+                        include_extended_hours=settings.extended_hours_enabled,
+                        extended_hours_order_impact=settings.extended_hours_order_impact,
+                    )
             del historical_bars
-        else:
-            async with recovery_lock:
-                buffered_live_bars.clear()
-                recovering_bars = False
 
         handlers = [
             ("marketbot.v1.analysis.result.>", handle_analysis, "analysis"),
@@ -1538,6 +1481,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                             suffix == "entry-signal" or suffix.startswith("leveraged-cancellation-")
                         ),
                         ack_wait_seconds=60,
+                        max_ack_pending=1,
                     ),
                 )
             )
@@ -1548,14 +1492,20 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 await asyncio.sleep(60)
                 try:
                     universe = await universe_client.get_universe()
-                    async with mutation_lock:
-                        await engine.reconcile(
-                            now=clock.now(),
-                            active_symbols=_entry_opportunity_symbols(
+                    now = clock.now()
+                    await enqueue_command(
+                        EventEnvelope(
+                            event_type="entry-opportunity.reconcile",
+                            source=service,
+                            occurred_at=now,
+                            payload=_entry_opportunity_symbols(
                                 universe.symbols,
                                 leveraged_opportunity_symbols,
                             ),
-                        )
+                        ),
+                        command_type="reconcile",
+                        symbol="MARKET",
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
@@ -1564,8 +1514,6 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                         error_type=type(error).__name__,
                     )
 
-        reconcile_task = asyncio.create_task(reconcile_opportunities())
-        command_task = asyncio.create_task(process_commands())
         details: dict[str, object] = {
             "service": service,
             "engine_version": spec.implementation,
@@ -1593,19 +1541,60 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             details["leveraged_cancellation_subjects"] = tuple(
                 leveraged_thesis_assessment_subject(symbol) for symbol in leveraged_underlyings
             )
-        await _publish_health(bus, service, details, clock.now())
-        if ready_path is not None:
-            _write_ready(ready_path, details)
-        await asyncio.Event().wait()
+        last_health_at: datetime | None = None
+
+        async def publish_processor_health(status: ServiceStatus) -> None:
+            assert bus is not None
+            try:
+                await _publish_health(bus, service, details, clock.now(), status=status)
+            except Exception as error:
+                await logger.awarning(
+                    "entry_opportunity_health_publish_failed", error_type=type(error).__name__
+                )
+
+        async def report_health(healthy: bool) -> None:
+            nonlocal last_health_at
+            if not healthy:
+                last_health_at = None
+                details["command_processor_status"] = "RETRYING"
+                if ready_path is not None:
+                    await asyncio.to_thread(ready_path.unlink, missing_ok=True)
+                await publish_processor_health(ServiceStatus.UNHEALTHY)
+                return
+            now = clock.now()
+            if last_health_at is not None and (now - last_health_at).total_seconds() < 30:
+                return
+            async with PersistenceUnitOfWork(session_factory) as unit:
+                backlog = await unit.entry_opportunity_commands.backlog_size()
+            details["pending_commands_capped"] = backlog
+            details["command_processor_checked_at"] = now.isoformat()
+            details["command_processor_status"] = "BACKLOG" if backlog >= 10000 else "RUNNING"
+            if ready_path is not None:
+                if backlog >= 10000:
+                    await asyncio.to_thread(ready_path.unlink, missing_ok=True)
+                else:
+                    _write_ready(ready_path, details)
+            last_health_at = now
+            await publish_processor_health(
+                ServiceStatus.DEGRADED if backlog >= 10000 else ServiceStatus.HEALTHY
+            )
+
+        processor = EntryOpportunityCommandProcessor(
+            session_factory, store=store, apply=apply_command, clock=clock.now,
+            report_health=report_health,
+        )
+        reconcile_task = asyncio.create_task(reconcile_opportunities())
+        command_task = asyncio.create_task(processor.run())
+        await asyncio.gather(command_task, reconcile_task)
     finally:
+        if ready_path is not None:
+            await asyncio.to_thread(ready_path.unlink, missing_ok=True)
         if command_task is not None:
             command_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await command_task
+            await asyncio.gather(command_task, return_exceptions=True)
         if reconcile_task is not None:
             reconcile_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reconcile_task
+            await asyncio.gather(reconcile_task, return_exceptions=True)
         for subscription in subscriptions:
             await subscription.unsubscribe()
         if bus is not None:

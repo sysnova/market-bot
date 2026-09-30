@@ -286,6 +286,7 @@ Table market_bot.entry_opportunity_commands {
   indexes {
     (available_at, occurred_at, created_at) [name: "entry_opportunity_commands_pending_idx", note: "Partial: status = 'PENDING'"]
     (symbol, status) [name: "entry_opportunity_commands_symbol_status_idx"]
+    (created_at, id) [name: "entry_opportunity_commands_fifo_idx", note: "Partial: status != 'PROCESSED'"]
   }
 }
 

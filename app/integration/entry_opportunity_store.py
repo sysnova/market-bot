@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from uuid import UUID
 
 from sqlalchemy import text
@@ -31,6 +34,27 @@ class PostgresEntryOpportunityStore:
     ) -> None:
         self._session_factory = session_factory
         self._source = source
+        self._bound_unit: ContextVar[PersistenceUnitOfWork | None] = ContextVar(
+            "entry_opportunity_unit", default=None
+        )
+
+    @contextmanager
+    def bind(self, unit: PersistenceUnitOfWork) -> Generator[None]:
+        """Include all aggregate writes and outbox events in the command transaction."""
+        token = self._bound_unit.set(unit)
+        try:
+            yield
+        finally:
+            self._bound_unit.reset(token)
+
+    @asynccontextmanager
+    async def _unit(self) -> AsyncGenerator[PersistenceUnitOfWork]:
+        bound = self._bound_unit.get()
+        if bound is not None:
+            yield bound
+        else:
+            async with PersistenceUnitOfWork(self._session_factory) as unit:
+                yield unit
 
     async def is_ready(self) -> bool:
         async with self._session_factory() as session:
@@ -52,34 +76,34 @@ class PostgresEntryOpportunityStore:
             )
 
     async def load_active(self, symbol: str) -> EntryOpportunity | None:
-        async with PersistenceUnitOfWork(self._session_factory) as unit:
+        async with self._unit() as unit:
             record = await unit.entry_opportunities.load_active(symbol)
         return _to_domain(record) if record is not None else None
 
     async def load_latest(self, symbol: str) -> EntryOpportunity | None:
-        async with PersistenceUnitOfWork(self._session_factory) as unit:
+        async with self._unit() as unit:
             record = await unit.entry_opportunities.load_latest(symbol)
         return _to_domain(record) if record is not None else None
 
     async def list_active(self) -> tuple[EntryOpportunity, ...]:
-        async with PersistenceUnitOfWork(self._session_factory) as unit:
+        async with self._unit() as unit:
             records = await unit.entry_opportunities.list_active()
         return tuple(_to_domain(record) for record in records)
 
     async def list_recent(self, *, limit: int) -> tuple[EntryOpportunity, ...]:
-        async with PersistenceUnitOfWork(self._session_factory) as unit:
+        async with self._unit() as unit:
             records = await unit.entry_opportunities.list_recent(limit=limit)
         return tuple(_to_domain(record) for record in records)
 
     async def event_seen(self, event_id: UUID) -> bool:
-        async with PersistenceUnitOfWork(self._session_factory) as unit:
+        async with self._unit() as unit:
             return await unit.entry_opportunities.event_seen(event_id)
 
     async def latest_events(
         self,
         opportunity_ids: tuple[UUID, ...],
     ) -> tuple[EntryOpportunityEvent, ...]:
-        async with PersistenceUnitOfWork(self._session_factory) as unit:
+        async with self._unit() as unit:
             records = await unit.entry_opportunities.latest_events(opportunity_ids)
         return tuple(
             EntryOpportunityEvent.model_validate(record.payload, strict=False)
@@ -92,7 +116,7 @@ class PostgresEntryOpportunityStore:
         *,
         limit: int = 500,
     ) -> tuple[EntryOpportunityEvent, ...]:
-        async with PersistenceUnitOfWork(self._session_factory) as unit:
+        async with self._unit() as unit:
             records = await unit.entry_opportunities.list_events(
                 opportunity_id,
                 limit=limit,
@@ -107,7 +131,7 @@ class PostgresEntryOpportunityStore:
         opportunity: EntryOpportunity,
         event: EntryOpportunityEvent | None,
     ) -> None:
-        async with PersistenceUnitOfWork(self._session_factory) as unit:
+        async with self._unit() as unit:
             changed = await unit.entry_opportunities.save(
                 _to_record(opportunity),
                 _event_record(event) if event is not None else None,

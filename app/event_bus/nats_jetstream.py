@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from time import monotonic
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from pydantic import ValidationError
 
@@ -16,6 +16,9 @@ from .codec import decode_envelope, encode_envelope
 from .current_state import CurrentEventStore, current_events
 from .protocols import EventHandler, Subscription, SubscriptionOptions
 from .subjects import validate_publish_subject, validate_subscription_subject
+
+if TYPE_CHECKING:
+    from nats.js.api import ConsumerConfig
 
 STREAM_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 JETSTREAM_API_TIMEOUT_SECONDS = 30.0
@@ -34,6 +37,8 @@ class _NatsMessage(Protocol):
     async def ack(self) -> None: ...
 
     async def nak(self, *, delay: float | None = None) -> None: ...
+
+    async def in_progress(self) -> None: ...
 
 
 class _StreamConfig(Protocol):
@@ -60,6 +65,7 @@ class _NatsSubscription(Protocol):
 class _ConsumerInfo(Protocol):
     num_pending: int
     num_ack_pending: int
+    config: ConsumerConfig
 
 
 class _NatsClient(Protocol):
@@ -72,6 +78,10 @@ class _NatsClient(Protocol):
 
 
 class _JetStream(Protocol):
+    async def consumer_info(self, stream: str, consumer: str) -> _ConsumerInfo: ...
+
+    async def add_consumer(self, stream: str, config: ConsumerConfig) -> object: ...
+
     async def publish(
         self,
         subject: str,
@@ -270,14 +280,39 @@ class NatsJetStreamEventBus:
             ack_policy=AckPolicy.EXPLICIT,
             ack_wait=resolved.ack_wait_seconds,
             max_deliver=resolved.max_deliver,
-            max_ack_pending=64 if resolved.replay_latest_per_subject else 1000,
+            max_ack_pending=resolved.max_ack_pending
+            or (64 if resolved.replay_latest_per_subject else 1000),
         )
+        if durable_name is not None and resolved.max_ack_pending is not None:
+            from nats.js.errors import NotFoundError
+
+            try:
+                existing = await self._jetstream.consumer_info(self._stream, durable_name)
+            except NotFoundError:
+                pass
+            else:
+                previous = existing.config
+                if previous.max_ack_pending != resolved.max_ack_pending:
+                    previous.max_ack_pending = resolved.max_ack_pending
+                    await self._jetstream.add_consumer(self._stream, config=previous)
         restoring = asyncio.Event()
         restore_error: BaseException | None = None
+        cooldown_until = 0.0
 
         async def callback(message: _NatsMessage) -> None:
-            await restoring.wait()
-            await self._deliver(message, handler, resolved)
+            nonlocal cooldown_until
+
+            async def handle(envelope: EventEnvelope) -> None:
+                nonlocal cooldown_until
+                await restoring.wait()
+                await asyncio.sleep(max(0.0, cooldown_until - monotonic()))
+                try:
+                    await handler(envelope)
+                except Exception:
+                    cooldown_until = monotonic() + _redelivery_delay(message, resolved)
+                    raise
+
+            await self._deliver(message, handle, resolved)
 
         native = await self._jetstream.subscribe(
             self._qualify(subject),
@@ -371,19 +406,44 @@ class NatsJetStreamEventBus:
             await message.ack()
             return
         try:
-            await self._remember(message.subject, envelope)
-            await handler(envelope)
+
+            async def handle() -> None:
+                await self._remember(message.subject, envelope)
+                await handler(envelope)
+
+            task = asyncio.create_task(handle())
+            try:
+                while not task.done():
+                    done, _ = await asyncio.wait({task}, timeout=resolved.ack_wait_seconds / 3)
+                    if not done:
+                        await message.in_progress()
+                await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
         except Exception:
+            if _delivery_attempt(message) >= resolved.max_deliver:
+                await self._dead_letter(message, reason="handler-retries-exhausted")
+                await message.ack()
+                logging.getLogger(__name__).error(
+                    "JetStream retries exhausted for subject %s event %s; preserved in DLQ",
+                    message.subject,
+                    envelope.event_id,
+                )
+                return
             logging.getLogger(__name__).exception(
                 "JetStream handler failed for subject %s event %s; NAKing for redelivery",
                 message.subject,
                 envelope.event_id,
             )
-            await message.nak(delay=resolved.redelivery_delay_seconds)
+            await message.nak(delay=_redelivery_delay(message, resolved))
             return
         await message.ack()
 
-    async def _dead_letter(self, message: _NatsMessage) -> None:
+    async def _dead_letter(
+        self, message: _NatsMessage, *, reason: str = "invalid-event-envelope"
+    ) -> None:
         if message.subject == self._qualify("dlq"):
             return
         await self._jetstream.publish(
@@ -391,7 +451,7 @@ class NatsJetStreamEventBus:
             message.data,
             headers={
                 "X-Original-Subject": message.subject,
-                "X-Dead-Letter-Reason": "invalid-event-envelope",
+                "X-Dead-Letter-Reason": reason,
             },
         )
 
@@ -403,3 +463,16 @@ class NatsJetStreamEventBus:
     def _require_open(self) -> None:
         if self._closed:
             raise RuntimeError("event bus is closed")
+
+
+def _delivery_attempt(message: _NatsMessage) -> int:
+    metadata = getattr(message, "metadata", None)
+    attempts = getattr(metadata, "num_delivered", 1)
+    return attempts if isinstance(attempts, int) and attempts > 0 else 1
+
+
+def _redelivery_delay(message: _NatsMessage, options: SubscriptionOptions) -> float:
+    return min(
+        60.0,
+        max(1.0, options.redelivery_delay_seconds) * 2 ** min(_delivery_attempt(message) - 1, 6),
+    )

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from app.common.clock import SystemClock
 from app.common.market_session import is_completed_daily_bar
@@ -36,6 +38,19 @@ ROTATION_HISTORY_REQUESTS = (
 )
 
 
+@dataclass
+class RotationRefreshSchedule:
+    """Rotation consumes completed daily bars, which do not change intraday."""
+
+    last_date: date | None = None
+
+    def due(self, now: datetime) -> bool:
+        return self.last_date != now.astimezone(ZoneInfo("America/New_York")).date()
+
+    def completed(self, now: datetime) -> None:
+        self.last_date = now.astimezone(ZoneInfo("America/New_York")).date()
+
+
 async def run_market_rotation_process(
     *, once: bool = False, interval_minutes: int = 5, ready_path: Path | None = None
 ) -> dict[str, object] | None:
@@ -56,14 +71,7 @@ async def run_market_rotation_process(
         symbols = tuple(
             dict.fromkeys(s for p in profiles for s in (*p.symbols, p.proxy, p.benchmark))
         )
-        await load_market_history(
-            settings,
-            database,
-            engine_id="market-rotation-v1",
-            symbols=symbols,
-            requirements=ROTATION_HISTORY_REQUESTS,
-            as_of=clock.now(),
-        )
+        schedule = RotationRefreshSchedule()
         if ready_path is not None:
             write_ready(
                 ready_path,
@@ -77,11 +85,15 @@ async def run_market_rotation_process(
                         EngineSlot.MARKET_ROTATION
                     ).strategy.version,
                     "interval_minutes": interval_minutes,
+                    "refresh_policy": "once-per-exchange-date-completed-daily-bars",
                     "profiles": len(profiles),
                 },
             )
         while True:
             now = clock.now()
+            if not once and not schedule.due(now):
+                await asyncio.sleep(interval_minutes * 60)
+                continue
             bars = await load_market_history(
                 settings,
                 database,
@@ -137,6 +149,7 @@ async def run_market_rotation_process(
             }
             if once:
                 return summary
+            schedule.completed(now)
             del bars, history
             await asyncio.sleep(interval_minutes * 60)
     finally:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -27,12 +28,18 @@ class FakeMessage:
     headers: dict[str, str] | None = None
     acked: int = 0
     naked: int = 0
+    delays: list[float | None] = field(default_factory=list)
+    metadata: Any = field(default_factory=lambda: SimpleNamespace(num_delivered=1))
 
     async def ack(self) -> None:
         self.acked += 1
 
-    async def nak(self, **_: Any) -> None:
+    async def nak(self, *, delay: float | None = None) -> None:
         self.naked += 1
+        self.delays.append(delay)
+
+    async def in_progress(self) -> None:
+        pass
 
 
 @dataclass
@@ -124,6 +131,91 @@ class FakeClient:
 
     async def publish(self, subject: str, payload: bytes) -> None:
         self.published.append((subject, payload))
+
+
+@pytest.mark.unit
+async def test_existing_consumer_gets_inflight_limit_without_losing_position() -> None:
+    from nats.js.api import ConsumerConfig
+
+    class ExistingJetStream(FakeJetStream):
+        existing = ConsumerConfig(
+            durable_name="ordered", deliver_subject="_INBOX.original", max_ack_pending=1000
+        )
+        updated: ConsumerConfig | None = None
+
+        async def consumer_info(self, stream: str, consumer: str) -> object:
+            assert stream == "MARKETBOT" and consumer == "ordered"
+            return SimpleNamespace(config=self.existing)
+
+        async def add_consumer(self, stream: str, config: ConsumerConfig) -> None:
+            self.updated = config
+
+    js = ExistingJetStream()
+    bus = NatsJetStreamEventBus(client=None, jetstream=js)  # type: ignore[arg-type]
+    await bus.subscribe(
+        "test", _discard, options=SubscriptionOptions(durable_name="ordered", max_ack_pending=1)
+    )
+    assert js.updated is js.existing
+    assert js.updated.max_ack_pending == 1
+    assert js.updated.deliver_subject == "_INBOX.original"
+
+
+@pytest.mark.unit
+async def test_final_handler_failure_goes_to_dlq_before_ack(event: EventEnvelope) -> None:
+    js = FakeJetStream()
+    bus = NatsJetStreamEventBus(client=None, jetstream=js)  # type: ignore[arg-type]
+    message = FakeMessage("marketbot.test", encode_envelope(event))
+    message.metadata.num_delivered = 5
+
+    async def fail(_: EventEnvelope) -> None:
+        raise RuntimeError("sensitive error detail")
+
+    await bus._deliver(message, fail)
+    assert message.acked == 1 and message.naked == 0
+    assert js.published[0][0] == "marketbot.dlq"
+    assert js.published[0][2]["X-Dead-Letter-Reason"] == "handler-retries-exhausted"
+    assert "sensitive error detail" not in str(js.published)
+
+
+@pytest.mark.unit
+async def test_redelivery_delay_grows_with_attempts(event: EventEnvelope) -> None:
+    bus = NatsJetStreamEventBus(client=None, jetstream=FakeJetStream())  # type: ignore[arg-type]
+    message = FakeMessage("marketbot.test", encode_envelope(event))
+    message.metadata.num_delivered = 4
+
+    async def fail(_: EventEnvelope) -> None:
+        raise RuntimeError("offline")
+
+    await bus._deliver(message, fail)
+    assert message.delays == [8.0]
+
+
+@pytest.mark.unit
+async def test_slow_handler_renews_ack_deadline(
+    event: EventEnvelope, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bus = NatsJetStreamEventBus(client=None, jetstream=FakeJetStream())  # type: ignore[arg-type]
+    message = FakeMessage("marketbot.test", encode_envelope(event))
+    release = asyncio.Event()
+    progress: list[bool] = []
+    original_wait = asyncio.wait
+
+    async def progress_ack() -> None:
+        progress.append(True)
+        release.set()
+
+    async def wait(tasks: Any, **kwargs: Any) -> Any:
+        if not release.is_set():
+            return set(), set(tasks)
+        return await original_wait(tasks, **kwargs)
+
+    async def handle(_: EventEnvelope) -> None:
+        await release.wait()
+
+    monkeypatch.setattr(message, "in_progress", progress_ack)
+    monkeypatch.setattr(asyncio, "wait", wait)
+    await bus._deliver(message, handle)
+    assert progress == [True] and message.acked == 1
 
 
 @pytest.mark.unit

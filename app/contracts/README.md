@@ -231,3 +231,12 @@ inverse SHORT confirmation without quotes, requires buyer flow and structure,
 and must not be mapped to an ETF paper EntrySignal. It expresses analytical
 confirmation only. Readers must support the new field before selecting 7.80.0;
 older strict consumers may reject new serialized payloads.
+
+### Bounded JetStream Delivery
+
+`SubscriptionOptions.max_ack_pending` is an optional positive limit. Omission
+preserves existing prefetch defaults. Entry Opportunity selects one in-flight
+message per subscription; existing durables are updated without resetting their
+acknowledgement position. Slow handlers renew their acknowledgement deadline.
+Handler failures use exponential delays (1-60 seconds); the final permitted
+delivery is persisted to the DLQ before acknowledgement, with its original subject.

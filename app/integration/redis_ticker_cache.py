@@ -56,7 +56,10 @@ if op == 'expire' then
   end
   return cjson.encode(true)
 end
-redis.call('ZADD', p..'owners', now, owner)
+local touched = tonumber(redis.call('ZSCORE', p..'owners', owner) or '0')
+if now - touched >= 30 or touched == 0 then
+  redis.call('ZADD', p..'owners', now, owner)
+end
 if op == 'touch' then return cjson.encode(true) end
 if op == 'release' then release(owner); return cjson.encode(true) end
 if op == 'stats' then

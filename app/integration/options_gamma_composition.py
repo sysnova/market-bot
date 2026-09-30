@@ -15,6 +15,7 @@ from app.alpaca_market_data import AlpacaRestClient
 from app.alpaca_market_data.transports import HttpxTransport
 from app.common.clock import SystemClock
 from app.common.logging import configure_logging, get_logger
+from app.common.market_session import is_regular_session
 from app.common.settings import AppSettings, Environment
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
@@ -115,6 +116,7 @@ class OptionsGammaRuntime:
         self._semaphore = asyncio.Semaphore(concurrency)
         self._symbols: tuple[str, ...] = ()
         self._universe_changed = asyncio.Event()
+        self._oi_cache: dict[str, tuple[datetime, tuple[OptionOpenInterest, ...]]] = {}
 
     @property
     def symbols(self) -> tuple[str, ...]:
@@ -125,13 +127,12 @@ class OptionsGammaRuntime:
         return self._universe_changed
 
     def set_symbols(self, symbols: tuple[str, ...]) -> None:
-        normalized = tuple(
-            dict.fromkeys(item.strip().upper() for item in symbols if item.strip())
-        )
+        normalized = tuple(dict.fromkeys(item.strip().upper() for item in symbols if item.strip()))
         if not normalized:
             raise ValueError("Options Gamma requires at least one symbol")
         if normalized != self._symbols:
             self._symbols = normalized
+            self._oi_cache = {s: item for s, item in self._oi_cache.items() if s in normalized}
             self._universe_changed.set()
 
     async def handle_universe(self, envelope: EventEnvelope) -> None:
@@ -144,9 +145,11 @@ class OptionsGammaRuntime:
         )
         self.set_symbols(change.symbols)
 
-    async def refresh(self, *, now: datetime) -> GammaRefreshSummary:
+    async def refresh(self, *, now: datetime, scheduled: bool = False) -> GammaRefreshSummary:
         if now.tzinfo is None or now.utcoffset() != timedelta(0):
             raise ValueError("Options Gamma refresh time must be UTC")
+        if scheduled and not is_regular_session(now):
+            return GammaRefreshSummary(symbols_requested=0, assessments_published=0, failures={})
         symbols = self._symbols
         results = await asyncio.gather(
             *(self._analyze(symbol, now=now) for symbol in symbols),
@@ -182,11 +185,7 @@ class OptionsGammaRuntime:
                     strike_from=_decimal_text(strike_from),
                     strike_to=_decimal_text(strike_to),
                 ),
-                self._open_interest_provider.fetch_open_interest(
-                    symbol,
-                    expiration_from=expiration_from,
-                    expiration_to=expiration_to,
-                ),
+                self._open_interest(symbol, now=now),
                 return_exceptions=True,
             )
             if isinstance(chain_result, BaseException):
@@ -230,6 +229,22 @@ class OptionsGammaRuntime:
                     payload=analysis,
                 ),
             )
+
+    async def _open_interest(self, symbol: str, *, now: datetime) -> tuple[OptionOpenInterest, ...]:
+        cached = self._oi_cache.get(symbol)
+        if (
+            cached is not None
+            and cached[0].date() == now.date()
+            and timedelta(0) <= now - cached[0] < timedelta(hours=1)
+        ):
+            return cached[1]
+        result = await self._open_interest_provider.fetch_open_interest(
+            symbol,
+            expiration_from=now.date(),
+            expiration_to=now.date() + timedelta(days=self._days_forward),
+        )
+        self._oi_cache[symbol] = (now, result)
+        return result
 
 
 async def run_options_gamma_process(
@@ -313,7 +328,7 @@ async def run_options_gamma_process(
                     ),
                 )
             )
-        first = await runtime.refresh(now=SystemClock().now())
+        first = await runtime.refresh(now=SystemClock().now(), scheduled=not once)
         details: dict[str, object] = {
             **universe_health_details("options-gamma"),
             "service": "options-gamma-v1",
@@ -325,6 +340,8 @@ async def run_options_gamma_process(
             "universe_source": universe.source,
             "symbols": list(runtime.symbols),
             "refresh_seconds": settings.options_gamma_refresh_seconds,
+            "scheduled_session": "REGULAR",
+            "open_interest_cache_seconds": 3600,
             "assessments_published": first.assessments_published,
             "failures": first.failures,
             "persistence": "nats-jetstream-7d",
@@ -341,7 +358,7 @@ async def run_options_gamma_process(
                     timeout=settings.options_gamma_refresh_seconds,
                 )
             runtime.universe_changed.clear()
-            summary = await runtime.refresh(now=SystemClock().now())
+            summary = await runtime.refresh(now=SystemClock().now(), scheduled=True)
             if summary.failures:
                 await logger.awarning(
                     "options_gamma_partial_refresh",
@@ -371,9 +388,7 @@ def _merge_open_interest(
         else replace(
             item,
             open_interest=(
-                metadata.open_interest
-                if metadata.open_interest is not None
-                else item.open_interest
+                metadata.open_interest if metadata.open_interest is not None else item.open_interest
             ),
             open_interest_date=(
                 metadata.open_interest_date
@@ -400,9 +415,7 @@ def _spot_snapshot(
         if not isinstance(item, Mapping):
             continue
         snapshot = cast("Mapping[str, object]", item)
-        price = _decimal(
-            snapshot.get("p") if key == "latestTrade" else snapshot.get("c")
-        )
+        price = _decimal(snapshot.get("p") if key == "latestTrade" else snapshot.get("c"))
         if price is None or price <= 0:
             continue
         timestamp = _datetime(snapshot.get("t")) or fallback_at
@@ -415,7 +428,7 @@ def _decimal(value: object) -> Decimal | None:
         return None
     try:
         parsed = Decimal(str(value))
-    except (InvalidOperation, ValueError):
+    except InvalidOperation, ValueError:
         return None
     return parsed if parsed.is_finite() else None
 
