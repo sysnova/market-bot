@@ -2,7 +2,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -16,7 +16,48 @@ from app.contracts import (
     PatternDirection,
     UniverseChanged,
 )
+from app.integration.engine_assembly import MarketBotAssembly
 from app.integration.manual_analysis import ManualEvents, analyze_in_process
+
+
+class FixedClock:
+    def now(self) -> datetime:
+        return datetime(2026, 9, 16, tzinfo=UTC)
+
+
+def geri_regular_bars() -> tuple[MarketBar, ...]:
+    values = [
+        (9, 11, 10),
+        (8, 10, 9),
+        (9, 14, 13),
+        (12, 18, 17),
+        (14, 17, 15),
+        (13, 16, 14),
+        (14, 17, 16),
+        (Decimal("12.8"), 16, 14),
+    ]
+    bars = []
+    for index, (low, high, close) in enumerate(values):
+        start = datetime(2026, 7, 20, 13, 30, tzinfo=UTC) + timedelta(
+            days=index // 2, hours=4 * (index % 2)
+        )
+        for minute in range(16 if index % 2 == 0 else 10):
+            bars.append(
+                MarketBar(
+                    symbol="TEST",
+                    timeframe=BarTimeframe.MINUTE_15,
+                    timestamp=start + timedelta(minutes=15 * minute),
+                    open=Decimal(close),
+                    high=Decimal(high),
+                    low=Decimal(low),
+                    close=Decimal(close),
+                    volume=Decimal(1000),
+                    source="test",
+                    feed="iex",
+                    is_final=True,
+                )
+            )
+    return tuple(bars)
 
 
 @pytest.mark.unit
@@ -45,26 +86,32 @@ async def test_private_event_collector_rejects_universe_commands() -> None:
 
 
 @pytest.mark.unit
-async def test_direct_engines_run_without_nats_and_return_current_support(tmp_path: Path) -> None:
+@pytest.mark.parametrize("with_geri_history", [True, False])
+async def test_direct_entry_engines_run_without_portfolio_or_nats(
+    tmp_path: Path,
+    with_geri_history: bool,
+) -> None:
     """No distributed service, broker history, or persistent decision write is used."""
-    database = AsyncMock()
-    portfolio = AsyncMock()
-    portfolio.get_holding_quantity.return_value = Decimal(1)
-    portfolio.get_portfolio_allocations.return_value = ()
+    assembly = MarketBotAssembly.from_path(Path("configs/marketbot/7.77.0.yaml"))
+    geri = assembly.build_4hgeri()
+    analyze_geri = Mock(wraps=geri.analyze)
     with (
-        patch("app.integration.manual_analysis.create_database_engine", return_value=database),
-        patch("app.integration.manual_analysis.PostgresUniverseClient", return_value=portfolio),
+        patch("app.integration.manual_analysis.SystemClock", return_value=FixedClock()),
+        patch(
+            "app.integration.manual_analysis.MarketBotAssembly.from_settings", return_value=assembly
+        ),
+        patch.object(type(geri), "analyze", analyze_geri),
+        patch.object(MarketBotAssembly, "build_4hgeri", return_value=geri),
+        patch(
+            "app.persistence.create_database_engine",
+            side_effect=AssertionError("manual analysis opened PostgreSQL"),
+        ) as database,
         patch("app.integration.live_composition.run_live_analysis", new_callable=AsyncMock) as core,
         patch("app.integration.manual_analysis._build_rest", return_value=AsyncMock()),
         patch(
             "app.integration.manual_analysis.MarketHistoryLoader.ensure_and_load",
             new_callable=AsyncMock,
         ) as history,
-        patch(
-            "app.integration.market_rotation_store.PostgresMarketRotationStore.load_profiles",
-            new_callable=AsyncMock,
-            return_value=(),
-        ),
         patch(
             "app.event_bus.NatsJetStreamEventBus.connect",
             side_effect=AssertionError("manual analysis connected to NATS"),
@@ -100,18 +147,38 @@ async def test_direct_engines_run_without_nats_and_return_current_support(tmp_pa
             )
             for index in range(60)
         )
+        if with_geri_history:
+            history.return_value += geri_regular_bars()
         report = await analyze_in_process("TEST", timeout_seconds=5, runtime_root=tmp_path)
     nats.assert_not_called()
     assert core.call_args.kwargs["isolated"] is True
     assert core.call_args.kwargs["mirror_to_nats"] is False
     assert report["transport"] == "DIRECT_ISOLATED"
     results = {item["engine"]: item for item in report["engines"]}
+    assert list(results) == ["core", "support-confirmation", "4hgeri"]
     assert results["core"]["status"] == "COMPLETED"
     assert results["support-confirmation"]["status"] == "COMPLETED"
     assert results["support-confirmation"]["result"]["events"]
-    assert results["long-portfolio"]["status"] == "SKIPPED"
-    assert results["signal-fusion"]["status"] == "COMPLETED"
-    database.dispose.assert_awaited_once()
+    assert report["execution_enabled"] is False
+    assert report["universe_modified"] is False
+    database.assert_not_called()
+    if with_geri_history:
+        assert results["4hgeri"]["status"] == "COMPLETED"
+        events = results["4hgeri"]["result"]["events"]
+        assessment = next(e["payload"] for e in events if e["event_type"] == "4hgeri.assessed")
+        assert assessment["symbol"] == "TEST"
+        assert assessment["zone_low"] == "12.8"
+        assert assessment["zone_high"] == "17"
+        assert assessment["four_hour_confirmation"] is False
+        context = analyze_geri.call_args.args[0]
+        assert len(context.bars) == 8
+        assert all(b.timeframe is BarTimeframe.HOUR_4 for b in context.bars)
+        support = results["support-confirmation"]["result"]["events"][0]["payload"]
+        assert str(context.support.assessment_id) == support["assessment_id"]
+        assert all(e["event_type"] in {"4hgeri.assessed", "4hgeri.transitioned"} for e in events)
+    else:
+        assert results["4hgeri"]["status"] == "SKIPPED"
+        assert results["4hgeri"]["reason"] == "no_4hgeri_assessment_from_completed_regular_bars"
 
 
 @pytest.mark.unit

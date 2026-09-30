@@ -10,6 +10,7 @@ from .repositories import (
     AlertDecisionStateRepository,
     CheckpointRepository,
     EngineDecisionStateRepository,
+    EntryOpportunityCommandRepository,
     EntryOpportunityRepository,
     EntryWatchRepository,
     HealthRepository,
@@ -35,6 +36,7 @@ class PersistenceUnitOfWork:
         self.health: HealthRepository
         self.entry_watches: EntryWatchRepository
         self.entry_opportunities: EntryOpportunityRepository
+        self.entry_opportunity_commands: EntryOpportunityCommandRepository
         self.long_portfolio_alerts: LongPortfolioAlertRepository
         self.long_portfolio_states: LongPortfolioStateRepository
         self.patreon_caps: PatreonCapsRepository
@@ -50,6 +52,7 @@ class PersistenceUnitOfWork:
         self.health = HealthRepository(session)
         self.entry_watches = EntryWatchRepository(session)
         self.entry_opportunities = EntryOpportunityRepository(session)
+        self.entry_opportunity_commands = EntryOpportunityCommandRepository(session)
         self.long_portfolio_alerts = LongPortfolioAlertRepository(session)
         self.long_portfolio_states = LongPortfolioStateRepository(session)
         self.patreon_caps = PatreonCapsRepository(session)

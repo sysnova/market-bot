@@ -40,8 +40,16 @@ class PostgresEntryOpportunityStore:
             event = await session.scalar(
                 text("select to_regclass('market_bot.entry_opportunity_events')")
             )
+            command = await session.scalar(
+                text("select to_regclass('market_bot.entry_opportunity_commands')")
+            )
             outbox = await session.scalar(text("select to_regclass('market_bot.outbox_events')"))
-            return opportunity is not None and event is not None and outbox is not None
+            return (
+                opportunity is not None
+                and event is not None
+                and command is not None
+                and outbox is not None
+            )
 
     async def load_active(self, symbol: str) -> EntryOpportunity | None:
         async with PersistenceUnitOfWork(self._session_factory) as unit:

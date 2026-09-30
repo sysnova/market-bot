@@ -592,6 +592,49 @@ class EntryOpportunityEventRecord(Base):
     )
 
 
+class EntryOpportunityCommandRecord(Base):
+    """Durable serialized input for the Entry Opportunity aggregate."""
+
+    __tablename__ = "entry_opportunity_commands"
+    __table_args__ = (
+        UniqueConstraint("source_event_id", name="entry_opportunity_commands_source_event_key"),
+        CheckConstraint(
+            "status in ('PENDING', 'PROCESSING', 'PROCESSED', 'FAILED')",
+            name="status",
+        ),
+        CheckConstraint("attempts >= 0", name="attempts_nonnegative"),
+        CheckConstraint(
+            "(status = 'PROCESSED') = (processed_at is not null)",
+            name="processed_evidence",
+        ),
+        Index(
+            "entry_opportunity_commands_pending_idx",
+            "available_at",
+            "occurred_at",
+            "created_at",
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+        Index("entry_opportunity_commands_symbol_status_idx", "symbol", "status"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    source_event_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    source_subject: Mapped[str] = mapped_column(Text, nullable=False)
+    command_type: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
 class LongPortfolioAlertRecord(Base):
     __tablename__ = "long_portfolio_alerts"
     __table_args__ = (

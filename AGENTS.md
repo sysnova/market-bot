@@ -55,6 +55,10 @@
 - `TICKER` always comes from the user's request. Never substitute a fixed ticker,
   reuse a ticker from an earlier report, or hardcode a symbol. The analyzer normalizes
   and validates the received value.
+- Analyze only Long, Swing and Intraday (inside Core), Support Confirmation, and
+  4H GERI. Do not run Market Rotation, Long Portfolio, Patreon Caps, Elliott Wave,
+  Portfolio Flow, Signal Fusion, or supplementary engines for this entry report.
+  Run Support Confirmation before 4H GERI and use only this invocation's results.
 - For an explicit per-engine timeout or to disable NATS during diagnostics, use the
   equivalent form `uv run marketbot analyzer TICKER --timeout-seconds SECONDS`.
   Manual reports run in an isolated child process and return engine results directly.
@@ -70,9 +74,8 @@
 - Interpret engine statuses as follows:
   - `COMPLETED`: analyze the returned result and include its material evidence.
   - `SKIPPED`: the engine was intentionally inapplicable. State the gate/reason; do
-    not present it as bearish evidence. Holdings-only engines normally skip tickers
-    that are not positive local holdings, and Portfolio Flow requires a live
-    quote/trade window.
+    not present it as bearish evidence. For 4H GERI, explain missing completed
+    regular-session history or missing assessable structure when reported.
   - `FAILED`: identify the unavailable engine and error type without inventing a
     verdict from it.
   - `TIMED_OUT`: identify the timeout and continue interpreting completed engines.
@@ -81,10 +84,12 @@
   reference price, support/resistance, entry or buy zones, invalidation, targets,
   VWAP/AVWAP gates, regime, and confirmation quality when present. Also report the
   Entry Watcher/Alert availability declared by Core.
-- Interpret Market Rotation as global context, not as a ticker-specific vote.
-  Patreon Caps, Elliott Wave, Support Confirmation, Long Portfolio, and Signal Fusion
-  retain their analytical, holdings-only, or allocation gates. Do not blur
-  a counterfactual calculation with an operational buy confirmation.
+- Interpret Support Confirmation's actual zone, reaction/reversal and gates.
+  For 4H GERI include the N1/N2/N3 sequence, active level class, zone, invalidation,
+  bounce and completed-timeframe confirmation, maturity and alignments when returned.
+  Never label an active resistance as long support or promote an unconfirmed 4H zone
+  to a buy. Keep Long, daily Swing and 4H GERI levels distinct.
+  Do not blur a counterfactual calculation with an operational buy confirmation.
 - State the report's data time and whether the market was regular, premarket, or
   closed when that can be established from the output. Intraday evidence without a
   completed confirmation timeframe must be described as provisional.

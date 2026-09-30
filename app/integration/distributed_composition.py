@@ -76,7 +76,7 @@ from app.entry_opportunity_engine import EntryOpportunityEngineV2
 from app.entry_watcher import EntryWatcherPolicy
 from app.event_bus import NatsJetStreamEventBus
 from app.patreon_caps_engine import PatreonCapsPolicy
-from app.persistence import create_database_engine, create_session_factory
+from app.persistence import PersistenceUnitOfWork, create_database_engine, create_session_factory
 
 from .alert_decision_state_store import PostgresAlertDecisionStateStore
 from .alert_publisher import AlertEventPublisher
@@ -1194,12 +1194,14 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
     bus: NatsJetStreamEventBus | None = None
     subscriptions: list[Subscription] = []
     reconcile_task: asyncio.Task[None] | None = None
+    command_task: asyncio.Task[None] | None = None
     try:
         spec = assembly.spec(EngineSlot.ENTRY_OPPORTUNITY)
         service = "entry-opportunity"
         logger = get_logger(service)
+        session_factory = create_session_factory(database)
         store = PostgresEntryOpportunityStore(
-            create_session_factory(database),
+            session_factory,
             source=service,
         )
         if not await store.is_ready():
@@ -1228,8 +1230,152 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             as_of=recovery_as_of,
         )
         recovery_lock = asyncio.Lock()
+        mutation_lock = asyncio.Lock()
         recovering_bars = True
         buffered_live_bars: list[MarketBar] = []
+
+        async def enqueue_command(
+            envelope: EventEnvelope,
+            *,
+            command_type: str,
+            symbol: str,
+        ) -> None:
+            async with PersistenceUnitOfWork(session_factory) as unit:
+                await unit.entry_opportunity_commands.enqueue(
+                    source_event_id=envelope.event_id,
+                    source_subject=envelope.subject or "",
+                    command_type=command_type,
+                    symbol=symbol,
+                    occurred_at=envelope.occurred_at,
+                    payload=envelope.model_dump(mode="json"),
+                )
+
+        async def apply_command(command_type: str, envelope: EventEnvelope) -> None:
+            if command_type == "analysis":
+                result = (
+                    envelope.payload
+                    if isinstance(envelope.payload, AnalysisResult)
+                    else AnalysisResult.model_validate(envelope.payload, strict=False)
+                )
+                await engine.ingest_analysis(result, now=clock.now())
+                return
+            if command_type == "entry-watch":
+                transition = (
+                    envelope.payload
+                    if isinstance(envelope.payload, EntryWatchTransition)
+                    else EntryWatchTransition.model_validate(envelope.payload, strict=False)
+                )
+                await engine.ingest_transition(transition)
+                return
+            if command_type == "bar":
+                bar = (
+                    envelope.payload
+                    if isinstance(envelope.payload, MarketBar)
+                    else MarketBar.model_validate(envelope.payload, strict=False)
+                )
+                if _order_impact_allowed(bar.timestamp, settings):
+                    await engine.ingest_bar(bar)
+                else:
+                    await engine.ingest_reference_bar(bar)
+                return
+            if command_type == "alert":
+                alert = (
+                    envelope.payload
+                    if isinstance(envelope.payload, LocalAlert)
+                    else LocalAlert.model_validate(envelope.payload, strict=False)
+                )
+                delivered_at = clock.now()
+                events = await engine.ingest_alert(alert)
+                log = logger.ainfo if events else logger.awarning
+                await log(
+                    "confirmed_short_opportunity_ingested"
+                    if events
+                    else "confirmed_short_opportunity_rejected",
+                    symbol=alert.symbol,
+                    alert_id=str(alert.alert_id),
+                    alert_created_at=alert.created_at.isoformat(),
+                    alert_expires_at=(
+                        alert.expires_at.isoformat() if alert.expires_at is not None else None
+                    ),
+                    delivery_delay_seconds=max(
+                        0, (delivered_at - alert.created_at).total_seconds()
+                    ),
+                    expired_at_delivery=(
+                        alert.expires_at is not None and delivered_at >= alert.expires_at
+                    ),
+                    event_count=len(events),
+                )
+                return
+            if command_type == "entry-signal":
+                if not isinstance(engine, EntryOpportunityEngineV2):
+                    return
+                signal = (
+                    envelope.payload
+                    if isinstance(envelope.payload, EntrySignal)
+                    else EntrySignal.model_validate(envelope.payload, strict=False)
+                )
+                await engine.ingest_signal(signal)
+                return
+            if command_type == "leveraged-cancellation":
+                if not isinstance(engine, EntryOpportunityEngineV2):
+                    return
+                assessment = (
+                    envelope.payload
+                    if isinstance(envelope.payload, LeveragedThesisAssessment)
+                    else LeveragedThesisAssessment.model_validate(envelope.payload, strict=False)
+                )
+                if assessment.state is LeveragedThesisState.CANCELLED:
+                    await engine.ingest_leveraged_cancellation(assessment)
+                return
+            raise ValueError(f"unsupported entry opportunity command type: {command_type}")
+
+        async def process_commands() -> None:
+            async with PersistenceUnitOfWork(session_factory) as unit:
+                requeued = await unit.entry_opportunity_commands.requeue_processing(
+                    available_at=clock.now(),
+                )
+            if requeued:
+                await logger.awarning(
+                    "entry_opportunity_commands_requeued",
+                    count=requeued,
+                )
+            while True:
+                async with PersistenceUnitOfWork(session_factory) as unit:
+                    command = await unit.entry_opportunity_commands.claim_pending(
+                        now=clock.now(),
+                    )
+                if command is None:
+                    await asyncio.sleep(0.25)
+                    continue
+                try:
+                    envelope = EventEnvelope.model_validate(command.payload, strict=False)
+                    async with mutation_lock:
+                        await apply_command(command.command_type, envelope)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    retry_delay = min(60, 2 ** min(command.attempts, 6))
+                    async with PersistenceUnitOfWork(session_factory) as unit:
+                        await unit.entry_opportunity_commands.mark_failed(
+                            command.id,
+                            error=f"{type(error).__name__}: {error}",
+                            available_at=clock.now() + timedelta(seconds=retry_delay),
+                        )
+                    await logger.aexception(
+                        "entry_opportunity_command_failed",
+                        command_id=str(command.id),
+                        command_type=command.command_type,
+                        symbol=command.symbol,
+                        source_event_id=str(command.source_event_id),
+                        attempts=command.attempts,
+                        retry_delay_seconds=retry_delay,
+                    )
+                    continue
+                async with PersistenceUnitOfWork(session_factory) as unit:
+                    await unit.entry_opportunity_commands.mark_processed(
+                        command.id,
+                        processed_at=clock.now(),
+                    )
 
         async def handle_analysis(envelope: EventEnvelope) -> None:
             if envelope.event_type != ANALYSIS_RESULT_EVENT:
@@ -1241,7 +1387,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
             if not _analysis_order_impact_allowed(result, settings):
                 return
-            await engine.ingest_analysis(result, now=clock.now())
+            await enqueue_command(envelope, command_type="analysis", symbol=result.symbol)
 
         async def handle_transition(envelope: EventEnvelope) -> None:
             if envelope.event_type != ENTRY_WATCH_TRANSITION_EVENT:
@@ -1253,7 +1399,11 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
             if not _order_impact_allowed(transition.occurred_at, settings):
                 return
-            await engine.ingest_transition(transition)
+            await enqueue_command(
+                envelope,
+                command_type="entry-watch",
+                symbol=transition.symbol,
+            )
 
         async def handle_bar(envelope: EventEnvelope) -> None:
             nonlocal recovering_bars
@@ -1272,10 +1422,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 if recovering_bars:
                     buffered_live_bars.append(bar)
                     return
-                if _order_impact_allowed(bar.timestamp, settings):
-                    await engine.ingest_bar(bar)
-                else:
-                    await engine.ingest_reference_bar(bar)
+                await enqueue_command(envelope, command_type="bar", symbol=bar.symbol)
 
         async def handle_alert(envelope: EventEnvelope) -> None:
             if envelope.event_type != LOCAL_ALERT_EVENT:
@@ -1289,27 +1436,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 return
             if not _order_impact_allowed(alert.created_at, settings):
                 return
-            delivered_at = clock.now()
-            events = await engine.ingest_alert(alert)
-            log = logger.ainfo if events else logger.awarning
-            await log(
-                "confirmed_short_opportunity_ingested"
-                if events
-                else "confirmed_short_opportunity_rejected",
-                symbol=alert.symbol,
-                alert_id=str(alert.alert_id),
-                alert_created_at=alert.created_at.isoformat(),
-                alert_expires_at=(
-                    alert.expires_at.isoformat() if alert.expires_at is not None else None
-                ),
-                delivery_delay_seconds=max(
-                    0, (delivered_at - alert.created_at).total_seconds()
-                ),
-                expired_at_delivery=(
-                    alert.expires_at is not None and delivered_at >= alert.expires_at
-                ),
-                event_count=len(events),
-            )
+            await enqueue_command(envelope, command_type="alert", symbol=alert.symbol)
 
         async def handle_signal(envelope: EventEnvelope) -> None:
             if envelope.event_type != ENTRY_SIGNAL_EVENT:
@@ -1323,7 +1450,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             )
             if not _order_impact_allowed(signal.created_at, settings):
                 return
-            await engine.ingest_signal(signal)
+            await enqueue_command(envelope, command_type="entry-signal", symbol=signal.symbol)
 
         async def handle_leveraged_assessment(envelope: EventEnvelope) -> None:
             if envelope.event_type != LEVERAGED_THESIS_ASSESSMENT_EVENT:
@@ -1336,7 +1463,11 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 else LeveragedThesisAssessment.model_validate(envelope.payload, strict=False)
             )
             if assessment.state is LeveragedThesisState.CANCELLED:
-                await engine.ingest_leveraged_cancellation(assessment)
+                await enqueue_command(
+                    envelope,
+                    command_type="leveraged-cancellation",
+                    symbol=assessment.underlying_symbol,
+                )
 
         subscriptions.append(
             await bus.subscribe(
@@ -1417,13 +1548,14 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                 await asyncio.sleep(60)
                 try:
                     universe = await universe_client.get_universe()
-                    await engine.reconcile(
-                        now=clock.now(),
-                        active_symbols=_entry_opportunity_symbols(
-                            universe.symbols,
-                            leveraged_opportunity_symbols,
-                        ),
-                    )
+                    async with mutation_lock:
+                        await engine.reconcile(
+                            now=clock.now(),
+                            active_symbols=_entry_opportunity_symbols(
+                                universe.symbols,
+                                leveraged_opportunity_symbols,
+                            ),
+                        )
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
@@ -1433,6 +1565,7 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
                     )
 
         reconcile_task = asyncio.create_task(reconcile_opportunities())
+        command_task = asyncio.create_task(process_commands())
         details: dict[str, object] = {
             "service": service,
             "engine_version": spec.implementation,
@@ -1447,6 +1580,8 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             "output_subject": "marketbot.v1.entry-opportunity.transition.>",
             "persistence": "postgresql",
             "delivery": "transactional-outbox",
+            "command_queue": "postgresql:entry_opportunity_commands",
+            "command_processing": "single-writer-ordered",
             "market_session_mode": settings.market_session_mode.value,
             "extended_hours_order_impact": settings.extended_hours_order_impact,
             **universe_health_details("entry-opportunity"),
@@ -1463,6 +1598,10 @@ async def run_entry_opportunity_process(*, ready_path: Path | None = None) -> No
             _write_ready(ready_path, details)
         await asyncio.Event().wait()
     finally:
+        if command_task is not None:
+            command_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await command_task
         if reconcile_task is not None:
             reconcile_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

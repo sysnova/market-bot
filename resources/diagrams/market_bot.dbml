@@ -268,6 +268,27 @@ Table market_bot.entry_opportunity_events {
   }
 }
 
+Table market_bot.entry_opportunity_commands {
+  id uuid [pk]
+  source_event_id uuid [not null, unique]
+  source_subject text [not null]
+  command_type text [not null]
+  symbol text [not null]
+  occurred_at timestamptz [not null]
+  status text [not null, default: "PENDING", note: "PENDING | PROCESSING | PROCESSED | FAILED"]
+  attempts integer [not null, default: 0]
+  available_at timestamptz [not null]
+  processed_at timestamptz
+  last_error text
+  payload jsonb [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (available_at, occurred_at, created_at) [name: "entry_opportunity_commands_pending_idx", note: "Partial: status = 'PENDING'"]
+    (symbol, status) [name: "entry_opportunity_commands_symbol_status_idx"]
+  }
+}
+
 Table market_bot.long_portfolio_alerts {
   id uuid [pk]
   deduplication_key text [not null, unique]

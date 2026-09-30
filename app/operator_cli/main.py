@@ -58,7 +58,7 @@ def root(
         str | None,
         typer.Option(
             "-analyzer",
-            help="Analyze one ticker through every engine except Peter Lynch and SEC.",
+            help="Analyze entry zones: Long, Swing, Intraday, Support Confirmation and 4H GERI.",
         ),
     ] = None,
 ) -> None:
@@ -143,7 +143,7 @@ def analyzer_symbol(
         typer.Option("--nats/--no-nats", help="Compatibility option; manual analysis is isolated."),
     ] = False,
 ) -> None:
-    """Analyze one symbol through every engine except Peter Lynch and SEC."""
+    """Analyze entry zones with Long, Swing, Intraday, Support Confirmation and 4H GERI."""
 
     summary = _run_market_analyzer(
         symbol,

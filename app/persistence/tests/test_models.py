@@ -29,6 +29,7 @@ EXPECTED_TABLES = {
     "consumer_checkpoints",
     "control_events",
     "entry_opportunities",
+    "entry_opportunity_commands",
     "entry_opportunity_events",
     "engine_decision_states",
     "entry_watch_transitions",

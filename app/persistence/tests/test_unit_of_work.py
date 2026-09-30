@@ -22,6 +22,7 @@ async def test_successful_context_commits_and_closes() -> None:
         assert active.engine_decision_states is not None
         assert active.alert_decision_states is not None
         assert active.health is not None
+        assert active.entry_opportunity_commands is not None
 
     session.commit.assert_awaited_once()
     session.rollback.assert_not_awaited()

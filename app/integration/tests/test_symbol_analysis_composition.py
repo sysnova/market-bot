@@ -21,7 +21,7 @@ class FixedClock:
 
 
 @pytest.mark.unit
-async def test_analyze_runs_core_then_parallel_engines_then_fusion() -> None:
+async def test_analyze_runs_core_then_parallel_engines_then_dependent() -> None:
     calls: list[str] = []
     peers_done = asyncio.Event()
     peer_count = 0
@@ -35,22 +35,19 @@ async def test_analyze_runs_core_then_parallel_engines_then_fusion() -> None:
         assert calls[0] == "core:TEST"
         calls.append(f"{name}:{symbol}")
         peer_count += 1
-        if peer_count == 2:
+        if peer_count == 1:
             peers_done.set()
         return {"service": name}
 
-    async def fusion(symbol: str) -> dict[str, object]:
+    async def dependent(symbol: str) -> dict[str, object]:
         assert peers_done.is_set()
-        calls.append(f"fusion:{symbol}")
+        calls.append(f"dependent:{symbol}")
         return {"state": "OBSERVING"}
 
     orchestrator = SymbolAnalysisOrchestrator(
         core=AnalysisStep("core", core),
-        parallel=(
-            AnalysisStep("sec", lambda symbol: peer("sec", symbol)),
-            AnalysisStep("support-confirmation", lambda symbol: peer("support", symbol)),
-        ),
-        fusion=AnalysisStep("signal-fusion", fusion),
+        parallel=(AnalysisStep("support-confirmation", lambda symbol: peer("support", symbol)),),
+        dependent=AnalysisStep("4hgeri", dependent),
         clock=FixedClock(),
     )
 
@@ -65,18 +62,17 @@ async def test_analyze_runs_core_then_parallel_engines_then_fusion() -> None:
     }
     assert [item["engine"] for item in report["engines"]] == [
         "core",
-        "sec",
         "support-confirmation",
-        "signal-fusion",
+        "4hgeri",
     ]
     assert all(item["status"] == "COMPLETED" for item in report["engines"])
     assert calls[0] == "core:TEST"
-    assert calls[-1] == "fusion:TEST"
+    assert calls[-1] == "dependent:TEST"
     assert all("peter" not in item for item in calls)
 
 
 @pytest.mark.unit
-async def test_analyze_isolates_timeout_and_failure_without_skipping_fusion() -> None:
+async def test_analyze_isolates_timeout_and_failure_without_skipping_dependent() -> None:
     async def complete(_symbol: str) -> dict[str, object]:
         return {"ok": True}
 
@@ -97,7 +93,7 @@ async def test_analyze_isolates_timeout_and_failure_without_skipping_fusion() ->
             AnalysisStep("failed", fail),
             AnalysisStep("skipped", skip),
         ),
-        fusion=AnalysisStep("signal-fusion", complete),
+        dependent=AnalysisStep("4hgeri", complete),
         clock=FixedClock(),
     )
 
@@ -115,7 +111,7 @@ async def test_analyze_isolates_timeout_and_failure_without_skipping_fusion() ->
         "error_type": "RuntimeError",
         "error": "provider unavailable",
     }
-    assert by_engine["signal-fusion"]["status"] == "COMPLETED"
+    assert by_engine["4hgeri"]["status"] == "COMPLETED"
     assert by_engine["skipped"] == {
         "engine": "skipped",
         "status": "SKIPPED",

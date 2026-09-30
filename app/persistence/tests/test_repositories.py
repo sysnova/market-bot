@@ -19,6 +19,7 @@ from app.persistence.models import OutboxEvent
 from app.persistence.repositories import (
     CheckpointRepository,
     EngineDecisionStateRepository,
+    EntryOpportunityCommandRepository,
     EntryWatchRepository,
     EventPayloadConflictError,
     HealthRepository,
@@ -282,6 +283,51 @@ async def test_entry_watch_loads_latest_thesis_regardless_of_status() -> None:
     assert "entry_watches.symbol" in sql
     assert "entry_watches.status IN" not in sql
     assert "entry_watches.updated_at DESC" in sql
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_entry_opportunity_command_enqueue_deduplicates_source_event() -> None:
+    session = AsyncMock()
+    session.execute.return_value = ScalarResult(None)
+    repository = EntryOpportunityCommandRepository(
+        session,
+        id_factory=lambda: ENTITY_ID,
+        clock=lambda: NOW,
+    )
+
+    inserted = await repository.enqueue(
+        source_event_id=ENTITY_ID,
+        source_subject="marketbot.v1.analysis.result.AAPL",
+        command_type="analysis",
+        symbol="aapl",
+        occurred_at=NOW,
+        payload={"event_id": str(ENTITY_ID), "payload": {"symbol": "AAPL"}},
+    )
+
+    assert inserted is False
+    statement = session.execute.await_args.args[0]
+    sql = str(statement.compile(dialect=repository.dialect))
+    assert "ON CONFLICT (source_event_id) DO NOTHING" in sql
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_entry_opportunity_command_claim_uses_ordered_skip_locked_queue() -> None:
+    session = AsyncMock()
+    session.scalar.return_value = None
+    repository = EntryOpportunityCommandRepository(session)
+
+    claimed = await repository.claim_pending(now=NOW)
+
+    assert claimed is None
+    statement = session.scalar.await_args.args[0]
+    sql = str(statement.compile(dialect=repository.dialect))
+    assert "FOR UPDATE SKIP LOCKED" in sql
+    assert "entry_opportunity_commands.status =" in sql
+    assert "entry_opportunity_commands.available_at <=" in sql
+    assert "ORDER BY" in sql
+    assert "entry_opportunity_commands.occurred_at" in sql
 
 
 @pytest.mark.unit

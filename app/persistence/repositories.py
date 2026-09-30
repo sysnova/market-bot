@@ -19,6 +19,7 @@ from .models import (
     AlertContinuationSessionRecord,
     ConsumerCheckpoint,
     EngineDecisionStateRecord,
+    EntryOpportunityCommandRecord,
     EntryOpportunityEventRecord,
     EntryOpportunityRecord,
     EntryWatchRecord,
@@ -644,6 +645,121 @@ class EntryOpportunityRepository(Repository):
                 .on_conflict_do_nothing(index_elements=["id"])
             )
         return True
+
+
+class EntryOpportunityCommandRepository(Repository):
+    """Durable command queue for serialized Entry Opportunity writes."""
+
+    async def enqueue(
+        self,
+        *,
+        source_event_id: UUID,
+        source_subject: str,
+        command_type: str,
+        symbol: str,
+        occurred_at: datetime,
+        payload: dict[str, Any],
+    ) -> bool:
+        now = self._clock()
+        statement = (
+            insert(EntryOpportunityCommandRecord)
+            .values(
+                id=self._id_factory(),
+                source_event_id=source_event_id,
+                source_subject=source_subject,
+                command_type=command_type,
+                symbol=symbol.strip().upper(),
+                occurred_at=occurred_at,
+                status="PENDING",
+                attempts=0,
+                available_at=now,
+                payload=payload,
+                created_at=now,
+            )
+            .on_conflict_do_nothing(index_elements=["source_event_id"])
+            .returning(EntryOpportunityCommandRecord.id)
+        )
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none() is not None
+
+    async def claim_pending(
+        self,
+        *,
+        now: datetime,
+    ) -> EntryOpportunityCommandRecord | None:
+        select_statement = (
+            select(EntryOpportunityCommandRecord.id)
+            .where(
+                EntryOpportunityCommandRecord.status == "PENDING",
+                EntryOpportunityCommandRecord.available_at <= now,
+            )
+            .order_by(
+                EntryOpportunityCommandRecord.occurred_at,
+                EntryOpportunityCommandRecord.created_at,
+                EntryOpportunityCommandRecord.id,
+            )
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        command_id = await self._session.scalar(select_statement)
+        if command_id is None:
+            return None
+        statement = (
+            update(EntryOpportunityCommandRecord)
+            .where(
+                EntryOpportunityCommandRecord.id == command_id,
+                EntryOpportunityCommandRecord.status == "PENDING",
+            )
+            .values(
+                status="PROCESSING",
+                attempts=EntryOpportunityCommandRecord.attempts + 1,
+                last_error=None,
+            )
+            .returning(EntryOpportunityCommandRecord)
+        )
+        result = await self._session.scalars(statement)
+        return result.one_or_none()
+
+    async def requeue_processing(self, *, available_at: datetime) -> int:
+        statement = (
+            update(EntryOpportunityCommandRecord)
+            .where(EntryOpportunityCommandRecord.status == "PROCESSING")
+            .values(
+                status="PENDING",
+                available_at=available_at,
+                last_error="requeued after entry-opportunity worker restart",
+            )
+            .returning(EntryOpportunityCommandRecord.id)
+        )
+        result = await self._session.scalars(statement)
+        return len(result.all())
+
+    async def mark_processed(
+        self,
+        command_id: UUID,
+        *,
+        processed_at: datetime,
+    ) -> None:
+        statement = (
+            update(EntryOpportunityCommandRecord)
+            .where(EntryOpportunityCommandRecord.id == command_id)
+            .values(status="PROCESSED", processed_at=processed_at, last_error=None)
+        )
+        await self._session.execute(statement)
+
+    async def mark_failed(
+        self,
+        command_id: UUID,
+        *,
+        error: str,
+        available_at: datetime,
+    ) -> None:
+        statement = (
+            update(EntryOpportunityCommandRecord)
+            .where(EntryOpportunityCommandRecord.id == command_id)
+            .values(status="PENDING", available_at=available_at, last_error=error[:2000])
+        )
+        await self._session.execute(statement)
 
 
 class LongPortfolioAlertRepository(Repository):

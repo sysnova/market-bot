@@ -88,13 +88,16 @@ uv run market-bot -analyzer TICKER
 
 The equivalent subcommand form is `uv run marketbot analyzer TICKER`. The ticker is
 passed unchanged (after uppercase normalization and validation) to every applicable engine.
-Long, Swing, Intraday, Entry Watcher, Alert, Market Rotation, LONG Portfolio,
-PatreonCaps, Elliott Wave, Support Confirmation, Portfolio Flow, and Signal Fusion are
-represented in one bounded report. Holdings-only and live-window engines are marked
-`SKIPPED` when their gate does not apply. Peter Lynch and the SEC dilution scan are
-intentionally excluded from this mode because they use slower external-provider paths.
-Each remaining engine has an independent timeout, so one unavailable service cannot block
-the complete report.
+The entry report runs only Core (Long, Swing and Intraday), Support Confirmation,
+and 4H GERI. Core also reports Entry Watcher/Alert availability. Support runs before
+4H GERI so its current assessment can inform the same request's 4H context. GERI
+aggregates completed regular-session 15-minute bars into 4-hour structure and returns
+its N1/N2/N3 levels, zone, invalidation and actual confirmation state. Missing structure
+is reported as `SKIPPED`, not as a bearish verdict.
+Portfolio, rotation, PatreonCaps, Elliott Wave, Signal Fusion, Peter Lynch and SEC
+engines are outside this report. Every step has an independent timeout. The report
+runs in an isolated child process without PostgreSQL portfolio access, operational
+NATS, shared decision state, universe changes or order execution.
 
 All operational entry points use the same versioned engine assembly. Inspect the effective
 implementation, strategy artifact, and mode of every engine with:

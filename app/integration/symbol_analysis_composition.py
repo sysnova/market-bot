@@ -1,4 +1,4 @@
-"""Bounded one-shot orchestration for a complete symbol analysis."""
+"""Bounded one-shot orchestration for an entry-focused symbol analysis."""
 
 from __future__ import annotations
 
@@ -37,26 +37,26 @@ class AnalysisStep:
 
 
 class SymbolAnalysisOrchestrator:
-    """Run core first, independent peers concurrently, and Fusion last."""
+    """Run core first, independent peers concurrently, and their dependent step last."""
 
     def __init__(
         self,
         *,
         core: AnalysisStep,
         parallel: tuple[AnalysisStep, ...] = (),
-        fusion: AnalysisStep | None = None,
+        dependent: AnalysisStep | None = None,
         clock: AnalysisClock | None = None,
     ) -> None:
         names = (core.name, *(item.name for item in parallel))
-        if fusion is not None:
-            names = (*names, fusion.name)
+        if dependent is not None:
+            names = (*names, dependent.name)
         if len(names) != len(set(names)):
             raise ValueError("analysis step names must be unique")
         if "peter-lynch" in names:
             raise ValueError("Peter Lynch is excluded from symbol analysis")
         self._core = core
         self._parallel = parallel
-        self._fusion = fusion
+        self._dependent = dependent
         self._clock = clock or SystemClock()
 
     async def analyze(self, symbol: str, *, timeout_seconds: float) -> dict[str, object]:
@@ -88,10 +88,10 @@ class SymbolAnalysisOrchestrator:
                     )
                 )
             )
-        if self._fusion is not None:
+        if self._dependent is not None:
             results.append(
                 await self._run_step(
-                    self._fusion,
+                    self._dependent,
                     normalized,
                     timeout_seconds=timeout_seconds,
                 )

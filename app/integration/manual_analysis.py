@@ -8,13 +8,11 @@ import selectors
 import sys
 from contextlib import redirect_stdout
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
-from typing import cast
 
 from app.common.clock import SystemClock
 from app.common.market_session import is_regular_analytical_bar
-from app.common.settings import AppSettings, Environment
+from app.common.settings import AppSettings
 from app.contracts import (
     ANALYSIS_RESULT_EVENT,
     AnalysisResult,
@@ -25,15 +23,12 @@ from app.contracts import (
 )
 from app.market_history_engine import MarketHistoryService
 from app.market_history_engine.service import BarCoverage
-from app.patreon_caps_engine import PatreonCapsEvaluation, PatreonCapsPolicy
-from app.persistence import create_database_engine
 
-from .engine_assembly import EngineSlot, MarketBotAssembly
+from .engine_assembly import MarketBotAssembly
 from .market_history_composition import (
     MarketHistoryLoader,
     _build_rest,  # pyright: ignore[reportPrivateUsage]
 )
-from .postgres_universe import PostgresUniverseClient
 from .symbol_analysis_composition import AnalysisSkipped, AnalysisStep, SymbolAnalysisOrchestrator
 
 
@@ -94,14 +89,6 @@ class ManualHistory:
         return tuple(result)
 
 
-class ManualPatreonStore:
-    async def save(self, evaluation: PatreonCapsEvaluation) -> bool:
-        return True
-
-    async def latest_transition_times(self, *, rule_version: str) -> dict[str, datetime]:
-        return {}
-
-
 async def analyze_in_process(
     symbol: str,
     *,
@@ -114,11 +101,6 @@ async def analyze_in_process(
     settings = AppSettings()
     assembly = MarketBotAssembly.from_settings(settings)
     clock = SystemClock()
-    database = create_database_engine(
-        settings.database_url.get_secret_value(),
-        require_ssl=settings.environment is Environment.PRODUCTION,
-    )
-    portfolio = PostgresUniverseClient(database)
     sources: list[EventEnvelope] = []
 
     async def history(
@@ -175,86 +157,6 @@ async def analyze_in_process(
             )
         return result
 
-    async def rotation(ticker: str) -> dict[str, object]:
-        from app.common.market_session import is_completed_daily_bar
-        from app.market_rotation_engine import Bar
-
-        from .market_rotation_composition import ROTATION_HISTORY_REQUESTS
-        from .market_rotation_store import PostgresMarketRotationStore
-
-        profiles = await PostgresMarketRotationStore(database).load_profiles()
-        symbols = tuple(
-            dict.fromkeys(s for p in profiles for s in (*p.symbols, p.proxy, p.benchmark))
-        )
-        bars = await history("manual-rotation", symbols, ROTATION_HISTORY_REQUESTS)
-        now = clock.now()
-        series = {
-            s: tuple(
-                Bar(b.close, b.volume)
-                for b in bars
-                if b.symbol == s and is_completed_daily_bar(b, as_of=now)
-            )
-            for s in symbols
-        }
-        return {
-            "scope": "global-market",
-            "requested_symbol": ticker,
-            "sectors": assembly.build_market_rotation().analyze(profiles, series),
-            "watchlist_additions": [],
-        }
-
-    async def long_portfolio(ticker: str) -> dict[str, object]:
-        allocations = await portfolio.get_portfolio_allocations()
-        if not any(item.symbol == ticker for item in allocations):
-            raise AnalysisSkipped("PORT_YTD_allocation_required")
-        engine = assembly.build_long_portfolio(allocations=allocations)
-        quantity = await portfolio.get_holding_quantity(ticker)
-        alerts = []
-        for event in sources:
-            if isinstance(event.payload, AnalysisResult):
-                alert = engine.ingest(event.payload, now=clock.now(), held_quantity=quantity)
-                if alert is not None:
-                    alerts.append(alert.model_dump(mode="json"))
-        state = engine.state_for(ticker, updated_at=clock.now())
-        return {"alerts": alerts, "state": state.model_dump(mode="json") if state else None}
-
-    async def patreon(ticker: str) -> dict[str, object]:
-        from .patreon_caps_composition import PATREON_HISTORY_REQUESTS, PatreonCapsRuntime
-
-        policy = cast("PatreonCapsPolicy", assembly.resolve_strategy(EngineSlot.PATREON_CAPS))
-        allocations = await portfolio.get_portfolio_allocations()
-        selected = tuple(dict.fromkeys((ticker, *policy.macro_symbols)))
-        bars = await history("manual-patreon", selected, PATREON_HISTORY_REQUESTS)
-        events = ManualEvents()
-        runtime = PatreonCapsRuntime(
-            engine=assembly.build_patreon_caps(),
-            publisher=events,
-            store=ManualPatreonStore(),
-            portfolio_data=portfolio,
-            allocations={item.symbol: item.weight_percent for item in allocations},
-            portfolio_capital_usd=policy.portfolio_capital_usd,
-            macro_symbols=policy.macro_symbols,
-            require_hourly=policy.lesson_enabled,
-        )
-        await runtime.bootstrap(bars, symbols=selected)
-        for event in tuple(sources):
-            await runtime.handle_analysis(event)
-        await runtime.complete_hydration()
-        return collect(events)
-
-    async def elliott(ticker: str) -> dict[str, object]:
-        from .elliott_wave_composition import ELLIOTT_HISTORY_REQUESTS, ElliottWaveRuntime
-
-        if await portfolio.get_holding_quantity(ticker) <= Decimal():
-            raise AnalysisSkipped("positive_holding_required")
-        events = ManualEvents()
-        runtime = ElliottWaveRuntime(engine=assembly.build_elliott_wave(), publisher=events)
-        await runtime.bootstrap(
-            await history("manual-elliott", (ticker,), ELLIOTT_HISTORY_REQUESTS),
-            symbols=(ticker,),
-        )
-        return collect(events)
-
     async def support(ticker: str) -> dict[str, object]:
         from .support_confirmation_composition import (
             SUPPORT_HISTORY_REQUESTS,
@@ -265,6 +167,7 @@ async def analyze_in_process(
         runtime = SupportConfirmationRuntime(
             engine=assembly.build_support_confirmation(),
             publisher=events,
+            clock=clock,
         )
         await runtime.bootstrap(
             await history("manual-support", (ticker,), SUPPORT_HISTORY_REQUESTS),
@@ -272,45 +175,38 @@ async def analyze_in_process(
         )
         return collect(events)
 
-    async def portfolio_flow(ticker: str) -> dict[str, object]:
-        raise AnalysisSkipped("requires_live_quote_trade_window")
+    async def geri(ticker: str) -> dict[str, object]:
+        from .swing_4h_geri_composition import GERI_HISTORY_REQUESTS, Swing4HGeriRuntime
 
-    async def fusion(ticker: str) -> dict[str, object]:
-        from .signal_fusion_composition import SignalFusionRuntime
-
-        quantity = await portfolio.get_holding_quantity(ticker)
-        if quantity <= Decimal():
-            raise AnalysisSkipped("positive_holding_required")
         events = ManualEvents()
-        runtime = SignalFusionRuntime(
-            engine=assembly.build_signal_fusion(),
+        runtime = Swing4HGeriRuntime(
+            engine=assembly.build_4hgeri(),
             publisher=events,
-            symbols=(ticker,),
-            holding_quantities={ticker: quantity},
+            clock=clock,
+            emit_countertrend_signals=False,
         )
-        for event in sources:
-            await runtime.handle_source(event)
-        await runtime.complete_hydration()
+        # Only this invocation's support assessment may inform the 4H context.
+        for event in tuple(sources):
+            await runtime.restore_support(event)
+        await runtime.bootstrap(
+            await history("manual-4hgeri", (ticker,), GERI_HISTORY_REQUESTS),
+            symbols=(ticker,),
+        )
+        for event in tuple(sources):
+            await runtime.handle_analysis(event)
+        if not events.events:
+            raise AnalysisSkipped("no_4hgeri_assessment_from_completed_regular_bars")
         return collect(events)
 
-    try:
-        report = await SymbolAnalysisOrchestrator(
-            core=AnalysisStep("core", core),
-            parallel=(
-                AnalysisStep("market-rotation", rotation),
-                AnalysisStep("long-portfolio", long_portfolio),
-                AnalysisStep("patreon-caps", patreon),
-                AnalysisStep("elliott-wave", elliott),
-                AnalysisStep("support-confirmation", support),
-                AnalysisStep("portfolio-flow", portfolio_flow),
-            ),
-            fusion=AnalysisStep("signal-fusion", fusion),
-        ).analyze(symbol, timeout_seconds=timeout_seconds)
-        report["transport"] = "DIRECT_ISOLATED"
-        report["universe_modified"] = False
-        return report
-    finally:
-        await database.dispose()
+    report = await SymbolAnalysisOrchestrator(
+        core=AnalysisStep("core", core),
+        parallel=(AnalysisStep("support-confirmation", support),),
+        dependent=AnalysisStep("4hgeri", geri),
+        clock=clock,
+    ).analyze(symbol, timeout_seconds=timeout_seconds)
+    report["transport"] = "DIRECT_ISOLATED"
+    report["universe_modified"] = False
+    return report
 
 
 def main() -> None:

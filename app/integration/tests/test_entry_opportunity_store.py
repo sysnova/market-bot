@@ -92,6 +92,7 @@ async def test_readiness_requires_snapshot_and_event_tables() -> None:
     session.scalar.side_effect = [
         "market_bot.entry_opportunities",
         None,
+        "market_bot.entry_opportunity_commands",
         "market_bot.outbox_events",
     ]
     context = AsyncMock()
@@ -100,7 +101,7 @@ async def test_readiness_requires_snapshot_and_event_tables() -> None:
     store = PostgresEntryOpportunityStore(factory)  # type: ignore[arg-type]
 
     assert await store.is_ready() is False
-    assert session.scalar.await_count == 3
+    assert session.scalar.await_count == 4
 
 
 @pytest.mark.unit
