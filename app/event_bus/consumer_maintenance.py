@@ -1,4 +1,4 @@
-"""Safe maintenance for legacy random JetStream consumers."""
+"""Safe maintenance for legacy disconnected JetStream consumers."""
 
 from __future__ import annotations
 
@@ -20,6 +20,12 @@ class ConsumerManager(Protocol):
     ) -> Sequence[ConsumerInfo]: ...
 
     async def delete_consumer(self, stream: str, consumer: str) -> bool: ...
+
+
+_SUPERSEDED_STABLE_PREFIXES = (
+    "marketbot-leveraged-thesis-source-v1-",
+    "marketbot-leveraged-thesis-source-v13-",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +52,7 @@ async def cleanup_orphan_consumers(
     minimum_age: timedelta = timedelta(minutes=10),
     apply: bool = False,
 ) -> ConsumerCleanupSummary:
-    """Delete only disconnected legacy consumers created with the ``mb_`` prefix."""
+    """Delete only disconnected legacy consumers with known safe stale prefixes."""
 
     consumers: list[ConsumerInfo] = []
     offset = 0
@@ -62,7 +68,7 @@ async def cleanup_orphan_consumers(
         sorted(
             consumer.name
             for consumer in consumers
-            if consumer.name.startswith("mb_")
+            if _is_cleanup_candidate(consumer.name)
             and consumer.push_bound is not True
             and consumer.created <= cutoff
         )
@@ -77,6 +83,10 @@ async def cleanup_orphan_consumers(
         candidates=candidates,
         deleted=tuple(deleted),
     )
+
+
+def _is_cleanup_candidate(name: str) -> bool:
+    return name.startswith("mb_") or name.startswith(_SUPERSEDED_STABLE_PREFIXES)
 
 
 async def run_orphan_consumer_cleanup(

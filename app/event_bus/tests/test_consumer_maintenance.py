@@ -56,3 +56,46 @@ async def test_cleanup_deletes_only_old_disconnected_random_consumers() -> None:
     assert summary.candidates == ("mb_orphan",)
     assert summary.deleted == ("mb_orphan",)
     assert manager.deleted == [("MARKETBOT", "mb_orphan")]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_cleanup_deletes_old_disconnected_superseded_leveraged_consumers() -> None:
+    manager = _Manager(
+        [
+            _Consumer(
+                "marketbot-leveraged-thesis-source-v1-6-current-v2",
+                NOW - timedelta(days=3),
+                False,
+            ),
+            _Consumer(
+                "marketbot-leveraged-thesis-source-v13-8-current-v2",
+                NOW - timedelta(days=3),
+                None,
+            ),
+            _Consumer(
+                "marketbot-leveraged-thesis-source-v14-8-current-v2",
+                NOW - timedelta(days=3),
+                False,
+            ),
+            _Consumer(
+                "marketbot-leveraged-thesis-source-v13-9-current-v2",
+                NOW - timedelta(days=3),
+                True,
+            ),
+        ]
+    )
+
+    summary = await cleanup_orphan_consumers(
+        manager,
+        stream="MARKETBOT",
+        now=NOW,
+        minimum_age=timedelta(minutes=10),
+        apply=True,
+    )
+
+    assert summary.candidates == (
+        "marketbot-leveraged-thesis-source-v1-6-current-v2",
+        "marketbot-leveraged-thesis-source-v13-8-current-v2",
+    )
+    assert summary.deleted == summary.candidates

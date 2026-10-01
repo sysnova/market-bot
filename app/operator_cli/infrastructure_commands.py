@@ -177,7 +177,7 @@ def cleanup_nats_consumers(
     ] = 10,
     stream: Annotated[str, typer.Option(help="JetStream stream to inspect.")] = "MARKETBOT",
 ) -> None:
-    """Remove only disconnected legacy consumers whose generated name starts with mb_."""
+    """Remove disconnected legacy consumers with known safe stale prefixes."""
 
     if minimum_age_minutes <= 0:
         raise typer.BadParameter("minimum age must be positive")
