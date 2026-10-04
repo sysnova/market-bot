@@ -51,6 +51,83 @@ class Repository:
         )
 
 
+async def test_restart_retires_oversized_history_but_preserves_current_consumers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.integration import redis_ticker_cache
+    from app.integration.redis_history import history_view
+
+    monkeypatch.setattr(
+        redis_ticker_cache, "_DROP_HISTORY", redis_ticker_cache._DROP_HISTORY.split("\n", 1)[1]
+    )
+    cache = RedisTickerCache(fakeredis.FakeRedis(decode_responses=True))
+    repo = Repository()
+    large = MarketHistoryRequirement(
+        timeframe=BarTimeframe.DAY_1, max_bars_per_symbol=100, lookback=timedelta(days=100)
+    )
+    small = large.model_copy(update={"max_bars_per_symbol": 10})
+    await RedisHistoryWarmer(cache, repo).warm(("AAPL",), (large,))
+    restarted = RedisHistoryWarmer(cache, repo)
+    await restarted.warm(("AAPL",), (small,))
+    view = history_view("AAPL", large.timeframe, False)
+    assert cache.redis.get(cache.namespace + "view:" + view) == "10"
+    assert cache.redis.hget(cache.namespace + view + ":coverage", "limit") == "10"
+    await restarted.warm(("AAPL",), (large,))
+    await restarted.warm(("AAPL",), (small,))
+    assert cache.redis.get(cache.namespace + "view:" + view) == "100"
+
+
+async def test_forced_recovery_does_not_warm_shared_redis() -> None:
+    from unittest.mock import AsyncMock
+
+    from app.contracts import MarketHistoryRequest
+    from app.integration.market_history_composition import RedisHistoryService
+
+    service, warmer = AsyncMock(), AsyncMock()
+    central = RedisHistoryService(service, warmer)
+    request = MarketHistoryRequest(
+        engine_id="recovery",
+        symbols=("AAPL",),
+        requirements=(
+            MarketHistoryRequirement(
+                timeframe=BarTimeframe.MINUTE_1,
+                max_bars_per_symbol=10000,
+                lookback=timedelta(days=5),
+            ),
+        ),
+        requested_at=datetime(2026, 9, 15, tzinfo=UTC),
+        force_refresh=True,
+    )
+    await central.ensure(request)
+    service.ensure.assert_awaited_once_with(request)
+    warmer.warm.assert_not_awaited()
+
+
+async def test_startup_prunes_unrequested_history_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.integration import redis_ticker_cache
+    from app.integration.redis_history import history_view
+
+    monkeypatch.setattr(
+        redis_ticker_cache, "_DROP_HISTORY", redis_ticker_cache._DROP_HISTORY.split("\n", 1)[1]
+    )
+    cache = RedisTickerCache(fakeredis.FakeRedis(decode_responses=True))
+    req = MarketHistoryRequirement(
+        timeframe=BarTimeframe.DAY_1, max_bars_per_symbol=10, lookback=timedelta(days=30)
+    )
+    repo = Repository()
+    await RedisHistoryWarmer(cache, repo).warm(("AAPL", "MSFT"), (req,))
+    cache.redis.set(cache.namespace + "pending-long:v1:MSFT", "preserve")
+    current = RedisHistoryWarmer(cache, repo)
+    await current.warm(("AAPL",), (req,))
+    assert current.prune_unrequested_at_startup() == 1
+    assert not cache.redis.exists(
+        cache.namespace + "view:" + history_view("MSFT", req.timeframe, False)
+    )
+    assert cache.redis.get(cache.namespace + "pending-long:v1:MSFT") == "preserve"
+    assert len(list(RedisHistoryBars(cache, ("AAPL",), (req,), repo.version, False))) == 1
+    assert current.prune_unrequested_at_startup() == 0
+
+
 async def test_load_once_then_restart_reads_redis_and_invalidates_changed_coverage() -> None:
     server = fakeredis.FakeServer()
     cache = RedisTickerCache(fakeredis.FakeRedis(server=server, decode_responses=True))
@@ -138,8 +215,10 @@ async def test_lazy_reader_filters_forming_bars_and_sorts_only_one_ticker() -> N
     assert len(lazy) == 1
 
 
-async def test_distributed_loader_uses_redis_without_opening_postgres(
+@pytest.mark.parametrize("force_refresh", [False, True])
+async def test_distributed_loader_uses_redis_except_for_temporary_recovery(
     monkeypatch: pytest.MonkeyPatch,
+    force_refresh: bool,
 ) -> None:
     from app.common.settings import AppSettings
     from app.contracts import MarketHistoryRequest, MarketHistoryResponse, MarketHistoryStatus
@@ -153,7 +232,8 @@ async def test_distributed_loader_uses_redis_without_opening_postgres(
         closed = False
 
         async def ensure(self, request: MarketHistoryRequest) -> MarketHistoryResponse:
-            await warmer.warm(request.symbols, request.requirements)
+            if not request.force_refresh:
+                await warmer.warm(request.symbols, request.requirements)
             return MarketHistoryResponse(
                 request_id=request.request_id,
                 status=MarketHistoryStatus.READY,
@@ -175,7 +255,9 @@ async def test_distributed_loader_uses_redis_without_opening_postgres(
     monkeypatch.setattr(ticker_cache_transport, "_client", cache)
     monkeypatch.setattr(market_history_composition.NatsMarketHistoryClient, "connect", connect)
     monkeypatch.setattr(
-        market_history_composition, "PostgresMarketBarRepository", forbidden_repository
+        market_history_composition,
+        "PostgresMarketBarRepository",
+        (lambda database: repo) if force_refresh else forbidden_repository,
     )
     req = MarketHistoryRequirement(
         timeframe=BarTimeframe.DAY_1,
@@ -189,10 +271,13 @@ async def test_distributed_loader_uses_redis_without_opening_postgres(
         symbols=("AAPL",),
         requirements=(req,),
         as_of=repo.version,
+        force_refresh=force_refresh,
     )
-    assert isinstance(result.bars, RedisHistoryBars)
+    assert isinstance(result.bars, RedisHistoryBars) is not force_refresh
     assert central.closed
     assert [bar.symbol for bar in result.bars] == ["AAPL"]
+    if force_refresh:
+        assert cache.redis.dbsize() == 0
 
 
 async def test_stream_updates_redis_before_notifying_consumers() -> None:

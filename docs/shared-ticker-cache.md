@@ -20,16 +20,20 @@ y estado de negocio; NATS transporta los eventos.
    por ticker, nunca como un lote de toda la watchlist.
 3. Cada ventana guarda cobertura (cantidad, última barra, fecha de descarga y
    capacidad). Las ventanas extendidas se cargan sólo cuando el pedido incluye
-   premarket; la precarga general de 15m/1h usa únicamente RTH. El supervisor
-   retira las antiguas ventanas extendidas sobrantes al iniciar, incluso si Redis
-   ya alcanzó su límite de memoria. Si la cobertura no cambió, los siguientes arranques reutilizan
+   premarket o after-hours; la precarga general de 15m/1h usa únicamente RTH.
+   El servicio histórico ajusta capacidades heredadas a los requisitos actuales
+   y retira las ventanas fuera de la precarga antes de aceptar lectores.
+   Si la cobertura y la capacidad siguen siendo válidas, los siguientes arranques reutilizan
    Redis sin volver a materializar ese histórico desde PostgreSQL. Se mantiene
    la comprobación de frescura del servicio histórico y la recuperación de huecos.
 4. Los Engines esperan al servicio histórico y reciben un iterable Redis: durante
    bootstrap sólo se materializa una ventana por ticker. Los ordenamientos de
-   Swing, GERI, SwingTrade y recuperación también quedan acotados por ticker.
+   Swing, GERI y SwingTrade también quedan acotados por ticker.
    Los símbolos adicionales de cada Engine se preparan centralmente antes de
    responder su solicitud. Rotation usa el mismo recorrido en sus ciclos.
+   Las recuperaciones puntuales con `force_refresh=True` leen PostgreSQL mediante
+   el loader existente y usan memoria temporal del proceso; no amplían Redis.
+   La política se detalla en [retención](../app/integration/redis-retention.md).
 5. El ingreso del stream actualiza Redis antes de publicar barras nuevas o
    corregidas en NATS. Las actualizaciones periódicas del servicio histórico
    también refrescan Redis. Los Engines guardan sus agregaciones y contextos ahí.

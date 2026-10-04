@@ -63,6 +63,8 @@ class RedisHistoryWarmer:
     def __init__(self, cache: RedisTickerCache, repository: Repository) -> None:
         self.cache = cache
         self.repository = repository
+        # Only requirements observed in this service lifetime may enlarge a window.
+        self._limits: dict[str, int] = {}
 
     async def warm(
         self,
@@ -78,9 +80,7 @@ class RedisHistoryWarmer:
             for symbol in symbols:
                 item = coverage[symbol]
                 fingerprint = f"{item.count}:{item.latest}:{item.downloaded_at}"
-                include_extended_hours = (
-                    include_premarket_intraday or include_after_hours_intraday
-                )
+                include_extended_hours = include_premarket_intraday or include_after_hours_intraday
                 regular_only = requires_regular_session(tf) and not include_extended_hours
                 variants = (regular_only,)
                 for regular in variants:
@@ -90,15 +90,27 @@ class RedisHistoryWarmer:
                         else analytical_storage_limit(tf, requirement.max_bars_per_symbol)
                     )
                     view = history_view(symbol, tf, regular)
+                    limit = max(limit, self._limits.get(view, 0))
                     meta = self.cache.namespace + view + ":coverage"
                     previous = cast(dict[str, str], self.cache.redis.hgetall(meta))
+                    capacity = int(
+                        cast(
+                            str | None, self.cache.redis.get(self.cache.namespace + "view:" + view)
+                        )
+                        or 0
+                    )
+                    if capacity > limit:
+                        # Retire an old recovery window before any current reader
+                        # receives it. Deletion also releases shared payload references.
+                        self.cache.discard_history(view)
+                        previous = {}
                     if (
                         previous.get("fingerprint") == fingerprint
                         and int(previous.get("limit", 0)) >= limit
-                        and self.cache.redis.exists(self.cache.namespace + "view:" + view)
+                        and capacity >= limit
                     ):
+                        self._limits[view] = limit
                         continue
-                    limit = max(limit, int(previous.get("limit", 0)))
                     bars = await self.repository.load_latest(
                         (symbol,),
                         tf,
@@ -114,6 +126,19 @@ class RedisHistoryWarmer:
                     self.cache.redis.hset(
                         meta, mapping={"fingerprint": fingerprint, "limit": limit}
                     )
+                    self._limits[view] = limit
+
+    def prune_unrequested_at_startup(self) -> int:
+        """Run only after central prewarm, before the history server accepts readers."""
+        prefix = self.cache.namespace + "view:"
+        keys = cast(Iterator[str], self.cache.redis.scan_iter(match=prefix + "history:*"))
+        removed = 0
+        for key in keys:
+            view = key[len(prefix) :]
+            if view not in self._limits and self.cache.redis.type(key) == "string":
+                self.cache.discard_history(view)
+                removed += 1
+        return removed
 
     def add_live(self, bar: MarketBar) -> None:
         for regular in (False, True):

@@ -160,9 +160,7 @@ class MarketHistoryLoader:
                 request.symbols,
                 requirement.timeframe,
                 limit_per_symbol=repository_limit,
-                regular_session_only=(
-                    intraday_session_filter and not include_extended_hours
-                ),
+                regular_session_only=(intraday_session_filter and not include_extended_hours),
             )
             repository_read_ms = _elapsed_ms(repository_started)
             selection_started = perf_counter()
@@ -255,7 +253,7 @@ async def load_market_history_profiled(
     )
     try:
         cache = shared_cache_client()
-        if isinstance(cache, RedisTickerCache):
+        if isinstance(cache, RedisTickerCache) and not force_refresh:
             started = perf_counter()
             await client.ensure(
                 MarketHistoryRequest(
@@ -412,6 +410,10 @@ class RedisHistoryService:
     async def ensure(self, request: MarketHistoryRequest) -> MarketHistoryResponse:
         async with self._lock:
             response = await self.service.ensure(request)
+            if request.force_refresh:
+                # Recovery reads the persisted window directly. It must not raise
+                # the permanent Redis retention required by normal consumers.
+                return response
             await self.warmer.warm(
                 request.symbols,
                 request.requirements,
@@ -466,3 +468,5 @@ class RedisHistoryService:
                     include_premarket_intraday=True,
                     include_after_hours_intraday=True,
                 )
+            # No engines can read yet; extra engine symbols are hydrated on demand.
+            self.warmer.prune_unrequested_at_startup()
