@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -12,13 +14,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.common.logging import get_logger
 from app.contracts import EventEnvelope
 from app.persistence import PersistenceUnitOfWork
-from app.persistence.models import EntryOpportunityCommandRecord
 
 from .entry_opportunity_store import PostgresEntryOpportunityStore
 
 
 async def _ignore_health(healthy: bool) -> None:
     pass
+
+
+@dataclass(frozen=True)
+class _ClaimedCommand:
+    id: UUID
+    attempts: int
 
 
 class EntryOpportunityCommandIngress:
@@ -83,7 +90,7 @@ class EntryOpportunityCommandProcessor:
         self._sleep = sleep
         self._report_health = report_health
         self._recovered = False
-        self._command: EntryOpportunityCommandRecord | None = None
+        self._command: _ClaimedCommand | None = None
 
     async def drain_once(self) -> bool:
         self._command = None
@@ -93,12 +100,12 @@ class EntryOpportunityCommandProcessor:
             if not self._recovered:
                 await queue.requeue_processing(available_at=self._clock())
             command = await queue.claim_pending(now=self._clock())
-            self._command = command
             if command is not None:
+                self._command = _ClaimedCommand(id=command.id, attempts=command.attempts)
                 envelope = EventEnvelope.model_validate(command.payload, strict=False)
                 with self._store.bind(unit):
                     await self._apply(command.command_type, envelope)
-                await queue.mark_processed(command.id, processed_at=self._clock())
+                await queue.mark_processed(self._command.id, processed_at=self._clock())
         self._recovered = True
         return command is not None
 

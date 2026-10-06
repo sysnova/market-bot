@@ -3,9 +3,11 @@
 import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from app.contracts import EventEnvelope
 from app.integration.entry_opportunity_commands import (
@@ -114,6 +116,63 @@ async def test_command_effects_and_ack_share_transaction(monkeypatch: pytest.Mon
     unit.entry_opportunity_commands.acquire_writer.assert_awaited_once()
     unit.entry_opportunity_commands.mark_processed.assert_awaited_once()
     unit.__aexit__.assert_awaited_once_with(None, None, None)
+
+
+@pytest.mark.unit
+async def test_failed_command_retry_does_not_read_detached_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.integration.entry_opportunity_commands as module
+
+    class Command:
+        def __init__(self) -> None:
+            self.detached = False
+            self._id = uuid4()
+            self.payload = EventEnvelope(
+                event_type="test.command",
+                source="test",
+                occurred_at=NOW,
+                payload={},
+            ).model_dump(mode="json")
+            self.command_type = "analysis"
+
+        @property
+        def id(self) -> UUID:
+            if self.detached:
+                raise DetachedInstanceError("command detached after rollback")
+            return self._id
+
+        @property
+        def attempts(self) -> int:
+            if self.detached:
+                raise DetachedInstanceError("command detached after rollback")
+            return 1
+
+    command = Command()
+    repository = AsyncMock()
+    repository.claim_pending.return_value = command
+    unit = AsyncMock()
+    unit.entry_opportunity_commands = repository
+    unit.__aenter__.return_value = unit
+
+    async def detach(*_args: object) -> None:
+        command.detached = True
+
+    unit.__aexit__.side_effect = detach
+    monkeypatch.setattr(module, "PersistenceUnitOfWork", lambda _: unit)
+    sleep = AsyncMock(side_effect=asyncio.CancelledError())
+    processor = EntryOpportunityCommandProcessor(
+        MagicMock(),
+        store=MagicMock(),
+        apply=AsyncMock(side_effect=RuntimeError("optimistic race")),
+        clock=lambda: NOW,
+        sleep=sleep,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await processor.run()
+
+    assert repository.mark_failed.await_args.args[0] == command._id
 
 
 @pytest.mark.unit
