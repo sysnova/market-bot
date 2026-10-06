@@ -20,6 +20,8 @@ from app.common.settings import AppSettings
 from app.persistence import create_database_engine
 
 _LOCAL = ZoneInfo("America/Argentina/Buenos_Aires")
+_SPLIT_2_FOR_1_LOW = Decimal("0.48")
+_SPLIT_2_FOR_1_HIGH = Decimal("0.52")
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,10 @@ def opportunity_rows(payloads: Iterable[dict[str, Any]]) -> list[OpportunityRow]
             continue
         if not (entry.is_finite() and current.is_finite() and entry > 0 and current > 0):
             continue
+        if item.get("trade_side", "LONG") == "LONG" and _split_adjustment_suspected(
+            entry=entry, current=current
+        ):
+            continue
         rows.append(
             OpportunityRow(
                 symbol=str(item["symbol"]),
@@ -79,6 +85,11 @@ def opportunity_rows(payloads: Iterable[dict[str, Any]]) -> list[OpportunityRow]
             )
         )
     return sorted(rows, key=lambda row: (row.entered_at, row.symbol, row.side), reverse=True)
+
+
+def _split_adjustment_suspected(*, entry: Decimal, current: Decimal) -> bool:
+    ratio = current / entry
+    return _SPLIT_2_FOR_1_LOW <= ratio <= _SPLIT_2_FOR_1_HIGH
 
 
 def render_panel(

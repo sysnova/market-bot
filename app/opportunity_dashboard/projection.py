@@ -17,6 +17,7 @@ from app.contracts import (
     GeriCountertrendMaturity,
     SwingTradeMaturity,
 )
+from app.contracts.corporate_actions import split_adjustment_suspected
 
 _FOUR_PLACES = Decimal("0.0001")
 _CORE_FAMILIES = {EntrySignalFamily.CORE_ENTRY, EntrySignalFamily.CORE_RECOVERY}
@@ -41,12 +42,14 @@ _THESIS_LABELS = {
 }
 
 
-def checkpoint_pnl_percent(checkpoint: EntryMaturityCheckpoint) -> Decimal:
+def checkpoint_pnl_percent(checkpoint: EntryMaturityCheckpoint) -> Decimal | None:
     """Return audited P/L for a close or mark-to-market P/L for an open checkpoint."""
 
     if checkpoint.status is EntryCheckpointStatus.CLOSED:
         assert checkpoint.gain_loss_percent is not None
         return checkpoint.gain_loss_percent
+    if split_adjustment_suspected(checkpoint):
+        return None
     result = (checkpoint.current_price / checkpoint.entry_price - Decimal("1")) * Decimal("100")
     return -result if checkpoint.signal_family is EntrySignalFamily.CORE_SHORT else result
 
@@ -196,9 +199,7 @@ def _checkpoint_row(
         "current_price": _number(checkpoint.current_price),
         "exit_price": _number(checkpoint.exit_price),
         "pnl_percent": _number(pnl),
-        "pnl_basis": (
-            "AUDITED_CLOSE" if checkpoint.status is EntryCheckpointStatus.CLOSED else "LIVE_MARK"
-        ),
+        "pnl_basis": _pnl_basis(checkpoint, pnl),
         "mfe_percent": _number(checkpoint.mfe_percent),
         "mae_percent": _number(checkpoint.mae_percent),
         "invalidation": _number(checkpoint.invalidation),
@@ -238,7 +239,7 @@ def _checkpoint_row(
         "updated_at": (checkpoint.closed_at or opportunity.updated_at).isoformat(),
         "lifecycle_updated_at": opportunity.updated_at.isoformat(),
         "closed_at": checkpoint.closed_at.isoformat() if checkpoint.closed_at else None,
-        "is_losing": pnl < 0,
+        "is_losing": pnl < 0 if pnl is not None else False,
         "latest_reasons": list(latest_reasons),
         "analysis_summary": [
             {
@@ -253,6 +254,14 @@ def _checkpoint_row(
             for item in analyses[:8]
         ],
     }
+
+
+def _pnl_basis(checkpoint: EntryMaturityCheckpoint, pnl: Decimal | None) -> str:
+    if checkpoint.status is EntryCheckpointStatus.CLOSED:
+        return "AUDITED_CLOSE"
+    if pnl is None and split_adjustment_suspected(checkpoint):
+        return "CORPORATE_ACTION_SUSPECTED"
+    return "LIVE_MARK"
 
 
 def _checkpoint_state(checkpoint: EntryMaturityCheckpoint) -> str:

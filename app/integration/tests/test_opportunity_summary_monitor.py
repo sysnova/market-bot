@@ -31,6 +31,19 @@ def test_summary_includes_unconfirmed_tracks_and_short_direction() -> None:
     assert "ARMED" in text
 
 
+def test_summary_excludes_split_like_long_mark_from_pl_board() -> None:
+    payload = dict(
+        symbol="APH",
+        status="ARMED",
+        trade_side="LONG",
+        armed_at="2026-09-10T14:00:00Z",
+        original_price="169.18",
+        current_price="85.12",
+    )
+
+    assert opportunity_rows([payload]) == []
+
+
 def test_summary_keeps_all_symbols_and_pages_without_truncating_history() -> None:
     rows = opportunity_rows(
         [
