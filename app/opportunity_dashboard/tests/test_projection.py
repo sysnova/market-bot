@@ -214,19 +214,6 @@ def test_checkpoint_pnl_uses_audited_close_or_live_mark() -> None:
 
 
 @pytest.mark.unit
-def test_dashboard_marks_split_like_live_pnl_as_unavailable() -> None:
-    cp = _checkpoint(12, level=EntryMaturityLevel.L1, entry="169.18", current="85.12")
-    item = opportunity().model_copy(update={"symbol": "APH", "checkpoints": (cp,)})
-
-    row = build_dashboard_snapshot((item,), refreshed_at=NOW)["rows"][0]
-
-    assert checkpoint_pnl_percent(cp) is None
-    assert row["pnl_percent"] is None
-    assert row["pnl_basis"] == "CORPORATE_ACTION_SUSPECTED"
-    assert row["is_losing"] is False
-
-
-@pytest.mark.unit
 @pytest.mark.parametrize("closed", [False, True])
 def test_swing_checkpoints_only_count_confirmed_st3_st4_as_buys(closed: bool) -> None:
     checkpoints = tuple(

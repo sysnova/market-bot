@@ -16,7 +16,6 @@ from app.contracts import (
     EntryOpportunityStatus,
     EntrySignalFamily,
 )
-from app.contracts.corporate_actions import split_adjustment_suspected
 from app.persistence import create_database_engine, create_session_factory
 
 from .entry_opportunity_store import PostgresEntryOpportunityStore
@@ -153,25 +152,6 @@ def _evidence_audit(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, An
     actionable = tuple(pair for pair in checkpoints if pair[1].level in _MATURE_LEVELS)
     negative: list[dict[str, Any]] = []
     for opportunity, checkpoint in checkpoints:
-        if split_adjustment_suspected(checkpoint):
-            negative.append(
-                {
-                    "symbol": opportunity.symbol,
-                    "level": checkpoint.level.value,
-                    "role": _checkpoint_role(checkpoint),
-                    "status": checkpoint.status.value,
-                    "snapshot_return_percent": None,
-                    "mfe_percent": _decimal_text(checkpoint.mfe_percent),
-                    "mae_percent": _decimal_text(checkpoint.mae_percent),
-                    "observed_fixed_horizons": 0,
-                    "fixed_returns": {label: None for label, _ in _FIXED_HORIZONS},
-                    "classifications": [
-                        "OPEN_RIGHT_CENSORED",
-                        "SPLIT_ADJUSTMENT_SUSPECTED",
-                    ],
-                }
-            )
-            continue
         snapshot_return = _checkpoint_snapshot_return(checkpoint)
         if snapshot_return >= 0:
             continue
@@ -242,9 +222,6 @@ def _evidence_audit(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, An
             "closed_checkpoints": sum(
                 checkpoint.status is EntryCheckpointStatus.CLOSED for _, checkpoint in checkpoints
             ),
-            "split_adjustment_suspected": sum(
-                split_adjustment_suspected(checkpoint) for _, checkpoint in checkpoints
-            ),
         },
         "snapshot": {
             "tracking": _snapshot_stats(tracking),
@@ -256,11 +233,7 @@ def _evidence_audit(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, An
         },
         "negative_evidence": sorted(
             negative,
-            key=lambda item: (
-                Decimal("Infinity")
-                if item["snapshot_return_percent"] is None
-                else Decimal(item["snapshot_return_percent"])
-            ),
+            key=lambda item: Decimal(item["snapshot_return_percent"]),
         ),
         "pullback_entry_improvement": _pullback_entry_improvement(opportunities),
         "limitations": limitations,
@@ -270,12 +243,7 @@ def _evidence_audit(opportunities: tuple[EntryOpportunity, ...]) -> dict[str, An
 def _snapshot_stats(
     pairs: tuple[tuple[EntryOpportunity, EntryMaturityCheckpoint], ...],
 ) -> dict[str, Any]:
-    usable = tuple(
-        (opportunity, checkpoint)
-        for opportunity, checkpoint in pairs
-        if not split_adjustment_suspected(checkpoint)
-    )
-    values = tuple(_checkpoint_snapshot_return(checkpoint) for _, checkpoint in usable)
+    values = tuple(_checkpoint_snapshot_return(checkpoint) for _, checkpoint in pairs)
     positive = sum(value > 0 for value in values)
     negative = sum(value < 0 for value in values)
     return {
@@ -286,8 +254,8 @@ def _snapshot_stats(
         "positive_rate_percent": _average_rate(positive, len(values)),
         "average_percent": _average(values),
         "median_percent": _median(values),
-        "average_mfe_percent": _average(tuple(checkpoint.mfe_percent for _, checkpoint in usable)),
-        "average_mae_percent": _average(tuple(checkpoint.mae_percent for _, checkpoint in usable)),
+        "average_mfe_percent": _average(tuple(checkpoint.mfe_percent for _, checkpoint in pairs)),
+        "average_mae_percent": _average(tuple(checkpoint.mae_percent for _, checkpoint in pairs)),
     }
 
 
@@ -297,10 +265,7 @@ def _fixed_horizon_stats(
     result: dict[str, dict[str, Any]] = {}
     for label, field in _FIXED_HORIZONS:
         values = tuple(
-            value
-            for _, checkpoint in pairs
-            if not split_adjustment_suspected(checkpoint)
-            if (value := getattr(checkpoint, field)) is not None
+            value for _, checkpoint in pairs if (value := getattr(checkpoint, field)) is not None
         )
         positive = sum(value > 0 for value in values)
         negative = sum(value < 0 for value in values)

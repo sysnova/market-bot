@@ -24,8 +24,6 @@ from app.common.settings import AppSettings
 from app.persistence import create_database_engine
 
 _LOCAL = ZoneInfo("America/Argentina/Buenos_Aires")
-_SPLIT_2_FOR_1_LOW = Decimal("0.48")
-_SPLIT_2_FOR_1_HIGH = Decimal("0.52")
 
 
 @dataclass(frozen=True)
@@ -94,8 +92,6 @@ def buy_rows(payloads: Iterable[dict[str, Any]]) -> list[BuyRow]:
                 continue
             if not (entry.is_finite() and current.is_finite() and entry > 0 and current > 0):
                 continue
-            if _split_adjustment_suspected(entry=entry, current=current):
-                continue
             rows.append(
                 BuyRow(
                     symbol=str(item["symbol"]),
@@ -125,11 +121,6 @@ def buy_rows(payloads: Iterable[dict[str, Any]]) -> list[BuyRow]:
             )
         grouped[key] = row
     return sorted(grouped.values(), key=lambda row: (row.entered_at, row.symbol), reverse=True)
-
-
-def _split_adjustment_suspected(*, entry: Decimal, current: Decimal) -> bool:
-    ratio = current / entry
-    return _SPLIT_2_FOR_1_LOW <= ratio <= _SPLIT_2_FOR_1_HIGH
 
 
 def render_panel(

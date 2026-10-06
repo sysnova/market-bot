@@ -192,51 +192,6 @@ def test_negative_evidence_explains_giveback_persistence_and_censoring() -> None
 
 
 @pytest.mark.unit
-def test_split_like_live_marks_are_excluded_from_evidence_metrics() -> None:
-    base = opportunity(closed=False, suffix=7)
-    checkpoint = EntryMaturityCheckpoint(
-        checkpoint_id=UUID("01987e76-3c00-7007-8000-000000000001"),
-        level=EntryMaturityLevel.L1,
-        reached_at=NOW - timedelta(hours=1),
-        entry_price=Decimal("169.18"),
-        current_price=Decimal("85.12"),
-        highest_price=Decimal("170"),
-        lowest_price=Decimal("84.50"),
-        invalidation=Decimal("150"),
-        mfe_percent=Decimal("0.4847"),
-        mae_percent=Decimal("-49.9930"),
-    )
-    audited = base.model_copy(
-        update={
-            "symbol": "APH",
-            "current_maturity": EntryMaturityLevel.L1,
-            "peak_maturity": EntryMaturityLevel.L1,
-            "current_price": Decimal("85.12"),
-            "checkpoints": (checkpoint,),
-        }
-    )
-
-    audit = build_entry_opportunity_report((audited,))["evidence_audit"]
-
-    assert audit["snapshot"]["actionable"]["observed"] == 0
-    assert audit["sample"]["split_adjustment_suspected"] == 1
-    assert audit["negative_evidence"] == [
-        {
-            "symbol": "APH",
-            "level": "L1",
-            "role": "ACTIONABLE_ENTRY",
-            "status": "OPEN",
-            "snapshot_return_percent": None,
-            "mfe_percent": "0.4847",
-            "mae_percent": "-49.9930",
-            "observed_fixed_horizons": 0,
-            "fixed_returns": {"15m": None, "30m": None, "60m": None, "close": None},
-            "classifications": ["OPEN_RIGHT_CENSORED", "SPLIT_ADJUSTMENT_SUSPECTED"],
-        }
-    ]
-
-
-@pytest.mark.unit
 def test_human_audit_labels_references_as_non_trades() -> None:
     base = opportunity(closed=False, suffix=5)
     checkpoint = EntryMaturityCheckpoint(

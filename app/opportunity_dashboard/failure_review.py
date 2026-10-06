@@ -225,8 +225,6 @@ def build_failure_dossier(
     if checkpoint is None:
         raise ValueError("checkpoint does not belong to opportunity")
     pnl = checkpoint_pnl_percent(checkpoint)
-    if pnl is None:
-        raise ValueError("failure review requires an adjusted P/L mark")
     if pnl >= 0:
         raise ValueError("failure review requires a currently or finally losing checkpoint")
     entry_snapshot, timeline, coverage = _analysis_history(opportunity, checkpoint, events)

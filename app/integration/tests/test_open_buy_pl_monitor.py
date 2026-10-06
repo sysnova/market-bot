@@ -59,26 +59,6 @@ def test_closed_leg_disappears_on_next_snapshot_and_no_entry_uses_parent_price()
     assert "Sin compras confirmadas abiertas" in render_panel([], now=datetime.now(UTC))
 
 
-def test_split_like_open_long_is_excluded_from_buy_pl_board() -> None:
-    at = "2026-09-10T14:00:00Z"
-    payload = dict(
-        symbol="APH",
-        status="OPEN",
-        checkpoints=[dict(status="OPEN", level="L2", reached_at=at)],
-        legs=[
-            dict(
-                status="OPEN",
-                trade_side="LONG",
-                entry_price="169.18",
-                current_price="85.12",
-                opened_at=at,
-            )
-        ],
-    )
-
-    assert buy_rows([payload]) == []
-
-
 def test_closed_confirmation_is_excluded_and_same_fill_horizons_are_grouped() -> None:
     at = "2026-09-10T14:00:00Z"
     leg = dict(status="OPEN", entry_price="100", current_price="101", opened_at=at)
