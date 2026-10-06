@@ -204,6 +204,8 @@ class EntryOpportunityEngine:
                 reason=EntryCloseReason.ORIGINAL_THESIS_INVALIDATED,
                 leg_status=EntryLegStatus.THESIS_BROKEN,
             )
+            if closed == active:
+                return ()
             closed = _with_source_cursor(
                 closed,
                 source=_WATCHER_SOURCE,
@@ -226,6 +228,8 @@ class EntryOpportunityEngine:
                 reason=EntryCloseReason.EXPIRED,
                 leg_status=EntryLegStatus.EXPIRED,
             )
+            if closed == active:
+                return ()
             closed = _with_source_cursor(
                 closed,
                 source=_WATCHER_SOURCE,

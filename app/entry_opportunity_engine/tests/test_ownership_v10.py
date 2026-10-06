@@ -151,6 +151,36 @@ async def test_matching_core_watcher_terminal_event_preserves_swing_trade(
     )
 
 
+@pytest.mark.parametrize("status", [EntryWatchStatus.INVALIDATED, EntryWatchStatus.EXPIRED])
+async def test_watcher_terminal_is_noop_after_core_thesis_already_closed(
+    status: EntryWatchStatus,
+) -> None:
+    store = InMemoryEntryOpportunityStore()
+    engine = EngineUnderTest(store=store)
+    terminal = unrelated_watcher_invalidation(at=NOW + timedelta(minutes=20))
+    await engine.ingest_transition(
+        terminal.model_copy(
+            update={
+                "occurred_at": NOW,
+                "status": EntryWatchStatus.ARMED,
+                "transition_id": terminal.watch_id,
+                "previous_status": None,
+            }
+        )
+    )
+    await engine.ingest_signal(swing_signal(SwingTradeMaturity.ST3, at=NOW + timedelta(minutes=1)))
+    await engine.ingest_analysis(
+        core_avoid(AnalysisHorizon.LONG_TERM),
+        now=NOW + timedelta(minutes=15),
+    )
+    before = await store.load_active("AAPL")
+
+    events = await engine.ingest_transition(terminal.model_copy(update={"status": status}))
+
+    assert events == ()
+    assert await store.load_active("AAPL") == before
+
+
 def market_bar(*, low: str = "96", high: str = "99", close: str = "98") -> MarketBar:
     return MarketBar(
         symbol="AAPL",
